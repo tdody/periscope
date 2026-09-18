@@ -174,3 +174,30 @@ def test_spawn_worktree_still_creates_a_brand_new_branch(tmp_git_repo, tmp_workt
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     assert head == "brand-new"
+
+
+def test_spawn_worktree_de_collides_a_drifted_slug(tmp_git_repo, tmp_worktrees):
+    """A worktree dir keeps the slug of the branch it was FORKED for; the
+    branch INSIDE it drifts the moment anyone runs `git switch` there. Opening
+    the original branch then found its slug path occupied and hard-failed —
+    fdy's `.worktrees/master` had been sitting on a feature branch for weeks,
+    which made "+ New tab → master" 409 with "worktree path already exists".
+    """
+    import subprocess
+
+    from periscope.worktree_spawn import spawn_worktree
+    repo = str(tmp_git_repo)
+
+    first = spawn_worktree(repo, "wip", fetch=False)
+    # Drift: the dir is still called `wip`, the branch in it is not.
+    subprocess.run(["git", "-C", first["path"], "switch", "-q", "-c", "drifted"],
+                   check=True)
+
+    res = spawn_worktree(repo, "wip", fetch=False)
+
+    assert res["path"] != first["path"]
+    head = subprocess.run(
+        ["git", "-C", res["path"], "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert head == "wip"
