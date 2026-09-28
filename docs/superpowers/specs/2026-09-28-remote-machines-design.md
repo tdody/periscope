@@ -1,9 +1,9 @@
 # Remote machines: panes on another host as full citizens
 
-**Status:** draft — D1, D4, D5, D6, D8, D9, D10, D12 settled with Tom
-(2026-09-28); D2, D3, D7, D11 proposed, no objection raised; O1 open. Next:
-spec-reviewer takes the worry list. Tier: **Full** (five phases, spans
-sessions).
+**Status:** draft, reviewed once by spec-reviewer. D1, D5, D6, D8, D9, D10,
+D12 settled with Tom (2026-09-28). D4's list is settled; its rationale is
+under O1. D2, D3, D7 proposed, no objection raised. D11 is under O2. Open:
+O1–O4. Tier: **Full** (spans sessions).
 
 **Goal.** From the laptop's dashboard, and from a Claude running on the
 laptop, spawn Claudes onto the Linux desktop and have each one show up as a
@@ -47,17 +47,19 @@ The viewer relays to the remote. The browser never learns the remote exists as
 a server. This keeps one unauthenticated server in front of the browser
 instead of two.
 
-### D3 — One SSH connection per remote, owned by periscope
+### D3 — One SSH connection per remote, owned and dialled by the viewer
 
-The viewer starts it, watches it, and restarts it. It carries traffic in both
-directions. Nothing listens on the network on either machine; each end of the
-link is reachable only by your own OS user on that machine.
+The viewer starts it, watches it, and restarts it. The remote never dials the
+viewer: what a remote sends travels back over a connection the viewer opened.
+Nothing listens on the network on either machine.
 
-### D4 — Trust is asymmetric
+Why the remote never dials: there is then one place on the viewer where
+remote traffic arrives, and D4's list is enforced there.
+
+### D4 — What each side may do to the other
 
 Periscope has no authentication. Today "can reach it" means "is you, on this
-machine." The link extends reach across machines, so the rule has to be
-explicit.
+machine." The link extends reach across machines, so the rule is explicit.
 
 | Direction | May do |
 |---|---|
@@ -67,8 +69,10 @@ explicit.
 A remote cannot type into the viewer's terminals, spawn or terminate there,
 read its files, or change its settings.
 
-Why asymmetric: the laptop holds the SSH keys and the credentials. A
-compromised desktop must not become a compromised laptop.
+On the remote, only a Claude's own channel tools can send to the viewer. No
+web request to the remote's periscope is ever forwarded to the viewer.
+
+**What this list is not:** a wall against a hostile desktop. See O1.
 
 Accepted: whoever controls your laptop account controls the desktop's
 periscope. That is already true of anything holding your SSH key.
@@ -77,7 +81,7 @@ periscope. That is already true of anything holding your SSH key.
 
 | Thing | Owner |
 |---|---|
-| Name, state, transcript, linked PR and ticket, alerts, notes, open file tabs, account, who spawned it | The pane's machine |
+| Name, state, transcript, linked PR and ticket, alerts, notes, tags, open file tabs, account, who spawned it | The pane's machine |
 | Which group a pane belongs to | The pane's machine |
 | Which groups from different machines show as one | The viewer |
 | Order of groups and tabs, collapsed groups, pins, current selection | The viewer |
@@ -86,44 +90,55 @@ Why: pane facts are written by the Claude in the pane, on its machine, and
 must be the same for anyone looking. Layout is a preference of whoever is
 looking.
 
+**Rule:** the viewer never writes a remote pane's facts into its own stores.
+
 ### D6 — Rail groups combine across machines; each pane carries a machine chip
 
-One piece of work is one group, wherever its panes run. A worker spawned onto
-the desktop lands in its spawner's group.
+One piece of work is one group, wherever its panes run.
 
 | Group kind | Shown as one group when |
 |---|---|
-| Repo group | Both checkouts have the same origin remote (owner and name) |
-| Named group | Both machines have a group with the same name |
+| Repo group | Both checkouts have the same origin remote (host, owner and name, compared without regard to case) |
+| Named group | Both machines hold the same group. A group created or extended across machines keeps one identity on all of them |
 | Ungrouped | Always |
 
 Rules that follow:
 
 - A repo with no origin remote is never combined; it shows per machine.
+- A fork and its upstream have different origins and are different groups.
 - Inside a combined group, panes on the same branch name sit together even
   though they are two checkouts, possibly at different commits. The chip and
   each pane's own git state tell them apart.
 - A new tab in a combined group asks which machine, defaulting to the machine
   last used in that group.
 - Moving a pane into a named group creates that group on the pane's machine
-  when it is missing there.
+  when it is missing there, with the same identity.
+- Group names are unique per machine among live named groups.
+- If a named group is renamed on one machine while the other is away, it stays
+  one group; the viewer shows its own machine's name.
 - Rename, dissolve and tear-down of a named group apply on every machine
   holding part of it, and are refused while any such machine is unreachable.
-  Repo groups and the ungrouped bucket have no such actions.
+  They run on the remote first, then locally, report what each machine did,
+  and are safe to run again after a partial failure.
+- Repo groups and the ungrouped bucket have no such actions.
 
-### D7 — Outside its own machine, every handle names its machine
+### D7 — In anything the viewer shows or stores, a remote pane's handle names its machine
 
-Local handles keep their current form. A remote pane's handle carries the
-machine's name.
+Local handles keep their current form.
 
-**Guarantee:** a handle stored in layout or given to a Claude identifies
-exactly one pane across all linked machines.
+**Guarantees:**
+
+- A handle stored in layout or given to a Claude identifies exactly one pane
+  across all linked machines.
+- A request for a remote pane that skips the relay fails. It never lands on a
+  local pane that happens to share a number.
 
 ### D8 — A dropped link loses nothing and hides nothing
 
 - Remote panes stay in the rail at their last known state, marked unreachable
-  with how long ago, actions disabled.
-- Layout belonging to an unreachable machine is never pruned.
+  with how long ago, actions disabled. This holds across a viewer restart.
+- Layout belonging to a machine is never pruned unless that machine is
+  connected and its full list of panes has arrived.
 - A message to an unreachable machine fails at once, with the reason.
 - A worker's report to a spawner it cannot reach becomes an alert on the
   worker's own card, and shows up when the link returns.
@@ -134,7 +149,15 @@ exactly one pane across all linked machines.
 - No working directory is inherited across machines; spawning onto another
   machine without one is an error.
 - The target machine picks account and model by its own routing rules.
-- The new pane joins its spawner's group (D6).
+- Group of the new pane:
+
+  | Spawner is in | Worker lands in |
+  |---|---|
+  | A named group | The same named group, created on the target machine if missing |
+  | A repo group | The repo group of the worker's own working directory. That is the spawner's group when both are the same repo, and a different group otherwise |
+
+- A group the target machine cannot resolve is an error, never a silent
+  fallback.
 
 ### D10 — Each machine has its own logins and routes on its own
 
@@ -151,10 +174,9 @@ Setup rules:
 
 The viewer's usage display shows the viewer's accounts.
 
-### D11 — Versions must match
+### D11 — Version mismatch between machines
 
-A remote running a different version is shown read-only: state visible,
-actions disabled, mismatch named. The viewer can trigger the remote's update.
+Under O2.
 
 ### D12 — Between Claudes, spawn and terminate run one way
 
@@ -166,7 +188,9 @@ actions disabled, mismatch named. The viewer can trigger the remote's update.
 ### Out of scope
 
 Review tab for remote panes; open-in-editor and reveal-in-file-manager for
-remote panes; history search across machines; any authentication scheme.
+remote panes; history search across machines (search covers the laptop; a
+desktop session is resumed from a desktop pane's card); any authentication
+scheme.
 
 The desktop as a viewer is out of scope here and must stay possible: nothing
 in the link, the ownership rules or the handles may assume a machine is only
@@ -174,9 +198,35 @@ ever a viewer or only ever a remote.
 
 ## Open questions
 
-**O1 — Resuming a session that ran on the desktop.** History search is per
-machine. Recommendation: search stays laptop-only; resuming a desktop session
-is done from a desktop pane's card.
+**O1 — How much is the desktop trusted?** A message delivered to a Claude is
+text that Claude acts on, and spawned Claudes act without asking. So any path
+by which desktop text reaches a laptop Claude, including a worker's report, is
+a path by which a hostile desktop can steer the laptop. D4's list cannot
+prevent that without also preventing reports, which the goal needs.
+Recommendation: treat the desktop as trusted exactly as much as the laptop.
+Keep D4's list as the smallest surface that meets the goal, and mark every
+cross-machine message with the machine it came from.
+
+**O2 — What happens when the two machines run different versions?** Version
+means the commit each is running. The laptop commits to main many times a day,
+so a strict rule would trip constantly.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| Warn (recommended) | Mismatch shows a chip with a one-click "update desktop". Everything stays usable | An action can fail after a change to the API, until the desktop is updated |
+| Strict | Mismatched desktop is view-only | Desktop goes view-only after most laptop commits |
+
+Either way the desktop can only update to commits that have been pushed.
+
+**O3 — Should "periscope runs on Linux" be its own spec?** It has value alone,
+it blocks everything else, and its unknowns can only be settled on the desktop
+itself. Recommendation: yes, and the work is done by a Claude running on the
+desktop.
+
+**O4 — File previews run with control of periscope.** A previewed HTML file
+runs scripts as if it were the dashboard. That is true of local files today;
+the link extends it to files on the desktop. Recommendation: fix it for local
+and remote together as a separate small change, not inside this work.
 
 ## Phases
 
@@ -184,7 +234,7 @@ Each phase ends in something you can use.
 
 | Phase | Delivers | Demo |
 |---|---|---|
-| **P0** | Periscope runs on the Linux desktop by itself | Forward a port by hand, open the desktop's dashboard in a browser tab |
+| **P0** | Periscope runs on the Linux desktop by itself, and survives logout and reboot | Forward a port by hand, open the desktop's dashboard in a browser tab |
 | **P1** | Link and merged read-only rail | Desktop panes appear in the laptop's rail with live state; pull the network cable and they go grey |
 | **P2** | Terminal and pane actions | Type into a desktop pane, read its transcript, rename it, close it |
 | **P3** | Create on a remote from the dashboard | Open a repo or new tab on the desktop from ⌘K |
@@ -194,102 +244,159 @@ The goal is met at P3 from the dashboard and at P4 from a Claude.
 
 ## Surfaces worth a line-by-line read
 
-1. **D4's list** of what a remote may do to the viewer. It is the whole trust
-   boundary.
+1. **D4's list** and **O1**. Together they are the whole trust position.
 2. **D5's ownership table.** Every merge and relay rule follows from it.
+
+## Mechanics
+
+Rules below implement the decisions. They are for the plan and its reviewer.
+
+### Handles in merged state
+
+| Field on a remote pane | In merged state | Used for |
+|---|---|---|
+| `pid` | Qualified with the machine | Rail identity, selection, layout values |
+| `target`, `pane_id`, `session`, `index` | Qualified with the machine | Calls to that machine only |
+| `track_id` | The layout key (below) | Rail grouping |
+| `track_kind` | Carried explicitly | Telling repo, named and ungrouped apart; never inferred from the id |
+| `spawned_by` | Qualified when it names a pane on another machine | Provenance, `report` routing |
+| `machine` | Added | Chip, relay prefix |
+| Alert `target`, `pane_id` | Qualified, plus `machine` | Reveal-pane from the alert feed |
+
+One helper builds every relayed call: it takes a pane, group or project,
+strips the qualifier, and adds the relay prefix. It throws when given a remote
+handle and no prefix. The channel tools accept qualified handles only for
+other machines; a bare `%N` is always local.
+
+### Layout keys for combined groups
+
+| Group | Layout key at the viewer |
+|---|---|
+| Repo group the viewer has a checkout of | The viewer's own group id (its repo path), unchanged from today |
+| Repo group only a remote has | The remote's group id, qualified with the machine |
+| Named group | Its identity, the same on every machine |
+| Ungrouped | Today's key |
+
+When the viewer gains a checkout of a repo it knew only through a remote, the
+merge re-keys that group's layout entries to the viewer's own id in the same
+step. Existing layout needs no migration.
+
+### Where the merge happens
+
+- In the function that builds state, so the push path and the REST fallback
+  both serve merged state (`routes/state.py:196`, `poll.js:97`).
+- The last payload per remote is written to disk with a timestamp and loaded
+  at boot.
+- The remote's project list is not merged. The open palette fetches a remote's
+  catalog on demand.
+- Per-machine values (`accounts`, `move_targets`, `launch_default`,
+  `spawn_account`, `spawn_model`, `poke`, `update`) are kept per machine in
+  the payload; a remote pane reads its machine's.
+
+### Layout sync in the browser
+
+The rail's periodic sync and its drag seed (`Rail.jsx:97-157`,
+`railTree.js:102,117`) keep every layout entry whose machine is not connected
+with its full pane list loaded.
+
+### Relayed responses
+
+- A layout blob in a remote's response is never applied to the viewer's
+  preferences (`OpenOmnibox.jsx:139`). A pane created on a remote is placed by
+  the normal live merge.
+- Notes, tags and pinned files of a remote pane are read from and written to
+  the remote through the relay (`prefs.js:34-44,133-140`).
+
+### The link
+
+- One `ssh` child per remote with a single forward, viewer to remote.
+- `ExitOnForwardFailure=yes` and keep-alives, so a dead link is seen as dead.
+- The local end is a socket in a directory only the user can enter.
+- The viewer holds one long-lived connection to the remote over that forward;
+  remote-to-viewer requests (D4's list) arrive on it.
+- Every relayed request has a timeout.
+
+### Testing
+
+- A second instance on one host needs its own home directory, config
+  directory, tmux socket and channel socket. The channel socket path is fixed
+  in the server today (`config.py:19`) and becomes configurable.
+- The link, merge and relay are tested against a second real process, not
+  in-process.
+- A dev instance binds no channel socket, so P4 is tested between two
+  prod-mode instances in isolated homes.
+
+### P0 checklist
+
+| Item | State |
+|---|---|
+| Usage token | Read from `$CLAUDE_CONFIG_DIR/.credentials.json` on Linux (per Claude Code's docs); file shape untested |
+| Process detection | Match on arguments or `/proc/<pid>/exe`; the process-name column is a truncated basename on Linux |
+| Process environment | Read `/proc/<pid>/environ` on Linux in place of `ps eww` |
+| Process listing | `ps -A -o`, documented on both platforms |
+| Service | A systemd user unit beside the launchd plist, in `bin/periscope` and the updater |
+| Survive logout and reboot | `loginctl enable-linger`; without it D1's guarantee ends at logout |
+| tmux persistence | The resurrect and continuum setup |
+| The `claude` wrapper | Carries profile and account; installed on the desktop |
+| Status lines | An API key in the desktop's `.env` |
+| Directory layout | `~/dev` and `~/dev/worktrees`, as on the laptop |
+| macOS-only actions | Editor open and reveal are hidden on Linux |
 
 ## Measured facts
 
 | Fact | Evidence |
 |---|---|
 | State payload is 70,999 bytes for 13 panes, pushed once a second while watched | `curl /api/state` on the live instance, 2026-09-28; `state_hub._TICK_INTERVAL_S` |
-| Roughly half of that payload is the project list, which rarely changes | same measurement: `projects` 34,361 bytes, `windows` 29,341 |
-| The server binds loopback only, with no auth, origin check, or token | `server.py:87`; grep of `app.py` and `routes/` |
-| The channel socket trusts the pane a caller claims to be; protection is the file mode | `channels.py:1039-1048`, `:1001-1007` |
+| Roughly half of that payload is the project list | same measurement: `projects` 34,361 bytes, `windows` 29,341 |
+| The server binds loopback only, with no auth, origin check, or token | `server.py:84-87` |
+| The channel socket trusts the pane a caller claims to be; protection is the file mode | `channels.py:1001-1048` |
 | Pane ids are 8 random hex characters with no machine component | `pids.py:44-50` |
-| Pane actions use three handles: pane id, periscope id, session plus index | `routes/ws.py:56`, `routes/pane.py`, `routes/send.py` |
-| The frontend has no base URL; about 55 root-relative paths | `static/src/util.js:139`, `overlays/modalRequest.js`, `store.js:87` |
-| HTTP and websocket client libraries are already dependencies | `server.py` PEP-723 header: `httpx`, `websockets` |
+| Pane actions use three handles: pane id, periscope id, session plus index | `routes/ws.py:55-65`, `routes/pane.py`, `routes/send.py` |
+| The frontend has no base URL; 55 root-relative paths across 17 files | grep of `static/src` |
+| HTTP and websocket client libraries are already dependencies | `server.py` PEP-723 header |
 | Usage reads its token from the macOS Keychain | `usage.py:161-195` |
-| Image paste sends bytes in the request body and writes them on the server | `routes/paste_image.py:49-72` |
+| Image paste writes the file on the machine that serves the request | `routes/paste_image.py:49-72` |
+| The browser's layout sync drops entries for panes absent from live state | `Rail.jsx:97-126`, `railTree.js:102,117` |
+| The HTML preview frame runs scripts on the dashboard's origin | `PreviewTabInner.jsx:584-587`, `routes/fs.py:140-164` |
+| Repo identity is derived for `github.com` URLs only, case-sensitively | `gitutil.py:75-89` |
+| A named group's id gets a numeric suffix on a clash; names are not checked for uniqueness | `tracks.py:98-114` |
+| Server-side prunes touch only the instance's own stores | `app.py:68-85`, `pids.py:385-421,482-490`, `routes/state.py:115-117` |
+| The activity worker runs whether or not anyone is watching | `activity.py:978-1020` |
 
-## Surface (sketch — settled in structure)
+## Worry list (unverified)
 
-- **Registry:** this machine's name, and a list of remotes (name, label, SSH
-  host), in `state.json`.
-- **Link supervisor:** owns the `ssh` child per remote; health on
-  `/api/healthz` and in the state payload.
-- **State merge:** the state hub subscribes to each remote's `/ws/state` while
-  it has subscribers of its own; tags and qualifies panes, groups, projects
-  and alerts; keeps the last payload per remote for D8.
-- **Relay:** one passthrough for HTTP and websocket under a per-remote prefix.
-  The remote's API is used as-is, with the remote's own unqualified handles, so
-  the three-handle split needs no consolidation.
-- **Remote-facing surface:** the D4 list, served separately from the main API.
-- **Frontend:** one helper that picks the prefix from a pane, group or project;
-  a machine chip on cards and groups; link status in the header; a machine
-  picker in the open palette and launcher.
-- **Channels:** qualified handles in `list_claudes`, `send_to`, `report`,
-  `peek`, `terminate`; a machine argument on `spawn_claude`.
-- **Portability (P0):** credential read for usage, a systemd user unit
-  alongside the launchd plist, process-table parsing, hiding macOS-only
-  actions.
-
-## Worry list (unverified — hand to spec-reviewer)
-
-- **W1** The `ps` invocations parse the same on Linux procps
-  (`session_status.py:163,196,309`, `agent_processes.py:70`, `pidfile.py:34`).
-  `ps eww` for reading a process's environment is the riskiest.
-- **W2** Where Claude Code keeps its OAuth credential on Linux, and whether the
-  usage fetch works with it.
-- **W3** OpenSSH forwards to owner-only unix sockets in both directions over
-  one connection, and a reconnect replaces a stale socket file.
-- **W4** Keystroke latency through the relay is acceptable on the home network.
-- **W5** Connecting a terminal resizes the real tmux window. A desktop pane
-  viewed from the laptop and attached locally on the desktop will contend.
-- **W6** The open flow returns a layout blob the client writes into its
-  preferences (`docs/unified-open.md`). A remote's blob must never be applied
-  to the viewer's layout.
-- **W7** Building state has side effects (identity minting, garbage
-  collection) and runs only while someone is subscribed. With the laptop
-  asleep nobody is. Same as a local instance with no browser open, but a remote
-  may sit that way for days.
-- **W8** Per-machine values at the top of the state payload (`move_targets`,
-  `accounts`, `launch_default`) are read by the frontend for any pane. For a
-  remote pane they must come from its machine.
-- **W9** Image paste through the relay lands the file on the remote, where the
-  remote Claude can read it. Inferred from the code, not run.
-- **W10** The desktop's directory layout matches the assumptions in repo
-  discovery and worktree placement (`open_ops.py:223`,
-  `worktree_spawn.py:36`).
-- **W11** The desktop's tmux version supports what the mirror relies on
-  (control mode, `capture-pane -N`).
-- **W12** Status lines for desktop panes need an API key on the desktop.
-- **W13** Pruning of layout and of `%N`-keyed rows at boot and per poll
-  (`app.py:65-85`, `pids.py:385-421`) never runs against a partial roster that
-  omits an unreachable remote.
-- **W14** Repo identity for D6 comes from the origin remote
-  (`gitutil.github_slug`, `gitutil.py:75-86`). The function name suggests
-  GitHub URL forms only; a repo hosted elsewhere may yield no identity and
-  silently stay uncombined.
-- **W15** A named group's id is derived from its name with a numeric suffix on
-  a local clash (`tracks.create_track`, `tracks.py:98-107`), so the same name
-  can carry different ids on two machines. D6 matches on name; layout is keyed
-  by id (`ui.track_order`, `ui.tabs_by_track`).
-- **W16** The rail groups panes by the group id on each pane
-  (`railTree.mergeLiveAndPrefs`). A combined group needs one id at the viewer,
-  including when the laptop has no checkout of a repo the desktop has.
-- **W17** Group tear-down resolves its targets from the local pane list
-  (`routes/tracks.py:84-90`). Across machines it is two calls; a failure
-  between them leaves half a group.
+- **W1** Process listing output on Linux: `lstart` depends on locale; `etime`,
+  `rss`, `state` are expected to parse the same. Not run.
+- **W2** The credential file on Linux has the shape the usage fetch expects
+  (`usage.py:180-190`).
+- **W3** Whether macOS honours the file mode on a unix socket. The socket sits
+  in a user-only directory so the answer does not matter.
+- **W4** Keystroke latency through the relay on the home network.
+- **W5** Connecting a terminal resizes the real tmux window and never restores
+  it (`ws.py:73-87`). Two viewers of one pane contend, locally today and
+  across machines here.
+- **W6** The desktop's tmux version supports control mode and
+  `capture-pane -N` (`tmux_mirror.py:278,431`).
+- **W7** Repo identity (D6) needs a matcher that handles hosts other than
+  GitHub and SSH host aliases such as `git@github-work:owner/name`. An alias
+  hides the real host, so two machines with different aliases for one repo
+  need a rule.
+- **W8** Moving a pane into a repo group whose repo is not checked out on that
+  pane's machine has no defined result.
 
 ## Cross-reference files
 
 `periscope/state_hub.py`, `periscope/routes/state.py`, `periscope/routes/ws.py`,
+`periscope/routes/fs.py`, `periscope/routes/tracks.py`,
 `periscope/channels.py`, `channel_shim.py`, `periscope/pids.py`,
-`periscope/store.py`, `periscope/tracks.py`, `periscope/open_ops.py`,
-`periscope/usage.py`, `periscope/session_status.py`, `periscope/poke.py`,
-`periscope/config.py`, `server.py`, `bin/periscope`, `static/src/util.js`,
-`static/src/poll.js`, `static/src/terminal/terminalCore.js`,
-`static/src/split/railTree.js`, `docs/invariants.md`, `docs/channels.md`,
-`docs/account-routing.md`, `docs/unified-open.md`.
+`periscope/store.py`, `periscope/tracks.py`, `periscope/gitutil.py`,
+`periscope/open_ops.py`, `periscope/usage.py`, `periscope/session_status.py`,
+`periscope/agent_processes.py`, `periscope/poke.py`, `periscope/config.py`,
+`server.py`, `bin/periscope`, `static/src/util.js`, `static/src/poll.js`,
+`static/src/prefs.js`, `static/src/split/Rail.jsx`,
+`static/src/split/railTree.js`, `static/src/split/alertFeed.js`,
+`static/src/overlays/OpenOmnibox.jsx`,
+`static/src/preview/PreviewTabInner.jsx`,
+`static/src/terminal/terminalCore.js`, `docs/invariants.md`,
+`docs/channels.md`, `docs/account-routing.md`, `docs/unified-open.md`,
+`docs/wrapper-profiles.md`, `docs/tmux-persistence.md`.
