@@ -1,9 +1,11 @@
 # Remote machines: panes on another host as full citizens
 
-**Status:** draft, reviewed once by spec-reviewer. D1, D5, D6, D8, D9, D10,
-D12 settled with Tom (2026-09-28). D4's list is settled; its rationale is
-under O1. D2, D3, D7 proposed, no objection raised. D11 is under O2. Open:
-O1–O4. Tier: **Full** (spans sessions).
+**Status:** decisions settled with Tom (2026-09-28): D1–D12, no open
+questions. Reviewed once by spec-reviewer; its findings are folded in. Next:
+structure proposal. Tier: **Full** (spans sessions).
+
+**Depends on:** `2026-09-28-periscope-on-linux-design.md`. Nothing here can be
+demonstrated until periscope runs on the desktop.
 
 **Goal.** From the laptop's dashboard, and from a Claude running on the
 laptop, spawn Claudes onto the Linux desktop and have each one show up as a
@@ -72,10 +74,16 @@ read its files, or change its settings.
 On the remote, only a Claude's own channel tools can send to the viewer. No
 web request to the remote's periscope is ever forwarded to the viewer.
 
-**What this list is not:** a wall against a hostile desktop. See O1.
+**Trust position:** the desktop is trusted exactly as much as the laptop. The
+list is the smallest surface that meets the goal. It is not a wall against a
+hostile desktop: a message delivered to a Claude is text that Claude acts on,
+and spawned Claudes act without asking, so a worker's report is itself a way
+to steer the laptop. Removing that path would remove reports.
 
-Accepted: whoever controls your laptop account controls the desktop's
-periscope. That is already true of anything holding your SSH key.
+Every cross-machine message is marked with the machine it came from.
+
+Accepted: whoever controls either machine's account controls both
+periscopes.
 
 ### D5 — Pane facts live with the pane's machine; layout lives with the viewer
 
@@ -174,9 +182,19 @@ Setup rules:
 
 The viewer's usage display shows the viewer's accounts.
 
-### D11 — Version mismatch between machines
+### D11 — A version mismatch warns; it does not lock
 
-Under O2.
+Version means the commit each machine is running. A mismatch shows a chip
+naming both versions, with a one-click "update desktop". Everything stays
+usable.
+
+Accepted: after a change to the API, an action on a desktop pane can fail
+until the desktop is updated. The failure names the mismatch.
+
+Rejected: making a mismatched desktop view-only. The laptop commits to main
+many times a day, so the desktop would be view-only most of the time.
+
+The desktop can only update to commits that have been pushed.
 
 ### D12 — Between Claudes, spawn and terminate run one way
 
@@ -187,10 +205,13 @@ Under O2.
 
 ### Out of scope
 
-Review tab for remote panes; open-in-editor and reveal-in-file-manager for
-remote panes; history search across machines (search covers the laptop; a
-desktop session is resumed from a desktop pane's card); any authentication
-scheme.
+| Item | Where it goes |
+|---|---|
+| Running periscope on Linux | Its own spec, `2026-09-28-periscope-on-linux-design.md`; a prerequisite |
+| Previewed HTML files run scripts with control of the dashboard | A separate change covering local and remote previews together. True of local files today; the link extends it to desktop files |
+| History search across machines | Not planned. Search covers the laptop; a desktop session is resumed from a desktop pane's card |
+| Review tab, open-in-editor and reveal-in-file-manager for remote panes | Not planned |
+| Any authentication scheme | Not planned |
 
 The desktop as a viewer is out of scope here and must stay possible: nothing
 in the link, the ownership rules or the handles may assume a machine is only
@@ -198,35 +219,7 @@ ever a viewer or only ever a remote.
 
 ## Open questions
 
-**O1 — How much is the desktop trusted?** A message delivered to a Claude is
-text that Claude acts on, and spawned Claudes act without asking. So any path
-by which desktop text reaches a laptop Claude, including a worker's report, is
-a path by which a hostile desktop can steer the laptop. D4's list cannot
-prevent that without also preventing reports, which the goal needs.
-Recommendation: treat the desktop as trusted exactly as much as the laptop.
-Keep D4's list as the smallest surface that meets the goal, and mark every
-cross-machine message with the machine it came from.
-
-**O2 — What happens when the two machines run different versions?** Version
-means the commit each is running. The laptop commits to main many times a day,
-so a strict rule would trip constantly.
-
-| Option | Behaviour | Cost |
-|---|---|---|
-| Warn (recommended) | Mismatch shows a chip with a one-click "update desktop". Everything stays usable | An action can fail after a change to the API, until the desktop is updated |
-| Strict | Mismatched desktop is view-only | Desktop goes view-only after most laptop commits |
-
-Either way the desktop can only update to commits that have been pushed.
-
-**O3 — Should "periscope runs on Linux" be its own spec?** It has value alone,
-it blocks everything else, and its unknowns can only be settled on the desktop
-itself. Recommendation: yes, and the work is done by a Claude running on the
-desktop.
-
-**O4 — File previews run with control of periscope.** A previewed HTML file
-runs scripts as if it were the dashboard. That is true of local files today;
-the link extends it to files on the desktop. Recommendation: fix it for local
-and remote together as a separate small change, not inside this work.
+None.
 
 ## Phases
 
@@ -234,7 +227,6 @@ Each phase ends in something you can use.
 
 | Phase | Delivers | Demo |
 |---|---|---|
-| **P0** | Periscope runs on the Linux desktop by itself, and survives logout and reboot | Forward a port by hand, open the desktop's dashboard in a browser tab |
 | **P1** | Link and merged read-only rail | Desktop panes appear in the laptop's rail with live state; pull the network cable and they go grey |
 | **P2** | Terminal and pane actions | Type into a desktop pane, read its transcript, rename it, close it |
 | **P3** | Create on a remote from the dashboard | Open a repo or new tab on the desktop from ⌘K |
@@ -244,7 +236,7 @@ The goal is met at P3 from the dashboard and at P4 from a Claude.
 
 ## Surfaces worth a line-by-line read
 
-1. **D4's list** and **O1**. Together they are the whole trust position.
+1. **D4.** The list and the trust position are the whole trust boundary.
 2. **D5's ownership table.** Every merge and relay rule follows from it.
 
 ## Mechanics
@@ -326,22 +318,6 @@ with its full pane list loaded.
 - A dev instance binds no channel socket, so P4 is tested between two
   prod-mode instances in isolated homes.
 
-### P0 checklist
-
-| Item | State |
-|---|---|
-| Usage token | Read from `$CLAUDE_CONFIG_DIR/.credentials.json` on Linux (per Claude Code's docs); file shape untested |
-| Process detection | Match on arguments or `/proc/<pid>/exe`; the process-name column is a truncated basename on Linux |
-| Process environment | Read `/proc/<pid>/environ` on Linux in place of `ps eww` |
-| Process listing | `ps -A -o`, documented on both platforms |
-| Service | A systemd user unit beside the launchd plist, in `bin/periscope` and the updater |
-| Survive logout and reboot | `loginctl enable-linger`; without it D1's guarantee ends at logout |
-| tmux persistence | The resurrect and continuum setup |
-| The `claude` wrapper | Carries profile and account; installed on the desktop |
-| Status lines | An API key in the desktop's `.env` |
-| Directory layout | `~/dev` and `~/dev/worktrees`, as on the laptop |
-| macOS-only actions | Editor open and reveal are hidden on Linux |
-
 ## Measured facts
 
 | Fact | Evidence |
@@ -365,23 +341,17 @@ with its full pane list loaded.
 
 ## Worry list (unverified)
 
-- **W1** Process listing output on Linux: `lstart` depends on locale; `etime`,
-  `rss`, `state` are expected to parse the same. Not run.
-- **W2** The credential file on Linux has the shape the usage fetch expects
-  (`usage.py:180-190`).
-- **W3** Whether macOS honours the file mode on a unix socket. The socket sits
+- **W1** Whether macOS honours the file mode on a unix socket. The socket sits
   in a user-only directory so the answer does not matter.
-- **W4** Keystroke latency through the relay on the home network.
-- **W5** Connecting a terminal resizes the real tmux window and never restores
+- **W2** Keystroke latency through the relay on the home network.
+- **W3** Connecting a terminal resizes the real tmux window and never restores
   it (`ws.py:73-87`). Two viewers of one pane contend, locally today and
   across machines here.
-- **W6** The desktop's tmux version supports control mode and
-  `capture-pane -N` (`tmux_mirror.py:278,431`).
-- **W7** Repo identity (D6) needs a matcher that handles hosts other than
+- **W4** Repo identity (D6) needs a matcher that handles hosts other than
   GitHub and SSH host aliases such as `git@github-work:owner/name`. An alias
   hides the real host, so two machines with different aliases for one repo
   need a rule.
-- **W8** Moving a pane into a repo group whose repo is not checked out on that
+- **W5** Moving a pane into a repo group whose repo is not checked out on that
   pane's machine has no defined result.
 
 ## Cross-reference files
