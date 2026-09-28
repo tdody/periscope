@@ -117,10 +117,12 @@ function syncRailPrefs() {
     JSON.stringify(nextTabsByTrack) === JSON.stringify(prefTabsByTrack)
   ) return;
 
+  const liveIds = [...new Set(live.map(w => w.track_id))];
+  const registryIds = (tracks.value || []).map(t => t.id);
   prefs.patchUI({
     track_order: nextTrackOrder,
     tabs_by_track: nextTabsByTrack,
-  });
+  }, `sync live=${JSON.stringify(liveIds)} registry=${JSON.stringify(registryIds)} cached=${JSON.stringify(prefTrackOrder)}`);
 }
 
 // --- Reorder splices (all seeded from the merged tree, not raw prefs). -------
@@ -150,7 +152,7 @@ async function reorderTracks(draggedKey, targetKey, insertAfter) {
   const to = order.indexOf(target);
   if (from < 0 || to < 0) return;
   spliceMove(order, from, to, insertAfter);
-  await prefs.setTrackOrder(order);
+  await prefs.setTrackOrder(order, `drag ${dragged} ${insertAfter ? "after" : "before"} ${target}`);
 }
 
 // Reorder a tab within its track's flat tab order. Identity from the drag

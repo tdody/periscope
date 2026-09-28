@@ -515,10 +515,16 @@ def get_ui() -> dict:
         return dict(_STATE.get("ui", {}))
 
 
-def update_ui(patch: dict) -> None:
-    """Merge `patch` into ui and persist. Keys with `None` value are removed."""
+def update_ui(patch: dict, writer: str = "") -> None:
+    """Merge `patch` into ui and persist. Keys with `None` value are removed.
+    `writer` labels the caller in the track_order change log."""
     with _STATE_LOCK:
         ui = _STATE.setdefault("ui", {})
+        # Diagnostic: tracks jump to the bottom of the rail with no user action,
+        # and no reading of the writers explains it — catch the write in the act.
+        if "track_order" in patch and patch["track_order"] != ui.get("track_order"):
+            log.info("track_order change by %s: %s -> %s",
+                     writer or "?", ui.get("track_order"), patch["track_order"])
         for k, v in patch.items():
             if v is None:
                 ui.pop(k, None)

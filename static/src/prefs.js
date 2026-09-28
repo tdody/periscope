@@ -103,7 +103,7 @@ export async function reorderCommands(labels) {
   return true;
 }
 
-export async function patchUI(patch) {
+export async function patchUI(patch, writer) {
   if (!P().loaded) {
     // Try to load first; refuse the write if that still fails so we don't
     // clobber real server state with empty defaults.
@@ -115,7 +115,7 @@ export async function patchUI(patch) {
   const data = await apiCall("save prefs", "/api/prefs/ui", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(writer ? { ...patch, writer } : patch),
   });
   if (!data) {
     prefsSignal.value = { ...P(), ui: previous };  // revert on failure
@@ -267,8 +267,8 @@ export function getTrackOrder() {
   return [...(ui.track_order || ui.repo_order || [])];
 }
 
-export function setTrackOrder(order) {
-  return patchUI({ track_order: order });
+export function setTrackOrder(order, writer) {
+  return patchUI({ track_order: order }, writer);
 }
 
 export function getTabsByTrack() {

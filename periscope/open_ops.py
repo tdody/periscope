@@ -151,7 +151,7 @@ def place_in_rail(tmux_session: str, project: projects.Project,
     for pid in pane_pids:
         if pid not in tab_list:
             tab_list.append(pid)
-    store.update_ui({"track_order": order, "tabs_by_track": tabs})
+    store.update_ui({"track_order": order, "tabs_by_track": tabs}, writer="place_in_rail")
     return store.get_ui()
 
 

@@ -63,12 +63,16 @@ class UIPatch(BaseModel):
     # fields are silently dropped by Pydantic, so a missing declaration here
     # makes the client's optimistic pin revert on the server echo.
     pinned_pids: list[str] | None = None
+    # Diagnostic label for the track_order change log (which client path wrote
+    # it, and what it saw); never persisted.
+    writer: str | None = None
 
 
 @router.patch("/api/prefs/ui")
 def patch_prefs_ui(body: UIPatch):
     """Merge partial UI prefs. Only fields present in the body get written."""
     patch = body.model_dump(exclude_none=True)
+    writer = patch.pop("writer", "client")
     # `view` is validated against a fixed enum to keep junk out of the file.
     if "view" in patch and patch["view"] not in ("grid", "stream", "split"):
         raise HTTPException(400, f"invalid view: {patch['view']!r}")
@@ -76,7 +80,7 @@ def patch_prefs_ui(body: UIPatch):
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):
                 raise HTTPException(400, f"invalid detail_mode for {pid!r}: {mode!r}")
-    update_ui(patch)
+    update_ui(patch, writer=writer)
     from periscope.store import get_ui
     return {"ok": True, "ui": get_ui()}
 
