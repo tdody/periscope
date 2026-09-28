@@ -1,8 +1,9 @@
 # Remote machines: panes on another host as full citizens
 
-**Status:** draft — D1–D11 are proposals, none settled; O1–O6 open. Next: Tom
-reviews Decisions and answers the open questions, then spec-reviewer takes the
-worry list. Tier: **Full** (five phases, spans sessions).
+**Status:** draft — D1, D4, D5, D6, D8, D9, D10, D12 settled with Tom
+(2026-09-28); D2, D3, D7, D11 proposed, no objection raised; O1 open. Next:
+spec-reviewer takes the worry list. Tier: **Full** (five phases, spans
+sessions).
 
 **Goal.** From the laptop's dashboard, and from a Claude running on the
 laptop, spawn Claudes onto the Linux desktop and have each one show up as a
@@ -78,18 +79,37 @@ periscope. That is already true of anything holding your SSH key.
 |---|---|
 | Name, state, transcript, linked PR and ticket, alerts, notes, open file tabs, account, who spawned it | The pane's machine |
 | Which group a pane belongs to | The pane's machine |
+| Which groups from different machines show as one | The viewer |
 | Order of groups and tabs, collapsed groups, pins, current selection | The viewer |
 
 Why: pane facts are written by the Claude in the pane, on its machine, and
 must be the same for anyone looking. Layout is a preference of whoever is
 looking.
 
-### D6 — Rail groups do not span machines
+### D6 — Rail groups combine across machines; each pane carries a machine chip
 
-The same repo checked out on both machines shows as two groups, each labelled
-with its machine. A group is anchored to a checkout on disk (its branches and
-worktrees), and two checkouts are two things. A pane moves between groups only
-within its own machine.
+One piece of work is one group, wherever its panes run. A worker spawned onto
+the desktop lands in its spawner's group.
+
+| Group kind | Shown as one group when |
+|---|---|
+| Repo group | Both checkouts have the same origin remote (owner and name) |
+| Named group | Both machines have a group with the same name |
+| Ungrouped | Always |
+
+Rules that follow:
+
+- A repo with no origin remote is never combined; it shows per machine.
+- Inside a combined group, panes on the same branch name sit together even
+  though they are two checkouts, possibly at different commits. The chip and
+  each pane's own git state tell them apart.
+- A new tab in a combined group asks which machine, defaulting to the machine
+  last used in that group.
+- Moving a pane into a named group creates that group on the pane's machine
+  when it is missing there.
+- Rename, dissolve and tear-down of a named group apply on every machine
+  holding part of it, and are refused while any such machine is unreachable.
+  Repo groups and the ungrouped bucket have no such actions.
 
 ### D7 — Outside its own machine, every handle names its machine
 
@@ -114,14 +134,20 @@ exactly one pane across all linked machines.
 - No working directory is inherited across machines; spawning onto another
   machine without one is an error.
 - The target machine picks account and model by its own routing rules.
+- The new pane joins its spawner's group (D6).
 
 ### D10 — Each machine has its own logins and routes on its own
 
-Usage meters come from Anthropic, so each machine already sees the combined
-burn of both. No coordination between machines is needed for routing.
+Both machines are logged into the same subscriptions. Usage meters come from
+Anthropic, so each machine already sees the combined burn of both. No
+coordination between machines is needed for routing.
 
-Setup rule: the same subscription gets the same id and label on every machine,
-so an account chip means the same thing on every card.
+Setup rules:
+
+- The same subscription gets the same id and label on every machine, so an
+  account chip means the same thing on every card.
+- The morning poke runs on the laptop only; it is switched off on the desktop
+  with the existing setting.
 
 The viewer's usage display shows the viewer's accounts.
 
@@ -130,34 +156,25 @@ The viewer's usage display shows the viewer's accounts.
 A remote running a different version is shown read-only: state visible,
 actions disabled, mismatch named. The viewer can trigger the remote's update.
 
+### D12 — Between Claudes, spawn and terminate run one way
+
+| Verb | Laptop Claude → desktop | Desktop Claude → laptop |
+|---|---|---|
+| List, message, report, read transcript | Yes | Yes |
+| Spawn, terminate | Yes | No |
+
 ### Out of scope
 
 Review tab for remote panes; open-in-editor and reveal-in-file-manager for
-remote panes; history search across machines; groups spanning machines;
-any authentication scheme.
+remote panes; history search across machines; any authentication scheme.
+
+The desktop as a viewer is out of scope here and must stay possible: nothing
+in the link, the ownership rules or the handles may assume a machine is only
+ever a viewer or only ever a remote.
 
 ## Open questions
 
-**O1 — May a Claude on the desktop spawn or terminate Claudes on the laptop?**
-Recommendation: no. D4's list stays at list, message, read. The use case is
-fan-out from the laptop, not the reverse.
-
-**O2 — May a Claude on the laptop terminate a Claude on the desktop?**
-Recommendation: yes, same as it can locally.
-
-**O3 — Are the desktop's logins the same subscriptions as the laptop's?**
-D10 assumes yes. If the desktop has a subscription the laptop lacks, the
-viewer's usage display has to show it.
-
-**O4 — The morning poke.** Both machines would poke the same subscription.
-Cost: one tiny message per account per day, no harm to the reset time.
-Recommendation: turn it off on the desktop with the existing setting; no code.
-
-**O5 — Will the desktop ever be the viewer?** The design allows it (each link
-is dialled by one side), but each viewer then has its own layout.
-Recommendation: not built or tested here.
-
-**O6 — Resuming a session that ran on the desktop.** History search is per
+**O1 — Resuming a session that ran on the desktop.** History search is per
 machine. Recommendation: search stays laptop-only; resuming a desktop session
 is done from a desktop pane's card.
 
@@ -251,6 +268,20 @@ The goal is met at P3 from the dashboard and at P4 from a Claude.
 - **W13** Pruning of layout and of `%N`-keyed rows at boot and per poll
   (`app.py:65-85`, `pids.py:385-421`) never runs against a partial roster that
   omits an unreachable remote.
+- **W14** Repo identity for D6 comes from the origin remote
+  (`gitutil.github_slug`, `gitutil.py:75-86`). The function name suggests
+  GitHub URL forms only; a repo hosted elsewhere may yield no identity and
+  silently stay uncombined.
+- **W15** A named group's id is derived from its name with a numeric suffix on
+  a local clash (`tracks.create_track`, `tracks.py:98-107`), so the same name
+  can carry different ids on two machines. D6 matches on name; layout is keyed
+  by id (`ui.track_order`, `ui.tabs_by_track`).
+- **W16** The rail groups panes by the group id on each pane
+  (`railTree.mergeLiveAndPrefs`). A combined group needs one id at the viewer,
+  including when the laptop has no checkout of a repo the desktop has.
+- **W17** Group tear-down resolves its targets from the local pane list
+  (`routes/tracks.py:84-90`). Across machines it is two calls; a failure
+  between them leaves half a group.
 
 ## Cross-reference files
 
