@@ -48,6 +48,28 @@ exiting — pid-identity-checked via proc_pidpath before the kill). Actions log
 to `~/.config/periscope/shell.log`. Test by lowering the thresholds via
 `launchctl setenv` (GUI apps don't inherit shell env) and watching that log.
 
+**Scroll anchoring is off app-wide (`* { overflow-anchor: none }` in
+`static/styles.css`).** Safari/WebKit 27 (macOS 27) turns scroll anchoring on
+by default. In that WebKit, an anchoring adjustment made while a `box-shadow`
+animation is running leaves the compositor's scroll offset ahead of layout's,
+and the error accumulates per adjustment: the scroller creeps slowly downward
+on screen while `scrollTop` and hit-testing stay where they were, so hover and
+clicks land on rows above the pointer. A user scroll resyncs the two; a reload
+appears to fix it only because it returns the scroller to the top, where
+anchoring is inert. All three ingredients are required — anchoring, a
+`box-shadow` animation anywhere on the page (the rail's `rail-pulse` /
+`rail-pulse-done` on needs-input and done panes), and content changing height
+above the viewport of a scrolled container (attention-section rows coming and
+going every poll). Measured 2026-10-01 on WebKit 22625.1.29 in an off-screen
+WKWebView loading the real stylesheet, comparing `scrollTop` against the
+overflow node's `scroll position` in `-[WKWebView _scrollingTreeAsText]`:
+after ~45 add/remove cycles of one 25.5px row, layout sat at 321 and the
+compositor at 347; a second scroller with no animation inside it drifted the
+same way. With `overflow-anchor: none`, or with the pulse animating `opacity`
+instead of `box-shadow`, the two stay equal. Page script cannot observe the
+drift — `_scrollingTreeAsText` is the only readout — so re-enabling anchoring
+means re-running that comparison on the WebKit of the day.
+
 The shell otherwise stays minimal on purpose: single-instance, window-state
 persistence, notification plugin available. Native badge + native
 notifications routing from the JS side via `window.__TAURI__` is

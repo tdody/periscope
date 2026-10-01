@@ -60,6 +60,15 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* No scroll anchoring anywhere. In WebKit 27 an anchoring adjustment made
+   while a box-shadow animation is running (the rail's needs-input / done
+   pulses) moves the compositor's scroll offset further than layout's, and the
+   gap accumulates: a scroller creeps downward on screen while hit-testing
+   stays put, so hover and clicks land on rows above the pointer. `*` because
+   any scroller drifts, not only the one holding the animation. Measurements
+   and the harness method: docs/tauri-shell.md. */
+* { overflow-anchor: none; }
+
 html, body {
   margin: 0;
   padding: 0;
