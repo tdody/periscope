@@ -67,8 +67,10 @@ after ~45 add/remove cycles of one 25.5px row, layout sat at 321 and the
 compositor at 347; a second scroller with no animation inside it drifted the
 same way. With `overflow-anchor: none`, or with the pulse animating `opacity`
 instead of `box-shadow`, the two stay equal. Page script cannot observe the
-drift — `_scrollingTreeAsText` is the only readout — so re-enabling anchoring
-means re-running that comparison on the WebKit of the day.
+drift — `_scrollingTreeAsText` is the only readout. `diag/scroll-drift/run.sh`
+is that comparison as a script: it prints LOCKED for the stylesheet as shipped,
+and `--anchoring` forces anchoring back on, so DRIFT means the WebKit of the
+day still has the bug and LOCKED means the `overflow-anchor` rule can go.
 
 The shell otherwise stays minimal on purpose: single-instance, window-state
 persistence, notification plugin available. Native badge + native

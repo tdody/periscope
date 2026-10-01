@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!-- Test page for diag/scroll-drift/run.sh. harness.swift substitutes the
+     checkout's static/styles.css for STYLES and the run's overrides for EXTRA,
+     so the rail below is styled by the real stylesheet. -->
+<html lang="en" data-density="compact" data-status-tx="current" data-border="leftbar">
+<head>
+<meta charset="utf-8">
+<style>/*STYLES*/</style>
+<style>/*EXTRA*/</style>
+</head>
+<body data-view="split">
+<header class="periscope-header" style="height:80px"></header>
+<div id="split-view">
+  <aside id="rail"></aside>
+  <!-- A second scroller with no animation inside it: the drift is page-wide,
+       not confined to the scroller that holds the pulse. -->
+  <div id="detail"><div id="second" style="height:400px;overflow-y:auto"></div></div>
+</div>
+<script>
+document.documentElement.style.setProperty("--header-h", "80px");
+const rail = document.getElementById("rail");
+const second = document.getElementById("second");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The rail's shape as <Rail> renders it: attention sections on top (their dots
+// pulse via box-shadow for needs-input / done), then track cards of pane rows
+// (their stripes pulse the same way).
+function buildRail() {
+  const add = (h) => rail.insertAdjacentHTML("beforeend", h);
+  const header = (label, tone, n) => add(
+    `<div class="rail-row section-header ${tone}"><span class="rail-chev">▾</span>` +
+    `<span class="section-header-label">${label}</span><span class="section-header-count">${n}</span></div>`);
+  const attn = (cls, dot, label) => add(
+    `<div class="rail-row attn-row ${cls}"><span class="attn-dot dot ${dot}"></span>` +
+    `<span class="attn-label">${label}</span><span class="attn-reason">reason</span></div>`);
+  header("NEEDS YOU", "section-header-alert", 2);
+  for (let i = 0; i < 2; i++) attn("attn-needs", "dot-alert dot-pulse", `needs ${i}`);
+  header("READY", "section-header-ready", 2);
+  for (let i = 0; i < 2; i++) attn("attn-ready", "dot-blue dot-pulse-done", `ready ${i}`);
+  header("RUNNING", "section-header-working", 3);
+  for (let i = 0; i < 3; i++) attn("attn-running", "dot-green", `running ${i}`);
+  header("TRACKS", "", 0);
+  const states = ["working", "needs-input", "idle", "done", "shell"];
+  for (let t = 0; t < 7; t++) {
+    add(`<div class="rail-row repo-row"><span class="rail-chev">▾</span><span class="rail-icon icon-effort">⧉</span>` +
+        `<span class="rail-label"><b>track ${t}</b></span><span class="repo-rule"></span><span class="dot dot-green"></span></div>`);
+    let rows = "";
+    for (let i = 0; i < 7; i++) {
+      const st = states[(t + i) % states.length];
+      rows += `<div class="rail-row child-row pane-row pane-state-${st}${st === "needs-input" ? " pane-expanded" : ""}">` +
+        `<span class="pane-stripe"></span><div class="pane-row-main"><span class="rail-icon">✻</span>` +
+        `<span class="rail-label">tab ${t}.${i}</span><span class="pane-mini-ctx">42%</span></div>` +
+        `<div class="rail-meta"><span class="rail-status">Doing a thing with a long status line here</span></div></div>`;
+    }
+    add(`<div class="rail-group rail-track-card"><div class="rail-group-body">${rows}</div></div>`);
+  }
+}
+
+function item(text) {
+  const d = document.createElement("div");
+  d.style.height = "25.5px";
+  d.textContent = text;
+  return d;
+}
+
+// Distinct starting offsets so the harness can pair each scroller with its
+// compositor node by sorting.
+function setup() {
+  buildRail();
+  for (let i = 0; i < 80; i++) second.appendChild(item(`item ${i}`));
+  rail.scrollTop = 300;
+  second.scrollTop = 600;
+  return true;
+}
+
+// One cycle = a 25.5px row appearing then disappearing above each viewport —
+// what a pane going working→idle does to the RUNNING section every few polls.
+async function churn(cycles) {
+  const railRef = rail.querySelector(".attn-running");
+  const secondRef = second.children[2];
+  for (let i = 0; i < cycles; i++) {
+    const a = document.createElement("div");
+    a.className = "rail-row attn-row attn-running";
+    a.innerHTML = '<span class="attn-dot dot dot-green"></span><span class="attn-label">churn</span><span class="attn-reason">working…</span>';
+    const b = item("churn");
+    rail.insertBefore(a, railRef);
+    second.insertBefore(b, secondRef);
+    await sleep(100);
+    a.remove();
+    b.remove();
+    await sleep(100);
+  }
+  return true;
+}
+
+function positions() { return [rail.scrollTop, second.scrollTop]; }
+</script>
+</body>
+</html>
