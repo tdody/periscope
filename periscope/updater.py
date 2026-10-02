@@ -38,6 +38,7 @@ COMMITS_LIMIT = 30
 _LOCK = threading.Lock()
 _checked_at = 0.0
 _behind = 0
+_ahead = 0
 _commits: list[dict] = []
 _proc: subprocess.Popen | None = None
 _started_at = 0.0
@@ -61,14 +62,14 @@ def _git(*args: str, timeout: float = 10.0) -> str | None:
 
 
 def check(force: bool = False) -> int:
-    """Fetch and recount commits behind upstream. Throttled to
+    """Fetch and recount commits behind AND ahead of upstream. Throttled to
     CHECK_INTERVAL_S unless `force`. Blocking — call from a worker thread.
 
     A probe that can't answer LEAVES THE LAST COUNT STANDING rather than
     resetting to zero: going offline doesn't make the checkout less behind, and
     publishing 0 would claim "up to date", which is the one wrong answer.
     """
-    global _checked_at, _behind, _commits
+    global _checked_at, _behind, _ahead, _commits
     with _LOCK:
         if not force and time.time() - _checked_at < CHECK_INTERVAL_S:
             return _behind
@@ -81,15 +82,21 @@ def check(force: bool = False) -> int:
         return known                  # detached HEAD or no tracking branch
     if _git("fetch", "--quiet", timeout=30.0) is None:
         return known                  # offline, or no credentials
-    count = _git("rev-list", "--count", f"HEAD..{upstream}")
-    if not (count and count.isdigit()):
+    # ONE call answers both directions — left = upstream-only (behind), right
+    # = local-only (ahead). Ahead is not decoration: `git pull --ff-only`, what
+    # the update actually runs, aborts outright once the checkout carries local
+    # commits. Counting only `behind` rendered "↑ 10 behind" over a button that
+    # could not succeed, with the reason nowhere in the UI.
+    counts = (_git("rev-list", "--count", "--left-right", f"{upstream}...HEAD") or "").split()
+    if len(counts) != 2 or not all(c.isdigit() for c in counts):
         return known
-    behind = int(count)
+    behind, ahead = int(counts[0]), int(counts[1])
     # Local read — the fetch above already brought the objects in. %x1f keeps
     # a subject containing a tab or space from splitting.
     raw = _git("log", "--format=%h\x1f%s", "-n", str(COMMITS_LIMIT), f"HEAD..{upstream}")
     with _LOCK:
         _behind = behind
+        _ahead = ahead
         # Same rule as the count: a probe that can't answer leaves the last
         # list standing. "" (nothing to list) is an answer; None is not.
         if raw is not None:
@@ -125,7 +132,7 @@ def summary() -> dict:
     hottest endpoint in the app.
     """
     with _LOCK:
-        return {"behind": _behind, "checked_at": _checked_at,
+        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at,
                 "running": _running_locked()}
 
 
@@ -135,7 +142,7 @@ def status() -> dict:
     opening, the post-click watch), the only callers that need either."""
     log_tail = tail()                 # disk read stays outside the lock
     with _LOCK:
-        return {"behind": _behind, "checked_at": _checked_at,
+        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at,
                 "running": _running_locked(), "commits": list(_commits),
                 "log": log_tail}
 

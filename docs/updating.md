@@ -55,8 +55,17 @@ to answer a credential or host-key prompt, and a wedged `git pull` would pin
 than refusing forever.
 
 **From the dashboard.** `updater.check()` runs on the activity worker's tick
-(self-throttled hourly) and counts commits behind the tracked upstream; the
-count rides `/api/state` as `update` and renders as a header pill. A probe that
+(self-throttled hourly) and counts commits behind AND ahead of the tracked
+upstream — one `rev-list --count --left-right @{u}...HEAD`; the counts ride
+`/api/state` as `update` and render as a header pill. **`ahead` is what makes
+the pill honest.** The update runs `git pull --ff-only`, which aborts outright
+once the checkout carries local commits, so a behind-only pill armed a button
+that was arithmetically incapable of succeeding and gave no reason — the
+reported "I can't get the update button to work" on a fork checkout whose
+`main` held one unpushed commit while origin moved 10 ahead. With both counts
+the popover names the blocker. The button stays ENABLED: the count is up to an
+hour stale (an external rebase may already have cleared it), and a refused pull
+aborts before launchd is touched. Warn, don't block. A probe that
 can't answer (offline, no upstream) LEAVES THE LAST COUNT STANDING — going
 offline doesn't make the checkout less behind, and publishing 0 would render as
 "up to date", the one wrong answer. Assert that through `summary()`, not
