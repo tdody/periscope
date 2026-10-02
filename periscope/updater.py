@@ -76,17 +76,17 @@ def check(force: bool = False) -> int:
         _checked_at = time.time()
         known = _behind
     # Compare against the tracked upstream rather than a hardcoded origin/main,
-    # matching the `git pull --ff-only` the update itself will run.
+    # matching the `merge --ff-only @{u}` the update itself will run.
     upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if not upstream:
         return known                  # detached HEAD or no tracking branch
     if _git("fetch", "--quiet", timeout=30.0) is None:
         return known                  # offline, or no credentials
     # ONE call answers both directions — left = upstream-only (behind), right
-    # = local-only (ahead). Ahead is not decoration: `git pull --ff-only`, what
-    # the update actually runs, aborts outright once the checkout carries local
-    # commits. Counting only `behind` rendered "↑ 10 behind" over a button that
-    # could not succeed, with the reason nowhere in the UI.
+    # = local-only (ahead). Ahead is not decoration: the update fast-forwards
+    # to @{u}, which refuses once BOTH counts are non-zero. Counting only
+    # `behind` rendered "↑ 10 behind" over a button that could not succeed,
+    # with the reason nowhere in the UI.
     counts = (_git("rev-list", "--count", "--left-right", f"{upstream}...HEAD") or "").split()
     if len(counts) != 2 or not all(c.isdigit() for c in counts):
         return known
@@ -160,7 +160,7 @@ def start() -> None:
     not self-update or one is already in flight."""
     global _proc, _started_at
     # Prod-only. A dev instance runs from a worktree on a feature branch, where
-    # `git pull --ff-only` would either fail or pull the WRONG branch over the
+    # a fast-forward would either fail or pull the WRONG branch over the
     # work in progress. (`bin/periscope update` refuses from a worktree too —
     # this gate and that one are independent, since the script is also a
     # user-facing verb.)

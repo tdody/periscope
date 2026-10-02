@@ -39,8 +39,8 @@ def test_check_counts_commits_behind(monkeypatch):
 def test_check_counts_local_commits_ahead(monkeypatch):
     """`ahead` is why the Update button refuses, so the pill has to know it.
 
-    `git pull --ff-only` — what the update actually runs — aborts outright once
-    the checkout carries local commits. Counting only `behind` rendered
+    The update fast-forwards to `@{u}`, which refuses once the checkout carries
+    local commits AND upstream has moved. Counting only `behind` rendered
     "↑ 10 behind" over a button that could not possibly succeed, with the
     reason nowhere in the UI (the fdy fork: one unpushed commit sat on `main`
     for two weeks while origin moved 10 ahead).
@@ -161,7 +161,7 @@ def test_check_keeps_last_count_when_it_cannot_answer(monkeypatch, broken):
 
 def test_start_refuses_on_dev_instance(monkeypatch):
     # A dev instance runs from a worktree on a feature branch: `git pull
-    # --ff-only` there would fail, or pull the WRONG branch over live work.
+    # forward there would fail, or pull the WRONG branch over live work.
     monkeypatch.setattr(config, "DEV", True)
     with pytest.raises(RuntimeError, match="prod-only"):
         updater.start()

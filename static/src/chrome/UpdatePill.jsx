@@ -15,9 +15,10 @@
 // shouldn't grow by thirty subjects.
 //
 // `ahead` rides on /api/state alongside `behind` because it decides whether the
-// button can work AT ALL: the update runs `git pull --ff-only`, which aborts
-// outright on a checkout carrying local commits. Behind-only, the pill armed a
-// button that was arithmetically incapable of succeeding and gave no reason.
+// button can work AT ALL: the update fast-forwards to @{u}, which refuses once
+// the checkout has local commits AND upstream has moved. Behind-only, the pill
+// armed a button that was arithmetically incapable of succeeding and gave no
+// reason.
 // The button stays ENABLED anyway — the count is up to an hour stale, so an
 // external rebase may already have fixed it, and a refused pull aborts before
 // launchd is touched (see docs/updating.md > "Ordering is the safety
@@ -146,7 +147,7 @@ export function UpdatePill() {
   // with nothing to do, which fast-forwards fine.
   const blocked = n > 0 && ahead > 0;
   const localPlural = `${ahead} local commit${ahead === 1 ? "" : "s"}`;
-  const warn = `${localPlural} not on origin — the update's \`git pull --ff-only\` will refuse. `
+  const warn = `${localPlural} not on origin — the update's fast-forward will refuse. `
     + "Rebase (`git pull`) or push first.";
   const title = error
     ? `update failed:\n${error}`

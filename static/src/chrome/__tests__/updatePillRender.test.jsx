@@ -40,9 +40,9 @@ describe("<UpdatePill>", () => {
   });
 
   it("warns when local commits make the fast-forward impossible", () => {
-    // The failure this exists for: `git pull --ff-only` aborts outright once
-    // the checkout carries local commits, so "↑ 10 behind" alone armed a
-    // button that could not succeed and said nothing about why.
+    // The failure this exists for: the update's fast-forward refuses once the
+    // checkout carries local commits AND upstream has moved, so "↑ 10 behind"
+    // alone armed a button that could not succeed and said nothing about why.
     updateInfo.value = { behind: 10, ahead: 1, checked_at: 1, running: false };
     const html = render(<UpdatePill />);
     expect(html).toContain("↑ 10 behind ⚠");
