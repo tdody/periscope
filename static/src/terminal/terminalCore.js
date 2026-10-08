@@ -114,6 +114,27 @@ export function normalizeAgentTerminalData(data, agent) {
 // rail resize, or a different container like the modal) as a new pin.
 let pinnedCols = 0;
 const WIDTH_PIN_TOLERANCE = 4;   // cols; absorbs scrollbar/rounding wobble, not a real resize
+// The xterm's ROWS follow the tmux pane (the server's `{type:"size"}`), never
+// the container. The reconcile frame paints rows 1..pane_height, so any extra
+// xterm rows are rows tmux never repaints — and xterm.js GROWING rows pulls
+// scrollback down over the screen, so they held a frozen older copy of the
+// pane under the live one. A pane is shorter than the container both when its
+// window is split (periscope sizes the window, the pane gets a slice) and
+// after a height-only resize, which is deliberately not sent (scheduleFit).
+let paneRows = 0;                // tmux's pane height, from the last size message
+let fitRows = 0;                 // the container's height in rows — what we ask tmux for
+
+// Pure: the xterm dims for a proposed fit. Width snaps to the pin within
+// tolerance (and re-pins beyond it); height is the pane's when known.
+export function fitDims(proposedCols, proposedRows, pinned, knownPaneRows) {
+  let cols = proposedCols;
+  let pin = pinned;
+  if (pin > 0 && cols !== pin) {
+    if (Math.abs(cols - pin) > WIDTH_PIN_TOLERANCE) pin = cols;
+    else cols = pin;
+  }
+  return { cols, rows: knownPaneRows > 0 ? knownPaneRows : proposedRows, pinnedCols: pin };
+}
 let containerEl = null;          // set by setTerminalContainer() before startLiveTerminal()
 let xtermHost = null;            // persistent parent for term.open(); moved between mounts
 
@@ -631,6 +652,7 @@ export function startLiveTerminal(target) {
     }
     initialCols = pinnedCols;
     initialRows = term.rows;
+    fitRows = term.rows;
   } catch (_) {}
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
@@ -681,6 +703,7 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "size") {
+          paneRows = msg.rows;
           term.resize(msg.cols, msg.rows);
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
@@ -718,9 +741,11 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
     termReconnectTimer = setTimeout(() => {
       termReconnectTimer = null;
       if (!term || termWsTarget !== target || termIntentionalClose) return;
-      // Re-send current xterm dims so the reconnected server resizes tmux
-      // before its initial paint — same reasoning as the first connect.
-      connectTerminalWs(target, term.cols, term.rows);
+      // Re-send current dims so the reconnected server resizes tmux before
+      // its initial paint — same reasoning as the first connect. The
+      // container's rows, not term.rows: those are the pane's, and on a
+      // split window echoing them back would shrink the window every retry.
+      connectTerminalWs(target, term.cols, fitRows || term.rows);
     }, delay);
   };
 }
@@ -730,21 +755,22 @@ function scheduleFit() {
   fitDebounce = setTimeout(() => {
     fitDebounce = null;
     if (!term || !fitAddon || fitHeld) return;
+    let proposed;
     try {
-      fitAddon.fit();
+      proposed = fitAddon.proposeDimensions();
     } catch (_) {
       return;
     }
+    if (!proposed || Number.isNaN(proposed.cols) || Number.isNaN(proposed.rows)) return;
     // Hold the pinned width: a fit that wobbled by a column or two (the bug —
     // mount/layout transients) snaps back so tmux never reflows; a genuinely
     // different width (real resize beyond tolerance) becomes the new pin.
-    if (pinnedCols > 0 && term.cols !== pinnedCols) {
-      if (Math.abs(term.cols - pinnedCols) > WIDTH_PIN_TOLERANCE) {
-        pinnedCols = term.cols;
-      } else {
-        term.resize(pinnedCols, term.rows);
-      }
-    }
+    // Rows stay at the pane's height (see paneRows) — proposeDimensions, not
+    // fit(), so the xterm never transiently grows and drags scrollback down.
+    fitRows = proposed.rows;
+    const next = fitDims(proposed.cols, proposed.rows, pinnedCols, paneRows);
+    pinnedCols = next.pinnedCols;
+    if (term.cols !== next.cols || term.rows !== next.rows) term.resize(next.cols, next.rows);
     // Only send a resize message when the dims actually changed since the
     // last one we sent, AND only when width changed — height-only changes
     // are dropped. Two reasons:
@@ -760,14 +786,16 @@ function scheduleFit() {
     //      from earlier frames overlapping the latest content — the same
     //      failure class as the width-reflow corruption noted in
     //      `routes/ws.py::set_pane_size`). Suppressing row-only sends costs
-    //      "modal may show empty rows at the bottom until the next real
-    //      width change re-syncs height," which is strictly better than
-    //      scrambled chat history.
+    //      empty rows at the bottom until the next real width change
+    //      re-syncs height — empty only because the xterm stays at the
+    //      pane's height (paneRows); grown to the container, those rows
+    //      showed a stale copy of the screen.
     if (term.cols === lastSentCols) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
       lastSentCols = term.cols;
-      _lastSentRows = term.rows;
-      termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      _lastSentRows = fitRows;
+      // The server's reconcile answers with the pane's real size.
+      termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: fitRows }));
     }
   }, 80);
 }
@@ -789,6 +817,7 @@ export function stopLiveTerminal() {
   }
   lastSentCols = 0;
   _lastSentRows = 0;
+  paneRows = 0;
   if (fitDebounce) {
     clearTimeout(fitDebounce);
     fitDebounce = null;
