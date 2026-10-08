@@ -453,6 +453,17 @@ def pane_efforts() -> dict[str, str]:
     return out
 
 
+def pane_session_activity() -> dict[str, float]:
+    """tmux pane id -> mtime of its live claude's session file. A running
+    claude rewrites that file on every status change, so among panes running
+    the same session the newest mtime is the one actually being used."""
+    live = _live_claude_pids()
+    by_pid = _indexes()[1]
+    return {pane_id: by_pid[pid][0]["_mtime"]
+            for pane_id, pid in pane_claude_pids().items()
+            if pid in live and by_pid.get(pid)}
+
+
 def live_session_id_for_pane(pane_id: str) -> str | None:
     """The sessionId the pane's RUNNING claude reports right now, or None when
     the pane has no live claude / no session file for it.
