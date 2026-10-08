@@ -344,10 +344,14 @@ def test_open_path_tags_only_its_own_panes(tmp_path, clean_state, fresh_activity
     # A user goal-track move must also survive later opens. Tags key on the
     # stamped @periscope_id (pid_raw on raw rows), not the %N pane id.
     tk = tracks.create_track(name="my goal")
+    # The shell sibling, found by its tag — NOT its cwd, which reads wrong while
+    # the shell is still in its rc (see test_open_tags_new_panes_mid_rc).
     moved_pid = next(
         w["pid_raw"]
         for w in open_ops.list_windows()
-        if w.get("pid_raw") and w["pid_raw"] != r_a.claude_pid and os.path.realpath(w.get("cwd") or "") == repo_a
+        if w.get("pid_raw")
+        and w["pid_raw"] != r_a.claude_pid
+        and fresh_activity_db.get_pane_track(w["pid_raw"]) == repo_a
     )
     tracks.move_pane(moved_pid, tk["id"])
 
@@ -359,6 +363,21 @@ def test_open_path_tags_only_its_own_panes(tmp_path, clean_state, fresh_activity
     # Re-opening A (focus path) keeps the explicit goal-track tag too.
     open_ops.open_target(open_ops.PathTarget(path=repo_a))
     assert fresh_activity_db.get_pane_track(moved_pid) == tk["id"]
+
+
+@needs_tmux
+def test_open_tags_new_panes_mid_rc(tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch):
+    """Regression (flaky test_open_path_tags_only_its_own_panes): a fresh
+    pane's cwd is its foreground process's, and ~60ms into zsh's rc
+    oh-my-zsh's `cd $ZSH` subshell reads as ~/.oh-my-zsh. The tag loop runs
+    inside that window, so it must tag the panes it created by pid."""
+    real = open_ops.list_windows
+    monkeypatch.setattr(open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh"} for w in real()])
+    repo = str(tmp_git_repo)
+    res = open_ops.open_target(open_ops.PathTarget(path=repo))
+    new = [w["pid_raw"] for w in real() if w.get("pid_raw")]
+    assert res.agent_pid in new and len(new) == 2  # agent + shell
+    assert {fresh_activity_db.get_pane_track(p) for p in new} == {repo}
 
 
 @needs_tmux

@@ -183,18 +183,31 @@ def ensure_session(
     agent: Literal["claude", "codex"] = "claude",
     account: str | None = None,
 ) -> tuple[str, str]:
+    session, agent_pid, _ = _ensure_session(project, pinned_dir, agent, account)
+    return session, agent_pid
+
+
+def _ensure_session(
+    project: projects.Project,
+    pinned_dir: str,
+    agent: Literal["claude", "codex"] = "claude",
+    account: str | None = None,
+) -> tuple[str, str, tuple[str, ...]]:
     """Idempotent create-or-focus into the single shared MANAGED_SESSION.
     `pinned_dir` is the project's key (taken explicitly — Project is a
     TypedDict with no self-key). Returns (tmux_session, claude_pid).
 
     "Already open?" is answered by cwd ownership WITHIN the shared session
     (every project's panes live there now) — not by a session named after the
-    project, which no longer exists. So there's no foreign-name dedupe here."""
+    project, which no longer exists. So there's no foreign-name dedupe here.
+
+    Also returns the pids of the panes it CREATED (empty on the focus path),
+    so the caller can tag them without trusting their live cwd."""
     session = config.MANAGED_SESSION
     if _session_live(session) and _session_owns_dir(session, pinned_dir):
         existing = _agent_pid_for_dir(session, pinned_dir, agent)
         if existing:
-            return session, existing
+            return session, existing, ()
     if agent == "claude":
         # No account named → launch_policy decides. This is periscope's
         # primary launch path (⌘K omnibox, POST /api/open, PR review); pinning
@@ -203,7 +216,7 @@ def ensure_session(
         # subscription to choose between. choose_launch degrades to "default"
         # when usage is unknown, so an open never waits on it.
         launch = usage.choose_launch(account)
-        agent_pid, _ = _layout_two_window(
+        agent_pid, shell_pid = _layout_two_window(
             session,
             pinned_dir,
             account=launch.account,
@@ -211,8 +224,8 @@ def ensure_session(
             effort=launch.effort,
         )
     else:
-        agent_pid, _ = _layout_two_window(session, pinned_dir, agent=agent, account=account)
-    return session, agent_pid
+        agent_pid, shell_pid = _layout_two_window(session, pinned_dir, agent=agent, account=account)
+    return session, agent_pid, tuple(p for p in (agent_pid, shell_pid) if p)
 
 
 def discover_repos() -> set[str]:
@@ -258,7 +271,7 @@ def _open_path(
     toplevel = _git_toplevel(path)  # ValueError if non-git
     repo = resolve_repo(toplevel)  # --git-common-dir → parent
     project = ensure_project(toplevel, repo)
-    session, agent_pid = ensure_session(project, toplevel, agent)
+    session, agent_pid, created = _ensure_session(project, toplevel, agent)
     # Rebuild the full pane list from the now-live session. list_windows()
     # is a live shell-out, so freshly-stamped windows are visible
     # synchronously; pid_raw is the @periscope_id, "" for unmanaged.
@@ -276,6 +289,13 @@ def _open_path(
     # project's panes, so a session-wide re-tag moves the whole rail into this
     # track (the sts2-seed-finder clobber); an existing tag is either already
     # right or a user's goal-track move — never overwrite it here.
+    #
+    # The panes this open just created are tagged by pid, NOT by cwd: a fresh
+    # pane's pane_current_path is its FOREGROUND process's cwd, and a shell
+    # still in its rc can have a subshell elsewhere (oh-my-zsh's `cd $ZSH`
+    # update check reads as ~/.oh-my-zsh ~60ms in, sometimes as ""). This loop
+    # runs inside that window, so a cwd test intermittently left the new
+    # shell — or, under load, the agent pane — untagged.
     from periscope import activity, tracks
 
     tid = tracks.repo_default_track(repo)
@@ -286,7 +306,7 @@ def _open_path(
         if (
             p
             and w.get("session") == session
-            and os.path.realpath(w.get("cwd") or "") == toplevel
+            and (p in created or os.path.realpath(w.get("cwd") or "") == toplevel)
             and activity.get_pane_track(p) is None
         ):
             tracks.move_pane(p, tid)
