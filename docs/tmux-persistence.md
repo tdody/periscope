@@ -41,13 +41,26 @@ loudly — a silently missing plugin is a silently missing save. A running
 server is re-sourced so the hook path is live immediately; continuum's
 auto-restore is gated on server start time, so that never restores over it.
 
+**Every plugin is declared exactly once across what TPM reads.** TPM does not
+dedupe `@plugin` lines: a user who already declares tpm/resurrect/continuum in
+`~/.tmux.conf` and also sources the owned file gets each plugin's `*.tmux` run
+twice — and continuum, run twice, starts TWO background restores at server
+start. They race through the same save file; one that sees "pane missing,
+window present" while the other is mid-create splits the window again, leaving
+an extra shell pane. Resume a Claude in it and the next save records it, so
+the window gains a pane every restart (observed 2026-10: one window at three
+panes, all `--resume`-ing one session, two of them zombie Claudes). So
+`install` omits from the owned file any plugin declared elsewhere, and healthz
+reports `plugin_declarations` (each must be 1). Check by hand:
+`bash -c 'source ~/.tmux/plugins/tpm/scripts/helpers/plugin_functions.sh; tpm_plugins_list_helper' | sort | uniq -c`.
+
 `GET /api/healthz` carries a `resurrect` block built from the LIVE tmux
 server's options (not the conf file — the file being right and the server
 having sourced it are different facts): plugin dirs, `conf_sourced`,
 `restore_on`, `processes_ok`, `hook_current` (live hook == this checkout), and
 `last_save_at` / `last_save_stale` (older than 2× the live save interval; a
-missing save is not stale, a fresh install hasn't had one yet). `ok` is the
-conjunction. `python3 -m periscope.tmux_persist status <repo>` prints the same
+missing save is not stale, a fresh install hasn't had one yet), and
+`plugin_declarations` (see above). `ok` is the conjunction. `python3 -m periscope.tmux_persist status <repo>` prints the same
 without a server round-trip.
 
 Diagnosing a stale restore: `ls -lt ~/.local/share/tmux/resurrect/` — gaps in
