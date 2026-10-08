@@ -13,6 +13,14 @@ when the server restarts, so at restore time there is nothing left to map.
 Import discipline: stdlib + `periscope.config` only — it runs under plain
 `python3`, and `periscope.activity` would drag in the Anthropic SDK.
 
+**One `--resume` per session per save.** After the rewrite, if several pane
+lines resume the same session (captured argv included — a restored zombie's
+argv already says `--resume`), only one keeps it: the pane whose live claude
+touched its session file last, then the active pane, then the first line. The
+rest restore as a fresh `claude` with their env prefixes and channel flags.
+Two Claudes on one session both write its transcript; this is the backstop
+that stops a duplicated layout (see the plugin rule below) from compounding.
+
 **Periscope drives the periodic save (`resurrect.save_now()`).**
 tmux-continuum has NO timer: its save fires purely as a side effect of
 `status-right` being *expanded*, which only happens when a status line is drawn
