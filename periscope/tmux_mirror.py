@@ -17,6 +17,7 @@ docs/superpowers/specs/2026-06-10-terminal-mirror-reconciliation-design.md
 
 import asyncio
 import contextlib
+import json
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -131,6 +132,7 @@ class GridSnapshot:
     rows: tuple[bytes, ...]  # capture-pane -e body lines (raw — reply
     # bodies are NOT octal-escaped, verified)
     height: int
+    width: int
     cursor_x: int  # 0-indexed, as tmux reports
     cursor_y: int
     alt_on: bool
@@ -139,14 +141,15 @@ class GridSnapshot:
 
 # Queried per reconcile; pane_height is included so the frame's row loop
 # tracks resizes without trusting a stale subscribe-time value.
-DISPLAY_FMT = "#{pane_height}|#{cursor_x}|#{cursor_y}|#{alternate_on}|#{cursor_flag}"
+DISPLAY_FMT = "#{pane_height}|#{cursor_x}|#{cursor_y}|#{alternate_on}|#{cursor_flag}|#{pane_width}"
 
 
 def snapshot_from_replies(capture: Reply, display: Reply) -> GridSnapshot:
-    height, cx, cy, alt, cvis = display.body[0].decode().split("|")
+    height, cx, cy, alt, cvis, width = display.body[0].decode().split("|")
     return GridSnapshot(
         rows=capture.body,
         height=int(height),
+        width=int(width),
         cursor_x=int(cx),
         cursor_y=int(cy),
         alt_on=alt == "1",
@@ -163,12 +166,23 @@ def build_reconcile_frame(snap: GridSnapshot) -> bytes:
     a missed screen *switch*.) Normal-screen frames lead with 1049l to
     heal the stuck-in-alt class and never emit 2J: scrollback stays
     untouched. One frame = one atomic WS message = no flicker.
+
+    The LAST row ends in ED 0 (`\x1b[J`) instead of EL: it erases the rest
+    of that row AND every client row below the pane. The xterm can be
+    taller than the pane — a split window gives the pane a slice of the
+    height periscope sized the window to, and xterm.js growing rows pulls
+    scrollback down over the screen — and rows the loop never addresses
+    held a frozen copy of an older screen under the live one. ED 0 cannot
+    reach scrollback (that's ED 3); it's the 2J/3J class that stays banned.
+    Not a CUP to height+1: on a same-size xterm that clamps onto the last
+    row and erases it.
     """
     parts = [b"\x1b[?1049h" if snap.alt_on else b"\x1b[?1049l"]
     rows = list(snap.rows[: snap.height])
     rows += [b""] * (snap.height - len(rows))
     for i, row in enumerate(rows):
-        parts.append(b"\x1b[%d;1H" % (i + 1) + row + b"\x1b[0m\x1b[K")
+        erase = b"\x1b[J" if i == len(rows) - 1 else b"\x1b[K"
+        parts.append(b"\x1b[%d;1H" % (i + 1) + row + b"\x1b[0m" + erase)
     parts.append(b"\x1b[%d;%dH" % (snap.cursor_y + 1, snap.cursor_x + 1))
     parts.append(b"\x1b[?25h" if snap.cursor_visible else b"\x1b[?25l")
     return b"".join(parts)
@@ -223,12 +237,18 @@ class ReconcileTimer:
 class Subscription:
     """Async iterator of decoded pane bytes; None sentinel = EOF (pane
     died, client died, shutdown). Async context manager — exit
-    unsubscribes."""
+    unsubscribes.
+
+    A `str` item is a JSON `{type:"size"}` control message, yielded only
+    once the consumer has set `size` (the pane dims it last told its
+    client) — the reconcile path then announces any pane resize ahead of
+    the frame painted at the new size."""
 
     def __init__(self, mirror: "_SessionMirror", pane_id: str) -> None:
         self._mirror = mirror
         self.pane_id = pane_id
-        self._q: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self.size: tuple[int, int] | None = None  # (cols, rows) the client holds
+        self._q: asyncio.Queue[bytes | str | None] = asyncio.Queue()
 
     def request_reconcile(self) -> None:
         self._mirror.request_reconcile(self.pane_id)
@@ -242,7 +262,7 @@ class Subscription:
     def __aiter__(self) -> "Subscription":
         return self
 
-    async def __anext__(self) -> bytes:
+    async def __anext__(self) -> bytes | str:
         chunk = await self._q.get()
         if chunk is None:
             raise StopAsyncIteration
@@ -401,8 +421,17 @@ class _SessionMirror:
             subs = self._subs.get(pane_id)
             if not subs:
                 return  # unsubscribed while the commands were in flight
-            frame = build_reconcile_frame(snapshot_from_replies(reply, disp))
+            snap = snapshot_from_replies(reply, disp)
+            frame = build_reconcile_frame(snap)
+            dims = (snap.width, snap.height)
             for s in subs:
+                # The client's xterm rows must track the PANE, which moves
+                # without periscope asking: a split or a killed sibling pane
+                # resizes it under an open terminal. Size first, so the
+                # frame paints into a grid of the height it was captured at.
+                if s.size is not None and s.size != dims:
+                    s.size = dims
+                    s._q.put_nowait(json.dumps({"type": "size", "cols": dims[0], "rows": dims[1]}))
                 s._q.put_nowait(frame)
             timer = self._timers.get(pane_id)
             if timer:

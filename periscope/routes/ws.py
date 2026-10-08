@@ -175,6 +175,10 @@ async def ws_pane(
     sub = await tmux_mirror.subscribe(session_name, pane_id)
     async with sub:
         await websocket.send_text(json.dumps({"type": "size", "cols": cols, "rows": rows}))
+        # Arms the mirror's size announcements: from here on, a reconcile
+        # that finds the pane at other dims (split, sibling killed, our own
+        # resize-window landing on a split window) re-sends `size` first.
+        sub.size = (cols, rows)
         await websocket.send_text(json.dumps({"type": "mouse", "on": mouse_on}))
 
         # 3) Initial paint, via the fork path — NOT the control client: a
@@ -216,7 +220,10 @@ async def ws_pane(
         #    FIFO; the client's reconnect FSM takes it from there.
         async def forward_out():
             async for chunk in sub:
-                await websocket.send_bytes(chunk)
+                if isinstance(chunk, str):
+                    await websocket.send_text(chunk)
+                else:
+                    await websocket.send_bytes(chunk)
             with contextlib.suppress(Exception):
                 await websocket.close()
 

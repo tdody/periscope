@@ -7,6 +7,7 @@ tmux's own grid even when bytes are dropped.
 """
 
 import asyncio
+import json
 import shutil
 import subprocess
 import uuid
@@ -117,6 +118,7 @@ def _snap(**kw):
     base = {
         "rows": (b"row1", b"row2"),
         "height": 2,
+        "width": 80,
         "cursor_x": 3,
         "cursor_y": 1,
         "alt_on": False,
@@ -131,17 +133,43 @@ def test_frame_normal_screen_exact_bytes():
     assert frame == (
         b"\x1b[?1049l"  # heal stuck-in-alt; no-op if normal
         b"\x1b[1;1Hrow1\x1b[0m\x1b[K"
-        b"\x1b[2;1Hrow2\x1b[0m\x1b[K"
+        b"\x1b[2;1Hrow2\x1b[0m\x1b[J"  # last row: ED 0 blanks client rows below the pane
         b"\x1b[2;4H"  # cursor 0-indexed (3,1) → 1-indexed (4,2)
         b"\x1b[?25h"
     )
 
 
 def test_frame_normal_screen_never_clears():
-    # 2J would be visually harmless but J-class erases are banned on the
-    # normal screen as a guard rail: scrollback must not be touched.
+    # 2J would be visually harmless but full-screen/scrollback erases are
+    # banned on the normal screen as a guard rail: scrollback must not be
+    # touched. ED 0 (erase below) is the one J allowed — it can't reach it.
     frame = build_reconcile_frame(_snap())
     assert b"\x1b[2J" not in frame
+    assert b"\x1b[3J" not in frame
+
+
+def test_frame_blanks_client_rows_below_the_pane():
+    # Regression: a pane in a split window is shorter than the xterm periscope
+    # sized the window for, and the row loop never addressed the extra rows —
+    # they kept a frozen copy of an older screen under the live one. Exactly
+    # one ED 0, at the end of the last pane row, after that row's content.
+    import pyte
+
+    screen = pyte.Screen(10, 6)
+    stream = pyte.ByteStream(screen)
+    stream.feed(b"".join(b"\x1b[%d;1Hstale%d" % (i + 1, i) for i in range(6)))
+    stream.feed(build_reconcile_frame(_snap(rows=(b"live1", b"live2"), height=2, cursor_x=0, cursor_y=0)))
+    assert [r.rstrip() for r in screen.display] == ["live1", "live2", "", "", "", ""]
+
+
+def test_frame_same_size_client_keeps_last_row():
+    # ED 0 must not be reached via a CUP to height+1: on a client exactly the
+    # pane's height that clamps onto the last row and erases it.
+    import pyte
+
+    screen = pyte.Screen(10, 2)
+    pyte.ByteStream(screen).feed(build_reconcile_frame(_snap()))
+    assert [r.rstrip() for r in screen.display] == ["row1", "row2"]
 
 
 def test_frame_alt_screen_prefix():
@@ -156,7 +184,7 @@ def test_frame_pads_short_capture_to_height():
     # be written even if capture returned fewer lines.
     frame = build_reconcile_frame(_snap(rows=(b"only",), height=3))
     assert b"\x1b[2;1H\x1b[0m\x1b[K" in frame
-    assert b"\x1b[3;1H\x1b[0m\x1b[K" in frame
+    assert b"\x1b[3;1H\x1b[0m\x1b[J" in frame  # last row carries ED 0
 
 
 def test_frame_cursor_hidden():
@@ -165,10 +193,10 @@ def test_frame_cursor_hidden():
 
 def test_snapshot_from_replies():
     cap = Reply(body=(b"r1", b"r2"))
-    disp = Reply(body=(b"2|3|1|0|1",))  # height|cx|cy|alt|cursor_flag
+    disp = Reply(body=(b"2|3|1|0|1|80",))  # height|cx|cy|alt|cursor_flag|width
     snap = snapshot_from_replies(cap, disp)
     assert snap.rows == (b"r1", b"r2")
-    assert snap.height == 2
+    assert (snap.width, snap.height) == (80, 2)
     assert (snap.cursor_x, snap.cursor_y) == (3, 1)
     assert snap.alt_on is False
     assert snap.cursor_visible is True
@@ -252,11 +280,56 @@ def test_reconcile_frame_enqueued_synchronously_on_second_reply():
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
         sub = m.subscribe("%7")
         m._fire_reconcile("%7")
-        m._dispatch(Reply(body=(b"1|0|0|0|1",)))  # display reply
+        m._dispatch(Reply(body=(b"1|0|0|0|1|80",)))  # display reply
         m._dispatch(Reply(body=(b"row",)))  # capture reply
         frame = sub._q.get_nowait()
         assert frame.startswith(b"\x1b[?1049l")
         assert b"row" in frame
+
+    asyncio.run(drive())
+
+
+def _reconcile_once(m, display=b"1|0|0|0|1|80"):
+    m._fire_reconcile("%7")
+    m._dispatch(Reply(body=(display,)))
+    m._dispatch(Reply(body=(b"row",)))
+
+
+def _mirror_with_fake_commands():
+    m = _SessionMirror("sess")
+    m._proc = object()  # _fire_reconcile guards on a live client
+    m._send_command = lambda cmd, cb: m._reply_callbacks.append(cb)
+    return m
+
+
+def test_reconcile_announces_pane_resize_before_the_frame():
+    # A split (or a killed sibling) resizes the pane under an open terminal;
+    # the client's xterm rows must follow, and BEFORE the frame painted at
+    # the new height.
+    async def drive():
+        m = _mirror_with_fake_commands()
+        sub = m.subscribe("%7")
+        sub.size = (80, 62)
+        _reconcile_once(m, b"32|0|0|0|1|80")
+        assert json.loads(sub._q.get_nowait()) == {"type": "size", "cols": 80, "rows": 32}
+        assert sub._q.get_nowait().startswith(b"\x1b[?1049l")
+        assert sub.size == (80, 32)
+        _reconcile_once(m, b"32|0|0|0|1|80")  # unchanged: frame only
+        assert isinstance(sub._q.get_nowait(), bytes)
+        assert sub._q.empty()
+
+    asyncio.run(drive())
+
+
+def test_reconcile_never_announces_size_to_an_unarmed_subscriber():
+    # The byte-stream consumers (the pyte oracle tests) never set `size`, and
+    # must keep receiving bytes only.
+    async def drive():
+        m = _mirror_with_fake_commands()
+        sub = m.subscribe("%7")
+        _reconcile_once(m, b"32|0|0|0|1|80")
+        assert isinstance(sub._q.get_nowait(), bytes)
+        assert sub._q.empty()
 
     asyncio.run(drive())
 
