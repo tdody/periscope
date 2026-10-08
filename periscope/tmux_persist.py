@@ -37,6 +37,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 
 from periscope import config
@@ -115,7 +116,7 @@ def plugin_declarations() -> dict[str, int]:
     return {p: names.count(p) for p in REQUIRED_PLUGINS}
 
 
-def owned_conf_text(repo: Path, declared_elsewhere: set[str] = frozenset()) -> str:
+def owned_conf_text(repo: Path, declared_elsewhere: AbstractSet[str] = frozenset()) -> str:
     plugins = "".join(
         f"set -g @plugin 'tmux-plugins/{p}'\n"
         if p not in declared_elsewhere
