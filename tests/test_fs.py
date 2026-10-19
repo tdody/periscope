@@ -261,3 +261,24 @@ def test_safe_write_oversize(tmp_path):
         fs.safe_write(str(tmp_path), "a.py", "x" * 200, None, max_bytes=128)
     assert exc.value.status_code == 413
     assert f.read_text() == "old\n"
+
+
+def test_safe_resolve_absolute_ignores_missing_cwd(tmp_path, monkeypatch):
+    # A pane whose worktree was removed by another session still has a cwd
+    # string (tmux keeps reporting it). An absolute path under a safe root
+    # (~ here, as for ~/.claude/doc-render-cache) never needs that cwd, so a
+    # stale one must not turn into a 400.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    f = tmp_path / "doc.html"
+    f.write_text("<p>hi</p>")
+    gone = tmp_path / "removed-worktree"
+    assert not gone.exists()
+    assert fs.safe_resolve(str(gone), str(f)) == f.resolve()
+
+
+def test_safe_resolve_relative_requires_cwd(tmp_path):
+    gone = tmp_path / "removed-worktree"
+    with pytest.raises(HTTPException) as exc:
+        fs.safe_resolve(str(gone), "doc.html")
+    assert exc.value.status_code == 400
+    assert "cwd does not exist" in exc.value.detail

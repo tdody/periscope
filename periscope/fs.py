@@ -82,8 +82,6 @@ def _resolve_existing(cwd: str, raw_path: str) -> Path:
         raise HTTPException(status_code=400, detail="empty path")
 
     cwd_p = Path(cwd).resolve()
-    if not cwd_p.exists():
-        raise HTTPException(status_code=400, detail=f"cwd does not exist: {cwd}")
 
     # Strip a trailing ":NN" line suffix if present; we don't read it here
     # but callers' regex may include it.
@@ -92,7 +90,15 @@ def _resolve_existing(cwd: str, raw_path: str) -> Path:
         candidate = candidate.rsplit(":", 1)[0]
 
     expanded = os.path.expanduser(candidate)
-    target = Path(expanded) if os.path.isabs(expanded) else cwd_p / expanded
+    if os.path.isabs(expanded):
+        target = Path(expanded)
+    else:
+        # Only a relative path needs the cwd. A pane whose worktree another
+        # session removed still reports that cwd, and an absolute path (the
+        # open_document tool's normal input) must keep working from it.
+        if not cwd_p.exists():
+            raise HTTPException(status_code=400, detail=f"cwd does not exist: {cwd}")
+        target = cwd_p / expanded
     try:
         resolved = target.resolve()
     except OSError:
