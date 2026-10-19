@@ -7,6 +7,7 @@ use tauri::Manager;
 mod notifications;
 mod recycle;
 mod text_behavior;
+mod zoom;
 
 fn main() {
     tauri::Builder::default()
@@ -65,6 +66,25 @@ fn main() {
                         .build(handle)?,
                 )
                 .separator()
+                // ⌘= rather than ⌘+ (⌘⇧=): the unshifted key is what Safari
+                // and Chrome users press, and it's the one AppKit matches
+                // against a "=" key equivalent.
+                .item(
+                    &MenuItemBuilder::with_id("zoom_in", "Zoom In")
+                        .accelerator("CmdOrCtrl+=")
+                        .build(handle)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("zoom_out", "Zoom Out")
+                        .accelerator("CmdOrCtrl+-")
+                        .build(handle)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("zoom_reset", "Actual Size")
+                        .accelerator("CmdOrCtrl+0")
+                        .build(handle)?,
+                )
+                .separator()
                 .item(
                     // Full WebContent process replacement — the only reset for
                     // WKWebView's trusted-input graphics-region leak (a plain
@@ -81,6 +101,9 @@ fn main() {
                 .items(&[&app_submenu, &edit_submenu, &view_submenu, &window_submenu])
                 .build()?;
             app.set_menu(menu)?;
+            if let Some(window) = app.get_webview_window("main") {
+                zoom::init(&window);
+            }
             recycle::start_monitor(&handle.clone());
             Ok(())
         })
@@ -94,6 +117,9 @@ fn main() {
                 "reload" => {
                     let _ = window.eval("location.reload()");
                 }
+                "zoom_in" => zoom::zoom_in(&window),
+                "zoom_out" => zoom::zoom_out(&window),
+                "zoom_reset" => zoom::reset(&window),
                 "devtools" => {
                     #[cfg(debug_assertions)]
                     if window.is_devtools_open() {
