@@ -197,6 +197,8 @@ pub fn recycle_now(app: &AppHandle) {
                 let _ = tx.send(match result {
                     Ok(window) => {
                         let _ = window.restore_state(StateFlags::all());
+                        // A fresh WKWebView starts at pageZoom 1.0.
+                        crate::zoom::apply(&window);
                         WEBCONTENT_PID.store(0, Ordering::Relaxed); // re-learned next tick
                         Ok(())
                     }

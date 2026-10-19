@@ -48,6 +48,16 @@ exiting — pid-identity-checked via proc_pidpath before the kill). Actions log
 to `~/.config/periscope/shell.log`. Test by lowering the thresholds via
 `launchctl setenv` (GUI apps don't inherit shell env) and watching that log.
 
+**Zoom (`src-tauri/src/zoom.rs`).** A bare WKWebView has no ⌘+/⌘−, so
+View carries Zoom In (⌘=), Zoom Out (⌘-) and Actual Size (⌘0), stepping
+Chrome's ladder from 50% to 300% via `set_zoom` (WKWebView `pageZoom`, which
+reflows rather than magnifies, so xterm re-renders crisp). The level is
+owned by the shell, not the page: it is persisted to
+`~/.config/periscope/zoom` and re-applied after every recycle, because a
+rebuilt webview starts back at 100%. These are native menu accelerators, so
+they reach the menu before the page — nothing in `static/src` may bind ⌘=,
+⌘- or ⌘0 expecting to see them in the `.app`.
+
 **Scroll anchoring is off app-wide (`* { overflow-anchor: none }` in
 `static/styles.css`).** Safari/WebKit 27 (macOS 27) turns scroll anchoring on
 by default. In that WebKit, an anchoring adjustment made while a `box-shadow`
