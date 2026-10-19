@@ -73,8 +73,8 @@ upstream — one `rev-list --count --left-right @{u}...HEAD`; the counts ride
 `/api/state` as `update` and render as a header pill. **`ahead` is what makes
 the pill honest.** The update fast-forwards to `@{u}`, which refuses once the
 checkout carries local commits AND upstream has moved, so a behind-only pill
-armed a button
-that was arithmetically incapable of succeeding and gave no reason — the
+armed a button that was arithmetically incapable of succeeding and gave no
+reason — the
 reported "I can't get the update button to work" on a fork checkout whose
 `main` held one unpushed commit while origin moved 10 ahead. With both counts
 the popover names the blocker. The button stays ENABLED: the count is up to an

@@ -160,8 +160,8 @@ def test_check_keeps_last_count_when_it_cannot_answer(monkeypatch, broken):
 # --- start() ---------------------------------------------------------------
 
 def test_start_refuses_on_dev_instance(monkeypatch):
-    # A dev instance runs from a worktree on a feature branch: `git pull
-    # forward there would fail, or pull the WRONG branch over live work.
+    # A dev instance runs from a worktree on a feature branch: a fast-forward
+    # there would fail, or pull the WRONG branch over live work.
     monkeypatch.setattr(config, "DEV", True)
     with pytest.raises(RuntimeError, match="prod-only"):
         updater.start()
