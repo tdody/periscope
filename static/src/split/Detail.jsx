@@ -32,6 +32,7 @@ import { TerminalSearch } from "../terminal/TerminalSearch.jsx";
 import { isTerminalAtBottom, scrollTerminalToBottom, setTerminalFileCallback, writeTerminalLine } from "../terminal/terminalCore.js";
 import { track } from "../track.js";
 import { apiCall, memHint, paneLabel, prStateMeta, prUrl, relTime, rewriteLgtmHost, targetQuery } from "../util.js";
+import { ResizeHandle } from "./ResizeHandle.jsx";
 import { TranscriptView } from "./Transcript.jsx";
 
 // Match the modal's /api/pane cadence so the two views feel identical.
@@ -492,6 +493,7 @@ function PaneDetail({ w }) {
             showing the previous pane's PR/notes for ~1.5s until the new tick
             lands. SidePanel takes `target`, NOT `w`. */}
         <SidePanel key={w.target} target={w.target} />
+        <ResizeHandle which="side" />
       </div>
       {paneTabActive && mode === "terminal" && !atBottom && (
         <button

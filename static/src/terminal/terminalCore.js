@@ -70,6 +70,7 @@ let webglAddon = null;
 let searchAddon = null;
 let termResizeObserver = null;
 let fitDebounce = null;
+let fitHeld = false;              // a splitter drag is in progress — see holdTerminalFit
 let lastSentCols = 0;            // dims of the most recent resize message sent to the server
 let _lastSentRows = 0;            //   — used to suppress redundant resizes during initial mount
 
@@ -728,7 +729,7 @@ function scheduleFit() {
   if (fitDebounce) clearTimeout(fitDebounce);
   fitDebounce = setTimeout(() => {
     fitDebounce = null;
-    if (!term || !fitAddon) return;
+    if (!term || !fitAddon || fitHeld) return;
     try {
       fitAddon.fit();
     } catch (_) {
@@ -825,6 +826,20 @@ export function scrollTerminalToBottom() {
 // container that just became visible via class toggle).
 export function refitTerminal() {
   if (!term || !fitAddon) return;
+  scheduleFit();
+}
+
+// Held while a splitter is dragged (split/ResizeHandle.jsx). The container
+// changes width on every pointermove, and each fit that landed would resize
+// the tmux pane mid-drag — a burst of SIGWINCHes, each one a Claude redraw:
+// the scrollback-mangling reflow scheduleFit's comment describes. The xterm
+// keeps its size (clipped, or short of the edge) until release, then fits once.
+export function holdTerminalFit() {
+  fitHeld = true;
+}
+
+export function releaseTerminalFit() {
+  fitHeld = false;
   scheduleFit();
 }
 

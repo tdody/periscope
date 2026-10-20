@@ -1906,11 +1906,39 @@ body.modal-open { overflow: hidden; }
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: 320px 1fr;
+  /* Splitter widths. --rail-w / --side-w come from prefs (Split.jsx) and move
+     live during a drag (ResizeHandle.jsx); the clamp mirrors paneResize.js and
+     re-applies on a window resize without JS. Declared here, on the common
+     ancestor, but the 50% resolves wherever it's used — every user of
+     --side-w-eff sits in a box as wide as #detail. */
+  --rail-w-eff: clamp(180px, var(--rail-w, 320px), 50%);
+  --side-w-eff: clamp(200px, var(--side-w, 280px), 50%);
+  grid-template-columns: var(--rail-w-eff) 1fr;
   overflow: hidden;
   background: var(--bg-0);
   z-index: 1;
 }
+
+/* Splitter handles (ResizeHandle.jsx). Absolutely positioned so they take no
+   grid cell: 7px of hit area straddling the 1px border, offset so the rail's
+   scrollbar and the transcript's lose at most 2px of it. The highlight waits
+   a beat so sweeping the pointer across a seam doesn't flash it. */
+.col-resize {
+  position: absolute; top: 0; bottom: 0; width: 7px;
+  z-index: 6; cursor: col-resize; touch-action: none;
+}
+.col-resize::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 1px; width: 2px;
+  background: transparent; transition: background 0.1s;
+}
+.col-resize:hover::after { background: var(--accent); transition-delay: 0.15s; }
+.col-resize.dragging::after { background: var(--accent); transition-delay: 0s; }
+.col-resize-rail { left: calc(var(--rail-w-eff) - 2px); }
+.col-resize-side { right: calc(var(--side-w-eff) - 5px); }
+/* Mid-drag: one cursor everywhere, no text selection, and iframes can't eat
+   the pointer (capture covers that in Chrome; this covers WebKit). */
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
+body.col-resizing iframe { pointer-events: none; }
 
 #split-view.hidden { display: none; }
 
@@ -1936,10 +1964,10 @@ body.modal-open { overflow: hidden; }
 
 .detail-pane { display: flex; flex-direction: column; position: relative; }
 /* Floating "scroll to latest" for the terminal — sits over the terminal area
-   (clear of the 280px sidebar). xterm's scrollbar is hard to drag to the very
+   (clear of the sidebar). xterm's scrollbar is hard to drag to the very
    bottom; this is the reliable way down. */
 .term-scroll-bottom {
-  position: absolute; bottom: 14px; right: 312px;   /* clear of sidebar + xterm scrollbar */
+  position: absolute; bottom: 14px; right: calc(var(--side-w-eff) + 32px);   /* clear of sidebar + xterm scrollbar */
   width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; line-height: 1; cursor: pointer; z-index: 5;
@@ -1948,7 +1976,10 @@ body.modal-open { overflow: hidden; }
   opacity: 0.7; transition: opacity 0.12s, background 0.12s;
 }
 .term-scroll-bottom:hover { opacity: 1; background: var(--bg-3); }
-.detail-pane-body { display: grid; grid-template-columns: 1fr 280px; flex: 1; min-height: 0; }
+/* minmax(0, …): mid-drag the xterm keeps its old width (the fit is held), and
+   an auto minimum would let it push the inspector off the edge. Relative so
+   the inspector's .col-resize positions against this grid. */
+.detail-pane-body { display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w-eff); flex: 1; min-height: 0; position: relative; }
 .detail-xterm { background: var(--bg-term); min-height: 0; overflow: hidden; padding: 2px 8px; font-feature-settings: "liga" 1, "calt" 1; }
 /* The single xterm instance is parked in this host div and moved between mount
    containers (terminalCore.ensureTerminal), so it sits between the styled
@@ -2767,7 +2798,7 @@ body.modal-open { overflow: hidden; }
    prose, ⏺ tool rows with collapsible ⎿ output, red/green Edit diffs.
    The host is absolutely positioned in the terminal's grid cell — below the
    (flex-wrapping, dynamic-height) header via --detail-header-h, and left of the
-   280px sidebar via right:280px — so both the rich header and the sidebar stay
+   sidebar via right: var(--side-w-eff) — so both the rich header and the sidebar stay
    visible in transcript mode. Kept mounted (one per opened pane) so scroll +
    expand survive pane switches. */
 #detail { position: relative; }
@@ -2775,7 +2806,7 @@ body.modal-open { overflow: hidden; }
 .detail-transcript-host {
   position: absolute;
   top: var(--detail-header-h, 40px);
-  left: 0; right: 280px; bottom: 0;
+  left: 0; right: var(--side-w-eff); bottom: 0;
   z-index: 1;
   overflow: hidden;
   background: var(--bg-0);
@@ -3024,15 +3055,15 @@ body.modal-open { overflow: hidden; }
 
 /* The Cmd+F search bar floats over the terminal area of #detail-pane
    (#detail-pane is `position: relative` via .detail-pane). Anchored at
-   top: --detail-header-h (just under the header), right: 290px (just
-   inside the 280px sidebar + a little gutter). Does NOT wrap the
+   top: --detail-header-h (just under the header), right: 10px clear of
+   the sidebar. Does NOT wrap the
    terminal host — wrapping the host with extra layout layers (`display:
    flex` etc.) shifts FitAddon's measurements and reflows scrollback at
    different widths. */
 .term-search {
   position: absolute;
   top: calc(var(--detail-header-h, 40px) + 4px);
-  right: 290px;
+  right: calc(var(--side-w-eff) + 10px);
   z-index: 5;
   display: flex;
   gap: 4px;
