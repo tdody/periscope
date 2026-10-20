@@ -58,6 +58,24 @@ def test_patch_prefs_ui_rejects_bogus_detail_mode(client, clean_state):
     assert "invalid detail_mode" in r.json()["detail"]
 
 
+def test_patch_prefs_ui_pane_widths(client, clean_state):
+    # Splitter drags persist the rail and inspector widths. Undeclared on
+    # UIPatch, Pydantic drops them silently and every reload snaps back.
+    r = client.patch("/api/prefs/ui", json={"rail_width": 360, "side_width": 420})
+    assert r.status_code == 200
+    ui = r.json()["ui"]
+    assert ui["rail_width"] == 360
+    assert ui["side_width"] == 420
+
+
+def test_patch_prefs_ui_rejects_absurd_pane_width(client, clean_state):
+    r = client.patch("/api/prefs/ui", json={"side_width": 5})
+    assert r.status_code == 400
+    assert "invalid side_width" in r.json()["detail"]
+    r = client.patch("/api/prefs/ui", json={"rail_width": 99999})
+    assert r.status_code == 400
+
+
 def test_put_window_annotation(client, clean_state):
     r = client.put("/api/prefs/windows/abc123", json={"notes": "hi", "tags": ["a", "b", "a"]})
     assert r.status_code == 200

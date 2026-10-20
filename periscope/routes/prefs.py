@@ -63,6 +63,9 @@ class UIPatch(BaseModel):
     # fields are silently dropped by Pydantic, so a missing declaration here
     # makes the client's optimistic pin revert on the server echo.
     pinned_pids: list[str] | None = None
+    # Split-view column widths in CSS px, written when a splitter drag ends.
+    rail_width: int | None = None
+    side_width: int | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
@@ -80,6 +83,10 @@ def patch_prefs_ui(body: UIPatch):
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):
                 raise HTTPException(400, f"invalid detail_mode for {pid!r}: {mode!r}")
+    # The client clamps to the window; this only keeps junk out of the file.
+    for key in ("rail_width", "side_width"):
+        if key in patch and not 100 <= patch[key] <= 4000:
+            raise HTTPException(400, f"invalid {key}: {patch[key]!r}")
     update_ui(patch, writer=writer)
     from periscope.store import get_ui
     return {"ok": True, "ui": get_ui()}
