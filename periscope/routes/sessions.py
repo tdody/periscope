@@ -282,6 +282,7 @@ def _window_new_plain(
     account: str | None = None,
     profile: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
 ) -> dict:
     """Non-resume "+ New tab": open a window in the one shared MANAGED_SESSION
     and tag the new pane into `track_id` (the `session` query param now carries
@@ -300,13 +301,14 @@ def _window_new_plain(
 
     `account` and `model` arrive RESOLVED (window_new ran them through
     `usage.choose_launch`); `model` is the ANTHROPIC_MODEL value or None for
-    no override.
+    no override, and `effort` the header's effort pin (Launch.effort).
     """
     row = activity.get_track(track_id)
     repo = row["repo"] if row and row.get("repo") else None
     config_dir = store.account_config_dir(account)
     profile_env = config.profile_env(profile)
     model_env = config.model_env(model)
+    effort_env = config.effort_env(effort)
 
     branch = (branch or "").strip()
     if branch and repo:
@@ -334,7 +336,7 @@ def _window_new_plain(
     if code != 0:
         ok, msg = _tmux_mutate(
             "new-session", "-d", "-s", MANAGED_SESSION, "-c", cwd,
-            *tmux_mod.env_args(config_dir, profile_env, model_env),
+            *tmux_mod.env_args(config_dir, profile_env, model_env, effort_env),
             "-P", "-F", "#{window_id}",
         )
         if not ok:
@@ -343,12 +345,12 @@ def _window_new_plain(
         # window in the one shared session inherits this account — silently
         # billing account-A panes to account B — and this profile. This window
         # already forked with the values; `new-window -e` has no such spillover.
-        if config_dir or profile_env or model_env:
+        if config_dir or profile_env or model_env or effort_env:
             tmux_mod.scrub_session_env(MANAGED_SESSION)
     else:
         ok, msg = _tmux_mutate(
             "new-window", "-t", f"={MANAGED_SESSION}:", "-c", cwd,
-            *tmux_mod.env_args(config_dir, profile_env, model_env),
+            *tmux_mod.env_args(config_dir, profile_env, model_env, effort_env),
             "-P", "-F", "#{window_id}",
         )
         if not ok:
@@ -377,7 +379,7 @@ def _window_new_plain(
     return {"ok": True, "session": MANAGED_SESSION, "index": index,
             "target": target, "mode": mode, "agent": agent, "exec": cmd,
             "cwd": cwd, "profile": profile_env or "default",
-            "model": model_env or "default"}
+            "model": model_env or "default", "effort": effort_env or "default"}
 
 
 def _codex_binding(session_id: str):
@@ -521,12 +523,13 @@ def window_new(
             account=usage.choose_launch(account).account,
         )
         return {**result, "agent": "claude"}
+    effort = None
     if agent == "claude":
         launch = usage.choose_launch(account, model)
-        account, model = launch.account, launch.model
+        account, model, effort = launch.account, launch.model, launch.effort
     return _window_new_plain(
         session, exec_cmd, mode, cwd_param=cwd, branch=branch, agent=agent,
-        account=account, profile=profile, model=model,
+        account=account, profile=profile, model=model, effort=effort,
     )
 
 

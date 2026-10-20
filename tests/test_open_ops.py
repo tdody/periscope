@@ -409,6 +409,16 @@ def test_ensure_session_explicit_account_wins(monkeypatch):
     assert seen.get("account") == "default"
 
 
+def test_ensure_session_passes_the_effort_pin_to_the_layout(monkeypatch):
+    from periscope import usage
+    seen = _capture_layout(monkeypatch)
+    from periscope.launch_policy import Launch
+    monkeypatch.setattr(usage, "choose_launch",
+                        lambda account=None, model=None: Launch("b", None, "", effort="low"))
+    open_ops.ensure_session({}, "/repo")
+    assert seen.get("effort") == "low"
+
+
 def test_ensure_session_never_auto_picks_for_codex(monkeypatch):
     """Codex has no Claude subscription — binding one would be meaningless."""
     from periscope import usage
