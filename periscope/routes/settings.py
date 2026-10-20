@@ -34,6 +34,7 @@ class SettingsPatch(BaseModel):
     bg_account: str | None = None
     spawn_account: str | None = None
     spawn_model: str | None = None
+    spawn_effort: str | None = None
     editor: str | None = None
     poke_at: str | None = None
     poke_grace_min: int | None = None
@@ -108,6 +109,14 @@ def settings_patch(body: SettingsPatch):
             patch["spawn_model"] = v
         else:
             raise HTTPException(400, f"spawn_model {v!r} is not a model id")
+    if "spawn_effort" in sent:
+        v = body.spawn_effort
+        # "default" is stored literally, like spawn_model's: it is the pin's
+        # explicit "leave effort to Claude", which keeps /effort usable.
+        if v is None or v == "default" or config.effort_env(v):
+            patch["spawn_effort"] = v
+        else:
+            raise HTTPException(400, f"spawn_effort {v!r} is not an effort level")
 
     if "poke_at" in sent:
         v = body.poke_at

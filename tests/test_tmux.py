@@ -165,6 +165,14 @@ def test_env_args_carries_the_model_override():
     ]
 
 
+def test_env_args_carries_the_effort_level():
+    assert env_args("", None, None, "high") == ["-e", "CLAUDE_CODE_EFFORT_LEVEL=high"]
+    assert env_args("/c", None, "opus", "max") == [
+        "-e", "CLAUDE_CONFIG_DIR=/c", "-e", "ANTHROPIC_MODEL=opus",
+        "-e", "CLAUDE_CODE_EFFORT_LEVEL=max",
+    ]
+
+
 def test_env_args_account_and_profile_are_independent():
     """The two axes compose: a lab pane on the second subscription carries both."""
     assert env_args("/Users/tom/.claude-b", "lab") == [

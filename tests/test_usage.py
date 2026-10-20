@@ -555,6 +555,25 @@ def test_choose_launch_honors_the_model_pin(monkeypatch, clean_state):
     assert usage.choose_launch().model == "sonnet"
 
 
+def test_choose_launch_honors_the_effort_pin(monkeypatch, clean_state):
+    # Effort isn't routed, only passed through — but a wrong settings key here
+    # would leave the header's effort pin inert with the suite green.
+    monkeypatch.setattr(usage, "cached_plan_usage", lambda: _plan(default=100, b=8))
+    assert usage.choose_launch().effort is None
+    store.update_settings({"spawn_effort": "xhigh"})
+    assert usage.choose_launch().effort == "xhigh"
+    store.update_settings({"spawn_effort": "default"})
+    assert usage.choose_launch().effort is None
+
+
+def test_choose_launch_sets_effort_even_without_usage(monkeypatch, clean_state):
+    # The no-usage-data early return builds its own Launch; the pin must
+    # survive it, or a cold server spawns at the wrong effort.
+    store.update_settings({"spawn_effort": "low"})
+    monkeypatch.setattr(usage, "cached_plan_usage", dict)
+    assert usage.choose_launch().effort == "low"
+
+
 def test_choose_launch_passes_explicit_args_through(monkeypatch, clean_state):
     monkeypatch.setattr(usage, "cached_plan_usage", lambda: _plan(default=100, b=8))
     launch = usage.choose_launch("default", "sonnet")

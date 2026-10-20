@@ -222,6 +222,40 @@ def test_model_prefix_orders_after_account_and_profile():
     )
 
 
+# --- effort prefix (CLAUDE_CODE_EFFORT_LEVEL) ---------------------------------
+# Unlike the model, effort cannot drift in-session: while the var is set,
+# Claude refuses /effort ("Not applied: CLAUDE_CODE_EFFORT_LEVEL=… overrides
+# effort this session"). So the var WAS the pane's effort for its whole life,
+# and both restore paths re-emit it — dropping it on --resume would silently
+# move a resumed pane to the account's default effort.
+
+def test_effort_prefix_emitted_without_session():
+    line = _pane_line("s", "1", "1", "claude")
+    out, changed = resurrect._rewrite_line(
+        line, {"s:1.1": "%56"}, {}, {}, {}, {}, {"%56": "high"})
+    assert changed
+    assert out.split("\t")[10] == ":CLAUDE_CODE_EFFORT_LEVEL=high claude"
+
+
+def test_effort_prefix_emitted_with_resume():
+    pane_map, sess_map = _maps()
+    line = _pane_line("s", "1", "1", "claude")
+    out, changed = resurrect._rewrite_line(
+        line, pane_map, sess_map, {"%56": ALT}, {}, {"%56": "opus"}, {"%56": "max"})
+    assert changed
+    # Model still dropped on resume; effort kept, after the account.
+    assert out.split("\t")[10] == (
+        f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_CODE_EFFORT_LEVEL=max claude --resume {SID}"
+    )
+
+
+def test_effort_prefix_orders_after_model():
+    line = _pane_line("s", "1", "1", "claude")
+    out, _ = resurrect._rewrite_line(
+        line, {"s:1.1": "%56"}, {}, {}, {}, {"%56": "opus"}, {"%56": "low"})
+    assert out.split("\t")[10] == ":ANTHROPIC_MODEL=opus CLAUDE_CODE_EFFORT_LEVEL=low claude"
+
+
 def test_profile_prefix_not_doubled():
     pane_map, sess_map = _maps()
     line = _pane_line("s", "1", "1", _both_channels())

@@ -89,6 +89,7 @@ class Settings(TypedDict, total=False):
     bg_account: str  # account id background commander jobs bill; unset => default
     spawn_account: str  # account id every unnamed spawn lands on; unset => launch_policy decides
     spawn_model: str  # "auto" | "default" | ANTHROPIC_MODEL value; unset => "auto" (launch_policy decides)
+    spawn_effort: str  # "default" | config.EFFORT_LEVELS value; unset => "default" (no override)
     editor: str  # display name of a KNOWN_EDITORS entry; unset => no open-in-editor action
     poke_at: str  # local HH:MM the session poke fires; unset => "08:00", "" => disabled (validated by PATCH /api/settings)
     poke_grace_min: int  # minutes past poke_at a missed poke may still fire; unset => 90

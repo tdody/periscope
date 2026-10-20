@@ -19,12 +19,13 @@ import re
 import subprocess
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import httpx
 
-from periscope import activity, launch_policy, store
+from periscope import activity, config, launch_policy, store
 from periscope.cost_pressure import (
     CostSample,
     TailSummary,
@@ -677,7 +678,7 @@ def choose_launch(account: str | None = None, model: str | None = None) -> Launc
     `cached_plan_usage` never blocks, so a launch never waits on usage.
     """
     settings = store.get_settings()
-    return launch_policy.choose(launch_policy.LaunchInputs(
+    launch = launch_policy.choose(launch_policy.LaunchInputs(
         accounts=tuple(a["id"] for a in store.get_accounts() if a.get("id")),
         usage=cached_plan_usage(),
         account_arg=account,
@@ -686,3 +687,6 @@ def choose_launch(account: str | None = None, model: str | None = None) -> Launc
         model_pin=settings.get("spawn_model"),
         now=time.time(),
     ))
+    # No meter depends on effort, so the policy never sees it; the pin rides on
+    # the answer so every spawn path gets it from the same call as the model.
+    return replace(launch, effort=config.effort_env(settings.get("spawn_effort")) or None)

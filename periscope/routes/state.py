@@ -173,6 +173,7 @@ def build_state() -> dict:
         # launcher's seed stay fresh without a second fetch path.
         "spawn_account": store.get_settings().get("spawn_account"),
         "spawn_model": store.get_settings().get("spawn_model"),
+        "spawn_effort": store.get_settings().get("spawn_effort"),
         # The chooser's current answer — what an unnamed spawn would get right
         # now. Computed from the cache (never blocks) on every poll so the
         # header chip and the launcher's preselect track the meters.

@@ -413,3 +413,14 @@ def test_pane_resume_ids_reads_resume_uuid_from_argv(mocker):
     }))
     assert ss.pane_resume_ids() == {
         "%3": "828e314f-76fe-42af-a750-e48d1f0a5316"}
+
+
+def test_pane_efforts_reads_the_spawn_effort_from_env(mocker):
+    ss._config_dirs_cache = None
+    mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111, "%2": 222})
+    mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude", 222: "claude"}))
+    mocker.patch.object(ss, "_env_by_pid", return_value={
+        111: "claude PATH=/x CLAUDE_CODE_EFFORT_LEVEL=xhigh TERM=xterm",
+        222: "claude PATH=/x TERM=xterm",
+    })
+    assert ss.pane_efforts() == {"%1": "xhigh"}

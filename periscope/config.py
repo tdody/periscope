@@ -69,6 +69,16 @@ MODEL_ENV_VAR = "ANTHROPIC_MODEL"
 _MODEL_OK = re.compile(r"^[A-Za-z0-9._:\[\]-]+$")
 
 
+# Reasoning-effort override for a spawned pane — the header's effort pin. Same
+# carrier and reasons as the model, with one difference that shapes resurrect:
+# while this var is set Claude refuses /effort for the session ("Not applied:
+# CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this session"), so unlike the
+# model it can never drift from the spawn-time choice, and resurrect re-emits
+# it on both paths (see resurrect._rewrite_line).
+EFFORT_ENV_VAR = "CLAUDE_CODE_EFFORT_LEVEL"
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
 def profile_env(profile_id: str | None) -> str:
     """The PROFILE_ENV_VAR value for a profile id; "" for the default profile.
 
@@ -98,6 +108,19 @@ def model_env(model: str | None) -> str:
     if not m or m in ("default", "auto") or not _MODEL_OK.match(m):
         return ""
     return m
+
+
+def effort_env(effort: str | None) -> str:
+    """The EFFORT_ENV_VAR value for a pin choice; "" for "default" (Claude
+    decides, and /effort keeps working in the pane).
+
+    Checked against the closed list, unlike model aliases — the levels don't
+    move, and an unknown one is a stale pin or a periscope bug. Fails OPEN to
+    the default like `profile_env`.
+    """
+    if effort and effort in EFFORT_LEVELS:
+        return effort
+    return ""
 
 
 def claude_subprocess_env(*, config_dir: str) -> dict[str, str]:
