@@ -237,16 +237,26 @@ _REFUSED_RE = re.compile(
     r"Not applied|overrides this session|Failed to set effort|Model switch failed"
     r"|Unknown model|isn't available")
 _CONFIRM_RE = re.compile(r"Switch model\?|confirmation required")
+# "exceeds the cap" is deliberately NOT applied: Claude then runs at the cap,
+# not the requested level, and recording the request would mislabel the pane.
 _APPLIED_RE = {
-    "effort": re.compile(r"(?:Set effort level to|Effort level set to|exceeds the cap)"),
+    "effort": re.compile(r"(?:Set effort level to|Effort level set to)"),
     "model": re.compile(r"(?:Set model to|Model set to|Model reset to) "),
 }
 _OUTCOME_WAIT_S = 3.0
 
 
-def _command_outcome(target: str, setting: str, command: str) -> tuple[str, str]:
+def _plain_rows(raw: str) -> list[str]:
+    return [_ANSI_SGR_RE.sub("", r).replace("\xa0", " ").strip() for r in raw.split("\n")]
+
+
+def _command_outcome(target: str, setting: str, command: str, baseline: int) -> tuple[str, str]:
     """("applied" | "confirm" | "refused" | "unverified", Claude's line) for a
     command just typed into `target`, read off the rows under its echo.
+
+    `baseline` is how many times the echo was already on screen before the
+    send: an identical command from an earlier pick can still be in the
+    capture with its reply, and reading that would report the old outcome.
 
     "confirm" is `/model` in a session with history: Claude asks before
     switching, because the conversation is re-read at the new model's cost.
@@ -256,12 +266,11 @@ def _command_outcome(target: str, setting: str, command: str) -> tuple[str, str]
     while True:
         time.sleep(0.2)
         try:
-            rows = [_ANSI_SGR_RE.sub("", r).replace("\xa0", " ").strip()
-                    for r in capture(target).split("\n")]
+            rows = _plain_rows(capture(target))
         except Exception:
             rows = []
         hits = [i for i, r in enumerate(rows) if r == echo]
-        for line in rows[hits[-1] + 1:] if hits else []:
+        for line in rows[hits[-1] + 1:] if len(hits) > baseline else []:
             text = line.lstrip("⎿").strip()
             if _REFUSED_RE.search(text):
                 return "refused", text
@@ -296,7 +305,8 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
         raise HTTPException(404, f"no live pane for pid {pid!r}")
     target = f"{window['session']}:{window['index']}"
     try:
-        parsed = parse_pane(capture(target))
+        raw = capture(target)
+        parsed = parse_pane(raw)
     except Exception as e:
         raise HTTPException(500, f"could not read the pane: {e}") from e
     # The session status file is authoritative when the pane maps to a live
@@ -304,20 +314,29 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
     sess = session_state_for(session_id_for_pane(pane_id))
     if parsed.get("agent") != "claude" and not sess:
         raise HTTPException(409, "not a Claude pane")
+    # A local dialog (the "Switch model?" confirm a previous pick left open) is
+    # invisible to the session file, and Enter into it answers the dialog.
+    if parsed.get("needs_input"):
+        raise HTTPException(409, "the pane has a dialog open — answer it first")
     state = sess["state"] if sess else parsed.get("state")
     if state not in ("idle", "done"):
         raise HTTPException(409, f"pane is {state} — try again when it's idle")
     if parsed.get("pending_input"):
         raise HTTPException(409, "the pane has unsent text in its input box")
     command = f"/{setting} {arg}"
+    baseline = _plain_rows(raw).count(f"❯ {command}")
     _send_to_target(target, command, ["Enter"])
-    outcome, message = _command_outcome(target, setting, command)
+    outcome, message = _command_outcome(target, setting, command, baseline)
     if outcome == "refused":
         raise HTTPException(409, f"Claude refused {command}: {message}")
     if outcome == "applied":
         # Tied to the claude process it was typed into: a fresh claude in the
         # same pane starts at its own launch values, and window_view drops it.
-        set_window_fields(rpid or pid, **{f"session_{setting}": {
-            "value": value.strip(), "claude_pid": pane_claude_pids().get(pane_id)}})
+        # Keyed by @periscope_id and a real pid, or window_view's _while_live
+        # can never match it and the pick would show as applied but never land.
+        claude_pid = pane_claude_pids().get(pane_id)
+        if rpid and claude_pid:
+            set_window_fields(rpid, **{f"session_{setting}": {
+                "value": value.strip(), "claude_pid": claude_pid}})
     return {"ok": True, "pid": rpid or pid, "sent": command,
             "result": outcome, "message": message}

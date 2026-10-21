@@ -205,7 +205,6 @@ def test_rename_stamps_narrator_cooldown(client, mocker):
 # feature's safety: keystrokes into a busy pane land mid-turn, and into a pane
 # with a half-typed message they get appended to the user's draft.
 
-_IDLE_CLAUDE = "❯ \n" + "─" * 20 + "\n  [Opus 4.8] 12% context\n"
 _WINDOW = {"session": "periscope", "index": 4, "pid_raw": "abc123"}
 
 
@@ -375,4 +374,64 @@ def test_session_setting_reports_when_claude_says_nothing(client, mocker, clean_
     r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
     assert r.status_code == 200, r.text
     assert r.json()["result"] == "unverified"
+    assert "session_effort" not in get_window("abc123")
+
+
+def test_session_setting_refuses_a_pane_with_a_dialog_open(client, mocker, clean_state):
+    # The "Switch model?" confirm a previous pick left open is a local dialog:
+    # the session file still says idle, and Enter into it answers the switch.
+    send = _patch_live_pane(mocker, sess_state="idle", parsed={
+        "agent": "claude", "state": "needs-input", "needs_input": True, "pending_input": None})
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    assert "dialog" in r.json()["detail"]
+    send.assert_not_called()
+
+
+def test_session_setting_ignores_a_stale_echo_of_the_same_command(client, mocker, clean_state):
+    # An earlier `/effort high` and its reply are still in the capture; the new
+    # echo hasn't painted yet. That is not this command's outcome.
+    from periscope.routes import pane as pane_route
+    from periscope.store import get_window
+    _patch_live_pane(mocker)
+    stale = "older output\n❯\xa0/effort high\n  ⎿  Set effort level to high\n❯\xa0\n"
+    mocker.patch.object(pane_route, "capture", return_value=stale)
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "unverified"
+    assert "session_effort" not in get_window("abc123")
+
+
+def test_session_setting_reads_the_new_echo_past_a_stale_one(client, mocker, clean_state):
+    from periscope.routes import pane as pane_route
+    _patch_live_pane(mocker)
+    stale = "❯\xa0/effort high\n  ⎿  Not applied: CLAUDE_CODE_EFFORT_LEVEL=low overrides this session\n"
+    fresh = stale + "❯\xa0/effort high\n  ⎿  Set effort level to high\n❯\xa0\n"
+    mocker.patch.object(pane_route, "capture", side_effect=[stale, stale, fresh])
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "applied"
+
+
+def test_session_setting_does_not_record_a_capped_effort(client, mocker, clean_state):
+    # Claude ran at the cap, not the requested level; recording the request
+    # would label the pane with an effort it isn't at.
+    from periscope.store import get_window
+    _patch_live_pane(mocker, after="⎿  xhigh exceeds the cap for this model, using high")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=xhigh")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "unverified"
+    assert "session_effort" not in get_window("abc123")
+
+
+def test_session_setting_records_nothing_without_a_live_claude_pid(client, mocker, clean_state):
+    # window_view only shows the value while claude_pid matches the live one;
+    # a None pid never matches, so storing it would be a silent no-op.
+    from periscope.routes import pane as pane_route
+    from periscope.store import get_window
+    _patch_live_pane(mocker)
+    mocker.patch.object(pane_route, "pane_claude_pids", return_value={})
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "applied"
     assert "session_effort" not in get_window("abc123")
