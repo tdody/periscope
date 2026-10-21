@@ -299,7 +299,17 @@ export function PaperStack() {
   );
 }
 
-export function CtxScreen({ pct }) {
+// A window nearly full shows its context bar; a context that's merely
+// expensive to keep carrying (the server's cost band) asks for a compact.
+export function CtxScreen({ pct, cost }) {
+  if (cost) {
+    return (
+      <g>
+        <Screen />
+        <Label x="27.5" y="9.6" size="1.7" fill="#f2a33a" anchor="middle">compact?</Label>
+      </g>
+    );
+  }
   const p = Math.min(100, Math.max(0, pct ?? 90));
   return (
     <g>

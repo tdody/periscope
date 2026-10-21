@@ -1,14 +1,14 @@
 // What Clawd is on duty for (Tamagotchi.jsx): the pure part, so the priority
 // rule and every trigger unit-test without signals or a DOM.
 //
-// Needs-you, ready and running come from the rail's own builders
-// (split/attention.js) with the same dismissals, and the context band from the
-// rail's ctxClass: Clawd and the rail can never disagree about a pane.
+// Needs-you and ready come from the rail's own builders (split/attention.js)
+// with the same dismissals, a click goes through the rail's own row behaviour
+// (split/alertFeed.js openNeedsPane / openReadyPane), and the context band is
+// the rail's ctxClass: Clawd and the rail can never disagree about a pane.
 
-import { buildNeedsYou, buildReady, isSoftQuestion, waitTier } from "../split/attention.js";
+import { buildNeedsYou, buildReady, waitTier } from "../split/attention.js";
 import { ctxClass } from "../split/ctxBand.js";
 import { paneLabel } from "../util.js";
-import { STALE_AFTER_S } from "./usageSummary.js";
 
 // One slot, highest first: what each one is costing you right now. A blocked
 // agent beats a stalled API beats a blocked merge beats waiting results; the
@@ -25,8 +25,11 @@ function waited(sinceSec, nowSec) {
   return min < 60 ? ` (${min} min)` : ` (${Math.floor(min / 60)}h ${min % 60}m)`;
 }
 
-const paneTarget = (w, extra = {}) =>
-  w ? { action: "pane", target: w.target, pid: w.pid, says: `open ${paneLabel(w)}`, ...extra } : null;
+// Click targets carry ids, not window objects: dutyItems' output is
+// JSON-keyed to spare re-renders, and the widget looks the live window up by
+// pid at click time, so a pane renumbered since (tmux renumber-windows) can't
+// send the click to its neighbour.
+const pane = (action, w, extra = {}) => ({ action, pid: w.pid, says: `open ${paneLabel(w)}`, ...extra });
 
 // Everything pending, in DUTY_ORDER. Each item: { kind, label (the bubble's
 // text), count (what it adds to the other items' "+N"), phrase (the hover's
@@ -37,17 +40,18 @@ const paneTarget = (w, extra = {}) =>
 // asks nothing of you, and you're usually looking at the pane that merged.
 export function dutyItems({
   windows = [], alerts = [], dismissedAlertIds = new Set(), dismissedNeedsPids = new Set(),
-  dismissedReadyPids = new Set(), selectedPid = null, needsSince = {}, parties = [], update = null, nowSec,
+  dismissedReadyPids = new Set(), selectedPid = null, parties = [], update = null, nowSec,
 }) {
   const items = [];
   const notSelected = (w) => !w || selectedPid == null || String(w.pid) !== String(selectedPid);
   const live = windows.filter(notSelected);
+  const byPid = new Map(windows.map((w) => [String(w.pid), w]));
 
-  // A live question has no start time on /api/state; clawdWatch records the
-  // first poll that showed it.
+  // A live question's age comes from the server's needs-input edge stamp
+  // (needs_since), so it survives a reload; an event row's from its alert.
   const needs = buildNeedsYou(windows, alerts, dismissedAlertIds, dismissedNeedsPids).filter((r) => notSelected(r.w));
   if (needs.length) {
-    const since = (r) => (r.kind === "event" ? r.ts : (needsSince[r.pid] ?? nowSec));
+    const since = (r) => (r.kind === "event" ? r.ts : (r.w?.needs_since || nowSec));
     const oldest = needs.reduce((a, b) => (since(b) < since(a) ? b : a));
     const name = oldest.w ? paneLabel(oldest.w) : oldest.name || oldest.session || "a pane";
     items.push({
@@ -55,9 +59,10 @@ export function dutyItems({
       urgent: waitTier(since(oldest), nowSec) !== "fresh",
       phrase: needs.length === 1 ? `${name} needs you${waited(since(oldest), nowSec)}`
         : `needs you in ${needs.length} panes · ${name} has waited longest${waited(since(oldest), nowSec)}`,
-      target: oldest.kind === "live"
-        ? paneTarget(oldest.w, { dismissNeeds: isSoftQuestion(oldest.w) })
-        : { action: "pane", target: oldest.target, pid: oldest.w?.pid, says: `open ${name}` },
+      // A live row opens the way the rail's NEEDS YOU row does; an event row
+      // reveals its pane, as the rail's event row does.
+      target: oldest.kind === "live" ? pane("needs", oldest.w)
+        : { action: "reveal", target: oldest.target, says: `open ${name}` },
     });
   }
 
@@ -66,7 +71,7 @@ export function dutyItems({
     items.push({
       kind: "api", count: api.length, label: "API",
       phrase: `the Anthropic API is erroring in ${plural(api.length, "pane")}, not your code`,
-      target: paneTarget(api[0]),
+      target: pane("select", api[0]),
     });
   }
 
@@ -84,7 +89,7 @@ export function dutyItems({
     items.push({
       kind: "ci", count: red.length, label: String(red.length),
       phrase: red.length === 1 ? `PR #${red[0].pr} is failing CI` : `${red.length} PRs failing CI`,
-      target: paneTarget(red[0].panes[0]),
+      target: pane("select", red[0].panes[0]),
     });
   }
 
@@ -95,43 +100,51 @@ export function dutyItems({
     items.push({
       kind: "done", count: ready.length, label: String(ready.length),
       phrase: ready.length === 1 ? `${name} finished` : `${ready.length} panes finished`,
-      target: first.kind === "live"
-        ? paneTarget(first.w, { dismissReady: true })
-        : { action: "pane", target: first.target, pid: first.w?.pid, says: `open ${name}` },
+      target: first.kind === "live" ? pane("ready", first.w)
+        : { action: "reveal", target: first.target, says: `open ${name}` },
     });
   }
 
+  // A click opens the merged pane if it's still there and ends the party
+  // either way; the hover says which.
   const partying = parties.filter((p) => nowSec - p.at < PARTY_S);
   if (partying.length) {
     const p = partying[partying.length - 1];
+    const w = byPid.get(String(p.pid));
     items.push({
       kind: "merged", count: partying.length, label: String(partying.length),
       phrase: partying.length === 1 ? `PR #${p.pr} merged 🎉` : `${partying.length} PRs merged 🎉`,
-      target: { action: "party", target: p.target, pid: p.pid, key: p.key, says: `open PR #${p.pr}` },
+      target: { action: "party", key: p.key, pid: w ? w.pid : null, says: w ? `open ${paneLabel(w)}` : "end the party" },
     });
   }
 
+  // The rail's red band has two causes, and the hover names the one at hand:
+  // a window nearly full (context_pct, the auto-compact hazard) or a context
+  // expensive to keep carrying (the server's cost band, `ctx_class: "hot"`).
   const hot = live.filter((w) => ctxClass(w) === " ctx-hot");
   if (hot.length) {
-    const fullest = hot.reduce((a, b) => ((b.context_pct ?? 0) > (a.context_pct ?? 0) ? b : a));
-    const pct = fullest.context_pct != null ? Math.round(fullest.context_pct) : null;
+    const full = hot.filter((w) => (w.context_pct ?? 0) >= 80);
+    const lead = full.length ? full.reduce((a, b) => (b.context_pct > a.context_pct ? b : a)) : hot[0];
+    const pct = full.length ? Math.round(lead.context_pct) : null;
+    const phrase = hot.length > 1 ? `${hot.length} panes worth compacting`
+      : pct != null ? `${paneLabel(lead)} is running out of context (${pct}%)`
+      : `${paneLabel(lead)} is costly to keep carrying${lead.ctx_hint ? `: ${lead.ctx_hint}` : ""}`;
     items.push({
-      kind: "ctx", count: hot.length, label: pct != null ? `${pct}%` : String(hot.length), pct,
-      phrase: hot.length === 1 ? `${paneLabel(fullest)} is running out of context${pct != null ? ` (${pct}%)` : ""}`
-        : `${hot.length} panes running out of context`,
-      target: paneTarget(fullest),
+      kind: "ctx", count: hot.length, label: pct != null ? `${pct}%` : String(hot.length), pct, cost: pct == null,
+      phrase, target: pane("select", lead),
     });
   }
 
-  // A pane whose linked PR has merged or closed: its worktree's work is done.
-  // Read off /api/state, not /api/cleanup/candidates — that walks every
-  // worktree's git state (two minutes on a checkout with a hundred of them)
-  // and lists long-idle worktrees no pane is using, a standing count that
-  // would keep Clawd sweeping forever.
+  // A pane at a linked worktree's root whose linked PR merged or closed: the
+  // worktree's work is done, and it's exactly what the cleanup dialog lists and
+  // its archive kills. The main checkout and subdirs never count, or a PR
+  // linked from them would keep Clawd sweeping forever. Read off /api/state,
+  // not /api/cleanup/candidates, which walks every worktree's git state.
   const finished = new Map();
   for (const w of live) {
-    const key = w.cwd || w.target;
-    if (w.pr && (w.pr_state === "merged" || w.pr_state === "closed") && !finished.has(key)) finished.set(key, w);
+    if (w.linked_worktree_root && w.pr && (w.pr_state === "merged" || w.pr_state === "closed") && !finished.has(w.cwd)) {
+      finished.set(w.cwd, w);
+    }
   }
   if (finished.size) {
     const [w] = finished.values();
@@ -159,35 +172,8 @@ export function moreCount(items) {
   return items.slice(1).reduce((n, i) => n + i.count, 0);
 }
 
-// Every account walled (session or weekly at 100%, the meters launch routing
-// treats as walls, docs/account-routing.md) means no launch can go anywhere:
-// Clawd naps until the soonest account comes back. An account that's stale or
-// unavailable can't be called walled, so it keeps Clawd awake. One account
-// walled while another has room isn't a nap at all — routing moves work there.
-// Returns { until } (epoch seconds, or null when no reset time is known) or null.
-const WALL_METERS = ["session", "week_all"];
-export function walledUntil(plan, nowSec) {
-  const entries = Object.values(plan || {});
-  if (!entries.length) return null;
-  let soonest = null;
-  let known = false;
-  for (const e of entries) {
-    if (!e?.available || !e.meters) return null;
-    if (e.fetched_at && nowSec - e.fetched_at > STALE_AFTER_S) return null;
-    const walls = WALL_METERS.map((k) => e.meters[k]).filter((m) => m && m.percent >= 100);
-    if (!walls.length) return null;
-    // An account is back once every meter walling it has reset.
-    const resets = walls.map((m) => m.resets_at).filter(Boolean);
-    if (resets.length !== walls.length) continue;
-    const back = Math.max(...resets);
-    if (!known || back < soonest) soonest = back;
-    known = true;
-  }
-  return { until: known ? soonest : null };
-}
-
-// "3pm", "3:40pm"; a reset more than 20 hours out (a weekly wall) also names
-// the day: { day: "Thu", time: "3pm" }.
+// The nap's reset time (`/api/state.walls.until`, launch_policy.walls): "3pm",
+// "3:40pm"; a reset more than 20 hours out (a weekly wall) also names the day.
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function wallLabel(until, nowSec) {
   if (!until) return { day: null, time: "later" };
@@ -202,24 +188,21 @@ export function wallPhrase({ day, time }) {
   return `every account is at its limit until ${day ? `${day} ` : ""}${time}`;
 }
 
-// The scene that actually plays at the desk: a nap while every account is
-// walled, a sweep when cleanup is the top item, otherwise the schedule's.
-export function deskScene(activity, topKind, walled) {
-  if (activity !== "code") return activity;
-  if (walled) return "nap";
-  return topKind === "clean" ? "sweep" : activity;
+// The kinds that take over the monitor; with any other on top (or none) the
+// monitor keeps mirroring the working agents.
+const SCREEN_KINDS = new Set(["done", "merged", "ci", "api", "ctx"]);
+
+// What the scene plays, for the drawing and the hover alike: a nap while
+// every account is walled, a sweep when cleanup is on top, else the
+// schedule's. At the desk, the mood shows only with nothing on duty, and the
+// monitor mirrors the agents unless the top kind needs the screen.
+export function deskView(activity, topKind, walled) {
+  const scene = activity !== "code" ? activity : walled ? "nap" : topKind === "clean" ? "sweep" : activity;
+  const atDesk = scene === "code";
+  return { scene, atDesk, moodShown: atDesk && !topKind, showsPanes: atDesk && !SCREEN_KINDS.has(topKind) };
 }
 
-// ---- watcher transitions (clawdWatch.js runs these on every poll) ---------
-
-// pid -> the first poll time that showed the pane waiting on you.
-export function nextNeedsSince(prev, windows, nowSec) {
-  const next = {};
-  for (const w of windows || []) {
-    if (w.state === "needs-input" && w.pid) next[w.pid] = prev[w.pid] ?? nowSec;
-  }
-  return next;
-}
+// ---- watcher transition (clawdWatch.js runs it on every poll) -------------
 
 // A linked PR's pr_state turning open → merged between two polls throws a
 // party. The first sighting of a pane only records its state, so a reload
@@ -234,7 +217,7 @@ export function nextMergeWatch({ states, parties }, windows, nowSec) {
     next[w.pid] = { pr: w.pr, state: w.pr_state };
     const key = `${w.pid}#${w.pr}`;
     if (was?.pr === w.pr && was.state === "open" && w.pr_state === "merged" && !out.some((p) => p.key === key)) {
-      out.push({ key, pid: w.pid, target: w.target, pr: w.pr, title: w.pr_title || "", at: nowSec });
+      out.push({ key, pid: w.pid, pr: w.pr, title: w.pr_title || "", at: nowSec });
     }
   }
   return { states: next, parties: out };
