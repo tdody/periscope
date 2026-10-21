@@ -23,12 +23,18 @@
 // external rebase may already have fixed it, and a refused pull aborts before
 // launchd is touched (see docs/updating.md > "Ordering is the safety
 // property"). Warn, don't block.
+import { signal } from "@preact/signals";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { updateInfo } from "../store.js";
 import { apiCall } from "../util.js";
 
 const POLL_MS = 2000;
+
+// Bumped by Clawd's parcel (chrome/Tamagotchi.jsx) to open this popover, so a
+// click on the mascot lands on the same commit list and button as the pill —
+// never a second, unreviewed way to start an update.
+export const updatePopoverRequest = signal(0);
 // The updater re-provisions (plist rewrite, bootout/bootstrap, hook install)
 // then waits for healthz. Past this, stop polling and let the banner speak.
 const GIVE_UP_MS = 120_000;
@@ -80,6 +86,12 @@ export function UpdatePill() {
   useEffect(() => {
     if (!behind) setOpen(false);
   }, [behind]);
+
+  // Before the early return (hooks run unconditionally); `toggle` is hoisted.
+  const popoverRequest = updatePopoverRequest.value;
+  useEffect(() => {
+    if (popoverRequest && behind && !open) toggle();
+  }, [popoverRequest]);
 
   // No info yet (dev instance, or pre-first-check), current, and not mid-run.
   if (!info || (!behind && !info.running && !busy && !error)) return null;

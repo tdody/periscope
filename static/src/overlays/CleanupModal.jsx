@@ -16,9 +16,12 @@ import { useEscape } from "../hooks/useEscape.js";
 import { track } from "../track.js";
 import { modalRequest } from "./modalRequest.js";
 
-const open = signal(false);
+// Exported for Clawd (chrome/Tamagotchi.jsx), whose broom opens this modal
+// and whose cleanup count refreshes when it closes.
+export const cleanupOpen = signal(false);
+const open = cleanupOpen;
 
-function openCleanupModal() {
+export function openCleanupModal() {
   open.value = true;
   track("overlay.open", { which: "cleanup" });
 }
