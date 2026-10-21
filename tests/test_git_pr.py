@@ -66,6 +66,24 @@ def test_git_state_for_returns_branch_for_mocked_git_repo(tmp_path, mocker):
     assert out["git"] == "clean"
 
 
+def test_git_state_for_marks_only_a_linked_worktree_root(tmp_path):
+    """The cleanup dialog lists, and its archive kills, only panes sitting at
+    a linked worktree's root: not the main checkout, not a subdir."""
+    repo, wt = tmp_path / "repo", tmp_path / "wt"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+    git("worktree", "add", "-q", str(wt), "-b", "feat")
+    (wt / "sub").mkdir()
+    assert git_state_for(str(repo))["linked_worktree_root"] is False
+    assert git_state_for(str(wt))["linked_worktree_root"] is True
+    assert git_state_for(str(wt / "sub"))["linked_worktree_root"] is False
+
+
 def _mock_git(mocker, *, diff="", untracked="", ahead="0"):
     """Patch _run so git_state_for sees a controlled repo shape."""
     def fake_run(cmd, cwd=None, timeout=3.0):
