@@ -186,3 +186,90 @@ describe("<Tamagotchi>", () => {
     expect(html).not.toContain("burning");
   });
 });
+
+describe("Clawd on duty", () => {
+  const scene = (activity, duty, extra = {}) =>
+    render(<TamaScene activity={activity} duty={duty && { label: "2", more: 0, ...duty }} {...extra} />);
+  const count = (html, needle) => html.split(needle).length - 1;
+
+  it("draws the bubble, with its +N, only while something is on duty", () => {
+    expect(scene("code", null)).not.toContain("tama-bubble");
+    const html = scene("eat", { kind: "ci", label: "3", more: 4 });
+    expect(html).toContain("tama-bubble");
+    expect(html).toContain(">3<");
+    expect(html).toContain(">+4<");
+    expect(scene("code", { kind: "bell", urgent: true })).toContain("tama-bubble-urgent");
+  });
+
+  it("acts each kind out at the desk", () => {
+    const bell = scene("code", { kind: "bell" });
+    expect(bell).toContain("tama-slap");
+    expect(bell).not.toContain('x="20.4"'); // the service bell takes the keyboard's spot
+    expect(scene("code", { kind: "ci" })).toContain("tama-spray");
+    expect(scene("code", { kind: "api" })).toContain("tama-orbit");
+    expect(scene("code", { kind: "api" })).not.toContain("tama-eyes");
+    expect(scene("code", { kind: "done" })).toContain("tama-cheer");
+    expect(scene("code", { kind: "ctx", label: "87%", pct: 87 })).toContain("tama-stack");
+    expect(scene("code", { kind: "update" })).toContain("tama-parcel");
+    const merged = scene("code", { kind: "merged" }, { party: true });
+    for (const piece of ["tama-hat-party", "tama-firework", "tama-confetti", ">merged<"]) expect(merged).toContain(piece);
+  });
+
+  it("asleep, only the bell wakes Clawd", () => {
+    const bell = scene("sleep", { kind: "bell" });
+    expect(bell).toContain("tama-alarm");
+    expect(bell).not.toContain("tama-eyes-closed");
+    expect(bell).not.toContain("tama-z");
+    const done = scene("sleep", { kind: "done" });
+    expect(done).toContain("tama-eyes-closed");
+    expect(done).not.toContain("tama-sparkle");
+    expect(done).toContain("tama-bubble");
+  });
+
+  it("away from the desk, only the face kinds change Clawd", () => {
+    expect(scene("eat", { kind: "ci" })).not.toContain("tama-spray");
+    expect(scene("eat", { kind: "api" })).toContain("tama-orbit");
+    expect(scene("read", { kind: "bell" })).toContain("tama-startle");
+    expect(scene("run", { kind: "api" }, { occasion: "halloween" })).not.toContain("tama-orbit");
+  });
+
+  it("naps at the desk while every account is walled, under the bubble", () => {
+    const html = scene("code", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
+    expect(html).toContain('data-activity="nap"');
+    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-bubble"]) expect(html).toContain(piece);
+    expect(html).not.toContain("tama-slap");
+    expect(scene("read", null, { walled: { day: "Thu", time: "3pm" } })).toContain('data-activity="read"');
+  });
+
+  it("leaves the desk to sweep when cleanup is on top", () => {
+    const html = scene("code", { kind: "clean" });
+    expect(html).toContain('data-activity="sweep"');
+    expect(html).toContain("tama-broom");
+    expect(html).not.toContain("tama-desk");
+  });
+
+  it("lights one split per working agent, up to four", () => {
+    expect(count(scene("code", null, { working: 2 }), "tama-type")).toBe(6);
+    expect(count(scene("code", null, { working: 3 }), "tama-type")).toBe(6);
+    const busy = scene("code", null, { working: 7 });
+    expect(count(busy, "tama-type")).toBe(8);
+    expect(busy).toContain('data-working="4"');
+    expect(scene("code", null, { working: 0 })).toContain('data-working="0"');
+    expect(scene("code", null)).not.toContain("data-working");
+  });
+
+  it("keeps the party hat on through a higher item, without the fireworks", () => {
+    const html = scene("code", { kind: "bell" }, { party: true });
+    expect(html).toContain("tama-hat-party");
+    expect(html).not.toContain("tama-firework");
+  });
+
+  it("puts the moods away while on duty", () => {
+    expect(scene("code", { kind: "bell" }, { mood: "furious" })).not.toContain("data-mood");
+  });
+
+  it("moves the new-year fireworks clear of the bubble", () => {
+    expect(count(render(<TamaScene activity="eat" occasion="newyear" />), "tama-firework")).toBe(2);
+    expect(count(scene("eat", { kind: "update" }, { occasion: "newyear" }), "tama-firework")).toBe(3);
+  });
+});
