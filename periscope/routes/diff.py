@@ -5,6 +5,7 @@
 
 See periscope.gitdiff for why this is git-backed rather than transcript-derived.
 """
+
 from fastapi import APIRouter, HTTPException, Query
 
 from periscope import activity, gitdiff
@@ -23,8 +24,7 @@ def fs_diff(
     target = f"{session}:{index}"
     # One fork for both fields — same pattern as turns.get_turns_for_pane.
     try:
-        meta = tmux("display-message", "-t", target, "-p",
-                    "#{pane_id}\t#{pane_current_path}").strip()
+        meta = tmux("display-message", "-t", target, "-p", "#{pane_id}\t#{pane_current_path}").strip()
     except Exception:
         raise HTTPException(404, f"unknown pane: {target}") from None
     pane_id, _, cwd = meta.partition("\t")
@@ -42,18 +42,15 @@ def fs_diff(
     else:
         sid = activity.get_pane_session(pane_id)
         if not sid:
-            raise HTTPException(
-                409, "no Claude session recorded for this pane yet")
+            raise HTTPException(409, "no Claude session recorded for this pane yet")
         rec = activity.get_session_base(sid)
         if not rec:
-            raise HTTPException(
-                409, "this session started before diff tracking — branch scope works")
+            raise HTTPException(409, "this session started before diff tracking — branch scope works")
         base_repo, base = rec
         # A pane that cd'd into a different repo mid-session has a baseline that
         # means nothing here; say so rather than rendering a bogus diff.
         if base_repo != repo:
-            raise HTTPException(
-                409, f"session baseline was taken in {base_repo}, not {repo}")
+            raise HTTPException(409, f"session baseline was taken in {base_repo}, not {repo}")
 
     out = gitdiff.diff_for(repo, base, context)
     out["scope"] = scope

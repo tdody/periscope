@@ -83,8 +83,21 @@ async def ws_pane(
     # the pane-switch path, where this runs on every connect.
     def set_pane_size(c: int, r: int) -> None:
         with contextlib.suppress(Exception):
-            tmux("setw", "-t", target, "window-size", "manual", ";",
-                 "resize-window", "-t", target, "-x", str(c), "-y", str(r))
+            tmux(
+                "setw",
+                "-t",
+                target,
+                "window-size",
+                "manual",
+                ";",
+                "resize-window",
+                "-t",
+                target,
+                "-x",
+                str(c),
+                "-y",
+                str(r),
+            )
 
     # 1+2) One fork: resize to the client's hint, then read tmux's view of the
     #    pane back. The resize must land BEFORE the initial capture or box-
@@ -97,15 +110,35 @@ async def ws_pane(
     #    %pane_id address — window_view reads recency_stamps_for(
     #    f"{session}:{index}")). If the pane is gone, close: the client's
     #    reconnect FSM handles it.
-    meta_fmt = ("#{pane_width}|#{pane_height}|#{cursor_x}|#{cursor_y}"
-                "|#{alternate_on}|#{pane_id}|#{session_name}|#{window_index}"
-                "|#{mouse_any_flag}")
+    meta_fmt = (
+        "#{pane_width}|#{pane_height}|#{cursor_x}|#{cursor_y}"
+        "|#{alternate_on}|#{pane_id}|#{session_name}|#{window_index}"
+        "|#{mouse_any_flag}"
+    )
 
     def size_then_meta(c: int, r: int) -> str:
         if c > 0 and r > 0:
-            out = tmux("setw", "-t", target, "window-size", "manual", ";",
-                       "resize-window", "-t", target, "-x", str(c), "-y", str(r), ";",
-                       "display-message", "-t", target, "-p", meta_fmt)
+            out = tmux(
+                "setw",
+                "-t",
+                target,
+                "window-size",
+                "manual",
+                ";",
+                "resize-window",
+                "-t",
+                target,
+                "-x",
+                str(c),
+                "-y",
+                str(r),
+                ";",
+                "display-message",
+                "-t",
+                target,
+                "-p",
+                meta_fmt,
+            )
             # tmux aborts the chain at the first failing command. A resize
             # failure has always been non-fatal here, so don't let it take the
             # handshake down — re-ask for the meta on its own.
@@ -114,10 +147,8 @@ async def ws_pane(
         return tmux("display-message", "-t", target, "-p", meta_fmt)
 
     try:
-        meta = await loop.run_in_executor(
-            None, lambda: size_then_meta(cols, rows))
-        (cols_s, rows_s, cx_s, cy_s, alt_s,
-         _pane_id, session_name, window_index, mouse_s) = meta.strip().split("|")
+        meta = await loop.run_in_executor(None, lambda: size_then_meta(cols, rows))
+        (cols_s, rows_s, cx_s, cy_s, alt_s, _pane_id, session_name, window_index, mouse_s) = meta.strip().split("|")
         cols, rows = int(cols_s), int(rows_s)
         cx, cy = int(cx_s), int(cy_s)
         alt_on = alt_s == "1"
@@ -143,12 +174,8 @@ async def ws_pane(
 
     sub = await tmux_mirror.subscribe(session_name, pane_id)
     async with sub:
-        await websocket.send_text(
-            json.dumps({"type": "size", "cols": cols, "rows": rows})
-        )
-        await websocket.send_text(
-            json.dumps({"type": "mouse", "on": mouse_on})
-        )
+        await websocket.send_text(json.dumps({"type": "size", "cols": cols, "rows": rows}))
+        await websocket.send_text(json.dumps({"type": "mouse", "on": mouse_on}))
 
         # 3) Initial paint, via the fork path — NOT the control client: a
         #    50k-history `-e` capture can run multi-MB, and tmux holds all
@@ -161,8 +188,9 @@ async def ws_pane(
         # -N preserves trailing spaces; without it capture-pane strips them and
         # the cursor row renders short while the cursor goes to tmux's true
         # column, leaving a one-cell gap (see tmux_mirror._fire_reconcile).
-        initial = await loop.run_in_executor(None, lambda: tmux(
-            "capture-pane", "-t", target, "-p", "-e", "-N", "-S", "-10000"))
+        initial = await loop.run_in_executor(
+            None, lambda: tmux("capture-pane", "-t", target, "-p", "-e", "-N", "-S", "-10000")
+        )
         # capture-pane separates lines with \n AND appends one more \n
         # after the final line. Strip exactly that final terminator and
         # convert internal \n to \r\n so xterm wraps each line back to
@@ -177,12 +205,11 @@ async def ws_pane(
             body = ""
         prefix = ""
         if alt_on:
-            prefix += "\x1b[?1049h"   # enter alt-screen buffer
-        prefix += "\x1b[2J\x1b[H"      # clear screen, home cursor
+            prefix += "\x1b[?1049h"  # enter alt-screen buffer
+        prefix += "\x1b[2J\x1b[H"  # clear screen, home cursor
         # ANSI positioning is 1-indexed; tmux's #{cursor_x/y} are 0-indexed.
         suffix = f"\x1b[{cy + 1};{cx + 1}H"
-        await websocket.send_bytes(
-            (prefix + body + suffix).encode("utf-8", errors="replace"))
+        await websocket.send_bytes((prefix + body + suffix).encode("utf-8", errors="replace"))
 
         # 4) Mirror → websocket. On EOF (pane died, mirror died, shutdown)
         #    close the socket — strictly more honest than the old silent
@@ -238,9 +265,7 @@ async def ws_pane(
                         rc = int(ctrl.get("cols") or 0)
                         rr = int(ctrl.get("rows") or 0)
                         if rc > 0 and rr > 0:
-                            await loop.run_in_executor(
-                                None, lambda c=rc, r=rr: set_pane_size(c, r)
-                            )
+                            await loop.run_in_executor(None, lambda c=rc, r=rr: set_pane_size(c, r))
                             # Reflow redraws can race the relay; an
                             # authoritative frame settles the result.
                             sub.request_reconcile()

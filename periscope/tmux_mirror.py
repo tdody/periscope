@@ -23,12 +23,12 @@ from dataclasses import dataclass
 
 from periscope.log import _task, log
 
-QUIESCE_S = 0.15        # reconcile this long after output stops
-MAX_INTERVAL_S = 1.0    # ... or at least this often during sustained output
-LINGER_S = 20.0         # keep a session client alive after its last viewer
-                        # (rail navigation unmounts before remounting)
+QUIESCE_S = 0.15  # reconcile this long after output stops
+MAX_INTERVAL_S = 1.0  # ... or at least this often during sustained output
+LINGER_S = 20.0  # keep a session client alive after its last viewer
+# (rail navigation unmounts before remounting)
 STREAM_LIMIT = 1 << 20  # asyncio readline limit; %output burst lines can
-                        # exceed the 64KB default
+# exceed the 64KB default
 
 # Integration tests monkeypatch this to target a dedicated `-L` server.
 _TMUX: tuple[str, ...] = ("tmux",)
@@ -72,9 +72,7 @@ class ControlParser:
         self._block_tokens: tuple[bytes, bytes] | None = None
         self._block_lines: list[bytes] = []
 
-    def feed_line(
-        self, line: bytes
-    ) -> Output | Reply | ReplyError | LayoutChange | Exit | None:
+    def feed_line(self, line: bytes) -> Output | Reply | ReplyError | LayoutChange | Exit | None:
         if self._block_tokens is not None:
             for marker, cls in ((b"%end ", Reply), (b"%error ", ReplyError)):
                 if line.startswith(marker):
@@ -130,10 +128,10 @@ def decode_octal(raw: bytes) -> bytes:
 
 @dataclass(frozen=True, kw_only=True)
 class GridSnapshot:
-    rows: tuple[bytes, ...]   # capture-pane -e body lines (raw — reply
-                              # bodies are NOT octal-escaped, verified)
+    rows: tuple[bytes, ...]  # capture-pane -e body lines (raw — reply
+    # bodies are NOT octal-escaped, verified)
     height: int
-    cursor_x: int             # 0-indexed, as tmux reports
+    cursor_x: int  # 0-indexed, as tmux reports
     cursor_y: int
     alt_on: bool
     cursor_visible: bool
@@ -186,8 +184,7 @@ class ReconcileTimer:
     frame itself is built later, inside the reader task (ordering rule).
     """
 
-    def __init__(self, fire: Callable[[], None], *,
-                 now: Callable[[], float] | None = None) -> None:
+    def __init__(self, fire: Callable[[], None], *, now: Callable[[], float] | None = None) -> None:
         self._fire = fire
         self._now = now
         self._handle: asyncio.TimerHandle | None = None
@@ -275,16 +272,20 @@ class _SessionMirror:
         # non-viewed windows (viewed panes are already window-size manual).
         # read-only: belt and braces — the mirror only ever reads.
         self._proc = await asyncio.create_subprocess_exec(
-            *_TMUX, "-C", "attach", "-t", self.session,
-            "-f", "ignore-size,read-only",
+            *_TMUX,
+            "-C",
+            "attach",
+            "-t",
+            self.session,
+            "-f",
+            "ignore-size,read-only",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             limit=STREAM_LIMIT,
         )
         self._reader = _task(f"tmux-mirror:{self.session}", self._read_loop())
-        log.info("tmux mirror client up for session %r (pid=%s)",
-                 self.session, self._proc.pid)
+        log.info("tmux mirror client up for session %r (pid=%s)", self.session, self._proc.pid)
 
     # -- subscriptions --
 
@@ -295,8 +296,7 @@ class _SessionMirror:
         sub = Subscription(self, pane_id)
         self._subs.setdefault(pane_id, []).append(sub)
         if pane_id not in self._timers:
-            self._timers[pane_id] = ReconcileTimer(
-                fire=lambda p=pane_id: self._fire_reconcile(p))
+            self._timers[pane_id] = ReconcileTimer(fire=lambda p=pane_id: self._fire_reconcile(p))
         # Connect-time reconcile: ws.py sends the initial blob via the
         # fork path (a multi-MB reply here would head-of-line-block every
         # %output in the session); this heals the capture-vs-subscribe gap
@@ -314,8 +314,7 @@ class _SessionMirror:
             if timer:
                 timer.cancel()
         if not self._subs and self._proc is not None and self._linger is None:
-            self._linger = asyncio.get_running_loop().call_later(
-                LINGER_S, self._kill)
+            self._linger = asyncio.get_running_loop().call_later(LINGER_S, self._kill)
 
     def request_reconcile(self, pane_id: str) -> None:
         timer = self._timers.get(pane_id)
@@ -350,9 +349,7 @@ class _SessionMirror:
         finally:
             self._finalize()
 
-    def _dispatch(
-        self, event: Output | Reply | ReplyError | LayoutChange
-    ) -> None:
+    def _dispatch(self, event: Output | Reply | ReplyError | LayoutChange) -> None:
         if isinstance(event, Output):
             subs = self._subs.get(event.pane_id)
             if subs:  # pane-id check before decode: unviewed panes are free
@@ -374,9 +371,7 @@ class _SessionMirror:
 
     # -- reconciliation --
 
-    def _send_command(
-        self, cmd: str, on_reply: Callable[[Reply | ReplyError], None]
-    ) -> None:
+    def _send_command(self, cmd: str, on_reply: Callable[[Reply | ReplyError], None]) -> None:
         assert self._proc is not None and self._proc.stdin is not None
         self._reply_callbacks.append(on_reply)
         # No drain(): commands are tens of bytes; a full OS pipe here
@@ -420,8 +415,7 @@ class _SessionMirror:
         # is intact and the cursor sits at worst one cell behind, corrected by
         # the next byte. Reported as "cursor is one ahead of where typing lands,
         # with stuttering as it reconciles".
-        self._send_command(
-            f"display-message -p -t {pane_id} '{DISPLAY_FMT}'", on_display)
+        self._send_command(f"display-message -p -t {pane_id} '{DISPLAY_FMT}'", on_display)
         # -N preserves trailing spaces. WITHOUT it capture-pane strips them, so
         # a row whose content ends in whitespace renders SHORT while the cursor
         # is still placed at tmux's true column — one empty cell between the
@@ -439,8 +433,7 @@ class _SessionMirror:
         if timer:
             timer.cancel()
         if not self._subs and self._proc is not None and self._linger is None:
-            self._linger = asyncio.get_running_loop().call_later(
-                LINGER_S, self._kill)
+            self._linger = asyncio.get_running_loop().call_later(LINGER_S, self._kill)
 
     def _kill(self) -> None:
         if self._proc is not None and self._proc.returncode is None:

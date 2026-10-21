@@ -53,13 +53,26 @@ async def _spawn() -> asyncio.subprocess.Process:
     # creates so a respawn after a tmux restart reuses it; detached, an idle
     # shell, shares no windows with user panes.
     create = await asyncio.create_subprocess_exec(
-        *_TMUX, "new-session", "-d", "-A", "-s", INPUT_CTL_SESSION,
-        "-x", "80", "-y", "24",
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        *_TMUX,
+        "new-session",
+        "-d",
+        "-A",
+        "-s",
+        INPUT_CTL_SESSION,
+        "-x",
+        "80",
+        "-y",
+        "24",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     await create.wait()
     proc = await asyncio.create_subprocess_exec(
-        *_TMUX, "-C", "attach", "-t", INPUT_CTL_SESSION,
+        *_TMUX,
+        "-C",
+        "attach",
+        "-t",
+        INPUT_CTL_SESSION,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,

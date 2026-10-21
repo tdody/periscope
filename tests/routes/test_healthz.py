@@ -24,27 +24,37 @@ def test_healthz_returns_ok_with_metadata():
     assert data["codex_hook"]["hook_version"] == 1
     assert "trusted" not in data["codex_hook"]
     assert set(data["resurrect"]) == {
-        "ok", "plugins", "conf_sourced", "restore_on", "processes_ok",
-        "hook_current", "last_save_at", "last_save_stale",
+        "ok",
+        "plugins",
+        "conf_sourced",
+        "restore_on",
+        "processes_ok",
+        "hook_current",
+        "last_save_at",
+        "last_save_stale",
     }
 
 
-def test_codex_hook_health_reports_definition_observation_and_staleness(
-    tmp_path, monkeypatch
-):
+def test_codex_hook_health_reports_definition_observation_and_staleness(tmp_path, monkeypatch):
     home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(home))
     path = home / "hooks.json"
     path.parent.mkdir()
-    command = healthz.command_for(
-        healthz.Path(healthz.__file__).resolve().parent.parent.parent
+    command = healthz.command_for(healthz.Path(healthz.__file__).resolve().parent.parent.parent)
+    path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "matcher": "",
+                            "hooks": [{"type": "command", "command": command, "timeout": 5}],
+                        }
+                    ]
+                }
+            }
+        )
     )
-    path.write_text(json.dumps({"hooks": {
-        "SessionStart": [{
-            "matcher": "",
-            "hooks": [{"type": "command", "command": command, "timeout": 5}],
-        }]
-    }}))
     db = tmp_path / "periscope.db"
     monkeypatch.setattr(config, "ACTIVITY_DB", db)
     with sqlite3.connect(db) as conn:
@@ -52,13 +62,20 @@ def test_codex_hook_health_reports_definition_observation_and_staleness(
         session_binding_db.append_hook_event(
             conn,
             session_binding_db.AgentHookEvent(
-                "%1", "codex", "secret", None, "SessionStart", 1, "0.146.0",
+                "%1",
+                "codex",
+                "secret",
+                None,
+                "SessionStart",
+                1,
+                "0.146.0",
                 int(time.time()) - healthz.CODEX_HOOK_STALE_S - 1,
             ),
         )
     data = healthz._codex_hook_health()
     assert data["definition"]["SessionStart"] == {
-        "present": True, "target_exists": True,
+        "present": True,
+        "target_exists": True,
     }
     assert data["definition"]["Stop"]["present"] is False
     assert data["observed"]["SessionStart"]["stale"] is True

@@ -54,9 +54,15 @@ def _poke_minute(settings: Settings) -> int | None:
     return int(hh) * 60 + int(mm)
 
 
-def due(*, now: datetime, settings: Settings, log: Mapping[str, PokeEntry],
-        usage: Mapping[str, AccountUsage], in_flight: AbstractSet[str],
-        accounts: Sequence[Account]) -> list[str]:
+def due(
+    *,
+    now: datetime,
+    settings: Settings,
+    log: Mapping[str, PokeEntry],
+    usage: Mapping[str, AccountUsage],
+    in_flight: AbstractSet[str],
+    accounts: Sequence[Account],
+) -> list[str]:
     """Account ids to poke at `now` (a naive LOCAL datetime), in registry order.
 
     Fires inside [poke_at, poke_at + grace) only: a catch-up past the grace
@@ -108,22 +114,30 @@ def poke_account(account_id: str, config_dir: str) -> None:
     failure was transient). Always releases the in-flight slot."""
     at = int(time.time())
     try:
-        argv = [config.claude_bin(), "-p", "ok", "--model", _POKE_MODEL,
-                # No --mcp-config → zero MCP servers: a one-word prompt must
-                # not spin up the channel shim.
-                "--strict-mcp-config"]
+        argv = [
+            config.claude_bin(),
+            "-p",
+            "ok",
+            "--model",
+            _POKE_MODEL,
+            # No --mcp-config → zero MCP servers: a one-word prompt must
+            # not spin up the channel shim.
+            "--strict-mcp-config",
+        ]
         try:
             proc = subprocess.run(
-                argv, env=config.claude_subprocess_env(config_dir=config_dir),
+                argv,
+                env=config.claude_subprocess_env(config_dir=config_dir),
                 # Never periscope's own cwd: from the prod checkout the poke
                 # would load that project's CLAUDE.md and project hooks every
                 # morning. bg_commander pins its cwd for the same reason.
                 cwd=os.path.expanduser("~"),
-                capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_S,
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT_S,
             )
             if proc.returncode != 0:
-                log.warning("poke %s: claude exited %d: %s", account_id,
-                            proc.returncode, (proc.stderr or "")[-300:])
+                log.warning("poke %s: claude exited %d: %s", account_id, proc.returncode, (proc.stderr or "")[-300:])
         except (subprocess.SubprocessError, OSError) as e:
             log.warning("poke %s: subprocess failed: %s", account_id, e)
         # refresh_plan_usage_now yields the CACHED payload when a background
@@ -139,19 +153,29 @@ def poke_account(account_id: str, config_dir: str) -> None:
         # {} means neither post-poke attempt got a reading that postdates the
         # poke — distinct from a reading that DID land but showed the window
         # still open: only the latter means the anchoring assumption is wrong.
-        state = ("anchored" if ok else
-                 "no post-poke reading — usage refresh stale/failed" if not payload else
-                 "NOT anchored — reset did not move")
+        state = (
+            "anchored"
+            if ok
+            else "no post-poke reading — usage refresh stale/failed"
+            if not payload
+            else "NOT anchored — reset did not move"
+        )
         (log.info if ok else log.warning)(
-            "poke %s at %s: session resets %s (%s)", account_id,
+            "poke %s at %s: session resets %s (%s)",
+            account_id,
             dt.strftime("%H:%M"),
             datetime.fromtimestamp(resets_at).strftime("%H:%M") if resets_at else "—",
             state,
         )
-        store.record_poke(account_id, {
-            "date": dt.strftime("%Y-%m-%d"),
-            "at": at, "resets_at": resets_at, "verified": ok,
-        })
+        store.record_poke(
+            account_id,
+            {
+                "date": dt.strftime("%Y-%m-%d"),
+                "at": at,
+                "resets_at": resets_at,
+                "verified": ok,
+            },
+        )
     finally:
         _in_flight.discard(account_id)
 
@@ -174,9 +198,14 @@ def _now() -> datetime:
 
 
 def _tick() -> None:
-    for aid in due(now=_now(), settings=store.get_settings(), log=store.get_poke_log(),
-                   usage=usage.cached_plan_usage(), in_flight=_in_flight,
-                   accounts=store.get_accounts()):
+    for aid in due(
+        now=_now(),
+        settings=store.get_settings(),
+        log=store.get_poke_log(),
+        usage=usage.cached_plan_usage(),
+        in_flight=_in_flight,
+        accounts=store.get_accounts(),
+    ):
         _in_flight.add(aid)
         try:
             _bg(f"poke:{aid}", poke_account, aid, store.account_config_dir(aid))

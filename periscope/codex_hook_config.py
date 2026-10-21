@@ -79,9 +79,7 @@ def update(repo: Path, *, install: bool) -> tuple[Path, list[str]]:
                 groups.append(_group(command))
                 changed.append(event)
         else:
-            filtered = [
-                group for group in groups if not _is_owned_group(group, command)
-            ]
+            filtered = [group for group in groups if not _is_owned_group(group, command)]
             if len(filtered) != len(groups):
                 changed.append(event)
             groups = filtered

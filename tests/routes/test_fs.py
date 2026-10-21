@@ -1,5 +1,6 @@
 """Route tests for /api/fs/read and /api/fs/open. Exercises the
 HTTP surface; the safe-path logic itself is tested in tests/test_fs.py."""
+
 import os
 
 from fastapi.testclient import TestClient
@@ -9,11 +10,9 @@ from periscope.app import app
 
 def test_fs_read_happy(tmp_path, monkeypatch):
     (tmp_path / "f.py").write_text("print('ok')\n")
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/read",
-                   params={"session": "s", "index": 1, "path": "f.py"})
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "f.py"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["content"] == "print('ok')\n"
@@ -25,11 +24,9 @@ def test_fs_read_image_returns_image_lang_without_bytes(tmp_path, monkeypatch):
     # Images resolve (safe-root gated) but skip the UTF-8 read that would
     # 415 on binary — the client streams them via /api/fs/render instead.
     (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\nnot-utf8\xff")
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/read",
-                   params={"session": "s", "index": 1, "path": "logo.png"})
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "logo.png"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["language"] == "image"
@@ -38,20 +35,16 @@ def test_fs_read_image_returns_image_lang_without_bytes(tmp_path, monkeypatch):
 
 
 def test_fs_read_blank_path(tmp_path, monkeypatch):
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/read",
-                   params={"session": "s", "index": 1, "path": ""})
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": ""})
     assert r.status_code == 400
 
 
 def test_fs_read_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/read",
-                   params={"session": "s", "index": 1, "path": "nope.txt"})
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "nope.txt"})
     assert r.status_code == 404
 
 
@@ -60,33 +53,25 @@ def test_fs_read_unknown_pane_empty_tmux(monkeypatch):
     # route must surface 404 (not 500).
     monkeypatch.setattr("periscope.fs.tmux", lambda *a: "")
     client = TestClient(app)
-    r = client.get("/api/fs/read",
-                   params={"session": "s", "index": 99, "path": "x"})
+    r = client.get("/api/fs/read", params={"session": "s", "index": 99, "path": "x"})
     assert r.status_code == 404
 
 
 def test_fs_open_reveal_invokes_subprocess(tmp_path, monkeypatch):
     (tmp_path / "f.py").write_text("x\n")
     called = []
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
-    monkeypatch.setattr("periscope.fs.subprocess.run",
-                        lambda c, **kw: called.append(c))
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.subprocess.run", lambda c, **kw: called.append(c))
     client = TestClient(app)
-    r = client.post("/api/fs/open",
-                    params={"session": "s", "index": 1,
-                            "path": "f.py", "action": "reveal"})
+    r = client.post("/api/fs/open", params={"session": "s", "index": 1, "path": "f.py", "action": "reveal"})
     assert r.status_code == 200
     assert called and called[0][:2] == ["open", "-R"]
 
 
 def test_fs_open_unknown_action(tmp_path, monkeypatch):
-    monkeypatch.setattr("periscope.fs.tmux",
-                        lambda *a: str(tmp_path) + "\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.post("/api/fs/open",
-                    params={"session": "s", "index": 1,
-                            "path": "x", "action": "edit"})
+    r = client.post("/api/fs/open", params={"session": "s", "index": 1, "path": "x", "action": "edit"})
     assert r.status_code == 400
 
 
@@ -137,6 +122,7 @@ def test_fs_render_safe_roots_enforced(tmp_path, monkeypatch):
     # tmp_path lives under /tmp — pointing HOME away (below) isn't enough; the
     # /tmp root would still admit the escape. This isolates the enforcement path.
     from pathlib import Path
+
     monkeypatch.setattr("periscope.fs._safe_roots", lambda c: [Path(c).resolve()])
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
@@ -175,13 +161,13 @@ def test_fs_render_oversize(tmp_path, monkeypatch):
 
 # --- /api/fs/stat: the auto-refresh freshness probe ------------------------
 
+
 def test_fs_stat_returns_mtime_and_size(tmp_path, monkeypatch):
     f = tmp_path / "doc.html"
     f.write_text("<h1>v1</h1>")
     monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/stat",
-                   params={"session": "s", "index": 1, "path": "doc.html"})
+    r = client.get("/api/fs/stat", params={"session": "s", "index": 1, "path": "doc.html"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["size"] == len("<h1>v1</h1>")
@@ -209,8 +195,7 @@ def test_fs_stat_missing_is_404(tmp_path, monkeypatch):
     content rather than blanking the tab."""
     monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/stat",
-                   params={"session": "s", "index": 1, "path": "gone.html"})
+    r = client.get("/api/fs/stat", params={"session": "s", "index": 1, "path": "gone.html"})
     assert r.status_code == 404
 
 
@@ -219,8 +204,7 @@ def test_fs_stat_enforces_safe_roots(tmp_path, monkeypatch):
     path-existence oracle outside the pane's roots."""
     monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path) + "\n")
     client = TestClient(app)
-    r = client.get("/api/fs/stat",
-                   params={"session": "s", "index": 1, "path": "../../../etc/passwd"})
+    r = client.get("/api/fs/stat", params={"session": "s", "index": 1, "path": "../../../etc/passwd"})
     assert r.status_code in (400, 403, 404)
 
 
@@ -236,8 +220,7 @@ def test_fs_read_returns_mtime(tmp_path, monkeypatch):
     f = tmp_path / "f.py"
     f.write_text("x = 1\n")
     _pane_cwd(monkeypatch, tmp_path)
-    r = TestClient(app).get("/api/fs/read",
-                            params={"session": "s", "index": 1, "path": "f.py"})
+    r = TestClient(app).get("/api/fs/read", params={"session": "s", "index": 1, "path": "f.py"})
     assert r.status_code == 200, r.text
     assert r.json()["mtime"] == f.stat().st_mtime
 
@@ -246,10 +229,16 @@ def test_fs_write_roundtrip(tmp_path, monkeypatch):
     f = tmp_path / "f.py"
     f.write_text("x = 1\n")
     _pane_cwd(monkeypatch, tmp_path)
-    r = TestClient(app).post("/api/fs/write", json={
-        "session": "s", "index": 1, "path": "f.py",
-        "content": "x = 2\n", "base_mtime": f.stat().st_mtime,
-    })
+    r = TestClient(app).post(
+        "/api/fs/write",
+        json={
+            "session": "s",
+            "index": 1,
+            "path": "f.py",
+            "content": "x = 2\n",
+            "base_mtime": f.stat().st_mtime,
+        },
+    )
     assert r.status_code == 200, r.text
     assert f.read_text() == "x = 2\n"
     assert r.json()["mtime"] == f.stat().st_mtime
@@ -260,10 +249,16 @@ def test_fs_write_409_on_stale_base_mtime(tmp_path, monkeypatch):
     f = tmp_path / "f.py"
     f.write_text("claude's edit\n")
     _pane_cwd(monkeypatch, tmp_path)
-    r = TestClient(app).post("/api/fs/write", json={
-        "session": "s", "index": 1, "path": "f.py",
-        "content": "mine\n", "base_mtime": f.stat().st_mtime - 10,
-    })
+    r = TestClient(app).post(
+        "/api/fs/write",
+        json={
+            "session": "s",
+            "index": 1,
+            "path": "f.py",
+            "content": "mine\n",
+            "base_mtime": f.stat().st_mtime - 10,
+        },
+    )
     assert r.status_code == 409
     assert f.read_text() == "claude's edit\n"
 
@@ -272,10 +267,16 @@ def test_fs_write_null_base_mtime_overwrites(tmp_path, monkeypatch):
     f = tmp_path / "f.py"
     f.write_text("theirs\n")
     _pane_cwd(monkeypatch, tmp_path)
-    r = TestClient(app).post("/api/fs/write", json={
-        "session": "s", "index": 1, "path": "f.py",
-        "content": "mine\n", "base_mtime": None,
-    })
+    r = TestClient(app).post(
+        "/api/fs/write",
+        json={
+            "session": "s",
+            "index": 1,
+            "path": "f.py",
+            "content": "mine\n",
+            "base_mtime": None,
+        },
+    )
     assert r.status_code == 200, r.text
     assert f.read_text() == "mine\n"
 
@@ -286,17 +287,29 @@ def test_fs_write_missing_base_mtime_is_422(tmp_path, monkeypatch):
     f = tmp_path / "f.py"
     f.write_text("theirs\n")
     _pane_cwd(monkeypatch, tmp_path)
-    r = TestClient(app).post("/api/fs/write", json={
-        "session": "s", "index": 1, "path": "f.py", "content": "mine\n",
-    })
+    r = TestClient(app).post(
+        "/api/fs/write",
+        json={
+            "session": "s",
+            "index": 1,
+            "path": "f.py",
+            "content": "mine\n",
+        },
+    )
     assert r.status_code == 422
     assert f.read_text() == "theirs\n"
 
 
 def test_fs_write_unknown_pane(monkeypatch):
     monkeypatch.setattr("periscope.fs.tmux", lambda *a: "\n")
-    r = TestClient(app).post("/api/fs/write", json={
-        "session": "s", "index": 9, "path": "f.py",
-        "content": "x\n", "base_mtime": None,
-    })
+    r = TestClient(app).post(
+        "/api/fs/write",
+        json={
+            "session": "s",
+            "index": 9,
+            "path": "f.py",
+            "content": "x\n",
+            "base_mtime": None,
+        },
+    )
     assert r.status_code == 404

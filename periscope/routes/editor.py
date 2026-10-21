@@ -25,9 +25,7 @@ def editor_open(body: OpenEditorBody):
     if not editor:
         raise HTTPException(400, "no preferred editor set — pick one in Settings")
 
-    win = next(
-        (w for w in list_windows() if (w.get("pid_raw") or "") == body.pid), None
-    )
+    win = next((w for w in list_windows() if (w.get("pid_raw") or "") == body.pid), None)
     if win is None:
         raise HTTPException(404, f"no live pane with id {body.pid}")
 

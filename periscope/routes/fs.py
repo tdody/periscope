@@ -3,6 +3,7 @@ GET /api/fs/render/{token}/{path} — stream a file's raw bytes for in-page rend
 POST /api/fs/open?action=reveal — macOS reveal-in-Finder.
 
 All three share the tmux-resolving wrappers in periscope.fs."""
+
 import base64
 import binascii
 import mimetypes
@@ -19,16 +20,20 @@ router = APIRouter()
 
 _LANGUAGE_BY_EXT = {
     ".py": "python",
-    ".js": "javascript", ".jsx": "javascript",
-    ".ts": "javascript", ".tsx": "javascript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "javascript",
+    ".tsx": "javascript",
     ".json": "json",
     ".md": "markdown",
-    ".html": "html", ".htm": "html",
+    ".html": "html",
+    ".htm": "html",
     ".css": "css",
     ".rs": "rust",
     ".go": "go",
     ".toml": "toml",
-    ".yaml": "yaml", ".yml": "yaml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
     ".sh": "shell",
     ".sql": "sql",
 }
@@ -37,8 +42,15 @@ _LANGUAGE_BY_EXT = {
 # UTF-8 text read (which 415s on binary) and are shown via /api/fs/render.
 # SVG is text but treated as an image so it displays rendered, not as XML.
 _IMAGE_EXTS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".webp",
-    ".svg", ".bmp", ".ico", ".avif",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".bmp",
+    ".ico",
+    ".avif",
 }
 
 
@@ -82,8 +94,7 @@ def fs_read(session: str, index: int, path: str):
     # they're not UTF-8 and the client streams them via /api/fs/render.
     if os.path.splitext(path)[1].lower() in _IMAGE_EXTS:
         resolved = fs.safe_resolve_for_pane(target, path)
-        return {"path": str(resolved), "content": None, "language": "image",
-                "mtime": resolved.stat().st_mtime}
+        return {"path": str(resolved), "content": None, "language": "image", "mtime": resolved.stat().st_mtime}
     # mtime is sampled BEFORE the body so the editor's save precondition can
     # only ever be too STRICT. A file that changes between the two samples
     # leaves us holding content newer than the mtime we hand out, so the save
@@ -92,8 +103,7 @@ def fs_read(session: str, index: int, path: str):
     resolved = fs.safe_resolve_for_pane(target, path)
     mtime = resolved.stat().st_mtime
     content = fs.read_text(resolved)
-    return {"path": str(resolved), "content": content,
-            "language": _language_for(str(resolved)), "mtime": mtime}
+    return {"path": str(resolved), "content": content, "language": _language_for(str(resolved)), "mtime": mtime}
 
 
 class WriteBody(BaseModel):
@@ -108,8 +118,7 @@ class WriteBody(BaseModel):
 
 @router.post("/api/fs/write")
 def fs_write(body: WriteBody):
-    resolved, mtime = fs.safe_write_for_pane(
-        f"{body.session}:{body.index}", body.path, body.content, body.base_mtime)
+    resolved, mtime = fs.safe_write_for_pane(f"{body.session}:{body.index}", body.path, body.content, body.base_mtime)
     return {"path": resolved, "mtime": mtime}
 
 

@@ -92,6 +92,7 @@ def patch_prefs_ui(body: UIPatch):
             raise HTTPException(400, f"invalid {key}: {patch[key]!r}")
     update_ui(patch, writer=writer)
     from periscope.store import get_ui
+
     return {"ok": True, "ui": get_ui()}
 
 
@@ -140,11 +141,15 @@ def put_window_annotation(pid: str, body: WindowAnnotation):
         updates["pinned_files"] = patch["pinned_files"] if patch["pinned_files"] != [] else None
     set_window_fields(pid, **updates)
     entry = get_window(pid)
-    return {"ok": True, "pid": pid, "annotation": {
-        "notes": entry.get("notes"),
-        "tags": entry.get("tags") or [],
-        "pinned_files": entry.get("pinned_files") or [],
-    }}
+    return {
+        "ok": True,
+        "pid": pid,
+        "annotation": {
+            "notes": entry.get("notes"),
+            "tags": entry.get("tags") or [],
+            "pinned_files": entry.get("pinned_files") or [],
+        },
+    }
 
 
 @router.delete("/api/prefs/windows/{pid}")
@@ -166,6 +171,7 @@ class CommandPatch(BaseModel):
     without clobbering `exec`; sending only `exec` updates the command
     without renaming. The frontend always sends both, but keeping them
     optional protects against curl-from-shell footguns."""
+
     label: str | None = None
     exec: str | None = None
 

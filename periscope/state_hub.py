@@ -92,9 +92,7 @@ async def run() -> None:
         _loop = None
 
 
-async def _run_loop(
-    loop: asyncio.AbstractEventLoop, build_state: Callable[[], dict]
-) -> None:
+async def _run_loop(loop: asyncio.AbstractEventLoop, build_state: Callable[[], dict]) -> None:
     while True:
         if not _subscribers:
             # Nobody watching: compute nothing. Wait for a subscriber (or kick).

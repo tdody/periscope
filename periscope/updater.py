@@ -54,7 +54,9 @@ def _git(*args: str, timeout: float = 10.0) -> str | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(REPO_ROOT), *args],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
     except (subprocess.SubprocessError, OSError):
         return None
@@ -79,9 +81,9 @@ def check(force: bool = False) -> int:
     # matching the `merge --ff-only @{u}` the update itself will run.
     upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if not upstream:
-        return known                  # detached HEAD or no tracking branch
+        return known  # detached HEAD or no tracking branch
     if _git("fetch", "--quiet", timeout=30.0) is None:
-        return known                  # offline, or no credentials
+        return known  # offline, or no credentials
     # ONE call answers both directions — left = upstream-only (behind), right
     # = local-only (ahead). Ahead is not decoration: the update fast-forwards
     # to @{u}, which refuses once BOTH counts are non-zero. Counting only
@@ -100,8 +102,11 @@ def check(force: bool = False) -> int:
         # Same rule as the count: a probe that can't answer leaves the last
         # list standing. "" (nothing to list) is an answer; None is not.
         if raw is not None:
-            _commits = [{"sha": sha, "subject": subject}
-                        for sha, _, subject in (line.partition("\x1f") for line in raw.splitlines()) if sha]
+            _commits = [
+                {"sha": sha, "subject": subject}
+                for sha, _, subject in (line.partition("\x1f") for line in raw.splitlines())
+                if sha
+            ]
     return behind
 
 
@@ -132,19 +137,23 @@ def summary() -> dict:
     hottest endpoint in the app.
     """
     with _LOCK:
-        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at,
-                "running": _running_locked()}
+        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at, "running": _running_locked()}
 
 
 def status() -> dict:
     """summary() plus what the update would pull and the current run's
     transcript — for the on-demand /api/update/status probe (the popover
     opening, the post-click watch), the only callers that need either."""
-    log_tail = tail()                 # disk read stays outside the lock
+    log_tail = tail()  # disk read stays outside the lock
     with _LOCK:
-        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at,
-                "running": _running_locked(), "commits": list(_commits),
-                "log": log_tail}
+        return {
+            "behind": _behind,
+            "ahead": _ahead,
+            "checked_at": _checked_at,
+            "running": _running_locked(),
+            "commits": list(_commits),
+            "log": log_tail,
+        }
 
 
 def tail(limit: int = 40) -> list[str]:
@@ -184,10 +193,12 @@ def start() -> None:
             _proc = subprocess.Popen(
                 [str(script), "update"],
                 cwd=str(REPO_ROOT),
-                stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                start_new_session=True,   # survive the bootout it will trigger
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,  # survive the bootout it will trigger
             )
         finally:
-            handle.close()               # the child holds its own dup
+            handle.close()  # the child holds its own dup
         _started_at = time.time()
         log.info("self-update started (pid %d)", _proc.pid)

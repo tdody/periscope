@@ -6,23 +6,27 @@ from fastapi.testclient import TestClient
 
 def test_app_construction_imports_cleanly():
     from periscope.app import app
+
     assert isinstance(app, FastAPI)
 
 
 def test_app_includes_state_router():
     from periscope.app import app
+
     paths = [r.path for r in app.routes if hasattr(r, "path")]
     assert "/api/state" in paths
 
 
 def test_app_includes_prefs_router():
     from periscope.app import app
+
     paths = [r.path for r in app.routes if hasattr(r, "path")]
     assert "/api/prefs" in paths
 
 
 def test_app_includes_ws_router():
     from periscope.app import app
+
     paths = [r.path for r in app.routes if hasattr(r, "path")]
     assert "/ws/pane" in paths
 
@@ -30,6 +34,7 @@ def test_app_includes_ws_router():
 def test_app_mounts_static_files():
     """The catch-all `app.mount("/", StaticFiles(...))` is registered last."""
     from periscope.app import app
+
     # Last route is the static mount.
     static_mounts = [r for r in app.routes if r.__class__.__name__ == "Mount"]
     assert len(static_mounts) >= 1
@@ -61,6 +66,7 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
 
     async def _noop():
         return None
+
     mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
     mocker.patch("periscope.app._mcp_listener", side_effect=_noop)
     # The activity worker's FIRST tick runs immediately on startup — with
@@ -83,6 +89,7 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
     mocker.patch("periscope.app.os.unlink")
 
     from periscope.app import app
+
     with TestClient(app) as client:
         r = client.get("/api/state")
         assert r.status_code == 200
@@ -94,6 +101,7 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
     # connection close (use-after-free → segfault). The autouse
     # _no_plan_usage_refresh fixture neuters usage._bg so no spawn happens.
     import threading
+
     assert not any(t.name == "plan-usage" for t in threading.enumerate())
 
 
@@ -101,11 +109,14 @@ def test_lifespan_skips_mcp_on_dev_port(mocker, monkeypatch, caplog):
     """When PORT != PROD_PORT, lifespan must not call _mcp_listener and must
     log that it's skipping."""
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.DEV_PORT)
 
     called = {"count": 0}
+
     async def fake_listener():
         called["count"] += 1
+
     mocker.patch("periscope.app._mcp_listener", side_effect=fake_listener)
 
     mocker.patch("periscope.app.prewarm_pr_cache")
@@ -114,11 +125,14 @@ def test_lifespan_skips_mcp_on_dev_port(mocker, monkeypatch, caplog):
     # tests don't write the real periscope.db. (Its list_windows() arg is a
     # harmless read; _pane_sessions_housekeeping already reads real tmux.)
     mocker.patch("periscope.tracks.seed_tracks", return_value=0)
+
     async def _noop():
         return None
+
     mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
 
     from periscope.app import app
+
     with caplog.at_level("INFO", logger="periscope"), TestClient(app):
         pass
 
@@ -129,11 +143,14 @@ def test_lifespan_skips_mcp_on_dev_port(mocker, monkeypatch, caplog):
 def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
     """When PORT == PROD_PORT, lifespan calls _mcp_listener exactly once."""
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.PROD_PORT)
 
     called = {"count": 0}
+
     async def fake_listener():
         called["count"] += 1
+
     mocker.patch("periscope.app._mcp_listener", side_effect=fake_listener)
 
     mocker.patch("periscope.app.prewarm_pr_cache")
@@ -146,8 +163,10 @@ def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
     # without this mock it runs a LIVE tmux move-window against the dev's real
     # server. See test_lifespan_starts_and_shuts_down_cleanly. Never unmock.
     mocker.patch("periscope.migrate_single_session.run_if_needed")
+
     async def _noop():
         return None
+
     mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
     # See test_lifespan_starts_and_shuts_down_cleanly: the real worker
     # fires a live tick against the developer's tmux on every test run.
@@ -164,6 +183,7 @@ def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
     mocker.patch("periscope.bg_commander.write_mcp_config")
 
     from periscope.app import app
+
     with TestClient(app):
         pass
 

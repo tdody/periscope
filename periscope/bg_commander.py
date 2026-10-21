@@ -9,6 +9,7 @@ prod-only (needs the MCP socket + subscription auth).
 Imports only periscope.config / periscope.log / periscope.store + stdlib —
 never activity (the worker tick imports US, one-way, to avoid a cycle).
 """
+
 from __future__ import annotations
 
 import json
@@ -81,7 +82,7 @@ spawn / resume has FULL tools; you do not.
 Prohibitions: never merge an fdy PR; never force-push; never prod-touching actions.
 """
 
-_ABSENT_GRACE_S = 60   # absent from `claude agents` AND younger than this => still registering, keep running
+_ABSENT_GRACE_S = 60  # absent from `claude agents` AND younger than this => still registering, keep running
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS commands (
@@ -108,6 +109,7 @@ class Job:
 
 
 # --- pure seams (no I/O) ---
+
 
 def parse_agents_json(raw: str) -> dict[str, str]:
     """{sessionId: state} for kind=="background" entries only. Empty on any parse
@@ -145,11 +147,18 @@ def _dispatch_argv() -> list[str]:
     and would swallow it (leaving -p with no input → crash). The prompt goes via
     stdin instead (see dispatch), so --allowedTools stays the last token."""
     return [
-        config.claude_bin(), "--bg", "-p",
-        "--append-system-prompt-file", str(config.ORCHESTRATOR_PROMPT_FILE),
-        "--mcp-config", str(config.PERISCOPE_MCP_CONFIG), "--strict-mcp-config",
-        "--model", config.BG_COMMANDER_MODEL,
-        "--allowedTools", config.BG_COMMANDER_ALLOWED_TOOLS,
+        config.claude_bin(),
+        "--bg",
+        "-p",
+        "--append-system-prompt-file",
+        str(config.ORCHESTRATOR_PROMPT_FILE),
+        "--mcp-config",
+        str(config.PERISCOPE_MCP_CONFIG),
+        "--strict-mcp-config",
+        "--model",
+        config.BG_COMMANDER_MODEL,
+        "--allowedTools",
+        config.BG_COMMANDER_ALLOWED_TOOLS,
     ]
 
 
@@ -189,6 +198,7 @@ def _parse_session_id(stdout: str) -> str | None:
 
 # --- table CRUD (shared ACTIVITY_DB file, own schema) ---
 
+
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
     # `with sqlite3.connect(...) as c` commits/rolls back the transaction but
@@ -198,7 +208,7 @@ def _conn() -> Iterator[sqlite3.Connection]:
     c = sqlite3.connect(config.ACTIVITY_DB)
     try:
         c.execute(_SCHEMA.strip())
-        with c:            # commit on success / rollback on exception
+        with c:  # commit on success / rollback on exception
             yield c
     finally:
         c.close()
@@ -215,8 +225,7 @@ def insert_job(*, id: str, text: str, cwd: str, at: int) -> None:
 def list_jobs() -> list[Job]:
     with _conn() as c:
         rows = c.execute(
-            "SELECT id, text, cwd, status, started_at FROM commands "
-            "ORDER BY started_at DESC, id DESC"
+            "SELECT id, text, cwd, status, started_at FROM commands ORDER BY started_at DESC, id DESC"
         ).fetchall()
     return [Job(*r) for r in rows]
 
@@ -237,6 +246,7 @@ def _set_status(job_id: str, status: str) -> None:
 
 # --- dispatch ---
 
+
 def dispatch(text: str, *, cwd: str | None = None) -> str:
     """Spawn `claude --bg -p <text>`, capture the session id it mints (it ignores
     --session-id), record the running job, and return the id. `claude --bg`
@@ -245,21 +255,23 @@ def dispatch(text: str, *, cwd: str | None = None) -> str:
     cwd = cwd or os.path.expanduser("~")
     if not os.path.isdir(cwd):
         cwd = os.path.expanduser("~")
-    handle = uuid.uuid4().hex   # cmdr handle (env, pre-spawn) — distinct from claude's id
+    handle = uuid.uuid4().hex  # cmdr handle (env, pre-spawn) — distinct from claude's id
     try:
         proc = subprocess.run(
             _dispatch_argv(),
-            input=text,                 # prompt via stdin (not a positional --allowedTools would eat)
-            cwd=cwd, env=_dispatch_env(handle=handle),
-            capture_output=True, text=True, timeout=120,
+            input=text,  # prompt via stdin (not a positional --allowedTools would eat)
+            cwd=cwd,
+            env=_dispatch_env(handle=handle),
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     except (subprocess.SubprocessError, OSError) as e:
         log.warning("bg commander dispatch failed: %s", e)
         raise RuntimeError(f"bg commander dispatch failed: {e}") from e
     session_id = _parse_session_id(proc.stdout or "")
     if not session_id:
-        log.warning("bg dispatch: no session id in output (stdout=%r stderr=%r)",
-                    proc.stdout, proc.stderr)
+        log.warning("bg dispatch: no session id in output (stdout=%r stderr=%r)", proc.stdout, proc.stderr)
         raise RuntimeError("bg commander dispatch produced no session id")
     insert_job(id=session_id, text=text, cwd=cwd, at=int(time.time()))
     return session_id
@@ -267,11 +279,14 @@ def dispatch(text: str, *, cwd: str | None = None) -> str:
 
 # --- status sync (called from the activity worker tick AND on-open from /jobs) ---
 
+
 def _read_agents() -> str:
     try:
         return subprocess.run(
             [config.claude_bin(), "agents", "--json", "--all"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             env=config.claude_subprocess_env(config_dir=_bg_config_dir()),
         ).stdout
     except (subprocess.SubprocessError, OSError) as e:
@@ -283,7 +298,9 @@ def _stop_session(session_id: str) -> None:
     try:
         subprocess.run(
             [config.claude_bin(), "stop", session_id],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             env=config.claude_subprocess_env(config_dir=_bg_config_dir()),
         )
     except (subprocess.SubprocessError, OSError) as e:
@@ -309,11 +326,12 @@ def sync_jobs(*, now: int | None = None, agents_raw: str | None = None, stop_fn=
         new_status = map_state(state, started_at=job.started_at, now=now, present=present)
         if new_status == "done":
             _set_status(job.id, "done")
-            if present:        # still listed => free the supervisor slot now (spec resolution #4)
+            if present:  # still listed => free the supervisor slot now (spec resolution #4)
                 stop(job.id)
 
 
 # --- boot-time generation (prod-only, called from app.py lifespan) ---
+
 
 def write_mcp_config() -> None:
     """Generate the static MCP config (channel_shim → socket) and the orchestrator
@@ -321,6 +339,7 @@ def write_mcp_config() -> None:
     process env (PERISCOPE_CALLER_ID). Contingency: if the MCP child doesn't inherit
     parent env, switch to a per-dispatch config with the caller id in `env`."""
     import sys
+
     cfg = {
         "mcpServers": {
             "periscope": {

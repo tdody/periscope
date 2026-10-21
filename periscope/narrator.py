@@ -44,7 +44,7 @@ RENAME_COOLDOWN_S = 1800
 STATUS_MAX_LEN = 72
 RAIL_MAX_LEN = 28
 GOAL_MAX_LEN = 120
-ARC_MAX = 6   # status lines kept as thread-divergence evidence
+ARC_MAX = 6  # status lines kept as thread-divergence evidence
 
 Regen = Literal["session_switch", "size_changed", "first_sight"]
 
@@ -53,8 +53,7 @@ _NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+){0,2}$")
 # Scaffolding words that appear in tracks, branches, and worktree dirs without
 # naming anything: they must not make a container token set look richer than it
 # is, or an echo slips through ('worktree-world-model' vs 'world-model').
-_ECHO_STOPWORDS = frozenset({"worktree", "worktrees", "wt", "claude", "dev",
-                             "tc", "repo", "main", "master"})
+_ECHO_STOPWORDS = frozenset({"worktree", "worktrees", "wt", "claude", "dev", "tc", "repo", "main", "master"})
 
 _enabled_checked: bool | None = None  # None = not yet checked
 
@@ -74,14 +73,13 @@ def _enabled() -> bool:
 @dataclass(frozen=True)
 class NarratorResult:
     status: str
-    name: str | None          # the model's best name for the goal (may == current);
-                              # rename_decision diffs it against current_name
+    name: str | None  # the model's best name for the goal (may == current);
+    # rename_decision diffs it against current_name
     rail: str | None = None
-    goal: str | None = None   # None = model gave none; caller carries previous
+    goal: str | None = None  # None = model gave none; caller carries previous
 
 
-def should_regenerate(row: PaneStatusRow | None, *, session_id: str,
-                      jsonl_size: int, now: int) -> Regen | None:
+def should_regenerate(row: PaneStatusRow | None, *, session_id: str, jsonl_size: int, now: int) -> Regen | None:
     """Why (if at all) this pane needs a fresh status. The reason matters:
     on "session_switch" the shell resets jsonl_size/renamed_at (a recycled
     pane id must not inherit the previous occupant's cooldown)."""
@@ -100,8 +98,7 @@ def should_regenerate(row: PaneStatusRow | None, *, session_id: str,
     return None
 
 
-def pick_regenerations(candidates: list[tuple[int, str]], *,
-                       cap: int = MAX_PER_TICK) -> list[str]:
+def pick_regenerations(candidates: list[tuple[int, str]], *, cap: int = MAX_PER_TICK) -> list[str]:
     """candidates: (generated_at, pane_id). Oldest first, at most `cap` —
     a 25-pane storm degrades to slightly-stale statuses, never a Haiku
     bill spike."""
@@ -115,8 +112,7 @@ def parse_response(raw: str) -> NarratorResult | None:
     bad rail drops just the rail — never the status."""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned,
-                         flags=re.MULTILINE)
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.MULTILINE)
     try:
         d = json.loads(cleaned)
     except ValueError:
@@ -148,8 +144,7 @@ def parse_response(raw: str) -> NarratorResult | None:
     return NarratorResult(status=status, name=name, rail=rail, goal=goal)
 
 
-def update_arc(history: list[dict], status: str, now: int, *,
-               cap: int = ARC_MAX) -> list[dict]:
+def update_arc(history: list[dict], status: str, now: int, *, cap: int = ARC_MAX) -> list[dict]:
     """Append this tick's status to the thread arc (newest last), skipping a
     consecutive duplicate so a quiet stretch re-emitting the same line never
     crowds out earlier phases. Keeps only the last `cap` entries."""
@@ -192,12 +187,10 @@ def _tokens(s: str | None) -> set[str]:
     return {p for p in parts if p and p not in _ECHO_STOPWORDS}
 
 
-def container_tokens(*, track_name: str | None, branch: str | None,
-                     cwd: str | None) -> set[str]:
+def container_tokens(*, track_name: str | None, branch: str | None, cwd: str | None) -> set[str]:
     """Every token already visible ABOVE a tab in the rail: its track header,
     its branch subgroup row, and its worktree directory."""
-    return (_tokens(track_name) | _tokens(branch)
-            | _tokens(os.path.basename(cwd or "")))
+    return _tokens(track_name) | _tokens(branch) | _tokens(os.path.basename(cwd or ""))
 
 
 def siblings_excluding(members: list[tuple[str, str]], pane_id: str) -> list[str]:
@@ -232,10 +225,15 @@ def is_placeholder_name(name: str | None) -> bool:
     return not n or n == "claude" or bool(_PLACEHOLDER_NAME_RE.match(n))
 
 
-def rename_decision(suggestion: str | None, *, current_name: str,
-                    row: PaneStatusRow | None, now: int,
-                    locked: bool = False,
-                    container: set[str] | None = None) -> str | None:
+def rename_decision(
+    suggestion: str | None,
+    *,
+    current_name: str,
+    row: PaneStatusRow | None,
+    now: int,
+    locked: bool = False,
+    container: set[str] | None = None,
+) -> str | None:
     """Code-side guards on the model's rename suggestion. The failure mode
     to fear is name churn, not staleness — every guard errs toward None."""
     if locked:
@@ -254,8 +252,7 @@ def rename_decision(suggestion: str | None, *, current_name: str,
     # version string — indefinitely. An echo beats "2.1.220".
     if container and not is_placeholder_name(current_name) and is_echo(suggestion, container):
         return None
-    if (row is not None and row.renamed_at is not None
-            and now - row.renamed_at < RENAME_COOLDOWN_S):
+    if row is not None and row.renamed_at is not None and now - row.renamed_at < RENAME_COOLDOWN_S:
         return None
     return suggestion
 
@@ -292,12 +289,19 @@ def is_external_rename(row: PaneStatusRow, current_name: str) -> bool:
     return row.seen_name is not None and current_name != row.seen_name
 
 
-def build_narrator_prompt(*, window_name: str, branch: str | None,
-                          pr: int | None, cwd: str, signals: dict,
-                          track_name: str | None = None,
-                          sibling_names: list[str] | None = None,
-                          goal: str | None = None,
-                          arc: list[dict] | None = None, now: int = 0) -> str:
+def build_narrator_prompt(
+    *,
+    window_name: str,
+    branch: str | None,
+    pr: int | None,
+    cwd: str,
+    signals: dict,
+    track_name: str | None = None,
+    sibling_names: list[str] | None = None,
+    goal: str | None = None,
+    arc: list[dict] | None = None,
+    now: int = 0,
+) -> str:
     """One pane's status+rename prompt. The rename half splices
     rename_ai.RENAME_RULES so taste can't drift from the manual surface.
     `goal` (the persistent thread carried across ticks) and `arc` (recent
@@ -356,8 +360,7 @@ def build_narrator_prompt(*, window_name: str, branch: str | None,
         lines.append(f"goal so far: {goal}")
     if arc:
         lines.append("thread arc so far (oldest→newest):")
-        lines += [f"  - {_fmt_age(now - e.get('t', now))}: {e.get('s', '')}"
-                  for e in arc]
+        lines += [f"  - {_fmt_age(now - e.get('t', now))}: {e.get('s', '')}" for e in arc]
     if branch:
         lines.append(f"branch: {branch}" + (f", PR #{pr}" if pr else ""))
     prompts = signals.get("recent_user_prompts") or []
@@ -393,7 +396,9 @@ def build_narrator_prompt(*, window_name: str, branch: str | None,
     ]
     return "\n".join(lines)
 
+
 # --- impure shell --------------------------------------------------------
+
 
 def tick(panes: list[tuple[dict, dict]]) -> None:
     """One narrator pass over the worker's (window, parsed) Claude panes.
@@ -414,6 +419,7 @@ def tick(panes: list[tuple[dict, dict]]) -> None:
     # the old wiring left track-grouped tabs without sibling context and
     # Haiku named every tab after its branch.
     from periscope import tracks as tracks_mod
+
     pane_tracks: dict[str, str] = {}
     # (pane_id, name) pairs, not bare names: a pane must be excluded from its
     # OWN sibling list by identity. Listing a tab's own name back to it read as
@@ -452,8 +458,7 @@ def tick(panes: list[tuple[dict, dict]]) -> None:
                 continue
             size = jsonl.stat().st_size
             row = rows.get(pane_id)
-            reason = should_regenerate(row, session_id=sid,
-                                       jsonl_size=size, now=now)
+            reason = should_regenerate(row, session_id=sid, jsonl_size=size, now=now)
             if reason is None:
                 continue
             work[pane_id] = (w, sid, jsonl, size, row, reason)
@@ -466,17 +471,35 @@ def tick(panes: list[tuple[dict, dict]]) -> None:
         track_name = tracks_mod.track_label(tid) if tid else None
         sibs = siblings_excluding(members.get(tid) or [], pane_id) if tid else None
         try:
-            _generate(w, pane_id=pane_id, sid=sid, jsonl=jsonl, size=size,
-                      row=row, reason=reason, now=now,
-                      track_name=track_name, sibling_names=sibs)
+            _generate(
+                w,
+                pane_id=pane_id,
+                sid=sid,
+                jsonl=jsonl,
+                size=size,
+                row=row,
+                reason=reason,
+                now=now,
+                track_name=track_name,
+                sibling_names=sibs,
+            )
         except Exception:
             log.exception("narrator generation failed for %s", pane_id)
 
 
-def _generate(w: dict, *, pane_id: str, sid: str, jsonl: Path, size: int,
-              row: PaneStatusRow | None, reason: Regen, now: int,
-              track_name: str | None = None,
-              sibling_names: list[str] | None = None) -> None:
+def _generate(
+    w: dict,
+    *,
+    pane_id: str,
+    sid: str,
+    jsonl: Path,
+    size: int,
+    row: PaneStatusRow | None,
+    reason: Regen,
+    now: int,
+    track_name: str | None = None,
+    sibling_names: list[str] | None = None,
+) -> None:
     """One pane's regeneration: signals → one Haiku call → persist row,
     maybe rename. Raises freely; tick()'s per-pane guard logs and keeps
     the previous row (natural retry next tick)."""
@@ -490,14 +513,23 @@ def _generate(w: dict, *, pane_id: str, sid: str, jsonl: Path, size: int,
     signals = transcript_summary_from_path(jsonl)
     git = cached_git_state(cwd) or {}
     pr = (cached_pr_state(cwd, git.get("branch")) or {}).get("pr")
-    raw = claude_complete(build_narrator_prompt(
-        window_name=current_name, branch=git.get("branch"), pr=pr,
-        cwd=cwd, signals=signals, track_name=track_name,
-        sibling_names=sibling_names, goal=prev_goal, arc=prev_arc, now=now))
+    raw = claude_complete(
+        build_narrator_prompt(
+            window_name=current_name,
+            branch=git.get("branch"),
+            pr=pr,
+            cwd=cwd,
+            signals=signals,
+            track_name=track_name,
+            sibling_names=sibling_names,
+            goal=prev_goal,
+            arc=prev_arc,
+            now=now,
+        )
+    )
     result = parse_response(raw)
     if result is None:
-        log.warning("narrator: unparseable response for %s; keeping previous "
-                    "status", pane_id)
+        log.warning("narrator: unparseable response for %s; keeping previous status", pane_id)
         return
     # A parse that drops `goal` (None) carries the previous one forward — never
     # wipe the thread memory on a single bad/omitted field.
@@ -517,27 +549,27 @@ def _generate(w: dict, *, pane_id: str, sid: str, jsonl: Path, size: int,
         renamed_at = now
         suggestion = None
     gate_row = replace(row, renamed_at=renamed_at) if row is not None else None
-    new_name = rename_decision(suggestion, current_name=current_name,
-                               row=gate_row, now=now,
-                               locked=is_name_pinned(w),
-                               container=container_tokens(
-                                   track_name=track_name,
-                                   branch=git.get("branch"), cwd=cwd))
+    new_name = rename_decision(
+        suggestion,
+        current_name=current_name,
+        row=gate_row,
+        now=now,
+        locked=is_name_pinned(w),
+        container=container_tokens(track_name=track_name, branch=git.get("branch"), cwd=cwd),
+    )
     if new_name:
         # current_name and row are snapshots from tick start, and a tick can
         # run many seconds (sequential Haiku calls). Re-read the live window
         # name and the live row immediately before applying: a human rename
         # mid-tick — direct tmux, or a rename route that stamped the cooldown
         # — must win over our stale snapshot.
-        live_name = tmux("display-message", "-t",
-                         f"{w['session']}:{w['index']}", "-p",
-                         "#{window_name}").strip()
+        live_name = tmux("display-message", "-t", f"{w['session']}:{w['index']}", "-p", "#{window_name}").strip()
         live_row = activity.get_pane_status(pane_id)
-        stamped = (live_row is not None and live_row.renamed_at is not None
-                   and now - live_row.renamed_at < RENAME_COOLDOWN_S)
+        stamped = (
+            live_row is not None and live_row.renamed_at is not None and now - live_row.renamed_at < RENAME_COOLDOWN_S
+        )
         if live_name != current_name or stamped:
-            log.info("narrator: rename of %s preempted mid-tick; keeping %r",
-                     pane_id, live_name)
+            log.info("narrator: rename of %s preempted mid-tick; keeping %r", pane_id, live_name)
             new_name = None
             if live_row is not None and live_row.renamed_at is not None:
                 renamed_at = live_row.renamed_at
@@ -545,8 +577,7 @@ def _generate(w: dict, *, pane_id: str, sid: str, jsonl: Path, size: int,
                 seen_name = live_row.seen_name
     if new_name:
         tmux("rename-window", "-t", f"{w['session']}:{w['index']}", new_name)
-        activity.record("pane", pane_id, "rename",
-                        f"renamed: {current_name} → {new_name}")
+        activity.record("pane", pane_id, "rename", f"renamed: {current_name} → {new_name}")
         log.info("narrator: renamed %s %r → %r", pane_id, current_name, new_name)
         renamed_at = now
         seen_name = new_name
@@ -554,11 +585,19 @@ def _generate(w: dict, *, pane_id: str, sid: str, jsonl: Path, size: int,
     # actually changes (an unchanged regeneration writes nothing). Kept out of
     # the live timeline by events_for; status_log_for() reads the history.
     if result.status != (row.status if row else None) or goal != prev_goal:
-        activity.record("pane", pane_id, "status", result.status,
-                        at=now, detail=goal)
-    activity.upsert_pane_status(PaneStatusRow(
-        pane_id=pane_id, session_id=sid, status=result.status,
-        generated_at=now, jsonl_size=size, seen_name=seen_name,
-        renamed_at=renamed_at, rail=result.rail, goal=goal,
-        history=json.dumps(arc)))
+        activity.record("pane", pane_id, "status", result.status, at=now, detail=goal)
+    activity.upsert_pane_status(
+        PaneStatusRow(
+            pane_id=pane_id,
+            session_id=sid,
+            status=result.status,
+            generated_at=now,
+            jsonl_size=size,
+            seen_name=seen_name,
+            renamed_at=renamed_at,
+            rail=result.rail,
+            goal=goal,
+            history=json.dumps(arc),
+        )
+    )
     log.info("narrator: %s status %r", pane_id, result.status)

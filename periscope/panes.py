@@ -49,9 +49,7 @@ _prev_state: dict[str, str | None] = {}
 # Structured-agent transition baselines.  Unlike `_prev_state`, these carry
 # session/turn identity so an idle edge from a different turn can never finish
 # stale work.  Values are (provider, session_id, turn_id, state).
-_agent_transition_baseline: dict[
-    str, tuple[str, str, str, str]
-] = {}
+_agent_transition_baseline: dict[str, tuple[str, str, str, str]] = {}
 _active_per_session: dict[str, str] = {}
 
 # Active resume operations, keyed by session_id. Each entry tracks where a
@@ -120,11 +118,7 @@ def smooth_parsed(*, pane_id: str, parsed: dict) -> dict:
     parsed["agent"] = smooth_agent(pane_id, parsed.get("agent"))
     if not parsed["agent"]:
         parsed["state"] = "shell"
-    if (
-        parsed.get("agent")
-        and parsed.get("spinner")
-        and parsed.get("state") not in ("working", "needs-input")
-    ):
+    if parsed.get("agent") and parsed.get("spinner") and parsed.get("state") not in ("working", "needs-input"):
         parsed["state"] = "working"
     return parsed
 
@@ -165,9 +159,7 @@ def update_focus_from_windows(windows: list[dict]) -> None:
             _active_per_session[session] = target
 
 
-def record_state_transition(
-    pid: str, target: str, state: str | None, now_ts: int
-) -> None:
+def record_state_transition(pid: str, target: str, state: str | None, now_ts: int) -> None:
     """Record this poll's parsed `state` for `pid`. On a working/needs-input
     → idle edge, stamp `target`'s completed-at to `now_ts` — the signal that
     Claude finished something the user hasn't acknowledged. No-op when `pid`
@@ -226,9 +218,7 @@ def recency_stamps_for(target: str) -> dict:
 
 # Status line at the bottom of every Claude pane:
 #   "  24% | ↑235k ↓479 | $17.04 | Opus 4.7 (1M context)"
-STATUS_RE = re.compile(
-    r"^\s*(?P<context>\d+)%\s*\|\s*↑\S+\s+↓\S+\s*\|\s*\$[\d.,]+\s*\|\s*(?P<model>.+?)\s*$"
-)
+STATUS_RE = re.compile(r"^\s*(?P<context>\d+)%\s*\|\s*↑\S+\s+↓\S+\s*\|\s*\$[\d.,]+\s*\|\s*(?P<model>.+?)\s*$")
 
 # Branch / PR / CI used to come from a custom statusline rendered in the line
 # above STATUS_RE. We now pull those from the pane's cwd directly (git +
@@ -260,9 +250,7 @@ SPINNER_RE = re.compile(r"^\s*[^\x00-\x7f]\s+(?P<phrase>[^(\n…]+?)…")
 # tokens · 21s)`), so completed lines don't match. Distinguishable from
 # STATUS_RE because the status line has both arrows on the same line, no
 # `tokens` word, and no parens around the metering.
-ACTIVE_OP_RE = re.compile(
-    r"^\s*[^\x00-\x7f]\s+\S+.*\([^)]*[↑↓]\s*[\d.]+\w*\s+tokens[^)]*\)"
-)
+ACTIVE_OP_RE = re.compile(r"^\s*[^\x00-\x7f]\s+\S+.*\([^)]*[↑↓]\s*[\d.]+\w*\s+tokens[^)]*\)")
 
 # Past-tense indicator: when Claude finishes a thinking phase, the spinner
 # line transforms from `<glyph> Verbing…` into `<glyph> Verb-past for Xs`
@@ -275,9 +263,7 @@ ACTIVE_OP_RE = re.compile(
 # or from the assistant's own response quoting the marker form verbatim in
 # code blocks). The shape is specific enough — `<glyph> <Verb-past> for
 # <digits><h|m|s>` — that prose embeds are very unlikely to match.
-IDLE_INDICATOR_RE = re.compile(
-    r"^\s*[^\x00-\x7f]\s+(?:\w+ed|Thought)\s+for\s+\d+\s*[hms]"
-)
+IDLE_INDICATOR_RE = re.compile(r"^\s*[^\x00-\x7f]\s+(?:\w+ed|Thought)\s+for\s+\d+\s*[hms]")
 
 # Pull out a verb-shaped word for the card label (`envisioning…`,
 # `planning…`). Falls back to the first word if there's no clean verb.
@@ -300,9 +286,7 @@ NEEDS_INPUT_FOOTER_RE = re.compile(
     r"(?:Enter\s+to\s+\w+|↑/↓|Submit\b).*Esc\s+to\s+cancel",
 )
 
-RECAP_RE = re.compile(
-    r"※ recap:\s*(?P<text>.+?)(?=\n\s*[─❯]|\Z)", re.DOTALL
-)
+RECAP_RE = re.compile(r"※ recap:\s*(?P<text>.+?)(?=\n\s*[─❯]|\Z)", re.DOTALL)
 PROMPT_LINE_RE = re.compile(r"^❯\s*(?P<input>.*)$")
 
 # Tool-call header in scrollback: `<glyph> Word(args)`. Used as one of
@@ -500,7 +484,7 @@ def _sgr_fg(params: list[str], fg: tuple | None, dim: bool) -> tuple[tuple | Non
         elif p in ("38", "48"):
             mode = params[i + 1] if i + 1 < len(params) else ""
             n = 1 if mode == "5" else 3 if mode == "2" else 0
-            args = params[i + 2:i + 2 + n]
+            args = params[i + 2 : i + 2 + n]
             if p == "38" and len(args) == n and n and all(a.isdigit() for a in args):
                 fg = ("256", int(args[0])) if n == 1 else ("rgb", *map(int, args))
             i += 1 + (n + 1 if n else 0)
@@ -559,9 +543,7 @@ def _input_is_ghost(raw: str) -> bool:
     return seen
 
 
-def _detect_pending_input(
-    raw_rows: list[str], plain_rows: list[str]
-) -> str | None:
+def _detect_pending_input(raw_rows: list[str], plain_rows: list[str]) -> str | None:
     """Text typed at the `❯` prompt but not yet submitted, or None.
 
     Ghost-text filter: Claude Code shows a greyed-out suggestion in the input
@@ -644,7 +626,7 @@ def _detect_asked_question(lines: list[str]) -> bool:
     #   - `❯ <text>` — submitted user reply or pending typing.
     #   - `<glyph> Word(...)` — tool-call header.
     #   - `⎿ …` — tool-result indicator.
-    for line in lines[idle_idx + 1:]:
+    for line in lines[idle_idx + 1 :]:
         s = line.strip()
         if not s:
             continue
@@ -727,18 +709,12 @@ def parse_pane(content: str) -> dict:
 
     # `❯ 1.` is the dialog's selection line, not user typing — skip
     # pending-input detection entirely when a dialog is open.
-    pending_input = (
-        None if needs_input else _detect_pending_input(raw_rows, plain_rows)
-    )
+    pending_input = None if needs_input else _detect_pending_input(raw_rows, plain_rows)
 
     recap = _extract_recap(lines)
     last_line = _last_meaningful_line(lines)
 
-    asked_question = (
-        _detect_asked_question(lines)
-        if agent == "claude" and not needs_input
-        else False
-    )
+    asked_question = _detect_asked_question(lines) if agent == "claude" and not needs_input else False
     api_error = _detect_api_error(lines) if agent == "claude" else False
 
     state = _resolve_state(agent, needs_input, asked_question, spinner)

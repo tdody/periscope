@@ -32,7 +32,9 @@ def _pid_is_periscope(os_pid: int) -> bool:
     try:
         out = subprocess.run(
             ["ps", "-p", str(os_pid), "-o", "command="],
-            capture_output=True, text=True, timeout=2.0,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
         )
     except (subprocess.SubprocessError, OSError):
         return False
@@ -69,7 +71,9 @@ def _reclaim_existing_instance() -> None:
         if recorded_port is not None and recorded_port != config.PORT:
             log.warning(
                 "pidfile %s has port %d, expected %d — refusing reclaim",
-                path, recorded_port, config.PORT,
+                path,
+                recorded_port,
+                config.PORT,
             )
             return
     # Legacy pidfile (no port line) — fall through to reclaim.

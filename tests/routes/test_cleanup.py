@@ -26,9 +26,7 @@ def test_candidates_returns_list(client, mocker):
 
 
 def test_candidates_repo_filter(client, mocker):
-    spy = mocker.patch(
-        "periscope.routes.cleanup.compute_candidates", return_value=[]
-    )
+    spy = mocker.patch("periscope.routes.cleanup.compute_candidates", return_value=[])
     r = client.get("/api/cleanup/candidates?repo=/Users/x/dev/foo")
     assert r.status_code == 200
     spy.assert_called_once()
@@ -42,8 +40,11 @@ def test_archive_happy_path(client, mocker):
         "periscope.routes.cleanup.all_projects",
         return_value={
             "/wt1": {
-                "name": "foo", "tmux_session": "foo", "repo": "/repo",
-                "archived_at": None, "base_branch": "main",
+                "name": "foo",
+                "tmux_session": "foo",
+                "repo": "/repo",
+                "archived_at": None,
+                "base_branch": "main",
             }
         },
     )
@@ -55,9 +56,12 @@ def test_archive_happy_path(client, mocker):
         return_value=(0, ""),  # worktree remove succeeds
     )
 
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "/wt1", "delete_branch": False}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "/wt1", "delete_branch": False}],
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["archived"] == ["/wt1"]
@@ -72,8 +76,11 @@ def test_archive_with_branch_delete(client, mocker):
         "periscope.routes.cleanup.all_projects",
         return_value={
             "/wt1": {
-                "name": "foo", "tmux_session": "foo", "repo": "/repo",
-                "archived_at": None, "base_branch": "main",
+                "name": "foo",
+                "tmux_session": "foo",
+                "repo": "/repo",
+                "archived_at": None,
+                "base_branch": "main",
             }
         },
     )
@@ -86,13 +93,16 @@ def test_archive_with_branch_delete(client, mocker):
         "periscope.routes.cleanup._run",
         side_effect=[
             (0, "feature/x"),  # rev-parse HEAD (only when delete_branch=True)
-            (0, ""),           # worktree remove
-            (0, ""),           # branch -D
+            (0, ""),  # worktree remove
+            (0, ""),  # branch -D
         ],
     )
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "/wt1", "delete_branch": True}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "/wt1", "delete_branch": True}],
+        },
+    )
     assert r.status_code == 200
     assert r.json()["archived"] == ["/wt1"]
 
@@ -106,12 +116,15 @@ def test_archive_untracked_resolves_repo_from_worktree(client, mocker):
         "periscope.routes.cleanup._run",
         side_effect=[
             (0, "/some/repo/.git"),  # git-common-dir
-            (0, ""),                  # worktree remove
+            (0, ""),  # worktree remove
         ],
     )
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "/wt-orphan", "delete_branch": False}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "/wt-orphan", "delete_branch": False}],
+        },
+    )
     assert r.status_code == 200
     assert r.json()["archived"] == ["/wt-orphan"]
 
@@ -122,12 +135,18 @@ def test_archive_continues_on_individual_failure(client, mocker):
         "periscope.routes.cleanup.all_projects",
         return_value={
             "/wt-good": {
-                "name": "good", "tmux_session": "good", "repo": "/repo",
-                "archived_at": None, "base_branch": "main",
+                "name": "good",
+                "tmux_session": "good",
+                "repo": "/repo",
+                "archived_at": None,
+                "base_branch": "main",
             },
             "/wt-bad": {
-                "name": "bad", "tmux_session": "bad", "repo": "/repo",
-                "archived_at": None, "base_branch": "main",
+                "name": "bad",
+                "tmux_session": "bad",
+                "repo": "/repo",
+                "archived_at": None,
+                "base_branch": "main",
             },
         },
     )
@@ -139,16 +158,19 @@ def test_archive_continues_on_individual_failure(client, mocker):
     mocker.patch(
         "periscope.routes.cleanup._run",
         side_effect=[
-            (0, ""),                          # wt-good remove
-            (1, "not a worktree"),            # wt-bad remove
+            (0, ""),  # wt-good remove
+            (1, "not a worktree"),  # wt-bad remove
         ],
     )
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [
-            {"pinned_dir": "/wt-good", "delete_branch": False},
-            {"pinned_dir": "/wt-bad", "delete_branch": False},
-        ],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [
+                {"pinned_dir": "/wt-good", "delete_branch": False},
+                {"pinned_dir": "/wt-bad", "delete_branch": False},
+            ],
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert "/wt-good" in body["archived"]
@@ -157,9 +179,12 @@ def test_archive_continues_on_individual_failure(client, mocker):
 
 def test_archive_rejects_main(client, mocker):
     mocker.patch("periscope.routes.cleanup.all_projects", return_value={})
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "__main__", "delete_branch": False}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "__main__", "delete_branch": False}],
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["archived"] == []
@@ -173,33 +198,40 @@ def test_archive_empty_candidates(client, mocker):
     assert r.json() == {"archived": [], "failed": []}
 
 
-def test_archive_kills_every_pane_at_cwd_no_workspace_sparing(
-        client, clean_state, fresh_activity_db, mocker):
+def test_archive_kills_every_pane_at_cwd_no_workspace_sparing(client, clean_state, fresh_activity_db, mocker):
     # No workspace-sparing: cleanup removes the worktree dir, so EVERY pane
     # rooted there dies — even one tagged into a live workspace. Kill by stable
     # pane_id, never kill-session, never index-target.
     clean_state["projects"]["/repo/a"] = {
-        "name": "a", "tmux_session": "sess_a", "repo": "/repo",
-        "archived_at": None, "base_branch": "main",
+        "name": "a",
+        "tmux_session": "sess_a",
+        "repo": "/repo",
+        "archived_at": None,
+        "base_branch": "main",
     }
     clean_state["workspaces"]["ws_goal"] = {"id": "ws_goal", "archived_at": None}
     fresh_activity_db.set_pane_workspace("%claude", "ws_goal")
-    mocker.patch("periscope.routes.cleanup.list_windows", return_value=[
-        {"session": "sess_a", "index": 0, "pane_id": "%claude", "cwd": "/repo/a"},
-        {"session": "sess_a", "index": 1, "pane_id": "%shell", "cwd": "/repo/a"},
-    ])
+    mocker.patch(
+        "periscope.routes.cleanup.list_windows",
+        return_value=[
+            {"session": "sess_a", "index": 0, "pane_id": "%claude", "cwd": "/repo/a"},
+            {"session": "sess_a", "index": 1, "pane_id": "%shell", "cwd": "/repo/a"},
+        ],
+    )
     calls = []
-    mocker.patch("periscope.routes.cleanup._tmux_mutate",
-                 side_effect=lambda *a: calls.append(a))
+    mocker.patch("periscope.routes.cleanup._tmux_mutate", side_effect=lambda *a: calls.append(a))
     mocker.patch("periscope.routes.cleanup._run", return_value=(0, ""))
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "/repo/a", "delete_branch": False}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "/repo/a", "delete_branch": False}],
+        },
+    )
     assert r.status_code == 200
-    assert ("kill-pane", "-t", "%shell") in calls      # killed by pane_id
-    assert ("kill-pane", "-t", "%claude") in calls     # ws pane killed too
+    assert ("kill-pane", "-t", "%shell") in calls  # killed by pane_id
+    assert ("kill-pane", "-t", "%claude") in calls  # ws pane killed too
     assert not any(a[0] == "kill-session" for a in calls)
-    assert not any("sess_a:" in a for a in calls)       # never index-targeted
+    assert not any("sess_a:" in a for a in calls)  # never index-targeted
 
 
 def test_archive_kills_only_panes_at_worktree_cwd(client, clean_state, fresh_activity_db, mocker):
@@ -209,24 +241,35 @@ def test_archive_kills_only_panes_at_worktree_cwd(client, clean_state, fresh_act
     # track-scoped — two panes sharing one cwd would both die (correct: that
     # directory is being removed).
     clean_state["projects"]["/repo/a"] = {
-        "name": "a", "tmux_session": "shared", "repo": "/repo",
-        "archived_at": None, "base_branch": "main",
+        "name": "a",
+        "tmux_session": "shared",
+        "repo": "/repo",
+        "archived_at": None,
+        "base_branch": "main",
     }
     clean_state["projects"]["/repo/b"] = {
-        "name": "b", "tmux_session": "shared", "repo": "/repo",
-        "archived_at": None, "base_branch": "main",
+        "name": "b",
+        "tmux_session": "shared",
+        "repo": "/repo",
+        "archived_at": None,
+        "base_branch": "main",
     }
-    mocker.patch("periscope.routes.cleanup.list_windows", return_value=[
-        {"session": "shared", "index": 0, "pane_id": "%pane_a", "cwd": "/repo/a"},
-        {"session": "shared", "index": 1, "pane_id": "%pane_b", "cwd": "/repo/b"},
-    ])
+    mocker.patch(
+        "periscope.routes.cleanup.list_windows",
+        return_value=[
+            {"session": "shared", "index": 0, "pane_id": "%pane_a", "cwd": "/repo/a"},
+            {"session": "shared", "index": 1, "pane_id": "%pane_b", "cwd": "/repo/b"},
+        ],
+    )
     calls = []
-    mocker.patch("periscope.routes.cleanup._tmux_mutate",
-                 side_effect=lambda *a: calls.append(a))
+    mocker.patch("periscope.routes.cleanup._tmux_mutate", side_effect=lambda *a: calls.append(a))
     mocker.patch("periscope.routes.cleanup._run", return_value=(0, ""))
-    r = client.post("/api/cleanup/archive", json={
-        "candidates": [{"pinned_dir": "/repo/a", "delete_branch": False}],
-    })
+    r = client.post(
+        "/api/cleanup/archive",
+        json={
+            "candidates": [{"pinned_dir": "/repo/a", "delete_branch": False}],
+        },
+    )
     assert r.status_code == 200
-    assert ("kill-pane", "-t", "%pane_a") in calls      # pane at worktree A dies
-    assert all("%pane_b" not in a for a in calls)        # sibling worktree B spared
+    assert ("kill-pane", "-t", "%pane_a") in calls  # pane at worktree A dies
+    assert all("%pane_b" not in a for a in calls)  # sibling worktree B spared

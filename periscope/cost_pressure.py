@@ -40,7 +40,7 @@ _ACTIVE_WITHIN_S = 300
 
 # Ratios to base input price, identical across every current model — which is
 # why this feature is model-independent and never shows dollars.
-_CACHE_READ_MULT = 0.1   # re-reading the whole context, once per API call
+_CACHE_READ_MULT = 0.1  # re-reading the whole context, once per API call
 _CACHE_WRITE_MULT = 2.0  # re-writing base_ctx on the 1h TTL a subscription gets
 
 
@@ -207,15 +207,14 @@ def hint(p: Pressure) -> str:
     ctx = fmt_tokens(p.cur_ctx)
     if p.band == "hot" and p.payback_mins is not None:
         if p.payback_mins < 1:
-            return (f"each call re-reads {ctx} of context; clearing pays for itself "
-                    f"almost immediately at this pace")
-        return (f"each call re-reads {ctx} of context; clearing pays for itself "
-                f"in ~{round(p.payback_mins)} min at this pace")
+            return f"each call re-reads {ctx} of context; clearing pays for itself almost immediately at this pace"
+        return (
+            f"each call re-reads {ctx} of context; clearing pays for itself "
+            f"in ~{round(p.payback_mins)} min at this pace"
+        )
     if p.band == "warn" and not p.active:
-        return (f"carrying {ctx} of context — write a handoff before resuming "
-                f"rather than picking this up as-is")
+        return f"carrying {ctx} of context — write a handoff before resuming rather than picking this up as-is"
     if p.band == "warn":
         calls = max(1, round(p.payback_calls))
-        return (f"carrying {ctx} of context; clearing pays back in "
-                f"~{calls} call{'' if calls == 1 else 's'}")
+        return f"carrying {ctx} of context; clearing pays back in ~{calls} call{'' if calls == 1 else 's'}"
     return f"context window used — clearing this wouldn't pay off yet ({ctx})"

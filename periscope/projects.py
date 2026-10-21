@@ -29,6 +29,7 @@ MAIN_KEY = "__main__"
 
 class Project(TypedDict, total=False):
     """A row in state['projects']."""
+
     name: str
     tmux_session: str
     repo: str | None
@@ -82,10 +83,7 @@ def get_project(pinned_dir: str) -> Project:
 def all_projects() -> dict[str, Project]:
     """Snapshot of all projects (copies)."""
     with _store._STATE_LOCK:
-        return {
-            k: cast(Project, dict(v))
-            for k, v in _store._STATE.get("projects", {}).items()
-        }
+        return {k: cast(Project, dict(v)) for k, v in _store._STATE.get("projects", {}).items()}
 
 
 def create_project(pinned_dir: str, **fields) -> Project:
@@ -153,6 +151,7 @@ def archive_project(pinned_dir: str) -> bool:
 # PR-fetch helpers (moved from routes/projects.py)
 # ---------------------------------------------------------------------------
 
+
 def _resolve_pr_metadata(repo: str, pr: int) -> dict:
     """`gh pr view` for PR #pr in `repo`, returning the parsed metadata.
 
@@ -161,8 +160,12 @@ def _resolve_pr_metadata(repo: str, pr: int) -> dict:
     """
     code, out = _run(
         [
-            "gh", "pr", "view", str(pr),
-            "--json", "headRefName,isCrossRepository,headRepository,baseRefName,state",
+            "gh",
+            "pr",
+            "view",
+            str(pr),
+            "--json",
+            "headRefName,isCrossRepository,headRepository,baseRefName,state",
         ],
         cwd=repo,
         timeout=15.0,
@@ -223,8 +226,8 @@ class PRWorktree:
     base_branch: str
     is_fork: bool
     local_branch: str
-    pr_state: str   # OPEN / CLOSED / MERGED (uppercased)
-    name: str       # resolved project name (head_ref or local_branch fallback)
+    pr_state: str  # OPEN / CLOSED / MERGED (uppercased)
+    name: str  # resolved project name (head_ref or local_branch fallback)
 
 
 def fetch_pr_into_worktree(repo: str, pr: int, name_override: str | None = None) -> PRWorktree:

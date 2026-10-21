@@ -2,6 +2,7 @@
 one organizational primitive (see docs/superpowers/specs/2026-06-25-track-*).
 Value-data (TypedDict) + module functions, mirroring workspaces.py/projects.py.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,6 +36,7 @@ def _repo_for_window(window: dict) -> str | None:
     if not cwd:
         return None
     from periscope import git_pr
+
     state = git_pr.cached_git_state(cwd)
     # repo_key is the repo toplevel path (resolve_repo(path)) — the SAME value
     # today's project keys use, so repo-default track ids match project keys
@@ -48,9 +50,15 @@ def repo_default_track(repo: str | None) -> str:
     if not repo:
         return LOOSE_KEY
     if activity.get_track(repo) is None:
-        activity.insert_track({"id": repo, "name": os.path.basename(repo.rstrip("/")),
-                               "repo": repo, "created_at": int(time.time()),
-                               "archived_at": None})
+        activity.insert_track(
+            {
+                "id": repo,
+                "name": os.path.basename(repo.rstrip("/")),
+                "repo": repo,
+                "created_at": int(time.time()),
+                "archived_at": None,
+            }
+        )
     return repo
 
 
@@ -81,7 +89,7 @@ def track_label(track_id: str) -> str:
 
 
 def track_kind(track_id: str) -> str:
-    """"loose" | "repo" | "goal" — which of the two catchalls a track is, or
+    """ "loose" | "repo" | "goal" — which of the two catchalls a track is, or
     neither. A repo-default track has id == repo (repo_default_track keys the
     row id on the repo path); goal tracks have id="tk_<slug>" != repo. Both
     catchalls refuse dissolve/teardown, so the rail hides their action menu —
@@ -101,8 +109,7 @@ def create_track(*, name: str, repo: str | None = None) -> Track:
     while activity.get_track(tid) is not None:
         tid = f"{base}-{n}"
         n += 1
-    row: Track = {"id": tid, "name": name, "repo": repo,
-                  "created_at": int(time.time()), "archived_at": None}
+    row: Track = {"id": tid, "name": name, "repo": repo, "created_at": int(time.time()), "archived_at": None}
     activity.insert_track(dict(row))
     return row
 
@@ -197,14 +204,20 @@ def migrate_workspaces_to_tracks() -> int:
         if ws.get("archived_at"):
             continue
         if activity.get_track(ws_id) is None:
-            activity.insert_track({"id": ws_id, "name": ws.get("name") or ws_id,
-                                   "repo": ws.get("base_repo"),
-                                   "created_at": int(time.time()), "archived_at": None})
+            activity.insert_track(
+                {
+                    "id": ws_id,
+                    "name": ws.get("name") or ws_id,
+                    "repo": ws.get("base_repo"),
+                    "created_at": int(time.time()),
+                    "archived_at": None,
+                }
+            )
     # pane_workspace_map is %N-keyed legacy data; pane_tracks keys on the
     # durable @periscope_id, so convert through a live %N → pid_raw map.
     from periscope.panes import list_windows
-    pane_to_pid = {w["pane_id"]: w["pid_raw"] for w in list_windows()
-                   if w.get("pane_id") and w.get("pid_raw")}
+
+    pane_to_pid = {w["pane_id"]: w["pid_raw"] for w in list_windows() if w.get("pane_id") and w.get("pid_raw")}
     already = activity.pane_track_map()
     written = 0
     for pane_id, ws_id in activity.pane_workspace_map().items():

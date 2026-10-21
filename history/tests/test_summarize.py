@@ -12,10 +12,18 @@ from history.summarize import (
 
 def _sample_record() -> SessionRecord:
     return SessionRecord(
-        session_id="s1", jsonl_path="/p.jsonl", project_path="/Users/tom/dev/foo",
-        branch="feat/cohort", started_at=0, ended_at=120, duration_s=120,
-        user_msg_count=2, asst_msg_count=3, tool_use_count=2,
-        was_interrupted=0, ended_cleanly=1,
+        session_id="s1",
+        jsonl_path="/p.jsonl",
+        project_path="/Users/tom/dev/foo",
+        branch="feat/cohort",
+        started_at=0,
+        ended_at=120,
+        duration_s=120,
+        user_msg_count=2,
+        asst_msg_count=3,
+        tool_use_count=2,
+        was_interrupted=0,
+        ended_cleanly=1,
         first_user_msg="investigate slow query",
         last_user_msg="verify with explain",
         final_assistant_msg="P99 down to 200ms after adding index",
@@ -71,12 +79,18 @@ def test_call_summarizer_uses_forced_tool_use():
 def test_call_summarizer_retries_on_missing_tool_use():
     mock_client = MagicMock()
     # First call: no tool_use block (model misbehaved)
-    bad_block = MagicMock(); bad_block.type = "text"; bad_block.text = "I refuse"
-    bad_msg = MagicMock(); bad_msg.content = [bad_block]
+    bad_block = MagicMock()
+    bad_block.type = "text"
+    bad_block.text = "I refuse"
+    bad_msg = MagicMock()
+    bad_msg.content = [bad_block]
     # Second call: succeeds
-    ok_block = MagicMock(); ok_block.type = "tool_use"; ok_block.name = SUMMARIZE_TOOL["name"]
+    ok_block = MagicMock()
+    ok_block.type = "tool_use"
+    ok_block.name = SUMMARIZE_TOOL["name"]
     ok_block.input = {"summary": "ok", "tags": ["a", "b", "c"]}
-    ok_msg = MagicMock(); ok_msg.content = [ok_block]
+    ok_msg = MagicMock()
+    ok_msg.content = [ok_block]
     mock_client.messages.create.side_effect = [bad_msg, ok_msg]
 
     result = call_summarizer(mock_client, _sample_record())
@@ -86,8 +100,11 @@ def test_call_summarizer_retries_on_missing_tool_use():
 
 def test_call_summarizer_returns_none_after_exhausting_retries():
     mock_client = MagicMock()
-    bad_block = MagicMock(); bad_block.type = "text"; bad_block.text = "no"
-    bad_msg = MagicMock(); bad_msg.content = [bad_block]
+    bad_block = MagicMock()
+    bad_block.type = "text"
+    bad_block.text = "no"
+    bad_msg = MagicMock()
+    bad_msg.content = [bad_block]
     mock_client.messages.create.return_value = bad_msg
 
     result = call_summarizer(mock_client, _sample_record())
@@ -108,9 +125,12 @@ def test_call_summarizer_parses_facets():
         type = "tool_use"
         name = "save_session_summary"
         input = {
-            "summary": "did the thing", "tags": ["a", "b", "c"],
-            "outcome": "shipped", "category": "feature",
-            "notable": True, "topics": ["periscope", "Rust"],
+            "summary": "did the thing",
+            "tags": ["a", "b", "c"],
+            "outcome": "shipped",
+            "category": "feature",
+            "notable": True,
+            "topics": ["periscope", "Rust"],
         }
 
     class _Msg:
@@ -124,18 +144,30 @@ def test_call_summarizer_parses_facets():
                 return _Msg()
 
     rec = SessionRecord(
-        session_id="s1", jsonl_path="/x", project_path="/p", branch=None,
-        started_at=0, ended_at=0, duration_s=0,
-        user_msg_count=3, asst_msg_count=3, tool_use_count=0,
-        was_interrupted=0, ended_cleanly=1,
-        first_user_msg="hi", last_user_msg="bye", final_assistant_msg="done",
-        files_touched="[]", notable_cmds="[]", tool_use_counts="{}",
+        session_id="s1",
+        jsonl_path="/x",
+        project_path="/p",
+        branch=None,
+        started_at=0,
+        ended_at=0,
+        duration_s=0,
+        user_msg_count=3,
+        asst_msg_count=3,
+        tool_use_count=0,
+        was_interrupted=0,
+        ended_cleanly=1,
+        first_user_msg="hi",
+        last_user_msg="bye",
+        final_assistant_msg="done",
+        files_touched="[]",
+        notable_cmds="[]",
+        tool_use_counts="{}",
     )
     res = call_summarizer(_Client(), rec, model="claude-haiku-5-5")
     assert res.outcome == "shipped"
     assert res.category == "feature"
     assert res.notable is True
-    assert res.topics == ["periscope", "rust"]   # normalized lowercase
+    assert res.topics == ["periscope", "rust"]  # normalized lowercase
 
 
 def test_call_summarizer_rejects_unknown_enum():
@@ -145,9 +177,14 @@ def test_call_summarizer_rejects_unknown_enum():
     class _Block:
         type = "tool_use"
         name = "save_session_summary"
-        input = {"summary": "x", "tags": ["a", "b", "c"],
-                 "outcome": "banana", "category": "nonsense",
-                 "notable": False, "topics": []}
+        input = {
+            "summary": "x",
+            "tags": ["a", "b", "c"],
+            "outcome": "banana",
+            "category": "nonsense",
+            "notable": False,
+            "topics": [],
+        }
 
     class _Msg:
         content = [_Block()]
@@ -160,13 +197,25 @@ def test_call_summarizer_rejects_unknown_enum():
                 return _Msg()
 
     rec = SessionRecord(
-        session_id="s2", jsonl_path="/x", project_path="/p", branch=None,
-        started_at=0, ended_at=0, duration_s=0,
-        user_msg_count=3, asst_msg_count=3, tool_use_count=0,
-        was_interrupted=0, ended_cleanly=1,
-        first_user_msg="hi", last_user_msg="bye", final_assistant_msg="done",
-        files_touched="[]", notable_cmds="[]", tool_use_counts="{}",
+        session_id="s2",
+        jsonl_path="/x",
+        project_path="/p",
+        branch=None,
+        started_at=0,
+        ended_at=0,
+        duration_s=0,
+        user_msg_count=3,
+        asst_msg_count=3,
+        tool_use_count=0,
+        was_interrupted=0,
+        ended_cleanly=1,
+        first_user_msg="hi",
+        last_user_msg="bye",
+        final_assistant_msg="done",
+        files_touched="[]",
+        notable_cmds="[]",
+        tool_use_counts="{}",
     )
     res = call_summarizer(_Client(), rec, model="claude-haiku-5-5")
-    assert res.outcome is None      # unknown enum → None
+    assert res.outcome is None  # unknown enum → None
     assert res.category is None

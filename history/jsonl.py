@@ -1,4 +1,5 @@
 """Stream-parse Claude Code JSONL transcripts into classified Event records."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class Event:
     """One JSONL event, normalized. Fields default to None when absent."""
+
     type: str
     raw: dict
     session_id: str | None = None
@@ -80,24 +82,25 @@ def _classify(raw: dict) -> Event:
             if isinstance(t, str):
                 texts.append(t)
         elif btype == "tool_use" and role == "assistant":
-            ev.tool_uses.append({
-                "id": block.get("id"),
-                "name": block.get("name"),
-                "input": block.get("input") or {},
-            })
+            ev.tool_uses.append(
+                {
+                    "id": block.get("id"),
+                    "name": block.get("name"),
+                    "input": block.get("input") or {},
+                }
+            )
         elif btype == "tool_result" and role == "user":
             content_val = block.get("content")
             if isinstance(content_val, list):
                 # Filter empty/missing-text blocks (image blocks contribute "")
                 # so we don't pad with blank lines.
-                content_val = "\n".join(
-                    t for c in content_val
-                    if isinstance(c, dict) and (t := c.get("text"))
-                )
-            ev.tool_results.append({
-                "tool_use_id": block.get("tool_use_id"),
-                "content": content_val if isinstance(content_val, str) else "",
-            })
+                content_val = "\n".join(t for c in content_val if isinstance(c, dict) and (t := c.get("text")))
+            ev.tool_results.append(
+                {
+                    "tool_use_id": block.get("tool_use_id"),
+                    "content": content_val if isinstance(content_val, str) else "",
+                }
+            )
     joined = "\n".join(t for t in texts if t.strip())
     if role == "user" and joined:
         ev.user_text = joined
@@ -132,5 +135,4 @@ def parse_jsonl(path: str | Path) -> Iterator[Event]:
                 ev.session_id = fallback_sid
             yield ev
     if total_lines and bad_lines / total_lines > 0.5:
-        log.warning("history.jsonl: %s — %d/%d lines malformed, results may be incomplete",
-                    p, bad_lines, total_lines)
+        log.warning("history.jsonl: %s — %d/%d lines malformed, results may be incomplete", p, bad_lines, total_lines)

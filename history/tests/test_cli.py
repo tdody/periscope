@@ -6,9 +6,12 @@ from history.cli import main
 
 def _fake_anthropic():
     client = MagicMock()
-    blk = MagicMock(); blk.type = "tool_use"; blk.name = "save_session_summary"
+    blk = MagicMock()
+    blk.type = "tool_use"
+    blk.name = "save_session_summary"
     blk.input = {"summary": "x", "tags": ["a", "b", "c"]}
-    m = MagicMock(); m.content = [blk]
+    m = MagicMock()
+    m.content = [blk]
     client.messages.create.return_value = m
     return client
 
@@ -29,17 +32,16 @@ def test_cli_unknown_verb(capsys):
 
 def test_cli_backfill(tmp_path, fixture_dir, capsys):
     proj_dir = tmp_path / "projects"
-    cwd_dir = proj_dir / "-Users-tom-dev-foo"; cwd_dir.mkdir(parents=True)
+    cwd_dir = proj_dir / "-Users-tom-dev-foo"
+    cwd_dir.mkdir(parents=True)
     shutil.copy(fixture_dir / "short_session.jsonl", cwd_dir / "s1.jsonl")
     # Back-date so live-skip doesn't fire
     import os
+
     os.utime(cwd_dir / "s1.jsonl", (1700000000, 1700000000))
     db_path = tmp_path / "h.db"
     with patch("history.indexer.get_anthropic_client", return_value=_fake_anthropic()):
-        rc = main(["backfill",
-                   "--projects-dir", str(proj_dir),
-                   "--db-path", str(db_path),
-                   "--workers", "1"])
+        rc = main(["backfill", "--projects-dir", str(proj_dir), "--db-path", str(db_path), "--workers", "1"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "scanned 1" in out.lower() or '"scanned": 1' in out
@@ -47,16 +49,15 @@ def test_cli_backfill(tmp_path, fixture_dir, capsys):
 
 def test_cli_search(tmp_path, fixture_dir, capsys):
     proj_dir = tmp_path / "projects"
-    cwd_dir = proj_dir / "-Users-tom-dev-foo"; cwd_dir.mkdir(parents=True)
+    cwd_dir = proj_dir / "-Users-tom-dev-foo"
+    cwd_dir.mkdir(parents=True)
     shutil.copy(fixture_dir / "normal_session.jsonl", cwd_dir / "n1.jsonl")
     import os
+
     os.utime(cwd_dir / "n1.jsonl", (1700000000, 1700000000))
     db_path = tmp_path / "h.db"
     with patch("history.indexer.get_anthropic_client", return_value=_fake_anthropic()):
-        main(["backfill",
-              "--projects-dir", str(proj_dir),
-              "--db-path", str(db_path),
-              "--workers", "1"])
+        main(["backfill", "--projects-dir", str(proj_dir), "--db-path", str(db_path), "--workers", "1"])
     capsys.readouterr()  # discard backfill output
     rc = main(["search", "investigate", "--db-path", str(db_path)])
     out = capsys.readouterr().out
@@ -74,6 +75,7 @@ def test_cli_stats(tmp_path, capsys):
 
 def test_cli_hook_delegates_to_run_hook(monkeypatch):
     import io
+
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     rc = main(["hook"])
     assert rc == 0
@@ -81,6 +83,7 @@ def test_cli_hook_delegates_to_run_hook(monkeypatch):
 
 def test_cli_clean_removes_missing_files(tmp_path, capsys):
     from history.db import connect
+
     db_path = tmp_path / "h.db"
     conn = connect(db_path)
     conn.execute(

@@ -67,7 +67,7 @@ def test_paste_image_deliver_false_skips_pane_paste(client, mocker, tmp_path):
     assert r.status_code == 200
     assert r.json()["ok"] is True
     assert r.json()["path"].endswith(".png")
-    tmux_mock.assert_not_called()   # no set-buffer / paste-buffer into the pane
+    tmux_mock.assert_not_called()  # no set-buffer / paste-buffer into the pane
 
 
 def test_paste_image_rejects_empty_body(client, mocker):

@@ -15,11 +15,13 @@ def test_install_is_idempotent_and_preserves_content_and_mode(tmp_path, monkeypa
     original = {
         "unknown": {"keep": True},
         "hooks": {
-            "SessionStart": [{
-                "matcher": "other",
-                "description": "keep",
-                "hooks": [{"type": "command", "command": "other", "timeout": 99}],
-            }]
+            "SessionStart": [
+                {
+                    "matcher": "other",
+                    "description": "keep",
+                    "hooks": [{"type": "command", "command": "other", "timeout": 99}],
+                }
+            ]
         },
     }
     path.write_text(json.dumps(original))
@@ -42,21 +44,23 @@ def test_uninstall_removes_only_exact_owned_groups(tmp_path, monkeypatch):
     codex_hook_config.update(tmp_path, install=True)
     path = home / "hooks.json"
     data = json.loads(path.read_text())
-    data["hooks"]["Stop"].append({
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": codex_hook_config.command_for(tmp_path) + " --different",
-            "timeout": 5,
-        }],
-    })
+    data["hooks"]["Stop"].append(
+        {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": codex_hook_config.command_for(tmp_path) + " --different",
+                    "timeout": 5,
+                }
+            ],
+        }
+    )
     path.write_text(json.dumps(data))
     _, changed = codex_hook_config.update(tmp_path, install=False)
     assert changed == list(codex_hook_config.EVENTS)
     remaining = json.loads(path.read_text())
-    assert remaining["hooks"]["Stop"][0]["hooks"][0]["command"].endswith(
-        "--different"
-    )
+    assert remaining["hooks"]["Stop"][0]["hooks"][0]["command"].endswith("--different")
 
 
 def test_malformed_json_is_not_modified(tmp_path, monkeypatch):

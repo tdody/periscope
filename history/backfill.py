@@ -4,6 +4,7 @@ Bounded concurrency via ThreadPoolExecutor (sync Anthropic client is thread-safe
 SQLite writes are serialized inside each index_one's own connection — WAL +
 short transactions keep contention low at this scale.
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,11 +25,9 @@ def find_jsonl_files(projects_dir: Path | None = None) -> list[Path]:
     live projects dir AND the archive dir. Archive entries are preferred
     over live entries when the same session-id exists in both."""
     from .indexer import ARCHIVE_DIR
-    dirs: list[Path]
-    if projects_dir is None:
-        dirs = [ARCHIVE_DIR, DEFAULT_PROJECTS_DIR]  # archive first → wins on dedup
-    else:
-        dirs = [projects_dir]
+
+    # archive first → wins on dedup
+    dirs: list[Path] = [ARCHIVE_DIR, DEFAULT_PROJECTS_DIR] if projects_dir is None else [projects_dir]
     by_stem: dict[str, Path] = {}
     for d in dirs:
         if not d.is_dir():
@@ -38,11 +37,14 @@ def find_jsonl_files(projects_dir: Path | None = None) -> list[Path]:
     return sorted(by_stem.values())
 
 
-def backfill(*, projects_dir: Path | None = None,
-             db_path: Path | str | None = None,
-             workers: int = 2,
-             since: int | None = None,
-             model: str | None = None) -> dict:
+def backfill(
+    *,
+    projects_dir: Path | None = None,
+    db_path: Path | str | None = None,
+    workers: int = 2,
+    since: int | None = None,
+    model: str | None = None,
+) -> dict:
     """Index every JSONL under projects_dir (or both live + archive if None)."""
     paths = find_jsonl_files(projects_dir)
     if since is not None:
@@ -51,8 +53,7 @@ def backfill(*, projects_dir: Path | None = None,
     errors: list[tuple[str, str]] = []
     log.info("history.backfill: scanning %d jsonl files (workers=%d)", len(paths), workers)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(index_one, str(p), db_path=db_path, model=model): p
-                   for p in paths}
+        futures = {pool.submit(index_one, str(p), db_path=db_path, model=model): p for p in paths}
         for fut in as_completed(futures):
             p = futures[fut]
             try:

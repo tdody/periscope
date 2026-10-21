@@ -24,6 +24,7 @@ failure is swallowed and it always exits 0, so it can never block a prompt.
 
 Installed/removed by `bin/periscope {install-hook,uninstall-hook}`.
 """
+
 import contextlib
 import json
 import os
@@ -51,8 +52,7 @@ _SCHEMA_BASES = (
 
 
 def _git(cwd: str, *args: str) -> str:
-    r = subprocess.run(["git", "-C", cwd, *args], capture_output=True,
-                       text=True, timeout=10.0)
+    r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=10.0)
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
@@ -71,18 +71,16 @@ def _stamp_session_base(c: sqlite3.Connection, sid: str, cwd: str) -> None:
     touching the worktree or the stash ref; it prints nothing on a clean tree,
     so fall back to HEAD.
     """
-    if c.execute("SELECT 1 FROM session_bases WHERE session_id=?",
-                 (sid,)).fetchone():
+    if c.execute("SELECT 1 FROM session_bases WHERE session_id=?", (sid,)).fetchone():
         return
     repo = _git(cwd, "rev-parse", "--show-toplevel")
     if not repo:
-        return   # not a git worktree; session scope simply won't be offered
+        return  # not a git worktree; session scope simply won't be offered
     base = _git(repo, "stash", "create") or _git(repo, "rev-parse", "HEAD")
     if not base:
-        return   # unborn branch (no commits yet)
+        return  # unborn branch (no commits yet)
     c.execute(
-        "INSERT OR IGNORE INTO session_bases "
-        "(session_id, repo, base_sha, created_at) VALUES (?,?,?,?)",
+        "INSERT OR IGNORE INTO session_bases (session_id, repo, base_sha, created_at) VALUES (?,?,?,?)",
         (sid, repo, base, int(time.time())),
     )
 

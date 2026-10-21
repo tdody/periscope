@@ -13,26 +13,33 @@ from periscope import session_binding_db
 def _rollout(home: Path, sid: str, *, originator: str = "codex-tui") -> Path:
     path = home / "sessions" / "2026" / "07" / "30" / "rollout.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "type": "session_meta",
-        "payload": {
-            "session_id": sid,
-            "originator": originator,
-            "cli_version": "0.146.0",
-        },
-    }) + "\n")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {
+                    "session_id": sid,
+                    "originator": originator,
+                    "cli_version": "0.146.0",
+                },
+            }
+        )
+        + "\n"
+    )
     return path
 
 
 def _payload(event: str, sid: str, path: Path) -> str:
-    return json.dumps({
-        "hook_event_name": event,
-        "session_id": sid,
-        "transcript_path": str(path),
-        "turn_id": "turn-1",
-        "cli_version": "0.146.0",
-        "prompt": "must not be stored",
-    })
+    return json.dumps(
+        {
+            "hook_event_name": event,
+            "session_id": sid,
+            "transcript_path": str(path),
+            "turn_id": "turn-1",
+            "cli_version": "0.146.0",
+            "prompt": "must not be stored",
+        }
+    )
 
 
 def test_all_events_bind_and_append_sanitized_metadata(tmp_path, monkeypatch):
@@ -49,13 +56,9 @@ def test_all_events_bind_and_append_sanitized_metadata(tmp_path, monkeypatch):
         binding = session_binding_db.get_binding(conn, "%4")
         assert binding is not None
         assert (binding.provider, binding.session_id) == ("codex", "root")
-        rows = conn.execute(
-            "SELECT event, turn_id FROM agent_session_events ORDER BY id"
-        ).fetchall()
+        rows = conn.execute("SELECT event, turn_id FROM agent_session_events ORDER BY id").fetchall()
         assert {row[0] for row in rows} == hook.EVENTS
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(agent_session_events)")
-        }
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(agent_session_events)")}
         assert "prompt" not in columns
 
 
@@ -68,35 +71,32 @@ def test_non_root_rollout_is_rejected_and_cannot_overwrite(tmp_path, monkeypatch
     db = tmp_path / "db.sqlite"
     hook.record(root, pane_id="%1", db_path=db)
 
-    root_path.write_text(json.dumps({
-        "type": "session_meta",
-        "payload": {"session_id": "child", "originator": "codex-subagent"},
-    }) + "\n")
-    child = hook.parse_payload(
-        io.StringIO(_payload("SessionStart", "child", root_path))
+    root_path.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"session_id": "child", "originator": "codex-subagent"},
+            }
+        )
+        + "\n"
     )
+    child = hook.parse_payload(io.StringIO(_payload("SessionStart", "child", root_path)))
     assert child is None
     with sqlite3.connect(db) as conn:
         assert session_binding_db.get_binding(conn, "%1").session_id == "root"
 
 
-def test_even_valid_different_session_cannot_overwrite_before_evidence_gate(
-    tmp_path, monkeypatch
-):
+def test_even_valid_different_session_cannot_overwrite_before_evidence_gate(tmp_path, monkeypatch):
     home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(home))
     first_path = _rollout(home, "first")
     db = tmp_path / "db.sqlite"
-    first = hook.parse_payload(
-        io.StringIO(_payload("SessionStart", "first", first_path))
-    )
+    first = hook.parse_payload(io.StringIO(_payload("SessionStart", "first", first_path)))
     assert first is not None
     hook.record(first, pane_id="%1", db_path=db)
     first_path.unlink()
     second_path = _rollout(home, "second")
-    second = hook.parse_payload(
-        io.StringIO(_payload("SessionStart", "second", second_path))
-    )
+    second = hook.parse_payload(io.StringIO(_payload("SessionStart", "second", second_path)))
     assert second is not None
     hook.record(second, pane_id="%1", db_path=db)
     with sqlite3.connect(db) as conn:
@@ -113,10 +113,7 @@ def test_subprocess_is_silent_always_zero_and_bootstraps_legacy_db(tmp_path):
     db = xdg / "periscope" / "periscope.db"
     db.parent.mkdir(parents=True)
     with sqlite3.connect(db) as conn:
-        conn.execute(
-            "CREATE TABLE pane_sessions "
-            "(pane_id TEXT PRIMARY KEY, session_id TEXT, updated_at INTEGER)"
-        )
+        conn.execute("CREATE TABLE pane_sessions (pane_id TEXT PRIMARY KEY, session_id TEXT, updated_at INTEGER)")
     env = {
         **os.environ,
         "TMUX_PANE": "%9",
@@ -139,7 +136,11 @@ def test_subprocess_is_silent_always_zero_and_bootstraps_legacy_db(tmp_path):
 
 def test_bad_inputs_are_silent_and_successful(tmp_path):
     script = Path(__file__).resolve().parent.parent / "codex_pane_session_hook.py"
-    for payload, pane in (("{", "%1"), ("{}", "%1"), ("{}", ""),):
+    for payload, pane in (
+        ("{", "%1"),
+        ("{}", "%1"),
+        ("{}", ""),
+    ):
         result = subprocess.run(
             [sys.executable, str(script)],
             input=payload,

@@ -29,10 +29,10 @@ STATIC = ROOT / "static"
 
 MASTER = 1024
 RADIUS_PCT = 0.2237  # macOS Big Sur+ app-icon corner ratio.
-BG = "#262a32"        # Sits between --bg-0 and --bg-1; reads as its own surface in the dock.
-FG = "#f5f7fa"        # Near-white, full contrast against the dark slate.
-GLYPH = "❯"      # ❯  — the prompt arrow used throughout periscope.
-GLYPH_SCALE = 0.62    # Fraction of canvas height occupied by the glyph cap.
+BG = "#262a32"  # Sits between --bg-0 and --bg-1; reads as its own surface in the dock.
+FG = "#f5f7fa"  # Near-white, full contrast against the dark slate.
+GLYPH = "❯"  # ❯  — the prompt arrow used throughout periscope.
+GLYPH_SCALE = 0.62  # Fraction of canvas height occupied by the glyph cap.
 
 # Order matters: SF Mono looks best when present, Menlo is the reliable
 # fallback on every macOS install since Snow Leopard.

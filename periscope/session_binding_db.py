@@ -65,22 +65,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute(_AGENT_SESSION_EVENTS_DDL)
 
 
-def get_binding(
-    conn: sqlite3.Connection, pane_id: str
-) -> AgentSessionBinding | None:
+def get_binding(conn: sqlite3.Connection, pane_id: str) -> AgentSessionBinding | None:
     if not pane_id:
         return None
     row = conn.execute(
-        "SELECT pane_id, provider, session_id, session_path, updated_at, evidence "
-        "FROM agent_sessions WHERE pane_id=?",
+        "SELECT pane_id, provider, session_id, session_path, updated_at, evidence FROM agent_sessions WHERE pane_id=?",
         (pane_id,),
     ).fetchone()
     return AgentSessionBinding(*row) if row else None
 
 
-def upsert_binding(
-    conn: sqlite3.Connection, binding: AgentSessionBinding
-) -> None:
+def upsert_binding(conn: sqlite3.Connection, binding: AgentSessionBinding) -> None:
     conn.execute(
         "INSERT INTO agent_sessions "
         "(pane_id, provider, session_id, session_path, updated_at, evidence) "
@@ -104,9 +99,7 @@ def delete_binding(conn: sqlite3.Connection, pane_id: str) -> None:
     conn.execute("DELETE FROM agent_sessions WHERE pane_id=?", (pane_id,))
 
 
-def append_hook_event(
-    conn: sqlite3.Connection, event: AgentHookEvent
-) -> int:
+def append_hook_event(conn: sqlite3.Connection, event: AgentHookEvent) -> int:
     cursor = conn.execute(
         "INSERT INTO agent_session_events "
         "(pane_id, provider, session_id, turn_id, event, hook_version, "

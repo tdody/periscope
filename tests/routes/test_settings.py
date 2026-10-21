@@ -49,9 +49,12 @@ def test_patch_rejects_invalid_idle_days(client, mocker):
 
 
 def test_patch_overrides_validates_each(client, mocker):
-    r = client.patch("/api/settings", json={
-        "worktree_layout_overrides": {"/foo": "sibling", "/bar": "bogus"},
-    })
+    r = client.patch(
+        "/api/settings",
+        json={
+            "worktree_layout_overrides": {"/foo": "sibling", "/bar": "bogus"},
+        },
+    )
     assert r.status_code == 400
     assert "/bar" in r.json()["detail"]
 
@@ -59,9 +62,12 @@ def test_patch_overrides_validates_each(client, mocker):
 def test_patch_overrides_replaces_wholesale(client, mocker):
     update_spy = mocker.patch("periscope.routes.settings.update_settings")
     mocker.patch("periscope.routes.settings.get_settings", return_value={})
-    r = client.patch("/api/settings", json={
-        "worktree_layout_overrides": {"/foo": "sibling"},
-    })
+    r = client.patch(
+        "/api/settings",
+        json={
+            "worktree_layout_overrides": {"/foo": "sibling"},
+        },
+    )
     assert r.status_code == 200
     update_spy.assert_called_once_with({"worktree_layout_overrides": {"/foo": "sibling"}})
 
@@ -130,7 +136,9 @@ def test_patch_spawn_model_stores_auto_and_default_literally_and_null_clears(cli
     assert client.patch("/api/settings", json={"spawn_model": "auto"}).status_code == 200
     assert client.patch("/api/settings", json={"spawn_model": None}).status_code == 200
     assert [c.args[0] for c in update_spy.call_args_list] == [
-        {"spawn_model": "default"}, {"spawn_model": "auto"}, {"spawn_model": None},
+        {"spawn_model": "default"},
+        {"spawn_model": "auto"},
+        {"spawn_model": None},
     ]
 
 
@@ -140,8 +148,10 @@ def test_patch_spawn_effort_accepts_levels_default_and_null(client, mocker):
     for v in ("high", "max", "default", None):
         assert client.patch("/api/settings", json={"spawn_effort": v}).status_code == 200
     assert [c.args[0] for c in update_spy.call_args_list] == [
-        {"spawn_effort": "high"}, {"spawn_effort": "max"},
-        {"spawn_effort": "default"}, {"spawn_effort": None},
+        {"spawn_effort": "high"},
+        {"spawn_effort": "max"},
+        {"spawn_effort": "default"},
+        {"spawn_effort": None},
     ]
 
 
@@ -184,10 +194,12 @@ def test_patch_poke_at_accepts_hhmm_empty_and_null(client, mocker):
     update_spy = mocker.patch("periscope.routes.settings.update_settings")
     mocker.patch("periscope.routes.settings.get_settings", return_value={})
     assert client.patch("/api/settings", json={"poke_at": "07:30"}).status_code == 200
-    assert client.patch("/api/settings", json={"poke_at": ""}).status_code == 200      # disabled
-    assert client.patch("/api/settings", json={"poke_at": None}).status_code == 200    # back to the default
+    assert client.patch("/api/settings", json={"poke_at": ""}).status_code == 200  # disabled
+    assert client.patch("/api/settings", json={"poke_at": None}).status_code == 200  # back to the default
     assert [c.args[0] for c in update_spy.call_args_list] == [
-        {"poke_at": "07:30"}, {"poke_at": ""}, {"poke_at": None},
+        {"poke_at": "07:30"},
+        {"poke_at": ""},
+        {"poke_at": None},
     ]
 
 

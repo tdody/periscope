@@ -37,9 +37,7 @@ router = APIRouter()
 
 @router.get("/api/projects")
 def projects_list():
-    return {"projects": [
-        {"pinned_dir": k, **v} for k, v in all_projects().items()
-    ]}
+    return {"projects": [{"pinned_dir": k, **v} for k, v in all_projects().items()]}
 
 
 class AdoptBody(BaseModel):
@@ -172,16 +170,14 @@ def projects_patch(body: PatchBody):
     # the rename, while the inverse drift is not.
     new_tmux = fields.get("tmux_session")
     if new_tmux and new_tmux != existing.get("tmux_session"):
-        ok, msg = _tmux_mutate(
-            "rename-session", "-t", existing["tmux_session"], new_tmux
-        )
+        ok, msg = _tmux_mutate("rename-session", "-t", existing["tmux_session"], new_tmux)
         if not ok:
-            raise HTTPException(
-                500, f"tmux rename-session failed: {msg}"
-            )
+            raise HTTPException(500, f"tmux rename-session failed: {msg}")
         log.info(
             "renamed tmux session %r → %r for project %r",
-            existing["tmux_session"], new_tmux, key,
+            existing["tmux_session"],
+            new_tmux,
+            key,
         )
 
     update_project(key, **fields)
@@ -222,28 +218,20 @@ def projects_promote(body: PromoteBody):
     # so we can distinguish "window not found" (non-zero exit) from
     # "legitimately empty cwd" (zero exit, empty stdout — rare but
     # possible mid-tmux-startup).
-    code, cwd_out = _run(
-        ["tmux", "display-message", "-t", target, "-p", "#{pane_current_path}"]
-    )
+    code, cwd_out = _run(["tmux", "display-message", "-t", target, "-p", "#{pane_current_path}"])
     if code != 0:
         raise HTTPException(404, f"window not found: {target}")
     cwd_out = cwd_out.strip()
     if not cwd_out:
         raise HTTPException(400, f"window {target} has empty cwd")
 
-    code, toplevel = _run(
-        ["git", "-C", cwd_out, "rev-parse", "--show-toplevel"]
-    )
+    code, toplevel = _run(["git", "-C", cwd_out, "rev-parse", "--show-toplevel"])
     if code != 0 or not toplevel:
-        raise HTTPException(
-            400, f"tab cwd is not inside a git repo: {cwd_out}"
-        )
+        raise HTTPException(400, f"tab cwd is not inside a git repo: {cwd_out}")
     pinned_dir = os.path.realpath(toplevel)
 
     if pinned_dir in all_projects():
-        raise HTTPException(
-            409, f"project already exists at {pinned_dir!r}"
-        )
+        raise HTTPException(409, f"project already exists at {pinned_dir!r}")
 
     repo, branch = resolve_repo_and_branch(pinned_dir)
 
@@ -255,8 +243,15 @@ def projects_promote(body: PromoteBody):
     # which would break under `renumber-windows`). `-P -F '#{window_id}'`
     # matches the existing pattern in routes/sessions.py:121-122.
     ok, msg = _tmux_mutate(
-        "new-session", "-d", "-s", tmux_session, "-c", pinned_dir,
-        "-P", "-F", "#{window_id}",
+        "new-session",
+        "-d",
+        "-s",
+        tmux_session,
+        "-c",
+        pinned_dir,
+        "-P",
+        "-F",
+        "#{window_id}",
     )
     if not ok:
         raise HTTPException(500, f"tmux new-session failed: {msg}")
@@ -265,7 +260,11 @@ def projects_promote(body: PromoteBody):
     # Move the source window in. Without a -t index, tmux picks the next
     # free slot.
     ok, msg = _tmux_mutate(
-        "move-window", "-s", target, "-t", f"{tmux_session}:",
+        "move-window",
+        "-s",
+        target,
+        "-t",
+        f"{tmux_session}:",
     )
     if not ok:
         # Rollback the empty session.
@@ -332,5 +331,3 @@ def projects_discoverable():
         "repos": sorted(repos),
         "branches_by_repo": branches_by_repo,
     }
-
-

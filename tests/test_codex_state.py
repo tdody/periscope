@@ -45,9 +45,7 @@ def test_incremental_partial_line_becomes_working(tmp_path):
     original = (FIXTURES / "partial-final-line.jsonl").read_bytes().rstrip(b"\n")
     path.write_bytes(original)
     partial_session = "33333333-3333-4333-8333-333333333333"
-    assert rollout_edge_for(
-        path, session_id=partial_session, sessions_root=root
-    ) is None
+    assert rollout_edge_for(path, session_id=partial_session, sessions_root=root) is None
     with path.open("ab") as fh:
         fh.write(b"}}\n")
     edge = rollout_edge_for(path, session_id=partial_session, sessions_root=root)
@@ -105,25 +103,21 @@ def _edge(kind, *, session=SESSION, turn=TURN, source="rollout", order=1):
     ],
 )
 def test_reconciliation_liveness(process, edge, expected):
-    assert (
-        reconcile_codex_state(
-            session_id=SESSION, process=process, rollout_edge=edge
-        )
-        == expected
-    )
+    assert reconcile_codex_state(session_id=SESSION, process=process, rollout_edge=edge) == expected
 
 
 def test_reconciliation_rejects_mismatch_and_unorderable_turns():
     mismatch = _edge("idle", session="different")
-    assert reconcile_codex_state(
-        session_id=SESSION, process="live", rollout_edge=mismatch
-    ).state == "unknown"
-    assert reconcile_codex_state(
-        session_id=SESSION,
-        process="live",
-        rollout_edge=_edge("working"),
-        tui_marker=_edge("idle", turn="other", source="tui"),
-    ).state == "unknown"
+    assert reconcile_codex_state(session_id=SESSION, process="live", rollout_edge=mismatch).state == "unknown"
+    assert (
+        reconcile_codex_state(
+            session_id=SESSION,
+            process="live",
+            rollout_edge=_edge("working"),
+            tui_marker=_edge("idle", turn="other", source="tui"),
+        ).state
+        == "unknown"
+    )
 
 
 def test_same_source_order_and_exact_turn_completion():

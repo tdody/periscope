@@ -14,7 +14,7 @@ ACCOUNTS = [
     {"id": "default", "label": "account A", "config_dir": ""},
     {"id": "b", "label": "account B", "config_dir": "/Users/x/.claude-b"},
 ]
-T0 = datetime(2026, 9, 8, 8, 0)          # Tue 08:00 local
+T0 = datetime(2026, 9, 8, 8, 0)  # Tue 08:00 local
 
 
 def usage(*, default_open=False, b_open=False, now=T0):
@@ -23,16 +23,24 @@ def usage(*, default_open=False, b_open=False, now=T0):
     later = int(now.timestamp()) + 3600
 
     def acct(is_open):
-        return {"available": True, "fetched_at": 1,
-                "meters": {"session": {"percent": 3 if is_open else 0,
-                                       "resets_at": later if is_open else None}}}
+        return {
+            "available": True,
+            "fetched_at": 1,
+            "meters": {"session": {"percent": 3 if is_open else 0, "resets_at": later if is_open else None}},
+        }
+
     return {"default": acct(default_open), "b": acct(b_open)}
 
 
 def due(now=T0, settings=None, log=None, u=None, in_flight=frozenset()):
-    return poke.due(now=now, settings=settings or {}, log=log or {},
-                    usage=u if u is not None else usage(), in_flight=in_flight,
-                    accounts=ACCOUNTS)
+    return poke.due(
+        now=now,
+        settings=settings or {},
+        log=log or {},
+        usage=u if u is not None else usage(),
+        in_flight=in_flight,
+        accounts=ACCOUNTS,
+    )
 
 
 def test_fires_for_every_account_at_the_default_time():
@@ -63,7 +71,7 @@ def test_empty_poke_at_disables():
 
 def test_skips_an_account_with_an_open_window_until_it_closes():
     assert due(u=usage(b_open=True)) == ["default"]
-    assert due(u=usage()) == ["default", "b"]        # closed → fires (inside grace)
+    assert due(u=usage()) == ["default", "b"]  # closed → fires (inside grace)
 
 
 def test_skips_an_account_already_poked_today_but_not_yesterday():
@@ -83,19 +91,23 @@ def test_skips_an_account_with_no_usable_credential():
     assert due(u=u) == ["default"]
 
 
-@pytest.mark.parametrize("resets_at,ok", [
-    (1_800_000_000 + 5 * 3600, True),
-    (1_800_000_000 + 5 * 3600 + 299, True),
-    (1_800_000_000 + 5 * 3600 - 299, True),
-    (1_800_000_000 + 5 * 3600 + 301, False),
-    (1_800_000_000 + 3600, False),          # a pre-existing window, not ours
-    (None, False),
-])
+@pytest.mark.parametrize(
+    "resets_at,ok",
+    [
+        (1_800_000_000 + 5 * 3600, True),
+        (1_800_000_000 + 5 * 3600 + 299, True),
+        (1_800_000_000 + 5 * 3600 - 299, True),
+        (1_800_000_000 + 5 * 3600 + 301, False),
+        (1_800_000_000 + 3600, False),  # a pre-existing window, not ours
+        (None, False),
+    ],
+)
 def test_verified_is_within_five_minutes_of_now_plus_5h(resets_at, ok):
     assert poke.verified(resets_at, at=1_800_000_000) is ok
 
 
 # --- poke_account: subprocess → refetch → verify → record --------------------
+
 
 def _worker(monkeypatch, *, resets_at, returncode=0, raise_subprocess=False):
     """Patch the two I/O seams; return the captured argv/env and the record."""
@@ -108,9 +120,15 @@ def _worker(monkeypatch, *, resets_at, returncode=0, raise_subprocess=False):
         return type("R", (), {"returncode": returncode, "stdout": "ok", "stderr": ""})()
 
     monkeypatch.setattr(poke.subprocess, "run", fake_run)
-    monkeypatch.setattr(poke.usage, "refresh_plan_usage_now",
-                        lambda aid, cfg: {"available": True, "fetched_at": int(poke.time.time()) + 1,
-                                          "meters": {"session": {"percent": 1, "resets_at": resets_at}}})
+    monkeypatch.setattr(
+        poke.usage,
+        "refresh_plan_usage_now",
+        lambda aid, cfg: {
+            "available": True,
+            "fetched_at": int(poke.time.time()) + 1,
+            "meters": {"session": {"percent": 1, "resets_at": resets_at}},
+        },
+    )
     monkeypatch.setattr(poke.time, "sleep", lambda s: None)
     monkeypatch.setattr(poke.store, "record_poke", lambda aid, e: seen.update(record=(aid, e)))
     monkeypatch.setattr(poke, "_in_flight", {"b"})
@@ -147,10 +165,8 @@ def test_poke_account_retries_once_for_a_reading_that_postdates_the_poke(monkeyp
     # "not anchored". The first stale reading is retried once after a wait.
     at = int(poke.time.time())
     seen = _worker(monkeypatch, resets_at=at + 5 * 3600)
-    stale = {"available": True, "fetched_at": at - 100,
-             "meters": {"session": {"percent": 0, "resets_at": None}}}
-    fresh = {"available": True, "fetched_at": at + 5,
-             "meters": {"session": {"percent": 1, "resets_at": at + 5 * 3600}}}
+    stale = {"available": True, "fetched_at": at - 100, "meters": {"session": {"percent": 0, "resets_at": None}}}
+    fresh = {"available": True, "fetched_at": at + 5, "meters": {"session": {"percent": 1, "resets_at": at + 5 * 3600}}}
     readings = iter([stale, fresh])
     monkeypatch.setattr(poke.usage, "refresh_plan_usage_now", lambda aid, cfg: next(readings))
     slept = []
@@ -163,8 +179,7 @@ def test_poke_account_retries_once_for_a_reading_that_postdates_the_poke(monkeyp
 def test_poke_account_gives_up_after_two_stale_readings_without_a_false_alarm(monkeypatch, caplog):
     at = int(poke.time.time())
     seen = _worker(monkeypatch, resets_at=None)
-    stale = {"available": True, "fetched_at": at - 100,
-             "meters": {"session": {"percent": 0, "resets_at": None}}}
+    stale = {"available": True, "fetched_at": at - 100, "meters": {"session": {"percent": 0, "resets_at": None}}}
     monkeypatch.setattr(poke.usage, "refresh_plan_usage_now", lambda aid, cfg: dict(stale))
     monkeypatch.setattr(poke.time, "sleep", lambda s: None)
     poke.poke_account("b", "/Users/x/.claude-b")
@@ -200,5 +215,5 @@ def test_tick_spawns_one_worker_per_due_account_and_marks_it_in_flight(monkeypat
     poke._tick()
     assert spawned == [("poke:default", ("default", "")), ("poke:b", ("b", "/Users/x/.claude-b"))]
     assert poke._in_flight == {"default", "b"}
-    poke._tick()                       # in flight → nothing new
+    poke._tick()  # in flight → nothing new
     assert len(spawned) == 2

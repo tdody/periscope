@@ -63,7 +63,7 @@ def test_open_in_editor_argv_is_a_list_never_a_shell(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", fake_run)
     editors.open_in_editor("Cursor", "/repo/with a space")
     assert seen["argv"] == ["open", "-a", "Cursor", "/repo/with a space"]
-    assert "shell" not in seen["kwargs"]      # never shell=True
+    assert "shell" not in seen["kwargs"]  # never shell=True
 
 
 def test_open_in_editor_raises_on_launch_failure(monkeypatch, tmp_path):
@@ -71,7 +71,8 @@ def test_open_in_editor_raises_on_launch_failure(monkeypatch, tmp_path):
     surfaced — the user clicked expecting a window."""
     monkeypatch.setattr(editors, "_APP_DIRS", (_fake_apps(tmp_path, "Cursor.app"),))
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda argv, **k: subprocess.CompletedProcess(argv, 1, "", "app is damaged"),
     )
     with pytest.raises(ValueError, match="app is damaged"):
@@ -81,7 +82,8 @@ def test_open_in_editor_raises_on_launch_failure(monkeypatch, tmp_path):
 def test_open_in_editor_failure_without_stderr_still_reports(monkeypatch, tmp_path):
     monkeypatch.setattr(editors, "_APP_DIRS", (_fake_apps(tmp_path, "Cursor.app"),))
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda argv, **k: subprocess.CompletedProcess(argv, 3, "", ""),
     )
     with pytest.raises(ValueError, match="exit 3"):

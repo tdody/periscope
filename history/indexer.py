@@ -7,6 +7,7 @@ Pipeline:
 Liveness guard: skip if last event < 5 min ago OR mtime < 60 s ago.
 Idempotency: if a row already exists with matching hash + model, reuse summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,11 +32,10 @@ from .summarize import SummaryResult, call_summarizer
 
 log = logging.getLogger(__name__)
 
-LIVE_LAST_EVENT_S = 5 * 60      # skip if last event newer than 5 min ago
-LIVE_MTIME_S = 60               # skip if jsonl mtime newer than 60 s ago
+LIVE_LAST_EVENT_S = 5 * 60  # skip if last event newer than 5 min ago
+LIVE_MTIME_S = 60  # skip if jsonl mtime newer than 60 s ago
 
-ARCHIVE_DIR = Path(os.environ.get("CLAUDE_HISTORY_ARCHIVE_DIR") or
-                   Path.home() / ".claude" / "projects-archive")
+ARCHIVE_DIR = Path(os.environ.get("CLAUDE_HISTORY_ARCHIVE_DIR") or Path.home() / ".claude" / "projects-archive")
 
 _anthropic_client = None
 _anthropic_lock = threading.Lock()
@@ -49,6 +49,7 @@ def get_anthropic_client():
             if not os.environ.get("ANTHROPIC_API_KEY"):
                 raise RuntimeError("ANTHROPIC_API_KEY is not set")
             from anthropic import Anthropic
+
             # max_retries=8 → SDK handles 429s with exponential backoff up to ~2 min cumulative,
             # parsing Retry-After headers. Our wrapper's max_retries handles cases the SDK gave up on.
             _anthropic_client = Anthropic(max_retries=8)
@@ -70,6 +71,7 @@ def _ensure_archived(jsonl_path: Path) -> Path:
     session is archived, our DB row points to the archive copy and survives
     rotation. Tom owns the archive's lifecycle — we never delete from it."""
     import shutil
+
     encoded_project = jsonl_path.parent.name  # e.g. -Users-tom-dev-foo
     archive_path = ARCHIVE_DIR / encoded_project / jsonl_path.name
     if archive_path.resolve() == jsonl_path.resolve():
@@ -92,11 +94,19 @@ def _is_live(source_mtime: int, last_event_ts: int) -> bool:
     return bool(source_mtime and now - source_mtime < LIVE_MTIME_S)
 
 
-def _upsert(conn: sqlite3.Connection, rec: SessionRecord, *,
-             summary: str | None, tags_csv: str | None,
-             summary_input_hash: str | None, summary_model: str | None,
-             outcome: str | None = None, category: str | None = None,
-             notable: int | None = None, topics_json: str | None = None) -> None:
+def _upsert(
+    conn: sqlite3.Connection,
+    rec: SessionRecord,
+    *,
+    summary: str | None,
+    tags_csv: str | None,
+    summary_input_hash: str | None,
+    summary_model: str | None,
+    outcome: str | None = None,
+    category: str | None = None,
+    notable: int | None = None,
+    topics_json: str | None = None,
+) -> None:
     """One transaction: UPSERT sessions + refresh sessions_fts.
 
     `tags_csv` is the canonical stored form (comma-separated). The sessions
@@ -162,16 +172,36 @@ def _upsert(conn: sqlite3.Connection, rec: SessionRecord, *,
           source_size = excluded.source_size
         """,
         (
-            rec.session_id, rec.jsonl_path, rec.project_path, rec.branch,
-            rec.started_at, rec.ended_at, rec.duration_s,
-            rec.user_msg_count, rec.asst_msg_count, rec.tool_use_count,
-            rec.was_interrupted, rec.ended_cleanly,
-            summary, tags_csv,
-            summary_input_hash, summary_model,
-            outcome, category, notable, topics_json,
-            rec.first_user_msg, rec.last_user_msg, rec.final_assistant_msg,
-            rec.files_touched, rec.notable_cmds, rec.tool_use_counts,
-            int(time.time()), MECHANICAL_VERSION, rec.source_mtime, rec.source_size,
+            rec.session_id,
+            rec.jsonl_path,
+            rec.project_path,
+            rec.branch,
+            rec.started_at,
+            rec.ended_at,
+            rec.duration_s,
+            rec.user_msg_count,
+            rec.asst_msg_count,
+            rec.tool_use_count,
+            rec.was_interrupted,
+            rec.ended_cleanly,
+            summary,
+            tags_csv,
+            summary_input_hash,
+            summary_model,
+            outcome,
+            category,
+            notable,
+            topics_json,
+            rec.first_user_msg,
+            rec.last_user_msg,
+            rec.final_assistant_msg,
+            rec.files_touched,
+            rec.notable_cmds,
+            rec.tool_use_counts,
+            int(time.time()),
+            MECHANICAL_VERSION,
+            rec.source_mtime,
+            rec.source_size,
         ),
     )
     conn.execute("DELETE FROM sessions_fts WHERE session_id = ?", (rec.session_id,))
@@ -186,17 +216,23 @@ def _upsert(conn: sqlite3.Connection, rec: SessionRecord, *,
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            rec.session_id, summary or "", tags_csv or "",
-            rec.first_user_msg or "", rec.last_user_msg or "",
+            rec.session_id,
+            summary or "",
+            tags_csv or "",
+            rec.first_user_msg or "",
+            rec.last_user_msg or "",
             rec.final_assistant_msg or "",
-            rec.user_messages_blob, rec.assistant_text_blob,
-            rec.files_touched, rec.notable_cmds,
+            rec.user_messages_blob,
+            rec.assistant_text_blob,
+            rec.files_touched,
+            rec.notable_cmds,
         ),
     )
 
 
-def index_one(jsonl_path: str, *, db_path: Path | str | None = None,
-              force: bool = False, model: str | None = None) -> dict[str, Any]:
+def index_one(
+    jsonl_path: str, *, db_path: Path | str | None = None, force: bool = False, model: str | None = None
+) -> dict[str, Any]:
     """Index (or re-index) one session. Returns a status dict."""
     p = Path(jsonl_path)
     if not p.is_file():
@@ -205,9 +241,7 @@ def index_one(jsonl_path: str, *, db_path: Path | str | None = None,
 
     # Parse + extract first; if we end up skipping, no DB write.
     events = list(parse_jsonl(str(p)))
-    rec = extract_record(str(p), events,
-                         source_mtime=int(stat.st_mtime),
-                         source_size=stat.st_size)
+    rec = extract_record(str(p), events, source_mtime=int(stat.st_mtime), source_size=stat.st_size)
 
     # periscope's /usage scraper launches a throwaway `claude` that is
     # screen-scraped and killed — it never produces an assistant turn.
@@ -241,54 +275,62 @@ def index_one(jsonl_path: str, *, db_path: Path | str | None = None,
 
         # Decide summary path
         if is_trivial(rec):
-            _upsert(conn, rec,
-                    summary=heuristic_summary(rec), tags_csv=None,
-                    summary_input_hash=new_hash, summary_model=None)
+            _upsert(
+                conn,
+                rec,
+                summary=heuristic_summary(rec),
+                tags_csv=None,
+                summary_input_hash=new_hash,
+                summary_model=None,
+            )
             conn.commit()
-            return {"status": "trivial", "session_id": rec.session_id,
-                    "source_mtime": rec.source_mtime}
+            return {"status": "trivial", "session_id": rec.session_id, "source_mtime": rec.source_mtime}
 
         if not _row_needs_resummary(row, new_hash=new_hash, target_model=target_model):
             # Re-extract but reuse existing summary.
-            _upsert(conn, rec,
-                    summary=row["summary"], tags_csv=row["tags"],
-                    summary_input_hash=new_hash, summary_model=row["summary_model"],
-                    outcome=row["outcome"], category=row["category"],
-                    notable=row["notable"], topics_json=row["topics"])
+            _upsert(
+                conn,
+                rec,
+                summary=row["summary"],
+                tags_csv=row["tags"],
+                summary_input_hash=new_hash,
+                summary_model=row["summary_model"],
+                outcome=row["outcome"],
+                category=row["category"],
+                notable=row["notable"],
+                topics_json=row["topics"],
+            )
             conn.commit()
-            return {"status": "hash-cache-hit", "session_id": rec.session_id,
-                    "source_mtime": rec.source_mtime}
+            return {"status": "hash-cache-hit", "session_id": rec.session_id, "source_mtime": rec.source_mtime}
 
         # Need to call Haiku
         try:
             client = get_anthropic_client()
         except RuntimeError as e:
             log.warning("summarize: %s - storing mechanical fields only", e)
-            _upsert(conn, rec,
-                    summary=None, tags_csv=None,
-                    summary_input_hash=new_hash, summary_model=None)
+            _upsert(conn, rec, summary=None, tags_csv=None, summary_input_hash=new_hash, summary_model=None)
             conn.commit()
-            return {"status": "no-api-key", "session_id": rec.session_id,
-                    "source_mtime": rec.source_mtime}
+            return {"status": "no-api-key", "session_id": rec.session_id, "source_mtime": rec.source_mtime}
 
         result: SummaryResult | None = call_summarizer(client, rec, model=target_model)
         if result is None:
-            _upsert(conn, rec,
-                    summary=None, tags_csv=None,
-                    summary_input_hash=new_hash, summary_model=None)
+            _upsert(conn, rec, summary=None, tags_csv=None, summary_input_hash=new_hash, summary_model=None)
             conn.commit()
-            return {"status": "summary-failed", "session_id": rec.session_id,
-                    "source_mtime": rec.source_mtime}
+            return {"status": "summary-failed", "session_id": rec.session_id, "source_mtime": rec.source_mtime}
 
-        _upsert(conn, rec,
-                summary=result.summary,
-                tags_csv=",".join(result.tags) if result.tags else None,
-                summary_input_hash=new_hash, summary_model=result.model,
-                outcome=result.outcome, category=result.category,
-                notable=1 if result.notable else 0,
-                topics_json=json.dumps(result.topics) if result.topics else None)
+        _upsert(
+            conn,
+            rec,
+            summary=result.summary,
+            tags_csv=",".join(result.tags) if result.tags else None,
+            summary_input_hash=new_hash,
+            summary_model=result.model,
+            outcome=result.outcome,
+            category=result.category,
+            notable=1 if result.notable else 0,
+            topics_json=json.dumps(result.topics) if result.topics else None,
+        )
         conn.commit()
-        return {"status": "summarized", "session_id": rec.session_id,
-                "source_mtime": rec.source_mtime}
+        return {"status": "summarized", "session_id": rec.session_id, "source_mtime": rec.source_mtime}
     finally:
         conn.close()

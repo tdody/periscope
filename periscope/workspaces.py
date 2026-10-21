@@ -5,6 +5,7 @@ Membership is NOT stored here — it is a per-tab tag in the `pane_workspaces`
 table (periscope.db, owned by activity.py), keyed on tmux pane_id. This module
 owns only the entity (CRUD) and the per-window resolve.
 """
+
 from __future__ import annotations
 
 import re
@@ -28,8 +29,7 @@ def _slug(name: str) -> str:
     return s or "workspace"
 
 
-def create_workspace(*, name: str, base_repo: str | None = None,
-                     base_worktree: str | None = None) -> Workspace:
+def create_workspace(*, name: str, base_repo: str | None = None, base_worktree: str | None = None) -> Workspace:
     base = f"ws_{_slug(name)}"
     with store._STATE_LOCK:
         existing = store._STATE["workspaces"]

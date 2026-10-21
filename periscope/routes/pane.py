@@ -78,8 +78,18 @@ def pane(session: str, index: int, lines: int = 200):
         window_name, cwd = "", ""
     git = cached_git_state(cwd) or {}
     pid_raw, pane_id, window_id = window_identity(target)
-    one = [{"session": session, "index": index, "name": window_name, "active": False,
-            "cwd": cwd, "pid_raw": pid_raw, "pane_id": pane_id, "window_id": window_id}]
+    one = [
+        {
+            "session": session,
+            "index": index,
+            "name": window_name,
+            "active": False,
+            "cwd": cwd,
+            "pid_raw": pid_raw,
+            "pane_id": pane_id,
+            "window_id": window_id,
+        }
+    ]
     _attach_git_then_resolve_pids(one)
     pid = one[0].get("pid")
     pr = cached_pr_state(cwd, git.get("branch")) or {}
@@ -88,7 +98,7 @@ def pane(session: str, index: int, lines: int = 200):
     home = os.path.expanduser("~")
     cwd_display = cwd
     if cwd and (cwd == home or cwd.startswith(home + "/")):
-        cwd_display = "~" + cwd[len(home):]
+        cwd_display = "~" + cwd[len(home) :]
     # Channel data: look up pane_id via list_windows since the route doesn't
     # take it directly. Single iteration is fine — list_windows is cached at
     # tmux's speed (sub-ms) and we already pay it on every state() poll.
@@ -235,7 +245,8 @@ def _slash_arg(setting: str, value: str) -> str:
 # know whether it took. Refusals first: "Not applied" contains "applied".
 _REFUSED_RE = re.compile(
     r"Not applied|overrides this session|Failed to set effort|Model switch failed"
-    r"|Unknown model|isn't available")
+    r"|Unknown model|isn't available"
+)
 _CONFIRM_RE = re.compile(r"Switch model\?|confirmation required")
 # "exceeds the cap" is deliberately NOT applied: Claude then runs at the cap,
 # not the requested level, and recording the request would mislabel the pane.
@@ -270,7 +281,7 @@ def _command_outcome(target: str, setting: str, command: str, baseline: int) -> 
         except Exception:
             rows = []
         hits = [i for i, r in enumerate(rows) if r == echo]
-        for line in rows[hits[-1] + 1:] if len(hits) > baseline else []:
+        for line in rows[hits[-1] + 1 :] if len(hits) > baseline else []:
             text = line.lstrip("⎿").strip()
             if _REFUSED_RE.search(text):
                 return "refused", text
@@ -336,7 +347,5 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
         # can never match it and the pick would show as applied but never land.
         claude_pid = pane_claude_pids().get(pane_id)
         if rpid and claude_pid:
-            set_window_fields(rpid, **{f"session_{setting}": {
-                "value": value.strip(), "claude_pid": claude_pid}})
-    return {"ok": True, "pid": rpid or pid, "sent": command,
-            "result": outcome, "message": message}
+            set_window_fields(rpid, **{f"session_{setting}": {"value": value.strip(), "claude_pid": claude_pid}})
+    return {"ok": True, "pid": rpid or pid, "sent": command, "result": outcome, "message": message}

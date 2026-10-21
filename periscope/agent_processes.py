@@ -47,9 +47,7 @@ def parse_ps_snapshot(output: str) -> dict[int, ProcessInfo]:
             continue
         pid, ppid, started, state, comm, argv = match.groups()
         try:
-            started_at = int(
-                datetime.strptime(started, "%a %b %d %H:%M:%S %Y").timestamp()
-            )
+            started_at = int(datetime.strptime(started, "%a %b %d %H:%M:%S %Y").timestamp())
         except ValueError:
             continue
         info = ProcessInfo(

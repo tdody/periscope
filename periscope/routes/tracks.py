@@ -12,6 +12,7 @@ before the handler runs. As a path param every write against a repo-default
 track 405'd: move-tab (dragging a tab into a project row), rename, dissolve,
 teardown. Same trap as session names — see CLAUDE.md invariant #6.
 """
+
 import os
 
 from fastapi import APIRouter, HTTPException
@@ -44,6 +45,7 @@ def tracks_rename(track_id: str, body: RenameBody):
     if not tracks.rename_track(track_id, body.name):
         raise HTTPException(404, f"no track {track_id!r}")
     from periscope import activity
+
     return activity.get_track(track_id)
 
 
@@ -56,6 +58,7 @@ class MoveTabBody(BaseModel):
 @router.post("/api/tracks/move-tab")
 def tracks_move_tab(track_id: str, body: MoveTabBody):
     from periscope import activity
+
     if activity.get_track(track_id) is None:
         raise HTTPException(404, f"no track {track_id!r}")
     tracks.move_pane(body.pid, track_id)
@@ -68,6 +71,7 @@ def tracks_dissolve(track_id: str):
     on the next resolve. Kills nothing. Refuses the loose/repo-default
     catchalls (409), matching teardown."""
     from periscope import activity
+
     if track_id == tracks.LOOSE_KEY or activity.get_track(track_id) is None:
         raise HTTPException(404, f"no track {track_id!r}")
     try:
@@ -96,11 +100,7 @@ def tracks_teardown(track_id: str, body: TeardownBody):
 
     # Capture each pane's worktree path BEFORE killing (cwd is the worktree
     # for these panes) so we can remove it after, if requested.
-    cwd_by_pane = {
-        w["pane_id"]: w.get("cwd")
-        for w in list_windows()
-        if w.get("pane_id")
-    }
+    cwd_by_pane = {w["pane_id"]: w.get("cwd") for w in list_windows() if w.get("pane_id")}
 
     killed: list[tuple[str, str]] = []
     for target, pane_id in targets:
@@ -130,7 +130,8 @@ def _remove_worktrees(paths: list[str | None]) -> None:
         seen.add(path)
         # Resolve the repo (worktree's main checkout) to run `git -C repo`.
         code, common = _run(
-            ["git", "-C", path, "rev-parse", "--git-common-dir"], timeout=3.0,
+            ["git", "-C", path, "rev-parse", "--git-common-dir"],
+            timeout=3.0,
         )
         if code != 0 or not common:
             log.warning("teardown: not a git worktree, skipping removal: %s", path)
@@ -138,7 +139,8 @@ def _remove_worktrees(paths: list[str | None]) -> None:
         common_abs = common if os.path.isabs(common) else os.path.join(path, common)
         repo = os.path.realpath(os.path.dirname(common_abs))
         code, out = _run(
-            ["git", "-C", repo, "worktree", "remove", "--force", path], timeout=10.0,
+            ["git", "-C", repo, "worktree", "remove", "--force", path],
+            timeout=10.0,
         )
         if code != 0:
             log.warning("teardown: worktree remove %s failed: %s", path, out)

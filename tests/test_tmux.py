@@ -26,7 +26,10 @@ def test_ansi_sgr_re_strips_color_codes():
 def test_tmux_invokes_subprocess_with_tmux_prefix(mocker):
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="hello\n", stderr="",
+        args=[],
+        returncode=0,
+        stdout="hello\n",
+        stderr="",
     )
     out = tmux("display-message", "-p", "hello")
     assert out == "hello\n"
@@ -40,7 +43,10 @@ def test_tmux_mutate_returns_ok_on_zero_exit(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="renamed\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="renamed\n",
+            stderr="",
         ),
     )
     ok, msg = _tmux_mutate("rename-window", "-t", "foo:0", "bar")
@@ -52,7 +58,10 @@ def test_tmux_mutate_surfaces_stderr_on_failure(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="no such window\n",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="no such window\n",
         ),
     )
     ok, msg = _tmux_mutate("rename-window", "-t", "missing:0", "bar")
@@ -64,7 +73,10 @@ def test_tmux_mutate_falls_back_to_generic_error(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="",
         ),
     )
     ok, msg = _tmux_mutate("bad-cmd")
@@ -76,7 +88,10 @@ def test_run_returns_returncode_and_stdout(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="abcdef\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="abcdef\n",
+            stderr="",
         ),
     )
     code, out = _run(["git", "rev-parse", "HEAD"])
@@ -95,7 +110,13 @@ def test_capture_calls_tmux_capture_pane_with_lines(mocker):
     mock_tmux = mocker.patch("periscope.tmux.tmux", return_value="pane body\n")
     out = capture("foo:0", lines=50)
     mock_tmux.assert_called_once_with(
-        "capture-pane", "-t", "foo:0", "-p", "-e", "-S", "-50",
+        "capture-pane",
+        "-t",
+        "foo:0",
+        "-p",
+        "-e",
+        "-S",
+        "-50",
     )
     assert out == "pane body\n"
 
@@ -106,7 +127,10 @@ def test_deliver_input_small_uses_send_keys_hex(mocker):
     tmux's argv parser eating standalone `;` as a command separator."""
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="", stderr="",
+        args=[],
+        returncode=0,
+        stdout="",
+        stderr="",
     )
     deliver_input("foo:0", "a;b\n")
     assert mock_run.call_count == 1
@@ -121,7 +145,10 @@ def test_deliver_input_large_falls_back_to_paste_buffer(mocker):
     over stdin so argv length stays bounded regardless of paste size."""
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="", stderr="",
+        args=[],
+        returncode=0,
+        stdout="",
+        stderr="",
     )
     big = "x" * 5000
     deliver_input("foo:0", big)
@@ -142,9 +169,7 @@ def test_env_args_empty_for_default_account():
 
 
 def test_env_args_builds_e_flag():
-    assert env_args("/Users/tom/.claude-b") == [
-        "-e", "CLAUDE_CONFIG_DIR=/Users/tom/.claude-b"
-    ]
+    assert env_args("/Users/tom/.claude-b") == ["-e", "CLAUDE_CONFIG_DIR=/Users/tom/.claude-b"]
 
 
 def test_env_args_carries_the_wrapper_profile():
@@ -154,16 +179,22 @@ def test_env_args_carries_the_wrapper_profile():
 def test_env_args_carries_the_model_override():
     assert env_args("", None, "opus") == ["-e", "ANTHROPIC_MODEL=opus"]
     assert env_args("/c", "lab", "opus") == [
-        "-e", "CLAUDE_CONFIG_DIR=/c", "-e", "CLAUDE_WRAPPER_PROFILE=lab",
-        "-e", "ANTHROPIC_MODEL=opus",
+        "-e",
+        "CLAUDE_CONFIG_DIR=/c",
+        "-e",
+        "CLAUDE_WRAPPER_PROFILE=lab",
+        "-e",
+        "ANTHROPIC_MODEL=opus",
     ]
 
 
 def test_env_args_account_and_profile_are_independent():
     """The two axes compose: a lab pane on the second subscription carries both."""
     assert env_args("/Users/tom/.claude-b", "lab") == [
-        "-e", "CLAUDE_CONFIG_DIR=/Users/tom/.claude-b",
-        "-e", "CLAUDE_WRAPPER_PROFILE=lab",
+        "-e",
+        "CLAUDE_CONFIG_DIR=/Users/tom/.claude-b",
+        "-e",
+        "CLAUDE_WRAPPER_PROFILE=lab",
     ]
 
 
@@ -182,11 +213,13 @@ def test_window_identity_parses_three_fields(mocker):
     pid_raw="" made every detail-pane poll rebind and flap last_seen.pane_id
     (2026-08-06, post session-keyed-identity deploy)."""
     from periscope import tmux as tmux_mod
+
     mocker.patch.object(tmux_mod, "tmux", return_value="abc12345\t%7\t@9\n")
     assert tmux_mod.window_identity("s:1") == ("abc12345", "%7", "@9")
 
 
 def test_window_identity_empty_on_unstamped(mocker):
     from periscope import tmux as tmux_mod
+
     mocker.patch.object(tmux_mod, "tmux", return_value="\t%7\t@9\n")
     assert tmux_mod.window_identity("s:1") == ("", "%7", "@9")

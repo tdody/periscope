@@ -48,17 +48,14 @@ def test_mutations_do_not_commit_the_callers_transaction():
 def test_legacy_pane_sessions_is_untouched():
     conn = sqlite3.connect(":memory:")
     conn.execute(
-        "CREATE TABLE pane_sessions (pane_id TEXT PRIMARY KEY, "
-        "session_id TEXT NOT NULL, updated_at INTEGER NOT NULL)"
+        "CREATE TABLE pane_sessions (pane_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, updated_at INTEGER NOT NULL)"
     )
     conn.execute("INSERT INTO pane_sessions VALUES ('%7', 'claude-id', 1)")
 
     ensure_schema(conn)
     upsert_binding(conn, _binding(session_id="codex-id"))
 
-    assert conn.execute("SELECT * FROM pane_sessions").fetchall() == [
-        ("%7", "claude-id", 1)
-    ]
+    assert conn.execute("SELECT * FROM pane_sessions").fetchall() == [("%7", "claude-id", 1)]
     assert get_binding(conn, "%7").session_id == "codex-id"
 
 

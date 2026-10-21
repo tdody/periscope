@@ -181,9 +181,10 @@ def _read_oauth_token(config_dir: str = "") -> str | None:
     any running Claude Code session keeps it fresh."""
     try:
         out = subprocess.run(
-            ["security", "find-generic-password",
-             "-s", _keychain_item(config_dir), "-w"],
-            capture_output=True, text=True, timeout=5,
+            ["security", "find-generic-password", "-s", _keychain_item(config_dir), "-w"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         creds = json.loads(out.stdout)["claudeAiOauth"]
         if creds.get("expiresAt", 0) / 1000 <= time.time():
@@ -202,7 +203,9 @@ def _claude_user_agent() -> str:
         try:
             out = subprocess.run(
                 ["claude", "--version"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             m = re.search(r"(\d+\.\d+\.\d+)", out.stdout)
             _claude_version = m.group(1) if m else "2.0.0"
@@ -227,13 +230,14 @@ def parse_plan_usage(data: dict) -> AccountUsage:
     # once per process when one goes live so a new per-model meter (Fable?)
     # doesn't get silently dropped from the dashboard.
     for field, entry in data.items():
-        if (field not in _KNOWN_USAGE_FIELDS
-                and field not in _warned_unknown_fields
-                and isinstance(entry, dict)
-                and entry.get("utilization") is not None):
+        if (
+            field not in _KNOWN_USAGE_FIELDS
+            and field not in _warned_unknown_fields
+            and isinstance(entry, dict)
+            and entry.get("utilization") is not None
+        ):
             _warned_unknown_fields.add(field)
-            log.warning("usage endpoint has live unmapped meter %r: %s",
-                        field, entry)
+            log.warning("usage endpoint has live unmapped meter %r: %s", field, entry)
     meters: dict[str, Meter] = {}
     for field, key, label in _PLAN_METERS:
         entry = data.get(field)
@@ -328,14 +332,12 @@ _MIN_SLOPE_SPAN_S = {
 }
 
 
-def attach_projections(meters: dict, now: float, samples_for=None,
-                       account: str = "default") -> None:
+def attach_projections(meters: dict, now: float, samples_for=None, account: str = "default") -> None:
     """Annotate each meter dict in place with projected_percent / limit_at.
     samples_for(meter_key, since) -> [(at, percent)] is injectable for tests;
     defaults to the persisted usage_samples series for `account`. The seam
     stays account-free so injected fakes don't have to model the registry."""
-    fetch = samples_for or (
-        lambda key, since: activity.usage_samples_since(account, key, since))
+    fetch = samples_for or (lambda key, since: activity.usage_samples_since(account, key, since))
     for key, m in meters.items():
         m["projected_percent"] = None
         m["projected_recent"] = None
@@ -407,10 +409,9 @@ def _refresh_plan_usage_into_cache(account: str, config_dir: str) -> None:
         if result:
             now = int(time.time())
             result["fetched_at"] = now
-            activity.record_usage_samples([
-                (now, account, k, m["utilization"], m.get("resets_at"))
-                for k, m in result["meters"].items()
-            ])
+            activity.record_usage_samples(
+                [(now, account, k, m["utilization"], m.get("resets_at")) for k, m in result["meters"].items()]
+            )
             attach_projections(result["meters"], now, account=account)
     except Exception:
         log.exception("plan usage: sample recording/projection failed")
@@ -451,8 +452,7 @@ def cached_plan_usage() -> dict[str, AccountUsage]:
             next_at, data = _plan_cache.get(aid, (0.0, None))
             if now >= next_at and aid not in _plan_in_flight:
                 _plan_in_flight.add(aid)
-                _bg(f"plan-usage:{aid}", _refresh_plan_usage_into_cache,
-                    aid, acct.get("config_dir", ""))
+                _bg(f"plan-usage:{aid}", _refresh_plan_usage_into_cache, aid, acct.get("config_dir", ""))
         out[aid] = data if data else {"available": False}
     return out
 
@@ -575,6 +575,7 @@ def _refresh_cost_into_cache(pane_ids: list[str]) -> None:
         # refresh permanently in-flight and freeze the feature with no way
         # to self-recover.
         from periscope import turns
+
         now = time.time()
         cutoff = now - _PACE_WINDOW_S
         for pid in pane_ids:
@@ -635,8 +636,7 @@ def annotate_cost_pressure(views: list[dict]) -> None:
     Unlike the burn flag it replaces, this touches no plan-usage state — no
     OAuth call, no account gate.
     """
-    ids = [v["pane_id"] for v in views
-           if v.get("agent") == "claude" and v.get("pane_id")]
+    ids = [v["pane_id"] for v in views if v.get("agent") == "claude" and v.get("pane_id")]
     if not ids:
         return
     samples = pane_cost_pressure(ids)
@@ -660,14 +660,21 @@ def move_targets() -> dict[str, str]:
     the click sends exactly that id."""
     ids = tuple(a["id"] for a in store.get_accounts() if a.get("id"))
     base = launch_policy.LaunchInputs(
-        accounts=ids, usage=cached_plan_usage(), account_arg=None, model_arg=None,
-        account_pin=None, model_pin=None, now=time.time(),
+        accounts=ids,
+        usage=cached_plan_usage(),
+        account_arg=None,
+        model_arg=None,
+        account_pin=None,
+        model_pin=None,
+        now=time.time(),
     )
     return {aid: t for aid in ids if (t := launch_policy.choose_move(base, aid))}
 
 
 def choose_launch(
-    account: str | None = None, model: str | None = None, effort: str | None = None,
+    account: str | None = None,
+    model: str | None = None,
+    effort: str | None = None,
 ) -> Launch:
     """The account and model a new pane lands on. The one choke point every
     unnamed spawn path shares — launcher New Tab, unified open, MCP
@@ -680,15 +687,17 @@ def choose_launch(
     `cached_plan_usage` never blocks, so a launch never waits on usage.
     """
     settings = store.get_settings()
-    launch = launch_policy.choose(launch_policy.LaunchInputs(
-        accounts=tuple(a["id"] for a in store.get_accounts() if a.get("id")),
-        usage=cached_plan_usage(),
-        account_arg=account,
-        model_arg=model,
-        account_pin=settings.get("spawn_account"),
-        model_pin=settings.get("spawn_model"),
-        now=time.time(),
-    ))
+    launch = launch_policy.choose(
+        launch_policy.LaunchInputs(
+            accounts=tuple(a["id"] for a in store.get_accounts() if a.get("id")),
+            usage=cached_plan_usage(),
+            account_arg=account,
+            model_arg=model,
+            account_pin=settings.get("spawn_account"),
+            model_pin=settings.get("spawn_model"),
+            now=time.time(),
+        )
+    )
     # No meter depends on effort, so the policy never sees it; the pin rides on
     # the answer so every spawn path gets it from the same call as the model.
     pick = effort if effort is not None else settings.get("spawn_effort")

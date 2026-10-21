@@ -15,7 +15,7 @@ import pytest
 class FakeSubscription:
     def __init__(self):
         self.q = asyncio.Queue()
-        self.loop = None        # captured in fake_subscribe (app's loop)
+        self.loop = None  # captured in fake_subscribe (app's loop)
         self.reconciles = 0
         self.exited = False
 
@@ -51,8 +51,7 @@ def _patch_mirror(mocker):
         sub.loop = asyncio.get_running_loop()
         return sub
 
-    mocker.patch("periscope.routes.ws.tmux_mirror.subscribe",
-                 side_effect=fake_subscribe)
+    mocker.patch("periscope.routes.ws.tmux_mirror.subscribe", side_effect=fake_subscribe)
     return sub
 
 
@@ -69,6 +68,7 @@ def _fake_tmux(calls=None):
         if "capture-pane" in args:
             return "hello\n"
         return ""
+
     return fake
 
 
@@ -102,8 +102,8 @@ def test_ws_pane_recency_stamp_keyed_on_session_index(client, mocker):
     _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
 
     assert recency_stamps_for("main:0")["acted_at"] > 0
@@ -120,11 +120,9 @@ def test_ws_pane_resizes_tmux_before_capture(client, mocker):
     mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
     _patch_mirror(mocker)
 
-    with client.websocket_connect(
-        "/ws/pane?pane_id=%7&cols=100&rows=30"
-    ) as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+    with client.websocket_connect("/ws/pane?pane_id=%7&cols=100&rows=30") as ws:
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
 
     def call_idx(pred):
@@ -167,11 +165,9 @@ def test_ws_pane_handshake_survives_resize_failure(client, mocker):
     mocker.patch("periscope.routes.ws.tmux", side_effect=fake)
     _patch_mirror(mocker)
 
-    with client.websocket_connect(
-        "/ws/pane?pane_id=%7&cols=100&rows=30"
-    ) as ws:
-        assert json.loads(ws.receive_text())["type"] == "size"   # handshake survived
-        _ = ws.receive_text()   # mouse
+    with client.websocket_connect("/ws/pane?pane_id=%7&cols=100&rows=30") as ws:
+        assert json.loads(ws.receive_text())["type"] == "size"  # handshake survived
+        _ = ws.receive_text()  # mouse
         assert ws.receive_bytes()
 
     # The chained attempt ran, then a bare display-message recovered the meta.
@@ -185,8 +181,8 @@ def test_ws_streams_subscription_bytes(client, mocker):
     sub = _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
         sub.push(b"live-bytes")
         assert ws.receive_bytes() == b"live-bytes"
@@ -199,8 +195,8 @@ def test_ws_closes_on_subscription_eof(client, mocker):
     sub = _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
         sub.push(None)  # EOF sentinel
         with pytest.raises(Exception):  # noqa: B017 — starlette's closed-ws exception type is an internal detail
@@ -212,8 +208,8 @@ def test_ws_resize_message_triggers_reconcile(client, mocker):
     sub = _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
         ws.send_text(json.dumps({"type": "resize", "cols": 90, "rows": 30}))
         # Resize handling is async; poll briefly for the side effect.
@@ -221,6 +217,7 @@ def test_ws_resize_message_triggers_reconcile(client, mocker):
             if sub.reconciles:
                 break
             import time
+
             time.sleep(0.02)
         assert sub.reconciles == 1
 
@@ -234,8 +231,8 @@ def test_ws_reconcile_message_repaints_without_resizing(client, mocker):
     sub = _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
-        _ = ws.receive_text()   # size
-        _ = ws.receive_text()   # mouse
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
         before = sum(1 for c in calls if "resize-window" in c)
         ws.send_text(json.dumps({"type": "reconcile"}))
@@ -243,6 +240,7 @@ def test_ws_reconcile_message_repaints_without_resizing(client, mocker):
             if sub.reconciles:
                 break
             import time
+
             time.sleep(0.02)
         assert sub.reconciles == 1
         assert sum(1 for c in calls if "resize-window" in c) == before
@@ -255,8 +253,7 @@ def test_ws_reconcile_message_is_not_forwarded_as_keystrokes(client, mocker):
     mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
     sub = _patch_mirror(mocker)
     sent = []
-    mocker.patch("periscope.routes.ws.tmux_input.send",
-                 side_effect=lambda target, data: sent.append(data))
+    mocker.patch("periscope.routes.ws.tmux_input.send", side_effect=lambda target, data: sent.append(data))
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
         _ = ws.receive_text()
@@ -267,6 +264,7 @@ def test_ws_reconcile_message_is_not_forwarded_as_keystrokes(client, mocker):
             if sub.reconciles:
                 break
             import time
+
             time.sleep(0.02)
     assert sub.reconciles == 1
     assert not any("reconcile" in s for s in sent)

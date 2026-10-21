@@ -13,7 +13,6 @@ batches stamp_updates across all panes and writes them under one
 _STATE_LOCK acquisition for efficiency.
 """
 
-
 import threading
 import time
 from dataclasses import dataclass
@@ -66,9 +65,7 @@ _view_cache: dict[tuple[str, str], dict] = {}
 
 _QUIET_STATES = ("idle", "shell")
 CODEX_UNKNOWN_GRACE_S = 5
-_TRUSTED_CODEX_BINDING_EVIDENCE = frozenset(
-    {"resume-explicit", "rollout-fallback", "launch-explicit"}
-)
+_TRUSTED_CODEX_BINDING_EVIDENCE = frozenset({"resume-explicit", "rollout-fallback", "launch-explicit"})
 
 
 @dataclass(frozen=True)
@@ -85,9 +82,7 @@ _codex_last_valid: dict[str, tuple[_CodexObservation, int]] = {}
 _codex_pid_panes: dict[str, str] = {}
 
 
-def _codex_observation(
-    pane_id: str, codex_live: bool | None
-) -> _CodexObservation | None:
+def _codex_observation(pane_id: str, codex_live: bool | None) -> _CodexObservation | None:
     """Resolve a trusted binding and rollout edge for one live Codex pane."""
     if codex_live is not True:
         return None
@@ -110,15 +105,9 @@ def _codex_observation(
         process="live",
         rollout_edge=edge,
     )
-    if (
-        reconciled is None
-        or reconciled.state not in {"working", "idle"}
-        or edge is None
-    ):
+    if reconciled is None or reconciled.state not in {"working", "idle"} or edge is None:
         return None
-    return _CodexObservation(
-        reconciled.state, binding.session_id, edge.turn_id
-    )
+    return _CodexObservation(reconciled.state, binding.session_id, edge.turn_id)
 
 
 def _apply_codex_state(
@@ -222,10 +211,7 @@ def _pane_env_labels() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
             cfg, aid = a.get("config_dir"), a.get("id")
             if cfg and aid:
                 by_dir[cfg] = aid
-        accounts = {
-            pane_id: by_dir.get(cfg, "unknown")
-            for pane_id, cfg in session_status.pane_config_dirs().items()
-        }
+        accounts = {pane_id: by_dir.get(cfg, "unknown") for pane_id, cfg in session_status.pane_config_dirs().items()}
         profiles = dict(session_status.pane_profiles())
         efforts = dict(session_status.pane_efforts())
         _pane_accounts_cache = (now, accounts, profiles, efforts)
@@ -251,7 +237,8 @@ def mem_signal(proc: dict | None) -> dict | None:
 
 
 def build_window_view(
-    w: dict, now_ts: int,
+    w: dict,
+    now_ts: int,
 ) -> tuple[dict, tuple[str, int, int] | None]:
     """Build the per-window dict the dashboard renders, plus an optional
     (pid, completed_at, acked_at) tuple if state.json needs persisting.
@@ -268,11 +255,7 @@ def build_window_view(
     cache_key = (target, w.get("pane_id", ""))
     cached = _view_cache.get(cache_key)
     parsed: dict  # unify the cache-hit (dict copy) and capture/error branches
-    if (
-        cached is not None
-        and cached["activity"] == window_activity
-        and cached["parsed"].get("state") in _QUIET_STATES
-    ):
+    if cached is not None and cached["activity"] == window_activity and cached["parsed"].get("state") in _QUIET_STATES:
         # No new output since last poll and the pane is quiet — reuse the
         # parsed result, skip the capture() subprocess + smoothing. Downstream
         # assembly (stamps, git, channel) still runs every poll below.
@@ -296,9 +279,7 @@ def build_window_view(
     # Process evidence is independent of terminal output, so evaluate it even
     # on quiet cache hits. Claude's distinctive parser wins for overlapping
     # synthetic content; otherwise a live Codex executable identifies Codex.
-    codex_live = codex_process_for_pane(
-        w.get("pane_id", ""), w.get("pane_pid")
-    )
+    codex_live = codex_process_for_pane(w.get("pane_id", ""), w.get("pane_pid"))
     if codex_live is True and parsed.get("agent") != "claude":
         parsed["agent"] = "codex"
         if parsed.get("state") == "shell":
@@ -351,19 +332,11 @@ def build_window_view(
     completed = max(stamps["completed_at"], int(persisted.get("completed_at") or 0))
     acked = max(stamps["acted_at"], int(persisted.get("acked_at") or 0))
 
-    if (
-        cur == "idle"
-        and parsed.get("agent")
-        and (parsed.get("agent") != "codex" or codex_valid)
-        and completed > acked
-    ):
+    if cur == "idle" and parsed.get("agent") and (parsed.get("agent") != "codex" or codex_valid) and completed > acked:
         parsed["state"] = "done"
 
     stamp_update: tuple[str, int, int] | None = None
-    if pid and (
-        completed > int(persisted.get("completed_at") or 0)
-        or acked > int(persisted.get("acked_at") or 0)
-    ):
+    if pid and (completed > int(persisted.get("completed_at") or 0) or acked > int(persisted.get("acked_at") or 0)):
         stamp_update = (pid, completed, acked)
 
     git = cached_git_state(w.get("cwd", "")) or {}
@@ -430,8 +403,7 @@ def build_window_view(
     # that process is still the pane's claude. The pid lookup is skipped for
     # panes that never had one set.
     set_model, set_effort = persisted.get("session_model"), persisted.get("session_effort")
-    live_claude = (session_status.pane_claude_pids().get(pane_id)
-                   if set_model or set_effort else None)
+    live_claude = session_status.pane_claude_pids().get(pane_id) if set_model or set_effort else None
 
     def _while_live(entry: SessionSetting | None) -> str | None:
         if entry and live_claude and entry.get("claude_pid") == live_claude:
@@ -439,7 +411,10 @@ def build_window_view(
         return None
 
     view = {
-        **w, **parsed, **git, **pr,
+        **w,
+        **parsed,
+        **git,
+        **pr,
         "target": target,
         # 0 means "never engaged through periscope" — stream view
         # filters these out; grid view sorts cards within each session
