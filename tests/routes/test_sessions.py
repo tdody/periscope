@@ -157,7 +157,8 @@ def test_window_delete(client, mocker):
 
 # === track-model "+ New tab" ==============================================
 # /api/window/new's `session` param is a TRACK ID. cwd comes from the track's
-# repo (repo-default track id == repo path; loose/None → ~/dev). The window is
+# repo (repo-default track id == repo path; loose/None → the first repo root,
+# ~/dev by default). The window is
 # always created in MANAGED_SESSION; the new pane is tagged into the track.
 
 def test_window_new_repo_track_uses_repo_cwd(client, mocker, fresh_activity_db):
@@ -179,7 +180,8 @@ def test_window_new_repo_track_uses_repo_cwd(client, mocker, fresh_activity_db):
 
 
 def test_window_new_loose_track_defaults_to_dev_dir(client, mocker, fresh_activity_db):
-    # A goal track with no repo (or an unknown track id) → cwd ~/dev.
+    # A goal track with no repo (or an unknown track id) → cwd is the first
+    # repo root, ~/dev when none is configured.
     import os
 
     from periscope import tracks
@@ -799,3 +801,17 @@ def test_move_account_404s_on_unknown_pid(client, mocker):
 
     assert r.status_code == 404
     resume.assert_not_called()
+
+
+def test_window_new_loose_track_uses_first_repo_root(client, mocker, fresh_activity_db, clean_state, tmp_path):
+    from periscope import tracks
+    clean_state["settings"]["repo_roots"] = [str(tmp_path), "/elsewhere"]
+    tk = tracks.create_track(name="my goal")  # repo=None
+    _patch(mocker, "tmux", side_effect=_fake_window_tmux(index="3", pane_id="%pr"))
+    _patch(mocker, "_run", return_value=(0, ""))  # MANAGED_SESSION exists
+    mutate = _patch(mocker, "_tmux_mutate", return_value=(True, "@3"))
+    _patch(mocker, "stamp_new_window", return_value="feed0033")
+    r = client.post(f"/api/window/new?session={tk['id']}&mode=shell")
+    assert r.status_code == 200, r.text
+    call = next(c for c in mutate.call_args_list if c.args[0] == "new-window")
+    assert call.args[list(call.args).index("-c") + 1] == str(tmp_path)

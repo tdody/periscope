@@ -213,7 +213,10 @@ export function OpenOmnibox() {
           <Palette
             value={query} onInput={setQuery} placeholder="repo, path, #PR…"
             items={items} onPick={pick} onClose={close}
-            empty={query ? "no matches" : "type a repo, path, or #PR…"} />
+            empty={query ? "no matches"
+                   : catalog.roots && !catalog.repos.length
+                     ? `no repos found under ${catalog.roots.join(", ")} — add roots in ⚙ settings, or type a path`
+                     : "type a repo, path, or #PR…"} />
         )}
         {jobsView && (
           <JobList

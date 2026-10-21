@@ -5,7 +5,6 @@ POST   /api/projects/adopt         — adopt unmanaged session OR existing workt
 POST   /api/projects/patch         — rename, edit base_branch, set/clear pinned_repo
 POST   /api/projects/archive       — set archived_at
 POST   /api/projects/promote       — promote a main-project tab to its own project
-GET    /api/projects/discoverable  — repos + branches for the new-project modal
 
 We deliberately do NOT use path params for `pinned_dir`. Starlette
 rejects URL-encoded `/` in path-converter segments by default, and
@@ -14,7 +13,6 @@ identifiers sidestep the issue entirely.
 """
 
 import os
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -289,48 +287,3 @@ def projects_promote(body: PromoteBody):
         raise HTTPException(409, str(e)) from e
 
     return {"ok": True, "pinned_dir": pinned_dir, **row}
-
-
-@router.get("/api/projects/discoverable")
-def projects_discoverable():
-    """Return the union of (a) currently-known project repos and (b) git
-    repos discovered under ~/dev (one level deep). Plus the local branch
-    list per repo, capped at 100 each for sanity.
-
-    Frontend uses this to populate the new-project modal's repo/branch
-    pickers.
-    """
-    repos: set[str] = set()
-
-    for p in all_projects().values():
-        if p.get("repo"):
-            repos.add(os.path.realpath(p["repo"] or ""))
-
-    dev = Path.home() / "dev"
-    if dev.is_dir():
-        for child in dev.iterdir():
-            if not child.is_dir():
-                continue
-            # Skip hidden and the worktrees container itself.
-            if child.name.startswith(".") or child.name == "worktrees":
-                continue
-            if (child / ".git").exists():
-                repos.add(str(child.resolve()))
-
-    branches_by_repo: dict[str, list[str]] = {}
-    for repo in sorted(repos):
-        code, out = _run(
-            ["git", "-C", repo, "branch", "--format=%(refname:short)"],
-            timeout=3.0,
-        )
-        if code == 0:
-            branches_by_repo[repo] = out.split("\n")[:100] if out else []
-        else:
-            branches_by_repo[repo] = []
-
-    return {
-        "repos": sorted(repos),
-        "branches_by_repo": branches_by_repo,
-    }
-
-

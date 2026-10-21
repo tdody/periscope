@@ -297,7 +297,8 @@ def _window_new_plain(
       2. else `cwd_param` set AND it's a real dir → use it (a worktree path the
          client already knows, e.g. straight from the open catalog).
       3. else → the track's repo (repo-default track id == repo path), or
-         ~/dev for a goal/loose track (repo None) or an unknown id.
+         the first repo root for a goal/loose track (repo None) or an
+         unknown id.
 
     `account` and `model` arrive RESOLVED (window_new ran them through
     `usage.choose_launch`); `model` is the ANTHROPIC_MODEL value or None for
@@ -325,7 +326,8 @@ def _window_new_plain(
     elif cwd_param and os.path.isdir(cwd_param):
         cwd = cwd_param
     else:
-        cwd = repo if repo else os.path.expanduser("~/dev")
+        roots = store.repo_roots()
+        cwd = repo or (roots[0] if roots else os.path.expanduser("~"))
 
     # Everything lives in one session. Create it lazily, else add a window.
     # Capture the STABLE #{window_id} (-P -F), never the index — with one

@@ -352,7 +352,7 @@ def test_place_in_rail_is_idempotent(tmp_git_repo, clean_state):
 
 def test_build_catalog_lists_repo_and_main_worktree(tmp_git_repo, clean_state, monkeypatch):
     repo = str(tmp_git_repo)
-    monkeypatch.setattr(open_ops, "_discover_repos", lambda: {repo})
+    monkeypatch.setattr(open_ops, "discover_repos", lambda: {repo})
     cat = open_ops.build_catalog()
     assert any(r["repo"] == repo for r in cat["repos"])
     assert any(w["path"] == os.path.realpath(repo) and w["is_main"]
@@ -450,3 +450,14 @@ def test_worktree_for_branch_does_not_answer_from_a_stale_cache(tmp_git_repo, tm
                    check=True, capture_output=True)
     assert open_ops.worktree_for_branch(repo, "feat") is None
     assert open_ops.worktree_for_branch(repo, "elsewhere") == os.path.realpath(wt)
+
+
+def test_discover_repos_scans_each_root_one_level_deep(clean_state, tmp_path):
+    root_a, root_b = tmp_path / "a", tmp_path / "b"
+    for d in ("repo1/.git", ".hidden/.git", "worktrees/x/.git", "plain"):
+        (root_a / d).mkdir(parents=True)
+    (root_b / "repo2/.git").mkdir(parents=True)
+    (tmp_path / "unlisted/repo3/.git").mkdir(parents=True)
+    clean_state["settings"]["repo_roots"] = [str(root_a), str(root_b), str(tmp_path / "missing")]
+    assert open_ops.discover_repos() == {str((root_a / "repo1").resolve()),
+                                         str((root_b / "repo2").resolve())}
