@@ -6,14 +6,14 @@
 // never enter the tree's connector-adjacency CSS.
 import { useEffect, useRef } from "preact/hooks";
 import * as prefs from "../prefs.js";
-import {dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection,
+import {dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids,
   windows, 
 } from "../store.js";
 import { AGENT_META, paneLabel, relTime, shortestUniqueSuffix, waitLabel } from "../util.js";
-import { alertItems, revealPane } from "./alertFeed.js";
+import { alertItems, openNeedsPane, openReadyPane, revealPane, selectPane } from "./alertFeed.js";
 import {buildActivity,
   buildNeedsYou, buildReady, buildRunning, 
-  isSoftQuestion, needsYouCount, prunedStateDismissals,resolvePinned, 
+  needsYouCount, prunedStateDismissals,resolvePinned, 
 } from "./attention.js";
 import { freezeRows, isStale, railHovered } from "./layoutFreeze.js";
 import { statusDotClass } from "./RailRows.jsx";
@@ -32,13 +32,6 @@ function sessionShortener(live) {
   return (s) => shortestUniqueSuffix(s, all);
 }
 
-// Mirror the rail's own selection write (string highlight signal + object pref).
-// Static import of railSelection is safe — store.js imports nothing from here.
-function selectPane(w) {
-  if (!w?.pid) return;
-  railSelection.value = `pane:${w.pid}`;
-  prefs.setLastSelected({ kind: "pane", pid: w.pid });
-}
 
 // Toggle takes the section's already-computed current state so the inverted
 // Activity default lives at exactly one place (the read site), not here.
@@ -127,22 +120,14 @@ export function AttentionTop() {
   // (no real dialog), dismiss it from the zone. Real dialogs stay sticky.
   function onLiveClick(w) {
     flush();
-    if (isSoftQuestion(w)) {
-      const next = new Set(dismissedNeedsPids.value);
-      next.add(w.pid);
-      dismissedNeedsPids.value = next;
-    }
-    selectPane(w);
+    openNeedsPane(w);
   }
   // Click a live ready row: navigate + always dismiss for this done-episode.
   // Selecting normally acks via the detail terminal's WS connect, but an
   // already-selected pane won't reconnect — the dismissal covers that case.
   function onReadyClick(w) {
     flush();
-    const next = new Set(dismissedReadyPids.value);
-    next.add(w.pid);
-    dismissedReadyPids.value = next;
-    selectPane(w);
+    openReadyPane(w);
   }
 
   return (
