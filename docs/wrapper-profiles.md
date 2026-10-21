@@ -118,14 +118,26 @@ through `/api/send`'s paste-then-Enter path (`_send_to_target`). Rules:
   level). The model takes any alias Claude does, `default` included,
   checked by `config.model_env`'s character set like the pin. `auto` is the
   pin's chooser value and is rejected here.
-- **The value is remembered** (`windows[pid].session_model` /
-  `session_effort` = `{value, claude_pid}`), because Claude reports effort
+- **Typing is not taking, so the pane is read back** (`_command_outcome`,
+  ~3s): Claude's own line under the echoed command decides. "Set … to" means
+  `applied`. "Not applied" / "overrides this session" means Claude refused,
+  which returns 409 with Claude's words. "Switch model?" means `confirm`:
+  in a session with history Claude asks before switching, because the whole
+  conversation is re-read at the new model's cost. periscope never answers
+  that for the user; the picker toasts "answer it in the pane". Silence
+  means `unverified`.
+- **The value is remembered only when applied** (`windows[pid].session_model`
+  / `session_effort` = `{value, claude_pid}`), because Claude reports effort
   nowhere periscope can read. `window_view` shows it only while that claude
   pid is still the pane's claude, so a fresh session in the same pane falls
   back to its launch values (`launch_effort`, read off argv). The model
   picker prefers the status line's model whenever it parses.
-- **Side effect worth knowing:** Claude's `/effort <level>` also saves the
-  level as the account's default for new sessions. Panes launched with an
-  explicit `--effort` aren't affected, but with the pin on `default`, the
-  last per-pane change becomes what new panes start at. `/model` is
-  session-scoped.
+- **Side effect worth knowing: both commands also save a default.**
+  `/effort <level>` writes `modelSettings.<model>.effortLevel` and `/model
+  <x>` writes `model` in the account's `settings.json` ("saved as your
+  default for new sessions"; verified on Claude Code 2.1.280). periscope
+  spawns aren't affected while their pin is set (`--effort` and
+  `ANTHROPIC_MODEL` both beat settings), but a hand-launched `claude`, or a
+  spawn with the pin on `default`, starts at whatever was last picked in
+  any pane. Nothing typed at the prompt selects Claude's session-only
+  variant.

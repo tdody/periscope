@@ -209,11 +209,22 @@ _IDLE_CLAUDE = "❯ \n" + "─" * 20 + "\n  [Opus 4.8] 12% context\n"
 _WINDOW = {"session": "periscope", "index": 4, "pid_raw": "abc123"}
 
 
-def _patch_live_pane(mocker, *, parsed=None, sess_state="idle"):
+def _patch_live_pane(mocker, *, parsed=None, sess_state="idle", after="⎿  Set effort level to high"):
+    """`after` is what Claude prints under the echoed command — the endpoint
+    reads it back to tell applied / needs-confirmation / refused apart."""
     from periscope.routes import pane as pane_route
     mocker.patch.object(pane_route, "_resolve_window_by_pid",
                         return_value=("abc123", "%7", dict(_WINDOW)))
-    mocker.patch.object(pane_route, "capture", return_value="ignored")
+    sent: list[str] = []
+
+    def fake_capture(_target):
+        if not sent:
+            return "ignored"  # the pre-send readiness read (parse_pane is mocked)
+        return f"older output\n❯\xa0{sent[-1]}\n  {after}\n❯\xa0\n"
+
+    mocker.patch.object(pane_route, "capture", side_effect=fake_capture)
+    mocker.patch.object(pane_route.time, "sleep")
+    mocker.patch.object(pane_route, "_OUTCOME_WAIT_S", 0.05)
     mocker.patch.object(pane_route, "parse_pane", return_value=parsed or {
         "agent": "claude", "state": "idle", "pending_input": None})
     mocker.patch.object(pane_route, "session_id_for_pane", return_value="sid-1")
@@ -221,7 +232,7 @@ def _patch_live_pane(mocker, *, parsed=None, sess_state="idle"):
                         return_value={"state": sess_state} if sess_state else None)
     mocker.patch.object(pane_route, "pane_claude_pids", return_value={"%7": 4242})
     return mocker.patch.object(pane_route, "_send_to_target",
-                               return_value={"target": "periscope:4", "ok": True})
+                               side_effect=lambda t, cmd, keys: sent.append(cmd) or {"ok": True})
 
 
 def test_session_setting_types_the_slash_command_into_an_idle_pane(client, mocker, clean_state):
@@ -230,6 +241,7 @@ def test_session_setting_types_the_slash_command_into_an_idle_pane(client, mocke
     r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
     assert r.status_code == 200, r.text
     assert r.json()["sent"] == "/effort high"
+    assert r.json()["result"] == "applied"
     send.assert_called_once_with("periscope:4", "/effort high", ["Enter"])
     # Remembered, because Claude reports effort nowhere periscope can read —
     # tied to the claude process it was typed into, so a fresh session in the
@@ -239,7 +251,7 @@ def test_session_setting_types_the_slash_command_into_an_idle_pane(client, mocke
 
 def test_session_setting_sets_the_model(client, mocker, clean_state):
     from periscope.store import get_window
-    send = _patch_live_pane(mocker)
+    send = _patch_live_pane(mocker, after="⎿  Set model to Opus 5.5 (1M context) and saved as your default for new sessions")
     r = client.post("/api/pane/session-setting?pid=abc123&setting=model&value=opus%5B1m%5D")
     assert r.status_code == 200, r.text
     send.assert_called_once_with("periscope:4", "/model opus[1m]", ["Enter"])
@@ -248,7 +260,7 @@ def test_session_setting_sets_the_model(client, mocker, clean_state):
 
 def test_session_setting_maps_default_effort_to_auto(client, mocker, clean_state):
     # The pickers say "default"; Claude's word for "the model's own effort" is auto.
-    send = _patch_live_pane(mocker)
+    send = _patch_live_pane(mocker, after="⎿  Effort level set to auto")
     r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=default")
     assert r.status_code == 200, r.text
     send.assert_called_once_with("periscope:4", "/effort auto", ["Enter"])
@@ -331,3 +343,36 @@ def test_session_setting_refuses_a_real_claude_2_1_draft(client, mocker, clean_s
     assert r.status_code == 409, r.text
     assert "unsent" in r.json()["detail"]
     send.assert_not_called()
+
+
+
+def test_session_setting_reports_a_model_switch_waiting_for_confirmation(client, mocker, clean_state):
+    # With history in the session, Claude asks before switching (the whole
+    # conversation is re-read at the new model's cost). periscope doesn't
+    # answer for the user, and records nothing until it has actually switched.
+    from periscope.store import get_window
+    _patch_live_pane(mocker, after="Switch model?\n  Your next response will be slower and use more tokens")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=model&value=sonnet")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "confirm"
+    assert "session_model" not in get_window("abc123")
+
+
+def test_session_setting_surfaces_claudes_refusal(client, mocker, clean_state):
+    # A pane launched with CLAUDE_CODE_EFFORT_LEVEL (the pin's first design)
+    # types /effort fine but Claude refuses it — that's a failure, not a 200.
+    from periscope.store import get_window
+    _patch_live_pane(mocker, after="⎿  CLAUDE_CODE_EFFORT_LEVEL=xhigh overrides this session — clear it and high takes over")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    assert "overrides this session" in r.json()["detail"]
+    assert "session_effort" not in get_window("abc123")
+
+
+def test_session_setting_reports_when_claude_says_nothing(client, mocker, clean_state):
+    from periscope.store import get_window
+    _patch_live_pane(mocker, after="")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "unverified"
+    assert "session_effort" not in get_window("abc123")

@@ -4,11 +4,13 @@
 //
 // Native <select>s whose hidden first option carries the current label: the
 // value is always "", so the control shows what the session is on, and picking
-// an option fires one request and snaps back. A successful pick shows at once
-// until the next poll brings the server's remembered value.
+// an option fires one request and snaps back. A pick shows at once only when
+// Claude confirmed it applied; a model switch Claude wants confirmed in the
+// pane (history gets re-read at the new model's cost) is left to the user.
 import { useEffect, useState } from "preact/hooks";
 import { PIN_EFFORTS } from "../chrome/SpawnEffortPicker.jsx";
 import { MODELS } from "../models.js";
+import { showToast } from "../overlays/Toast.jsx";
 import { apiCall } from "../util.js";
 import { effortShown, modelShown, sessionBlocker } from "./sessionPickers.js";
 
@@ -24,7 +26,11 @@ export function SessionPickers({ w }) {
     if (!value) return;
     const q = `pid=${encodeURIComponent(w.pid)}&setting=${setting}&value=${encodeURIComponent(value)}`;
     const res = await apiCall(`set ${setting}`, `/api/pane/session-setting?${q}`, { method: "POST" });
-    if (res) setPicked((p) => ({ ...p, [setting]: value }));
+    if (!res) return; // busy pane, draft, or Claude refused: apiCall toasted the reason
+    if (res.result === "applied") setPicked((p) => ({ ...p, [setting]: value }));
+    else if (res.result === "confirm") {
+      showToast("Claude is asking to confirm the model switch in the pane — answer it there", "info", 7000);
+    } else showToast(`Sent ${res.sent}, but Claude didn't confirm it took`, "info", 5000);
   }
 
   const modelLabel = picked.model

@@ -6,6 +6,7 @@ mirror). Mostly an aggregator over already-cached subsystems.
 """
 
 import os
+import re
 import time
 from typing import Literal
 
@@ -29,7 +30,7 @@ from periscope.routes.send import _send_to_target
 from periscope.session_status import pane_claude_pids, session_state_for
 from periscope.store import get_window, set_window_fields
 from periscope.tabs import activate_tab, close_tab, open_tab
-from periscope.tmux import capture, pane_meta, tmux, window_identity
+from periscope.tmux import _ANSI_SGR_RE, capture, pane_meta, tmux, window_identity
 from periscope.turns import get_turns_for_pane, session_id_for_pane
 
 router = APIRouter()
@@ -230,6 +231,48 @@ def _slash_arg(setting: str, value: str) -> str:
     raise HTTPException(400, f"{setting} {value!r} is not a valid value")
 
 
+# What Claude prints under a typed /model or /effort, which is the only way to
+# know whether it took. Refusals first: "Not applied" contains "applied".
+_REFUSED_RE = re.compile(
+    r"Not applied|overrides this session|Failed to set effort|Model switch failed"
+    r"|Unknown model|isn't available")
+_CONFIRM_RE = re.compile(r"Switch model\?|confirmation required")
+_APPLIED_RE = {
+    "effort": re.compile(r"(?:Set effort level to|Effort level set to|exceeds the cap)"),
+    "model": re.compile(r"(?:Set model to|Model set to|Model reset to) "),
+}
+_OUTCOME_WAIT_S = 3.0
+
+
+def _command_outcome(target: str, setting: str, command: str) -> tuple[str, str]:
+    """("applied" | "confirm" | "refused" | "unverified", Claude's line) for a
+    command just typed into `target`, read off the rows under its echo.
+
+    "confirm" is `/model` in a session with history: Claude asks before
+    switching, because the conversation is re-read at the new model's cost.
+    periscope never answers that for the user."""
+    echo = f"❯ {command}"
+    deadline = time.monotonic() + _OUTCOME_WAIT_S
+    while True:
+        time.sleep(0.2)
+        try:
+            rows = [_ANSI_SGR_RE.sub("", r).replace("\xa0", " ").strip()
+                    for r in capture(target).split("\n")]
+        except Exception:
+            rows = []
+        hits = [i for i, r in enumerate(rows) if r == echo]
+        for line in rows[hits[-1] + 1:] if hits else []:
+            text = line.lstrip("⎿").strip()
+            if _REFUSED_RE.search(text):
+                return "refused", text
+            if _CONFIRM_RE.search(text):
+                return "confirm", text
+            if _APPLIED_RE[setting].search(text):
+                return "applied", text
+        if time.monotonic() >= deadline:
+            return "unverified", ""
+
+
 @router.post("/api/pane/session-setting")
 def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: str):
     """Change a RUNNING Claude pane's model or effort by typing `/model <x>` or
@@ -239,8 +282,13 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
     Refused (409) unless the pane is a Claude that is idle with an empty input
     box, read fresh from the pane rather than from the 3s poll: keystrokes into
     a busy pane land mid-turn, and into a half-typed message they are appended
-    to the user's draft and submitted with it. The value is remembered on the
-    window because Claude reports effort nowhere periscope can read back.
+    to the user's draft and submitted with it.
+
+    Typing the command is not the same as it taking, so the pane is read back
+    (_command_outcome): Claude refusing is a 409, a model switch waiting on
+    Claude's own confirmation comes back as result="confirm", and the value is
+    remembered on the window only once Claude says it applied. Claude reports
+    effort nowhere else periscope can read.
     """
     arg = _slash_arg(setting, value)
     rpid, pane_id, window = _resolve_window_by_pid(pid)
@@ -263,8 +311,13 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
         raise HTTPException(409, "the pane has unsent text in its input box")
     command = f"/{setting} {arg}"
     _send_to_target(target, command, ["Enter"])
-    # Tied to the claude process it was typed into: a fresh claude in the same
-    # pane starts at its own launch values, and window_view drops the label.
-    set_window_fields(rpid or pid, **{f"session_{setting}": {
-        "value": value.strip(), "claude_pid": pane_claude_pids().get(pane_id)}})
-    return {"ok": True, "pid": rpid or pid, "sent": command}
+    outcome, message = _command_outcome(target, setting, command)
+    if outcome == "refused":
+        raise HTTPException(409, f"Claude refused {command}: {message}")
+    if outcome == "applied":
+        # Tied to the claude process it was typed into: a fresh claude in the
+        # same pane starts at its own launch values, and window_view drops it.
+        set_window_fields(rpid or pid, **{f"session_{setting}": {
+            "value": value.strip(), "claude_pid": pane_claude_pids().get(pane_id)}})
+    return {"ok": True, "pid": rpid or pid, "sent": command,
+            "result": outcome, "message": message}
