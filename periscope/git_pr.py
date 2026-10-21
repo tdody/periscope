@@ -101,12 +101,20 @@ def git_state_for(path: str) -> dict | None:
 
     repo_key = resolve_repo(path)
     repo_label = os.path.basename(repo_key.rstrip("/")) if repo_key else ""
+    # The top of a LINKED worktree — not the repo's main checkout, not a subdir
+    # of either: the only kind of pane cwd the cleanup dialog lists and its
+    # archive kills (cleanup.py, routes/cleanup.py). Clawd's broom counts only
+    # these, or a merged PR linked from the main checkout would sweep forever.
+    _, toplevel = _run(["git", "-C", path, "rev-parse", "--show-toplevel"])
+    top = os.path.realpath(toplevel) if toplevel else ""
+    linked_root = bool(top) and top == os.path.realpath(path) and top != repo_key
     return {
         "branch": branch,
         "git": state,
         "repo_slug": github_slug(path),
         "repo_key": repo_key,
         "repo_label": repo_label,
+        "linked_worktree_root": linked_root,
     }
 
 
