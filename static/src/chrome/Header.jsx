@@ -3,7 +3,7 @@
 // overflow, alerts toggle, view switch). Ported from the <header> markup in
 // index.html + the wiring in app.js. CSS classes (.periscope-header, .topbar,
 // .brand, .meta, .filters, .filter-btn, .is-action, .filters-sep,
-// .filters-spacer, count-* spans, .tb-dd*) are preserved verbatim.
+// count-* spans, .tb-dd*) are preserved verbatim.
 //
 // Scope note (Task 4 = chrome): this owns the filter, view switch, usage
 // pill, counts, history link, and the global ⌘/ + Tab keybindings. The +new
@@ -76,18 +76,20 @@ function Counts() {
   // CSS colors them by status.
   return (
     <span id="counts">
-      <span>
+      <span class="count-row">
         <b>{total}</b> windows
+        {needsInput > 0 && (
+          <>
+            {" "}
+            <Sep /> <span class="count-needs">{needsInput} needs input</span>
+          </>
+        )}
       </span>
-      {needsInput > 0 && (
-        <>
-          {" "}
-          <Sep /> <span class="count-needs">{needsInput} needs input</span>
-        </>
-      )}{" "}
-      <Sep /> <span class="count-working">{working} working</span> <Sep />{" "}
-      <span class="count-done">{done} done</span> <Sep />{" "}
-      <span class="count-idle">{idle} idle</span>
+      <span class="count-row">
+        <span class="count-working">{working} working</span> <Sep />{" "}
+        <span class="count-done">{done} done</span> <Sep />{" "}
+        <span class="count-idle">{idle} idle</span>
+      </span>
     </span>
   );
 }
@@ -195,7 +197,7 @@ export function Header() {
           </button>
         </Dropdown>
 
-        <span class="filters-spacer"></span>
+        <span class="filters-sep"></span>
         <PanelToggles />
       </nav>
       {/* Spans both header rows in the top-right corner (styles.css), so the
