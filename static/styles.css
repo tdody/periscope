@@ -371,24 +371,23 @@ html, body {
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }
 .tama:hover { border-color: var(--fg-3); }
-/* As big as the corner allows: 5x (170×120), when the header is tall enough.
-   Width is the limit: the spawn pins and the counts end at the left column's
-   gutter at every window width, so the widget widens into that gutter, leaving
-   --tama-gap of breathing room to them and to the window edge — room for 5x,
-   the largest integer scale. Height needs the 124px header that three rows of
-   pins give (the account row, data-pin-rows="3", set by Header.jsx); with one
-   account the header is 107px and the widget stays at 4x.
-   The overhang is a decision, not a side effect: 2px from the top, the 126px
-   widget ends 4px below the 124px header, inside the pane header's 5px top
-   padding — the corner the Transcript/Terminal toggle gave up for the tab bar
-   — and above the pane header's content at any width. The negative bottom
-   margin keeps the widget's margin box (120px) under the rows' 123px, so it
-   never sets the header's height. */
+/* Bigger than the corner: 6x (204×144) with three rows of pins (the account
+   row, data-pin-rows="3", set by Header.jsx; one account keeps the 107px
+   header and 4x). The spawn pins and the counts end at the left column's
+   gutter at every window width, so the widget widens into that gutter,
+   leaving --tama-gap of breathing room to them and to the window edge.
+   The overhang is a decision, not a side effect: 2px from the top, the 150px
+   widget ends 28px below the 124px header, over the right-hand side of the
+   pane header — a left-aligned, wrapping flex row whose right end is empty at
+   any sane width — and well above the tab bar (~58px down), where the
+   Transcript/Terminal toggle sits. The negative bottom margin keeps the
+   widget's margin box (120px) under the rows' 123px, so it never sets the
+   header's height. */
 .periscope-header[data-pin-rows="3"] .tama {
-  --tama-gap: 12px;
-  width: 170px; height: 120px; border-radius: 18px;
+  --tama-gap: 18px;
+  width: 204px; height: 144px; border-radius: 20px;
   align-self: start;
-  margin: 2px var(--tama-gap) -8px calc(var(--tama-gap) - var(--header-gutter));
+  margin: 2px var(--tama-gap) -32px calc(var(--tama-gap) - var(--header-gutter));
 }
 .tama svg { display: block; width: 100%; height: 100%; }
 .tama g, .tama rect, .tama path, .tama text, .tama circle, .tama ellipse, .tama polygon, .tama line { transform-box: fill-box; }
