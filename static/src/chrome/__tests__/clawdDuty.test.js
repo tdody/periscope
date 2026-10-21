@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deskView, DUTY_ORDER, dutyItems, moreCount, nextMergeWatch, PARTY_S, wallLabel, wallPhrase } from "../clawdDuty.js";
+import { DUTY_ORDER, deskView, dutyItems, moreCount, nextMergeWatch, PARTY_S, wallLabel, wallPhrase } from "../clawdDuty.js";
 
 const NOW = 1_800_000_000;
 const pane = (pid, extra = {}) => ({ pid, target: `s:${pid}`, name: `pane-${pid}`, agent: "claude", state: "idle", ...extra });
 const kinds = (items) => items.map((i) => i.kind);
-const merged = (pid, extra = {}) => pane(pid, { pr: 4, pr_state: "merged", cwd: `/w/${pid}`, linked_worktree_root: true, ...extra });
 
 describe("dutyItems", () => {
   it("is empty when nothing needs anyone", () => {
@@ -19,22 +18,20 @@ describe("dutyItems", () => {
         pane("c", { ci: "✗", pr: 7, repo_slug: "o/r" }),
         pane("d", { state: "done" }),
         pane("e", { context_pct: 91 }),
-        merged("g"),
-        merged("h", { pr: 5, pr_state: "closed" }),
       ],
       parties: [{ key: "f#9", pid: "f", pr: 9, at: NOW - 5 }],
       update: { behind: 3, running: false }, nowSec: NOW,
     });
     expect(kinds(items)).toEqual(DUTY_ORDER);
-    expect(moreCount(items)).toBe(1 + 1 + 1 + 1 + 1 + 2 + 1);
+    expect(moreCount(items)).toBe(1 + 1 + 1 + 1 + 1 + 1);
   });
 
   it("skips the pane you're looking at for every kind but its merge party", () => {
     const windows = [
       pane("a", { state: "needs-input", waiting_for: "permission" }), pane("b", { api_error: true }),
-      pane("c", { state: "done" }), pane("d", { context_pct: 95 }), merged("e"),
+      pane("c", { state: "done" }), pane("d", { context_pct: 95 }),
     ];
-    for (const [pid, kind] of [["a", "bell"], ["b", "api"], ["c", "done"], ["d", "ctx"], ["e", "clean"]]) {
+    for (const [pid, kind] of [["a", "bell"], ["b", "api"], ["c", "done"], ["d", "ctx"]]) {
       expect(kinds(dutyItems({ windows, selectedPid: pid, nowSec: NOW })), pid).not.toContain(kind);
     }
     const parties = [{ key: "a#9", pid: "a", pr: 9, at: NOW }];
@@ -57,6 +54,23 @@ describe("dutyItems", () => {
     expect(dutyItems({ windows, nowSec: NOW })[0]).toMatchObject({ count: 2, urgent: true, target: { action: "needs", pid: "b" } });
     // A pane without a stamp (a server from before needs_since) reads as fresh.
     expect(dutyItems({ windows: [pane("c", { state: "needs-input", waiting_for: "permission" })], nowSec: NOW })[0].urgent).toBe(false);
+  });
+
+  it("counts a pane once when it has both a live row and a need_human event", () => {
+    // Claude notifies while its pane already sits in needs-input: one pane, one ring.
+    const windows = [pane("a", { state: "needs-input", waiting_for: "permission", needs_since: NOW - 30 })];
+    const alerts = [{ id: 1, kind: "need_human", target: "s:a", ts: NOW - 20 }];
+    const [bell] = dutyItems({ windows, alerts, nowSec: NOW });
+    expect(bell).toMatchObject({ count: 1, label: "1", target: { action: "needs", pid: "a" } });
+    expect(bell.phrase).toBe("pane-a needs you");
+  });
+
+  it("ages a pane from its oldest unanswered event, as the rail's urgency tier does", () => {
+    // After a reload needs_since can be fresh while the pane has been asking for
+    // an hour; the rail marks it wait-urgent from the event, and so does Clawd.
+    const windows = [pane("a", { state: "needs-input", waiting_for: "permission", needs_since: NOW - 30 })];
+    const alerts = [{ id: 1, kind: "need_human", target: "s:a", ts: NOW - 700 }];
+    expect(dutyItems({ windows, alerts, nowSec: NOW })[0]).toMatchObject({ urgent: true, phrase: "pane-a needs you (11 min)" });
   });
 
   it("opens live rows the rail's way and event rows by revealing them", () => {
@@ -109,15 +123,6 @@ describe("dutyItems", () => {
       .toEqual({ action: "party", key: "a#9", pid: null, says: "end the party" });
   });
 
-  it("offers cleanup only for linked worktree roots whose PR is done, each once", () => {
-    const windows = [merged("a"), merged("b", { cwd: "/w/a" }), pane("c", { pr: 6, pr_state: "open", cwd: "/w/c", linked_worktree_root: true })];
-    expect(dutyItems({ windows, nowSec: NOW })[0]).toMatchObject({
-      kind: "clean", count: 1, phrase: "PR #4 is merged: pane-a's worktree can be cleaned up", target: { action: "cleanup" },
-    });
-    // The main checkout or a subdir: the dialog can't list it, so Clawd doesn't sweep for it.
-    expect(dutyItems({ windows: [merged("m", { linked_worktree_root: false })], nowSec: NOW })).toEqual([]);
-  });
-
   it("offers the update only when behind and not already running", () => {
     expect(kinds(dutyItems({ update: { behind: 2, running: false }, nowSec: NOW }))).toEqual(["update"]);
     expect(dutyItems({ update: { behind: 2, running: true }, nowSec: NOW })).toEqual([]);
@@ -140,11 +145,10 @@ describe("wallLabel", () => {
 });
 
 describe("deskView", () => {
-  it("naps or sweeps only at the desk", () => {
+  it("naps only at the desk", () => {
     expect(deskView("code", "bell", true).scene).toBe("nap");
-    expect(deskView("code", "clean", false).scene).toBe("sweep");
     expect(deskView("code", "bell", false).scene).toBe("code");
-    expect(deskView("read", "clean", true).scene).toBe("read");
+    expect(deskView("read", null, true).scene).toBe("read");
   });
 
   it("shows the mood only with nothing on duty, and mirrors agents unless the screen is taken", () => {
@@ -159,12 +163,12 @@ describe("deskView", () => {
 describe("merge watch", () => {
   it("throws a party only on open → merged for the same PR", () => {
     const open = [pane("a", { pr: 9, pr_state: "open" })];
-    const done = [pane("a", { pr: 9, pr_state: "merged", pr_title: "Clawd" })];
+    const done = [pane("a", { pr: 9, pr_state: "merged" })];
     let m = nextMergeWatch({ states: {}, parties: [] }, open, NOW);
     expect(m.parties).toEqual([]);
     m = nextMergeWatch(m, [pane("a", { pr: 9 })], NOW + 3); // a cold cache drops pr_state for a poll
     m = nextMergeWatch(m, done, NOW + 6);
-    expect(m.parties).toEqual([{ key: "a#9", pid: "a", pr: 9, title: "Clawd", at: NOW + 6 }]);
+    expect(m.parties).toEqual([{ key: "a#9", pid: "a", pr: 9, at: NOW + 6 }]);
     expect(nextMergeWatch(m, done, NOW + 9).parties).toHaveLength(1);
   });
 

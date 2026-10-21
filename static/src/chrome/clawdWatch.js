@@ -7,7 +7,7 @@ import { effect, signal } from "@preact/signals";
 import { windows } from "../store.js";
 import { nextMergeWatch } from "./clawdDuty.js";
 
-export const mergeParties = signal([]);  // [{ key, pid, pr, title, at }]
+export const mergeParties = signal([]);  // [{ key, pid, pr, at }]
 
 let started = false;
 let mergeStates = {};

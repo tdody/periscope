@@ -233,19 +233,22 @@ describe("Clawd on duty", () => {
     expect(scene("run", { kind: "api" }, { occasion: "halloween" })).not.toContain("tama-orbit");
   });
 
-  it("naps at the desk while every account is walled, under the bubble", () => {
-    const html = scene("code", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
+  it("naps at the desk while every account is walled", () => {
+    const html = scene("code", null, { walled: { day: null, time: "3pm" } });
     expect(html).toContain('data-activity="nap"');
-    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-bubble"]) expect(html).toContain(piece);
-    expect(html).not.toContain("tama-slap");
+    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z"]) expect(html).toContain(piece);
     expect(scene("read", null, { walled: { day: "Thu", time: "3pm" } })).toContain('data-activity="read"');
   });
 
-  it("leaves the desk to sweep when cleanup is on top", () => {
-    const html = scene("code", { kind: "clean" });
-    expect(html).toContain('data-activity="sweep"');
-    expect(html).toContain("tama-broom");
-    expect(html).not.toContain("tama-desk");
+  it("wakes from the nap for the bell, as it does at night", () => {
+    const html = scene("code", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
+    expect(html).toContain('data-pose="bell"');
+    for (const piece of ["tama-slap", "tama-ding", ">3pm<", "tama-bubble"]) expect(html, piece).toContain(piece);
+    expect(html).not.toContain("tama-eyes-closed");
+    expect(html).not.toContain("tama-z");
+    expect(html).not.toContain("tama-alarm");
+    // Anything else leaves Clawd asleep under its bubble.
+    expect(scene("code", { kind: "done" }, { walled: { day: null, time: "3pm" } })).toContain("tama-eyes-closed");
   });
 
   it("lights one split per working agent, up to four", () => {

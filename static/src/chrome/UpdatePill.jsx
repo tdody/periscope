@@ -27,14 +27,22 @@ import { signal } from "@preact/signals";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { updateInfo } from "../store.js";
-import { apiCall } from "../util.js";
+import { apiCall, plural } from "../util.js";
 
 const POLL_MS = 2000;
 
-// Bumped by Clawd's parcel (chrome/Tamagotchi.jsx) to open this popover, so a
-// click on the mascot lands on the same commit list and button as the pill —
-// never a second, unreviewed way to start an update.
-export const updatePopoverRequest = signal(0);
+// The popover's open state, at module level so Clawd's parcel
+// (chrome/clawdClick.js) opens this same popover — the same commit list and
+// button as the pill, never a second, unreviewed way to start an update.
+const popoverOpen = signal(false);
+let focusOnOpen = false;
+
+// Opened from the mascot, focus moves to the update button: the pill sits far
+// earlier in tab order, and the dialog announces nothing.
+export function openUpdatePopover({ focus = false } = {}) {
+  focusOnOpen = focus;
+  popoverOpen.value = true;
+}
 // The updater re-provisions (plist rewrite, bootout/bootstrap, hook install)
 // then waits for healthz. Past this, stop polling and let the banner speak.
 const GIVE_UP_MS = 120_000;
@@ -63,10 +71,12 @@ export function CommitList({ commits, behind }) {
 export function UpdatePill() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [open, setOpen] = useState(false);
+  const open = popoverOpen.value;
+  const setOpen = (v) => { popoverOpen.value = v; };
   const [commits, setCommits] = useState(null);
   const ref = useRef(null);
-  const close = useCallback(() => setOpen(false), []);
+  const goRef = useRef(null);
+  const close = useCallback(() => { popoverOpen.value = false; }, []);
   useEscape(close, open);
   useEffect(() => {
     if (!open) return;
@@ -87,38 +97,27 @@ export function UpdatePill() {
     if (!behind) setOpen(false);
   }, [behind]);
 
-  // Before the early return (hooks run unconditionally); `toggle` is hoisted.
-  // Opened from Clawd, focus moves to the update button: the pill sits far
-  // earlier in tab order than the mascot, and the dialog announces nothing.
-  const popoverRequest = updatePopoverRequest.value;
-  const goRef = useRef(null);
-  const focusGo = useRef(false);
+  // The commit list is fetched each time the popover opens, however it was
+  // opened (the pill or Clawd).
   useEffect(() => {
-    if (popoverRequest && behind && !open) {
-      focusGo.current = true;
-      toggle();
-    }
-  }, [popoverRequest]);
-  useEffect(() => {
-    if (open && focusGo.current) {
-      focusGo.current = false;
+    if (!open) return;
+    let live = true;
+    setCommits(null);
+    if (focusOnOpen) {
+      focusOnOpen = false;
       goRef.current?.focus();
     }
+    fetch("/api/update/status")
+      .then(async (res) => { if (live) setCommits(res.ok ? (await res.json()).commits || [] : "error"); })
+      .catch(() => { if (live) setCommits("error"); });
+    return () => { live = false; };
   }, [open]);
 
   // No info yet (dev instance, or pre-first-check), current, and not mid-run.
   if (!info || (!behind && !info.running && !busy && !error)) return null;
 
-  async function toggle() {
-    if (open) return setOpen(false);
-    setOpen(true);
-    setCommits(null);
-    try {
-      const res = await fetch("/api/update/status");
-      setCommits(res.ok ? (await res.json()).commits || [] : "error");
-    } catch (_) {
-      setCommits("error");
-    }
+  function toggle() {
+    setOpen(!open);
   }
 
   // Poll the status endpoint until the updater exits. If it exits with the
@@ -167,20 +166,19 @@ export function UpdatePill() {
 
   const running = busy || info.running;
   const n = info.behind;
-  const plural = `${n} commit${n === 1 ? "" : "s"} behind origin`;
+  const behindText = `${plural(n, "commit")} behind origin`;
   // Only meaningful while the pill is up (behind > 0): ahead alone is a pull
   // with nothing to do, which fast-forwards fine.
   const blocked = n > 0 && ahead > 0;
-  const localPlural = `${ahead} local commit${ahead === 1 ? "" : "s"}`;
-  const warn = `${localPlural} not on origin — the update's fast-forward will refuse. `
+  const warn = `${plural(ahead, "local commit")} not on origin — the update's fast-forward will refuse. `
     + "Rebase (`git pull`) or push first.";
   const title = error
     ? `update failed:\n${error}`
     : running
       ? "updating — periscope will restart itself"
       : blocked
-        ? `${plural}, but ${warn}`
-        : `${plural} — click to see what's changing`;
+        ? `${behindText}, but ${warn}`
+        : `${behindText} — click to see what's changing`;
 
   return (
     <div class="update-dd" ref={ref}>
@@ -196,7 +194,7 @@ export function UpdatePill() {
         {running ? "updating…" : error ? "⚠ update failed" : `↑ ${n} behind${blocked ? " ⚠" : ""}`}
       </button>
       <div class="tb-dd-menu update-menu" role="dialog" hidden={!open}>
-        <div class="update-menu-head">{plural}</div>
+        <div class="update-menu-head">{behindText}</div>
         {blocked && <div class="update-menu-warn">{warn}</div>}
         {error && <pre class="update-menu-error">{error}</pre>}
         <div class="update-commits">

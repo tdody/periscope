@@ -37,12 +37,6 @@ const ICONS = {
       <rect x="2.35" y="2.05" width="1.7" height="2.8" fill="#e8892e" />
     </g>
   ),
-  clean: (
-    <g>
-      <path d="M4.4 1.4 L3 3.7" stroke="#8b6a4e" stroke-width="0.45" />
-      <path d="M2.2 3.4 L3.9 4.2 L3.2 5.3 L1.4 4.5 Z" fill="#d9a83a" />
-    </g>
-  ),
   update: (
     <g>
       <rect x="1.6" y="2.3" width="3.2" height="2.8" fill="#c49a6c" />
@@ -379,39 +373,7 @@ export function DeskZs() {
   );
 }
 
-// ---- 8. cleanup: away from the desk, sweeping up merged branches -----------
-const Twig = ({ x }) => (
-  <path d={`M${x} 19 v-0.9 l-0.6 -0.6 M${x} 18.1 l0.5 -0.7 M${x} 18.6 l0.5 -0.3`} fill="none" stroke="#8b6a4e" stroke-width="0.3" />
-);
-
-export function SweepHand() {
-  return (
-    <g>
-      <rect x="25" y="13.3" width="1.5" height="0.9" fill={SKIN} />
-      <text class="tama-note" x="25.6" y="8.2" font-size="2.6" font-family="var(--mono)" fill="var(--fg-2)">♪</text>
-    </g>
-  );
-}
-
-export function Broom() {
-  return (
-    <g>
-      <g class="tama-broom" shape-rendering={GEO}>
-        <path d="M27.6 8.4 L25.4 17.4" stroke="#b07a4f" stroke-width="0.5" />
-        <rect x="24.8" y="16.8" width="1.6" height="0.6" fill="#8b6a4e" />
-        <path d="M24.3 17.4 L26.8 17.4 L27.9 19 L23.4 19 Z" fill="#d9b44a" />
-        <path d="M24.6 18 L24.3 19 M25.5 18 L25.5 19 M26.4 18 L26.8 19" stroke="#b08a2e" stroke-width="0.2" />
-      </g>
-      <g fill="#b8a58a" shape-rendering={GEO}>
-        <circle class="tama-smoke" cx="28.6" cy="18.4" r="0.5" />
-        <circle class="tama-smoke tama-smoke2" cx="29.3" cy="18.2" r="0.45" />
-      </g>
-      <g shape-rendering={GEO}><Twig x={30.4} /><Twig x={31.6} /><Twig x={32.9} /></g>
-    </g>
-  );
-}
-
-// ---- 9. an update has arrived ---------------------------------------------
+// ---- 8. an update has arrived ---------------------------------------------
 export function LookDown({ x0 }) {
   return (
     <g fill={EYE}>
