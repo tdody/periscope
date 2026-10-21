@@ -41,7 +41,7 @@ from periscope.panes import (
     smooth_parsed,
 )
 from periscope.session_status import claude_proc_for, session_state_for
-from periscope.store import get_accounts, get_window
+from periscope.store import SessionSetting, get_accounts, get_window
 from periscope.tmux import capture
 from periscope.tracks import resolve_track_for_window, track_kind, track_label
 from periscope.turns import session_id_for_pane
@@ -183,12 +183,14 @@ def _apply_codex_state(
 # the mapping, and a new pane waiting one interval for its chip is harmless.
 _ACCOUNTS_TTL_S = 15.0
 _pane_accounts_lock = threading.Lock()
-_pane_accounts_cache: tuple[float, dict[str, str], dict[str, str]] | None = None
+_pane_accounts_cache: tuple[float, dict[str, str], dict[str, str], dict[str, str]] | None = None
 
 
-def _pane_env_labels() -> tuple[dict[str, str], dict[str, str]]:
-    """(accounts, profiles), each tmux pane id -> label for panes NOT on the
-    default. Both come off the same live-process env scan, under one lock: they
+def _pane_env_labels() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """(accounts, profiles, launch efforts), each tmux pane id -> label for
+    panes NOT on the default. The effort comes off argv rather than env
+    (session_status.pane_efforts) but is just as immutable for a process's
+    lifetime, so it shares the scan's cache. Both come off the same live-process env scan, under one lock: they
     share a `ps eww` snapshot downstream, and two separately-locked callers
     would each pay the stampede this lock exists to prevent.
 
@@ -214,7 +216,7 @@ def _pane_env_labels() -> tuple[dict[str, str], dict[str, str]]:
     with _pane_accounts_lock:
         cached = _pane_accounts_cache
         if cached is not None and now - cached[0] < _ACCOUNTS_TTL_S:
-            return cached[1], cached[2]
+            return cached[1], cached[2], cached[3]
         by_dir: dict[str, str] = {}
         for a in get_accounts():
             cfg, aid = a.get("config_dir"), a.get("id")
@@ -225,8 +227,9 @@ def _pane_env_labels() -> tuple[dict[str, str], dict[str, str]]:
             for pane_id, cfg in session_status.pane_config_dirs().items()
         }
         profiles = dict(session_status.pane_profiles())
-        _pane_accounts_cache = (now, accounts, profiles)
-        return accounts, profiles
+        efforts = dict(session_status.pane_efforts())
+        _pane_accounts_cache = (now, accounts, profiles, efforts)
+        return accounts, profiles, efforts
 
 
 def mem_signal(proc: dict | None) -> dict | None:
@@ -420,7 +423,20 @@ def build_window_view(
     pinned_for_aff = aff_repo if aff_repo else None
     aff = affiliation(w.get("cwd", ""), pinned_for_aff, aff_repo)
 
-    pane_accounts, pane_profiles = _pane_env_labels()
+    pane_accounts, pane_profiles, pane_efforts = _pane_env_labels()
+    pane_id = w.get("pane_id") or ""
+    # A model/effort set from the pane header (POST /api/pane/session-setting)
+    # is remembered with the claude pid it was typed into, and only shown while
+    # that process is still the pane's claude. The pid lookup is skipped for
+    # panes that never had one set.
+    set_model, set_effort = persisted.get("session_model"), persisted.get("session_effort")
+    live_claude = (session_status.pane_claude_pids().get(pane_id)
+                   if set_model or set_effort else None)
+
+    def _while_live(entry: SessionSetting | None) -> str | None:
+        if entry and live_claude and entry.get("claude_pid") == live_claude:
+            return entry.get("value")
+        return None
 
     view = {
         **w, **parsed, **git, **pr,
@@ -474,5 +490,11 @@ def build_window_view(
         # card distinguishes a lab pane from a normal one, and the difference
         # changes what the pane can do.
         "profile": pane_profiles.get(w.get("pane_id") or "", "default"),
+        # The pane header's model/effort pickers. Claude reports effort nowhere
+        # periscope can read, so the effort shown is what periscope last set,
+        # else the `--effort` the claude was launched with.
+        "launch_effort": pane_efforts.get(pane_id),
+        "session_effort": _while_live(set_effort),
+        "session_model": _while_live(set_model),
     }
     return view, stamp_update

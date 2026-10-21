@@ -142,13 +142,27 @@ def test_claude_subprocess_env_strips_api_credit_auth_and_binds_the_account(monk
     assert env["PATH"] == os.environ["PATH"]   # the rest of the environment is inherited
 
 
-def test_effort_env_passes_the_levels_claude_accepts():
+def test_effort_level_passes_the_levels_claude_accepts():
     for level in ("low", "medium", "high", "xhigh", "max"):
-        assert config.effort_env(level) == level
+        assert config.effort_level(level) == level
 
 
-def test_effort_env_fails_open_to_default():
+def test_effort_level_fails_open_to_default():
     # "default" is the pin's "leave it to Claude" value, and anything unknown
-    # (a stale level, a typo, shell metacharacters) must not reach a `-e` arg.
+    # (a stale level, a typo, shell metacharacters) must not reach the argv.
     for v in (None, "", "default", "auto", "ultracode", "HIGH", "high; rm -rf"):
-        assert config.effort_env(v) == ""
+        assert config.effort_level(v) == ""
+
+
+def test_build_agent_command_carries_effort_as_a_flag():
+    # A flag, not CLAUDE_CODE_EFFORT_LEVEL: the env var makes Claude refuse
+    # /effort for the whole session, which would leave the per-pane effort
+    # control dead on every pane periscope launched.
+    argv = config.build_agent_command("claude", cwd="/x", effort="high")
+    assert argv[-2:] == ["--effort", "high"]
+    assert "--effort" not in config.build_agent_command("claude", cwd="/x", effort="default")
+    assert "--effort" not in config.build_agent_command("claude", cwd="/x")
+
+
+def test_build_agent_command_never_gives_codex_an_effort():
+    assert "--effort" not in config.build_agent_command("codex", cwd="/x", effort="high")

@@ -63,6 +63,15 @@ from periscope.config import CLAUDE_EXEC, instance_file
 from periscope.log import log
 
 
+class SessionSetting(TypedDict):
+    """A model/effort typed into a running pane from its header
+    (POST /api/pane/session-setting). `claude_pid` is the process it applies
+    to: a fresh claude in the same pane starts over, so window_view stops
+    showing the value once the pid differs."""
+    value: str
+    claude_pid: int | None
+
+
 class WindowAnnotation(TypedDict, total=False):
     """Per-pid annotations persisted in state.json under windows[pid]."""
     linked_pr: int
@@ -79,6 +88,8 @@ class WindowAnnotation(TypedDict, total=False):
     # set_name, or passed to spawn_claude) — narrator.is_name_pinned locks the
     # auto-rename out. Absent means unpinned; never stored as False.
     name_pinned: bool
+    session_model: SessionSetting
+    session_effort: SessionSetting
 
 
 class Settings(TypedDict, total=False):

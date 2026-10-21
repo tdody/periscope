@@ -16,7 +16,7 @@ import re
 import time
 
 from periscope.config import INPUT_CTL_SESSION
-from periscope.tmux import _ANSI_SGR_RE, _FG_COLOR_RE, tmux
+from periscope.tmux import _ANSI_SGR_RE, tmux
 
 # Server-tracked "last user-focused" per target.
 # Tmux's window_activity bumps on any output (Claude streaming, build logs, dev
@@ -478,17 +478,79 @@ def _detect_needs_input(lines: list[str]) -> bool:
     return any(NEEDS_INPUT_FOOTER_RE.search(line) for line in lines[-5:])
 
 
+_SGR_SPLIT_RE = re.compile(r"(\x1b\[[0-9;]*m)")
+# Ghost suggestions are drawn dim, bright-black, or in the dark half of the
+# 256-color grey ramp. Anything else after the prompt is treated as typed.
+_GHOST_256 = frozenset({8, *range(232, 248)})
+
+
+def _sgr_fg(params: list[str], fg: tuple | None, dim: bool) -> tuple[tuple | None, bool]:
+    """Apply one SGR sequence's params to the (fg, dim) state."""
+    i = 0
+    while i < len(params):
+        p = params[i] or "0"
+        if p == "0":
+            fg, dim = None, False
+        elif p == "2":
+            dim = True
+        elif p == "22":
+            dim = False
+        elif p == "39":
+            fg = None
+        elif p in ("38", "48"):
+            mode = params[i + 1] if i + 1 < len(params) else ""
+            n = 1 if mode == "5" else 3 if mode == "2" else 0
+            args = params[i + 2:i + 2 + n]
+            if p == "38" and len(args) == n and n and all(a.isdigit() for a in args):
+                fg = ("256", int(args[0])) if n == 1 else ("rgb", *map(int, args))
+            i += 1 + (n + 1 if n else 0)
+            continue
+        elif p.isdigit() and (30 <= int(p) <= 37 or 90 <= int(p) <= 97):
+            fg = ("basic", int(p))
+        i += 1
+    return fg, dim
+
+
+def _input_is_ghost(raw: str) -> bool:
+    """True when the first character after the `❯` is drawn like Claude Code's
+    greyed-out suggestion: dim, bright-black, or dark grey.
+
+    Decided positively, so anything unrecognized counts as typed. The old rule
+    ("typed input switches to a second fg color") broke on Claude Code 2.1.280,
+    which draws a draft in the default fg, the same as the ❯. A draft read as
+    ghost text, and the per-pane /effort picker pasted onto it and submitted
+    it. Reading a ghost suggestion as a draft only costs a refused send.
+    """
+    fg: tuple | None = None
+    dim = False
+    after_prompt = False
+    for part in _SGR_SPLIT_RE.split(raw):
+        if part.startswith("\x1b["):
+            fg, dim = _sgr_fg(part[2:-1].split(";"), fg, dim)
+            continue
+        for ch in part:
+            if not after_prompt:
+                after_prompt = ch == "❯"
+            elif not ch.isspace():
+                if dim or fg == ("basic", 90):
+                    return True
+                if fg and fg[0] == "256":
+                    return fg[1] in _GHOST_256
+                if fg and fg[0] == "rgb":
+                    return max(fg[1:]) - min(fg[1:]) <= 24 and max(fg[1:]) <= 160
+                return False
+    return False
+
+
 def _detect_pending_input(
     raw_rows: list[str], plain_rows: list[str]
 ) -> str | None:
     """Text typed at the `❯` prompt but not yet submitted, or None.
 
-    Ghost-text filter: Claude Code shows a greyed-out suggestion in the
-    input slot when nothing's typed. It looks like real input in plain
-    text, but in the colored row it shares the prompt prefix's fg color
-    (single distinct fg code). Real typed input switches to a different fg
-    color (≥2 distinct fg codes). A row with no SGR escapes at all (e.g.
-    test fixtures) carries no color info — trust the visible text.
+    Ghost-text filter: Claude Code shows a greyed-out suggestion in the input
+    slot when nothing's typed, which looks like input in plain text. It is
+    told apart by color (_input_is_ghost). A row with no SGR escapes at all
+    (e.g. test fixtures) carries no color info, so the visible text is trusted.
 
     Caller invokes this only when no dialog is open — `❯ 1.` would
     otherwise read as the dialog's selection line, not user typing.
@@ -502,10 +564,7 @@ def _detect_pending_input(
         input_text = m.group("input").strip()
         if not input_text:
             return None
-        if "\x1b[" in raw:
-            fg_codes = set(_FG_COLOR_RE.findall(raw))
-            return input_text if len(fg_codes) >= 2 else None
-        return input_text
+        return None if _input_is_ghost(raw) else input_text
     return None
 
 

@@ -69,13 +69,12 @@ MODEL_ENV_VAR = "ANTHROPIC_MODEL"
 _MODEL_OK = re.compile(r"^[A-Za-z0-9._:\[\]-]+$")
 
 
-# Reasoning-effort override for a spawned pane — the header's effort pin. Same
-# carrier and reasons as the model, with one difference that shapes resurrect:
-# while this var is set Claude refuses /effort for the session ("Not applied:
-# CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this session"), so unlike the
-# model it can never drift from the spawn-time choice, and resurrect re-emits
-# it on both paths (see resurrect._rewrite_line).
-EFFORT_ENV_VAR = "CLAUDE_CODE_EFFORT_LEVEL"
+# Reasoning effort a spawned Claude starts at — the header's effort pin. The one
+# launch choice carried as a FLAG (`--effort`), not env like the account,
+# profile and model: Claude's env var CLAUDE_CODE_EFFORT_LEVEL makes it refuse
+# /effort for the whole session ("overrides this session — clear it and …
+# takes over"), which would leave the per-pane effort control dead on every
+# pane periscope launched. `--effort` only seeds the session's starting level.
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
@@ -110,13 +109,14 @@ def model_env(model: str | None) -> str:
     return m
 
 
-def effort_env(effort: str | None) -> str:
-    """The EFFORT_ENV_VAR value for a pin choice; "" for "default" (Claude
-    decides, and /effort keeps working in the pane).
+def effort_level(effort: str | None) -> str:
+    """The `--effort` value for a pin choice; "" for "default" (no flag —
+    Claude picks per model and settings.json).
 
     Checked against the closed list, unlike model aliases — the levels don't
     move, and an unknown one is a stale pin or a periscope bug. Fails OPEN to
-    the default like `profile_env`.
+    the default like `profile_env`. Also what makes the value safe to splice
+    into a shell command line unquoted (channels.spawn_claude does).
     """
     if effort and effort in EFFORT_LEVELS:
         return effort
@@ -175,12 +175,16 @@ def build_agent_command(
     *,
     cwd: str,
     resume_id: str | None = None,
+    effort: str | None = None,
 ) -> list[str]:
-    """Build a typed agent argv. Shell serialization belongs at the tmux edge."""
+    """Build a typed agent argv. Shell serialization belongs at the tmux edge.
+    `effort` is the pin value; codex has no equivalent and ignores it."""
     if agent == "claude":
         argv = shlex.split(claude_exec())
         if resume_id:
             argv.extend(["--resume", resume_id])
+        if level := effort_level(effort):
+            argv.extend(["--effort", level])
         return argv
     if agent == "codex":
         argv = [codex_exec()]

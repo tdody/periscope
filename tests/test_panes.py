@@ -377,6 +377,24 @@ GHOST_CASES: list[tuple[str, str, str | None]] = [
     ("real-with-bg-color",
      f"\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231mreal user input\x1b[39m\n{STATUS_LINE}\n",
      "real user input"),
+
+    # Claude Code 2.1.280: a typed draft shares the prompt glyph's DEFAULT fg
+    # (39), with a no-break space after ❯. The old "≥2 fg colors" rule read
+    # this as ghost text, and the per-pane /effort picker pasted onto the
+    # draft and submitted it. Ghost text is the one that's dim or grey.
+    ("default-fg-draft",
+     f"\x1b[39m❯\xa0half a thought\n{STATUS_LINE}\n",
+     "half a thought"),
+
+    # Dim (SGR 2) suggestion after the prompt — ghost, not input.
+    ("dim-ghost",
+     f"\x1b[39m❯\xa0\x1b[2mtry the tests\x1b[22m\n{STATUS_LINE}\n",
+     None),
+
+    # Bright-black (90) suggestion — ghost too.
+    ("bright-black-ghost",
+     f"\x1b[90m❯ try the tests\x1b[39m\n{STATUS_LINE}\n",
+     None),
 ]
 
 

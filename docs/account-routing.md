@@ -48,9 +48,11 @@ Resurrect (`resurrect.py`) re-emits a restored pane's OWN account and model
 env — it restores intent, it does not choose.
 
 Effort (`settings.spawn_effort`, the header's third pin): no meter depends on
-it, so `launch_policy` never sees it. `choose_launch` copies the pin onto
-`Launch.effort` after the policy runs, so it reaches every spawn path from
-the same call as the model. `"default"` (or unset) means no override.
+it, so `launch_policy` never sees it. `choose_launch` copies the pin (or an
+explicit per-launch value) onto `Launch.effort` after the policy runs, so it
+reaches every spawn path from the same call as the model. It's applied as
+`--effort` on the command line, not env (docs/wrapper-profiles.md says why).
+`"default"` (or unset) means no flag.
 
 Background-commander jobs (`bg_account`): `claude agents` / `claude stop` are
 per-config-dir, and a job whose account is re-resolved between dispatch and
