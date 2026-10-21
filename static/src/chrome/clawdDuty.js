@@ -11,10 +11,10 @@ import { ctxClass } from "../split/ctxBand.js";
 import { paneLabel, plural } from "../util.js";
 
 // One slot, highest first: what each one is costing you right now. A blocked
-// agent beats a stalled API beats a blocked merge beats waiting results; the
-// merge party is ten minutes long and a context warning can wait that long;
-// the update is housekeeping.
-export const DUTY_ORDER = ["bell", "api", "ci", "done", "merged", "ctx", "update"];
+// agent beats a stalled API beats waiting results; the merge party is ten
+// minutes long and a context warning can wait that long; red CI is the PR's
+// own loop to fix and stays on the PR chip meanwhile; the update is housekeeping.
+export const DUTY_ORDER = ["bell", "api", "done", "merged", "ctx", "ci", "update"];
 export const PARTY_S = 600;
 
 function waited(sinceSec, nowSec) {

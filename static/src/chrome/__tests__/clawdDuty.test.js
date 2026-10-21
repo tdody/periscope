@@ -23,6 +23,7 @@ describe("dutyItems", () => {
       update: { behind: 3, running: false }, nowSec: NOW,
     });
     expect(kinds(items)).toEqual(DUTY_ORDER);
+    expect(DUTY_ORDER).toEqual(["bell", "api", "done", "merged", "ctx", "ci", "update"]);
     expect(moreCount(items)).toBe(1 + 1 + 1 + 1 + 1 + 1);
   });
 
