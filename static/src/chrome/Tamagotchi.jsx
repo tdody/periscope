@@ -2,15 +2,15 @@
 // mascot, living its day on the local clock: asleep, coffee, coding, lunch,
 // a run, dinner, a book (tamagotchi.js has the schedule). Click it to pet it.
 //
-// Coding happens at a desk and reading in an armchair by the fireplace; the
-// rest are standing poses with a prop.
+// Coding happens at a desk, reading in an armchair by the fireplace, and the
+// run outdoors in the current season; the rest are standing poses with a prop.
 //
 // Pure pixel art: a 34×24 scene where each sprite cell is 1×2 (the banner's
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
 import { useEffect, useState } from "preact/hooks";
-import { activityAt, BODY, EYES, gridCells, hourLabel, LEGS, msUntilNextChange } from "./tamagotchi.js";
+import { activityAt, BODY, EYES, gridCells, hourLabel, LEGS, msUntilNextChange, seasonAt } from "./tamagotchi.js";
 
 const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
 const SKIN = "#d97757";
@@ -42,8 +42,77 @@ function Eyes({ closed, x0 }) {
   );
 }
 
+// The run happens outdoors, in whatever season it is: sky tint, ground, a tree
+// dressed for the season, and something falling (petals, leaves, snow).
+const SEASONS = {
+  spring: { sky: "#7fb3e0", ground: "#5c9a4c", canopy: ["#6fae5a", "#f2a7c3"], fall: "#f4b6cc" },
+  summer: { sky: "#6fb4ea", ground: "#4f9443", canopy: ["#4f9a46", "#3f8238"] },
+  autumn: { sky: "#c9a36b", ground: "#7a6a3a", canopy: ["#d9822b", "#b5452a"], fall: "#e07b39" },
+  winter: { sky: "#9fb3c8", ground: "#e6edf3", fall: "#f4f8fb" },
+};
+const FALLING = [[3, 0], [11, -0.7], [18, -1.6], [25.5, -0.3], [32, -1.1]];
+
+function Scenery({ season }) {
+  const sc = SEASONS[season] || SEASONS.summer;
+  return (
+    <g class="tama-scenery" data-season={season}>
+      <rect x="0" y="0" width="34" height="19.2" fill={sc.sky} opacity="0.13" />
+      <rect x="0" y="19.4" width="34" height="4.6" fill={sc.ground} opacity={season === "winter" ? 0.85 : 0.55} />
+      {season === "summer" && <circle class="tama-sun" cx="4.5" cy="4" r="2.1" fill="#ffd166" />}
+      <rect x="30.2" y="11.6" width="1.4" height="7.6" fill="#6b4a33" />
+      {sc.canopy ? (
+        <g>
+          <rect x="27.4" y="7.4" width="6.6" height="4.6" rx="1.4" fill={sc.canopy[0]} />
+          <rect x="28.4" y="5.8" width="4.6" height="2.2" rx="1" fill={sc.canopy[0]} />
+          <g fill={sc.canopy[1]}>
+            <rect x="28.2" y="8.2" width="0.8" height="0.8" />
+            <rect x="31.4" y="7" width="0.8" height="0.8" />
+            <rect x="32.4" y="9.8" width="0.8" height="0.8" />
+            <rect x="29.6" y="10.4" width="0.8" height="0.8" />
+          </g>
+        </g>
+      ) : (
+        <g stroke="#6b4a33" stroke-width="0.5">
+          <line x1="30.9" y1="12" x2="28.4" y2="8.2" />
+          <line x1="30.9" y1="11" x2="33.4" y2="8" />
+          <line x1="30.9" y1="9.6" x2="30.4" y2="6.2" />
+        </g>
+      )}
+      {season === "spring" && (
+        <g>
+          <rect x="3" y="19.8" width="0.7" height="0.7" fill="#f2a7c3" />
+          <rect x="6.5" y="20.6" width="0.7" height="0.7" fill="#ffd166" />
+          <rect x="26" y="20.2" width="0.7" height="0.7" fill="#f2a7c3" />
+        </g>
+      )}
+      {season === "summer" && (
+        <g fill="#3f8238">
+          <rect x="2.6" y="18.4" width="0.4" height="1.2" />
+          <rect x="3.3" y="18.1" width="0.4" height="1.5" />
+          <rect x="26.4" y="18.3" width="0.4" height="1.3" />
+        </g>
+      )}
+      {season === "autumn" && (
+        <g fill="#c2452d">
+          <rect x="4" y="19.7" width="1" height="0.5" />
+          <rect x="24.8" y="20.1" width="1" height="0.5" />
+          <rect x="27.6" y="19.6" width="1" height="0.5" fill="#e07b39" />
+        </g>
+      )}
+      {sc.fall && (
+        <g fill={sc.fall}>
+          {FALLING.map(([x, delay]) => (
+            <rect key={x} class="tama-fall" x={x} y="-1" width="0.7" height="0.7"
+                  style={{ animationDelay: `${delay}s` }} />
+          ))}
+        </g>
+      )}
+    </g>
+  );
+}
+
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity }) {
+function Behind({ activity, season }) {
   switch (activity) {
     case "sleep":
       return (
@@ -110,8 +179,13 @@ function Behind({ activity }) {
             <rect x="26.6" y="18.4" width="5" height="0.6" rx="0.3" fill="#5a3a26" />
           </g>
           <g class="tama-chair" fill="#8e3b3b">
-            <rect x="1" y="8.6" width="3.2" height="10.4" rx="1" />
-            <rect x="3.6" y="16.8" width="16.8" height="2.2" rx="0.6" />
+            <rect x="1" y="8.6" width="3.2" height="9.6" rx="1" />
+            <rect x="3.6" y="16.8" width="16.8" height="1.5" rx="0.6" />
+          </g>
+          <g class="tama-chair-legs" fill="#4a2f22">
+            <rect x="1.5" y="18.2" width="0.9" height="0.8" />
+            <rect x="5" y="18.2" width="0.9" height="0.8" />
+            <rect x="16.4" y="18.2" width="0.9" height="0.8" />
           </g>
         </g>
       );
@@ -128,12 +202,15 @@ function Behind({ activity }) {
     case "run":
       return (
         <g>
+          <Scenery season={season} />
           <g class="tama-motion" fill="var(--fg-3)">
             <rect x="1" y="10.6" width="4" height="0.5" />
             <rect x="2.4" y="13.6" width="3.6" height="0.5" />
             <rect x="0.6" y="16.6" width="4.6" height="0.5" />
           </g>
-          <path class="tama-sweat" d="M27 8.4 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />
+          {season === "winter"
+            ? <rect x="11" y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
+            : <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
         </g>
       );
     default:
@@ -146,7 +223,8 @@ function InFront({ activity }) {
   // The armchair's arm, then the open book held up toward the fire.
   return (
     <g>
-      <rect class="tama-chair" x="17.4" y="13.6" width="3.6" height="5.4" rx="0.8" fill="#7a3030" />
+      <rect class="tama-chair" x="17.4" y="13.6" width="3.6" height="4.7" rx="0.8" fill="#7a3030" />
+      <rect class="tama-chair-legs" x="19.6" y="18.2" width="0.9" height="0.8" fill="#4a2f22" />
       <g class="tama-book">
         <rect x="17.4" y="10.6" width="2.9" height="3.4" fill="#f2ece0" />
         <rect x="20.3" y="10.6" width="2.9" height="3.4" fill="#ebe3d3" />
@@ -163,13 +241,13 @@ function InFront({ activity }) {
   );
 }
 
-export function TamaScene({ activity, petted = false, petKey = 0 }) {
+export function TamaScene({ activity, season = "summer", petted = false, petKey = 0 }) {
   const { x0, sitting } = POSES[activity] || STANDING;
   const legRows = (frame) => [...BODY.map(() => ""), frame];
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true" data-activity={activity}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
-      <Behind activity={activity} />
+      <Behind activity={activity} season={season} />
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells rows={BODY} cls="tama-body" x0={x0} />
         <Eyes closed={activity === "sleep"} x0={x0} />
@@ -216,7 +294,7 @@ export function Tamagotchi() {
       aria-label={label}
       onClick={() => { setPets((n) => n + 1); setPetted(true); }}
     >
-      <TamaScene activity={a.id} petted={petted} petKey={pets} />
+      <TamaScene activity={a.id} season={seasonAt(now)} petted={petted} petKey={pets} />
     </button>
   );
 }

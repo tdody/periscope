@@ -57,3 +57,28 @@ describe("sitting scenes", () => {
     }
   });
 });
+
+describe("seasonal run", () => {
+  it.each(["spring", "summer", "autumn", "winter"])("runs through a %s backdrop", (season) => {
+    const html = render(<TamaScene activity="run" season={season} />);
+    expect(html).toContain(`data-season="${season}"`);
+    expect(html).toContain("tama-scenery");
+  });
+
+  it("only dresses the run in the season", () => {
+    expect(render(<TamaScene activity="code" season="winter" />)).not.toContain("tama-scenery");
+  });
+
+  it("drops snow, leaves or petals, but not in summer", () => {
+    expect(render(<TamaScene activity="run" season="winter" />)).toContain("tama-fall");
+    expect(render(<TamaScene activity="run" season="autumn" />)).toContain("tama-fall");
+    expect(render(<TamaScene activity="run" season="spring" />)).toContain("tama-fall");
+    expect(render(<TamaScene activity="run" season="summer" />)).toContain("tama-sun");
+  });
+});
+
+describe("reading chair", () => {
+  it("stands on legs", () => {
+    expect(render(<TamaScene activity="read" />)).toContain("tama-chair-legs");
+  });
+});

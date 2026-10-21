@@ -28,6 +28,16 @@ export function msUntilNextChange(date) {
   return end - date;
 }
 
+// The run's backdrop. Meteorological seasons (whole months), northern
+// hemisphere — the hemisphere isn't knowable from the browser clock.
+export function seasonAt(date) {
+  const m = date.getMonth();
+  if (m === 11 || m <= 1) return "winter";
+  if (m <= 4) return "spring";
+  if (m <= 7) return "summer";
+  return "autumn";
+}
+
 export function hourLabel(h) {
   if (h === 0 || h === 24) return "midnight";
   if (h === 12) return "noon";

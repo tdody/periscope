@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityAt, BODY, gridCells, hourLabel, LEGS, msUntilNextChange, SCHEDULE } from "../tamagotchi.js";
+import { activityAt, BODY, gridCells, hourLabel, LEGS, msUntilNextChange, SCHEDULE, seasonAt } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0);
 
@@ -50,5 +50,15 @@ describe("sprite", () => {
   });
   it("maps grid cells to coordinates", () => {
     expect(gridCells(["#.", ".#"])).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+  });
+});
+
+describe("seasonAt", () => {
+  it("uses meteorological seasons (northern hemisphere)", () => {
+    const month = (m) => seasonAt(new Date(2026, m, 15));
+    expect([11, 0, 1].map(month)).toEqual(["winter", "winter", "winter"]);
+    expect([2, 3, 4].map(month)).toEqual(["spring", "spring", "spring"]);
+    expect([5, 6, 7].map(month)).toEqual(["summer", "summer", "summer"]);
+    expect([8, 9, 10].map(month)).toEqual(["autumn", "autumn", "autumn"]);
   });
 });
