@@ -311,3 +311,23 @@ def test_session_setting_404s_an_unknown_pid(client, mocker, clean_state):
     mocker.patch.object(pane_route, "_resolve_window_by_pid", return_value=("", "", {}))
     r = client.post("/api/pane/session-setting?pid=gone&setting=effort&value=high")
     assert r.status_code == 404
+
+
+def test_session_setting_refuses_a_real_claude_2_1_draft(client, mocker, clean_state):
+    # Regression, end to end through the real parser: Claude 2.1.280 draws a
+    # typed draft in the default fg, which the old ghost filter dropped. The
+    # endpoint then pasted `/effort high` onto the draft and submitted it as a
+    # prompt. The pane below is the captured shape (custom status line, so the
+    # scrape doesn't even recognize Claude — the session file does).
+    from periscope import panes
+    from periscope.routes import pane as pane_route
+    send = _patch_live_pane(mocker)
+    mocker.patch.object(pane_route, "parse_pane", side_effect=panes.parse_pane)
+    mocker.patch.object(pane_route, "capture", return_value=(
+        "\x1b[39m❯\xa0half a thought\n"
+        "\x1b[38;5;244m" + "─" * 40 + "\n"
+        "  📁 periscope 🌿 main  |  🧠 0% | 🤖 opus ⚡high\n"))
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409, r.text
+    assert "unsent" in r.json()["detail"]
+    send.assert_not_called()
