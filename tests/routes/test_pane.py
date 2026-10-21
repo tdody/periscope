@@ -198,3 +198,113 @@ def test_rename_stamps_narrator_cooldown(client, mocker):
     assert args[0] == "%5"
     assert kwargs["name"] == "my-name"
     assert isinstance(kwargs["at"], int)
+
+
+# --- per-pane model / effort (POST /api/pane/session-setting) -------------------
+# Types `/model x` or `/effort x` into a live Claude pane. The gate is the whole
+# feature's safety: keystrokes into a busy pane land mid-turn, and into a pane
+# with a half-typed message they get appended to the user's draft.
+
+_IDLE_CLAUDE = "❯ \n" + "─" * 20 + "\n  [Opus 4.8] 12% context\n"
+_WINDOW = {"session": "periscope", "index": 4, "pid_raw": "abc123"}
+
+
+def _patch_live_pane(mocker, *, parsed=None, sess_state="idle"):
+    from periscope.routes import pane as pane_route
+    mocker.patch.object(pane_route, "_resolve_window_by_pid",
+                        return_value=("abc123", "%7", dict(_WINDOW)))
+    mocker.patch.object(pane_route, "capture", return_value="ignored")
+    mocker.patch.object(pane_route, "parse_pane", return_value=parsed or {
+        "agent": "claude", "state": "idle", "pending_input": None})
+    mocker.patch.object(pane_route, "session_id_for_pane", return_value="sid-1")
+    mocker.patch.object(pane_route, "session_state_for",
+                        return_value={"state": sess_state} if sess_state else None)
+    return mocker.patch.object(pane_route, "_send_to_target",
+                               return_value={"target": "periscope:4", "ok": True})
+
+
+def test_session_setting_types_the_slash_command_into_an_idle_pane(client, mocker, clean_state):
+    from periscope.store import get_window
+    send = _patch_live_pane(mocker)
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 200, r.text
+    assert r.json()["sent"] == "/effort high"
+    send.assert_called_once_with("periscope:4", "/effort high", ["Enter"])
+    # Remembered, because Claude reports effort nowhere periscope can read.
+    assert get_window("abc123")["session_effort"] == "high"
+
+
+def test_session_setting_sets_the_model(client, mocker, clean_state):
+    from periscope.store import get_window
+    send = _patch_live_pane(mocker)
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=model&value=opus%5B1m%5D")
+    assert r.status_code == 200, r.text
+    send.assert_called_once_with("periscope:4", "/model opus[1m]", ["Enter"])
+    assert get_window("abc123")["session_model"] == "opus[1m]"
+
+
+def test_session_setting_maps_default_effort_to_auto(client, mocker, clean_state):
+    # The pickers say "default"; Claude's word for "the model's own effort" is auto.
+    send = _patch_live_pane(mocker)
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=default")
+    assert r.status_code == 200, r.text
+    send.assert_called_once_with("periscope:4", "/effort auto", ["Enter"])
+
+
+def test_session_setting_refuses_a_busy_pane(client, mocker, clean_state):
+    send = _patch_live_pane(mocker, sess_state="working")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    assert "working" in r.json()["detail"]
+    send.assert_not_called()
+
+
+def test_session_setting_refuses_a_pane_waiting_on_a_prompt(client, mocker, clean_state):
+    send = _patch_live_pane(mocker, sess_state="needs-input")
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=model&value=sonnet")
+    assert r.status_code == 409
+    send.assert_not_called()
+
+
+def test_session_setting_refuses_when_the_user_has_a_draft(client, mocker, clean_state):
+    send = _patch_live_pane(mocker, parsed={
+        "agent": "claude", "state": "idle", "pending_input": "half a thought"})
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    assert "unsent" in r.json()["detail"]
+    send.assert_not_called()
+
+
+def test_session_setting_falls_back_to_the_scraped_state(client, mocker, clean_state):
+    # No session-status file (unmapped pane): the scraped state decides.
+    send = _patch_live_pane(mocker, sess_state=None, parsed={
+        "agent": "claude", "state": "working", "pending_input": None})
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    send.assert_not_called()
+
+
+def test_session_setting_refuses_a_non_claude_pane(client, mocker, clean_state):
+    send = _patch_live_pane(mocker, sess_state=None, parsed={
+        "agent": None, "state": "shell", "pending_input": None})
+    r = client.post("/api/pane/session-setting?pid=abc123&setting=effort&value=high")
+    assert r.status_code == 409
+    assert "Claude" in r.json()["detail"]
+    send.assert_not_called()
+
+
+def test_session_setting_rejects_unknown_values(client, mocker, clean_state):
+    send = _patch_live_pane(mocker)
+    for q in ("setting=effort&value=ultracode", "setting=effort&value=HIGH",
+              "setting=model&value=opus%20%26%26%20rm", "setting=model&value=auto",
+              "setting=color&value=red"):
+        r = client.post(f"/api/pane/session-setting?pid=abc123&{q}")
+        assert r.status_code in (400, 422), (q, r.status_code)
+    send.assert_not_called()
+
+
+def test_session_setting_404s_an_unknown_pid(client, mocker, clean_state):
+    from periscope.routes import pane as pane_route
+    mocker.patch.object(pane_route, "_resolve_window_by_pid", return_value=("", "", {}))
+    r = client.post("/api/pane/session-setting?pid=gone&setting=effort&value=high")
+    assert r.status_code == 404

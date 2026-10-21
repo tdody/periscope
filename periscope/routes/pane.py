@@ -7,12 +7,14 @@ mirror). Mostly an aggregator over already-cached subsystems.
 
 import os
 import time
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from periscope.activity import cached_pane_activity, stamp_pane_rename
-from periscope.channels import channel_state_for
+from periscope import config
+from periscope.channels import _resolve_window_by_pid, channel_state_for
 from periscope.git_pr import cached_git_state, cached_pr_state
 from periscope.lgtm import cached_lgtm_state
 from periscope.log import log
@@ -23,10 +25,12 @@ from periscope.panes import (
     smooth_parsed,
 )
 from periscope.pids import _attach_git_then_resolve_pids
+from periscope.routes.send import _send_to_target
+from periscope.session_status import session_state_for
 from periscope.store import get_window, set_window_fields
 from periscope.tabs import activate_tab, close_tab, open_tab
-from periscope.tmux import pane_meta, tmux, window_identity
-from periscope.turns import get_turns_for_pane
+from periscope.tmux import capture, pane_meta, tmux, window_identity
+from periscope.turns import get_turns_for_pane, session_id_for_pane
 
 router = APIRouter()
 
@@ -207,3 +211,57 @@ def name_pin(body: NamePinBody):
     # None), so an unpinned window is indistinguishable from one never pinned.
     set_window_fields(pid, name_pinned=True if body.pinned else None)
     return {"ok": True, "pid": pid, "name_pinned": body.pinned}
+
+
+def _slash_arg(setting: str, value: str) -> str:
+    """What to type after `/<setting>`, or 400. Effort's "default" is Claude's
+    `auto` (the model's own level). The model takes any alias Claude does,
+    `default` included, so only the character set is checked — the same
+    config.model_env rule as the spawn pin; "auto" is the pin's chooser
+    value and means nothing to a running session."""
+    v = (value or "").strip()
+    if setting == "effort":
+        if v in ("default", "auto"):
+            return "auto"
+        if config.effort_level(v):
+            return v
+    elif v == "default" or config.model_env(v):
+        return v
+    raise HTTPException(400, f"{setting} {value!r} is not a valid value")
+
+
+@router.post("/api/pane/session-setting")
+def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: str):
+    """Change a RUNNING Claude pane's model or effort by typing `/model <x>` or
+    `/effort <x>` into it — the per-pane counterpart of the header pins, which
+    only shape new panes.
+
+    Refused (409) unless the pane is a Claude that is idle with an empty input
+    box, read fresh from the pane rather than from the 3s poll: keystrokes into
+    a busy pane land mid-turn, and into a half-typed message they are appended
+    to the user's draft and submitted with it. The value is remembered on the
+    window because Claude reports effort nowhere periscope can read back.
+    """
+    arg = _slash_arg(setting, value)
+    rpid, pane_id, window = _resolve_window_by_pid(pid)
+    if not window:
+        raise HTTPException(404, f"no live pane for pid {pid!r}")
+    target = f"{window['session']}:{window['index']}"
+    try:
+        parsed = parse_pane(capture(target))
+    except Exception as e:
+        raise HTTPException(500, f"could not read the pane: {e}") from e
+    # The session status file is authoritative when the pane maps to a live
+    # session (as in window_view); the scrape decides otherwise.
+    sess = session_state_for(session_id_for_pane(pane_id))
+    if parsed.get("agent") != "claude" and not sess:
+        raise HTTPException(409, "not a Claude pane")
+    state = sess["state"] if sess else parsed.get("state")
+    if state not in ("idle", "done"):
+        raise HTTPException(409, f"pane is {state} — try again when it's idle")
+    if parsed.get("pending_input"):
+        raise HTTPException(409, "the pane has unsent text in its input box")
+    command = f"/{setting} {arg}"
+    _send_to_target(target, command, ["Enter"])
+    set_window_fields(rpid or pid, **{f"session_{setting}": value.strip()})
+    return {"ok": True, "pid": rpid or pid, "sent": command}
