@@ -9,7 +9,7 @@
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
-import { useComputed } from "@preact/signals";
+import { useComputed, useSignal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
@@ -597,9 +597,19 @@ export function Tamagotchi() {
     return () => clearTimeout(t);
   }, [petted, pets]);
 
+  // A minute tick for the stale check below: a failed poll leaves `usage`
+  // untouched, so without it a hot reading from a server that's gone away
+  // would keep Clawd furious forever rather than going stale and calm.
+  const minute = useSignal(0);
+  useEffect(() => {
+    const i = setInterval(() => { minute.value += 1; }, 60_000);
+    return () => clearInterval(i);
+  }, []);
+
   // The coding mood, as a string key: /api/state replaces `usage` every poll,
   // and a poll that leaves the mood unchanged mustn't rebuild the scene.
   const moodKey = useComputed(() => {
+    minute.value;
     const plan = usage.value?.plan;
     const r = codingMood(plan, Date.now() / 1000);
     const name = r.account && multiAccount() ? accountLabel(r.account) : null;
