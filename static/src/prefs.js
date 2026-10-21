@@ -337,6 +337,16 @@ export function togglePin(pid) {
   return setPinnedPids(next);
 }
 
+// Split-view column widths (px) from the splitter drags, keyed by pref name
+// ("rail_width" | "side_width"); null → the CSS default.
+export function getPaneWidth(pref) {
+  return P().ui?.[pref] ?? null;
+}
+
+export function setPaneWidth(pref, px) {
+  return patchUI({ [pref]: px });
+}
+
 // Per-pane detail-mode toggle (split view). Reactive via prefsSignal — read
 // directly in components for live updates. Map shape: { [pid]: "terminal" | "transcript" }.
 export function getDetailMode(pid) {
