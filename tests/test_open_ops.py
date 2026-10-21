@@ -381,6 +381,32 @@ def test_open_tags_new_panes_mid_rc(tmp_git_repo, clean_state, fresh_activity_db
 
 
 @needs_tmux
+def test_open_claims_untagged_panes_at_its_toplevel_only(
+    tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server
+):
+    """Panes the open did NOT create reach the tag loop only through its cwd
+    test: that is both the claim on this repo's untagged panes and the scope
+    that leaves other projects' alone (the sts2-seed-finder clobber). Neither
+    was tested once created panes went by pid. `sleep` keeps
+    pane_current_path steady, unlike a shell mid-rc."""
+    from periscope import pids
+
+    (tmp_path / "other").mkdir()
+    repo_s, other_s = str(tmp_git_repo), os.path.realpath(tmp_path / "other")
+    sess = config.MANAGED_SESSION
+    ok, here_win = _tmux_mutate("new-session", "-d", "-s", sess, "-c", repo_s, "-P", "-F", "#{window_id}", "sleep 600")
+    assert ok, here_win
+    ok, there_win = _tmux_mutate("new-window", "-t", f"{sess}:", "-c", other_s, "-P", "-F", "#{window_id}", "sleep 600")
+    assert ok, there_win
+    here, there = pids.stamp_new_window(here_win), pids.stamp_new_window(there_win)
+
+    open_ops.open_target(open_ops.PathTarget(path=repo_s))
+
+    assert fresh_activity_db.get_pane_track(here) == repo_s
+    assert fresh_activity_db.get_pane_track(there) is None
+
+
+@needs_tmux
 def test_open_target_pr_stamps_linked_pr(tmp_git_repo, clean_state, tmux_test_server, monkeypatch):
     repo = str(tmp_git_repo)
     monkeypatch.setattr(
