@@ -3,7 +3,7 @@
 // overflow, alerts toggle, view switch). Ported from the <header> markup in
 // index.html + the wiring in app.js. CSS classes (.periscope-header, .topbar,
 // .brand, .meta, .filters, .filter-btn, .is-action, .filters-sep,
-// .filters-spacer, count-* spans, .tb-dd*) are preserved verbatim.
+// count-* spans, .tb-dd*) are preserved verbatim.
 //
 // Scope note (Task 4 = chrome): this owns the filter, view switch, usage
 // pill, counts, history link, and the global ⌘/ + Tab keybindings. The +new
@@ -140,9 +140,6 @@ export function Header() {
           <SpawnEffortPicker />
         </div>
         <UpdatePill />
-        <div class="meta">
-          <Counts />
-        </div>
       </div>
       <nav class="filters" id="filters">
         <a
@@ -195,8 +192,14 @@ export function Header() {
           </button>
         </Dropdown>
 
-        <span class="filters-spacer"></span>
+        <span class="filters-sep"></span>
         <PanelToggles />
+
+        {/* Counts live at the row's far end (.meta is margin-left:auto): the
+            top bar's right side is the tamagotchi's, and this row has the room. */}
+        <div class="meta">
+          <Counts />
+        </div>
       </nav>
       {/* Spans both header rows in the top-right corner (styles.css), so the
           4x scene adds no height to either. */}

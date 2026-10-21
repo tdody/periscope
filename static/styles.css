@@ -172,6 +172,8 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
+  /* Takes the slack, so the spawn pins land at the bar's far right, above
+     the counts at the end of the filters row. */
   flex: 1;
   min-width: 0;
   cursor: pointer;
@@ -344,6 +346,7 @@ html, body {
   margin-left: auto;
 }
 .meta b { color: var(--fg-1); font-weight: 500; }
+#counts { white-space: nowrap; }
 
 /* Claude tamagotchi (chrome/Tamagotchi.jsx): the easter egg in the header's
    top-right corner, a 34×24 pixel scene at 4×. CSS transforms on SVG groups
@@ -489,8 +492,6 @@ html, body {
   background: var(--line-soft);
   margin: 0 4px;
 }
-
-.filters-spacer { flex: 1; }
 
 /* ─── Toolbar dropdowns (filter / + new / ⋯) ─────────────────────────── */
 /* Three top-bar dropdowns share this pattern: a `.filter-btn` toggle with
