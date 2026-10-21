@@ -846,6 +846,7 @@ def test_move_account_404s_on_unknown_pid(client, mocker):
 
 def test_window_new_loose_track_uses_first_repo_root(client, mocker, fresh_activity_db, clean_state, tmp_path):
     from periscope import tracks
+
     clean_state["settings"]["repo_roots"] = [str(tmp_path), "/elsewhere"]
     tk = tracks.create_track(name="my goal")  # repo=None
     _patch(mocker, "tmux", side_effect=_fake_window_tmux(index="3", pane_id="%pr"))

@@ -495,5 +495,4 @@ def test_discover_repos_scans_each_root_one_level_deep(clean_state, tmp_path):
     (root_b / "repo2/.git").mkdir(parents=True)
     (tmp_path / "unlisted/repo3/.git").mkdir(parents=True)
     clean_state["settings"]["repo_roots"] = [str(root_a), str(root_b), str(tmp_path / "missing")]
-    assert open_ops.discover_repos() == {str((root_a / "repo1").resolve()),
-                                         str((root_b / "repo2").resolve())}
+    assert open_ops.discover_repos() == {str((root_a / "repo1").resolve()), str((root_b / "repo2").resolve())}

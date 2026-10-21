@@ -482,6 +482,7 @@ def test_poke_log_tolerates_a_state_file_that_predates_it(clean_state):
 
 def test_repo_roots_defaults_to_dev_and_expands_tilde(clean_state, monkeypatch, tmp_path):
     from periscope import store
+
     monkeypatch.setenv("HOME", str(tmp_path))
     assert store.repo_roots() == [str(tmp_path / "dev")]
     clean_state["settings"]["repo_roots"] = ["~/code", "/srv/x"]
