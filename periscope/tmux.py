@@ -33,6 +33,11 @@ def tmux(*args: str) -> str:
 def _run(cmd: list[str], cwd: str | None = None, timeout: float = 3.0) -> tuple[int, str]:
     try:
         r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            # git and gh explain failures on stderr, with stdout empty: every
+            # "git worktree add failed: " the open surfaces raised ended blank,
+            # and the "already in use" / "not found" matches on `out` never hit.
+            return r.returncode, (r.stderr.strip() or r.stdout.strip())
         return r.returncode, r.stdout.strip()
     except Exception:
         return -1, ""

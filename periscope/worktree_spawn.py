@@ -132,6 +132,33 @@ def free_worktree_path(repo: str, slug: str) -> str:
     raise ValueError(f"worktree path already exists: {base}")
 
 
+def worktree_add(repo: str, path: str, args: list[str]) -> tuple[int, str]:
+    """`git worktree add <args>` (with `path` among them), populated in a second step so a
+    git-crypt key reaches the checkout.
+
+    git-crypt resolves its key under the WORKTREE's git dir
+    (.git/worktrees/<name>/git-crypt), not the common one, and `git-crypt
+    unlock` sets filter.git-crypt.required=true — so a plain add of an
+    unlocked repo dies on the first encrypted file (fdy's vault/secrets/*
+    failed every PR open). Linking the common key dir in before the files are
+    written is what the hand-fixed fdy worktrees do. Repos without git-crypt
+    skip the link and see the same result as a one-step add.
+    """
+    code, out = _run(["git", "-C", repo, "worktree", "add", "--no-checkout", *args], timeout=30.0)
+    if code != 0:
+        return code, out
+    _, dirs = _run(["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"])
+    git_dir, common = (Path(d) for d in dirs.splitlines()[:2])
+    key_dir = common / "git-crypt"
+    link = git_dir / "git-crypt"
+    if key_dir.is_dir() and not link.exists():
+        os.symlink(os.path.relpath(key_dir, git_dir), link)
+    code, out = _run(["git", "-C", path, "reset", "--hard", "--quiet"], timeout=60.0)
+    if code != 0:
+        _run(["git", "-C", repo, "worktree", "remove", "--force", path], timeout=30.0)
+    return code, out
+
+
 def _branch_exists(repo: str, branch: str) -> bool:
     """True when `branch` is already a local ref in `repo`."""
     code, _ = _run(
@@ -232,14 +259,13 @@ def spawn_worktree(
         # launcher and the omnibox's BranchTarget — the "open something that
         # isn't currently open" gap.
         if _branch_exists(repo, branch):
-            add_args = ["worktree", "add", wt_path_str, branch]
+            code, out = worktree_add(repo, wt_path_str, [wt_path_str, branch])
         else:
             # With fetch=True the fresh remote ref is the source of truth.
             # With fetch=False the local ref is what we want — typically
             # the project's own feature branch with the user's unpushed work.
             base_ref = f"origin/{base}" if fetch else base
-            add_args = ["worktree", "add", "-b", branch, wt_path_str, base_ref]
-        code, out = _run(["git", "-C", repo, *add_args], timeout=30.0)
+            code, out = worktree_add(repo, wt_path_str, ["-b", branch, wt_path_str, base_ref])
         if code != 0:
             raise ValueError(f"git worktree add failed: {out}")
 

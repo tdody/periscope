@@ -39,16 +39,18 @@ def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(tmp_git_re
     )
     monkeypatch.setattr(projects, "_fetch_pr_branch", lambda *a, **k: None)
 
-    # Stub _run: let mkdir calls (routed via Path.mkdir, not _run) pass, but
-    # make the git worktree add call fail by intercepting it in _run.
-    real_run = projects._run
+    # The add runs through worktree_spawn.worktree_add; fail it there and let
+    # every other git call (the branch -D rollback included) run for real.
+    from periscope import worktree_spawn
+
+    real_run = worktree_spawn._run
 
     def patched_run(cmd, **kwargs):
         if "worktree" in cmd and "add" in cmd:
             return (1, "fatal: simulated worktree add failure")
         return real_run(cmd, **kwargs)
 
-    monkeypatch.setattr(projects, "_run", patched_run)
+    monkeypatch.setattr(worktree_spawn, "_run", patched_run)
 
     from fastapi import HTTPException as FastHTTPException
 
@@ -63,6 +65,33 @@ def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(tmp_git_re
         text=True,
     )
     assert "pr-42" not in result.stdout, "orphan branch was not cleaned up after worktree add failure"
+
+
+def test_fetch_pr_into_worktree_carries_the_git_crypt_key(tmp_git_repo, tmp_path, monkeypatch):
+    """The PR path creates its worktree the same two-step way as spawn_worktree,
+    so an unlocked git-crypt repo's secrets check out instead of aborting."""
+    from pathlib import Path
+
+    from tests.test_worktree_spawn import arm_fake_git_crypt
+
+    arm_fake_git_crypt(tmp_git_repo)
+    subprocess.run(["git", "-C", str(tmp_git_repo), "branch", "pr-42"], check=True)
+    monkeypatch.setattr(projects, "worktree_path", lambda repo, slug: str(tmp_path / "wt-pr-42"))
+    monkeypatch.setattr(
+        projects,
+        "_resolve_pr_metadata",
+        lambda repo, pr: {
+            "headRefName": "feature-x",
+            "isCrossRepository": False,
+            "baseRefName": "main",
+            "state": "OPEN",
+        },
+    )
+    monkeypatch.setattr(projects, "_fetch_pr_branch", lambda *a, **k: None)
+
+    res = projects.fetch_pr_into_worktree(str(tmp_git_repo), 42)
+
+    assert (Path(res.path) / "secret").read_text() == "hunter2\n"
 
 
 def test_fetch_pr_into_worktree_409_if_wt_path_exists(tmp_git_repo, monkeypatch):

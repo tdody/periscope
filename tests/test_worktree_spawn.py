@@ -201,6 +201,42 @@ def test_spawn_worktree_still_creates_a_brand_new_branch(tmp_git_repo, tmp_workt
     assert head == "brand-new"
 
 
+def arm_fake_git_crypt(repo) -> None:
+    """Make `repo` behave like an unlocked git-crypt repo: a required smudge
+    filter that passes only when the key sits under the git dir of the
+    checkout being written — where git-crypt looks, and where a fresh
+    worktree has nothing."""
+    import subprocess
+
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+    keys = repo / ".git" / "git-crypt" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "default").write_text("k")
+    smudge = 'test -f "$(git rev-parse --git-dir)/git-crypt/keys/default" && cat'
+    subprocess.run([*git, "config", "filter.fake.smudge", smudge], check=True)
+    subprocess.run([*git, "config", "filter.fake.clean", "cat"], check=True)
+    subprocess.run([*git, "config", "filter.fake.required", "true"], check=True)
+    (repo / ".gitattributes").write_text("secret filter=fake\n")
+    (repo / "secret").write_text("hunter2\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-qm", "secret"], check=True)
+
+
+def test_spawn_worktree_carries_the_git_crypt_key_into_the_worktree(tmp_git_repo, tmp_worktrees):
+    """A one-step `git worktree add` of an unlocked git-crypt repo dies on the
+    first encrypted file: the filter looks for its key under the worktree's
+    own git dir. fdy's vault/secrets/* failed every PR open this way."""
+    from pathlib import Path
+
+    from periscope.worktree_spawn import spawn_worktree
+
+    arm_fake_git_crypt(tmp_git_repo)
+
+    res = spawn_worktree(str(tmp_git_repo), "unlocked", fetch=False)
+
+    assert (Path(res["path"]) / "secret").read_text() == "hunter2\n"
+
+
 def test_spawn_worktree_de_collides_a_drifted_slug(tmp_git_repo, tmp_worktrees):
     """A worktree dir keeps the slug of the branch it was FORKED for; the
     branch INSIDE it drifts the moment anyone runs `git switch` there. Opening

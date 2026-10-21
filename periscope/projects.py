@@ -21,7 +21,7 @@ from periscope import store as _store
 from periscope.log import log
 from periscope.repo_locks import repo_lock
 from periscope.tmux import _run
-from periscope.worktree_spawn import worktree_path
+from periscope.worktree_spawn import worktree_add, worktree_path
 from periscope.worktrees import invalidate as worktrees_invalidate
 
 MAIN_KEY = "__main__"
@@ -171,8 +171,8 @@ def _resolve_pr_metadata(repo: str, pr: int) -> dict:
         timeout=15.0,
     )
     if code != 0:
-        # gh's stderr is in `out` since _run merges them; map "not found"
-        # variants to 404, anything else to 400.
+        # `out` is gh's stderr on failure; map "not found" variants to 404,
+        # anything else to 400.
         if "no pull requests found" in out.lower() or "could not resolve" in out.lower():
             raise HTTPException(404, f"PR #{pr} not found in {repo}: {out}")
         raise HTTPException(400, f"gh pr view failed: {out}")
@@ -274,10 +274,7 @@ def fetch_pr_into_worktree(repo: str, pr: int, name_override: str | None = None)
     # retry hits the "non-fast-forward" path and 409s with a confusing error.
     with repo_lock(repo):
         Path(wt_path).parent.mkdir(parents=True, exist_ok=True)
-        code, out = _run(
-            ["git", "-C", repo, "worktree", "add", wt_path, local_branch],
-            timeout=30.0,
-        )
+        code, out = worktree_add(repo, wt_path, [wt_path, local_branch])
         if code != 0:
             _run(["git", "-C", repo, "branch", "-D", local_branch])
             raise HTTPException(500, f"git worktree add failed: {out}")

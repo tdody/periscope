@@ -99,6 +99,18 @@ def test_run_returns_returncode_and_stdout(mocker):
     assert out == "abcdef"
 
 
+def test_run_returns_stderr_when_the_command_fails(mocker):
+    """git and gh explain failures on stderr with stdout empty — stdout-only
+    made every 'git worktree add failed:' end blank."""
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=128, stdout="", stderr="fatal: smudge filter git-crypt failed\n"
+        ),
+    )
+    assert _run(["git", "worktree", "add", "x"]) == (128, "fatal: smudge filter git-crypt failed")
+
+
 def test_run_returns_minus_one_on_exception(mocker):
     mocker.patch("subprocess.run", side_effect=OSError("no such command"))
     code, out = _run(["nonexistent"])
