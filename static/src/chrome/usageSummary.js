@@ -25,7 +25,7 @@ const METER_LABELS = {
 // Scoped per-model meters (week_fable, ...) are keyed dynamically by the
 // server and differ between accounts — an account can be missing a meter the
 // other one has. Never assume a fixed key set.
-function meterLabel(k) {
+export function meterLabel(k) {
   return METER_LABELS[k] || k.replace(/^week_/, "");
 }
 

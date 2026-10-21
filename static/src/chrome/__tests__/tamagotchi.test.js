@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityAt, activityLabel, BODY, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,
+  activityAt, activityLabel, codingMood, moodReason, BODY, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,
   msUntilNextChange, occasionAt, occasionShown, SCHEDULE, seasonAt, seasonStart,
 } from "../tamagotchi.js";
 
@@ -126,5 +126,64 @@ describe("headlines and labels", () => {
     const run = SCHEDULE.find((s) => s.id === "run");
     expect(activityLabel(run, { id: "halloween" })).toBe("trick-or-treating");
     expect(activityLabel(run, null)).toBe(run.label);
+  });
+});
+
+describe("codingMood", () => {
+  // Reads the usage pill's own fields: 🔥 `hot` is furious, a projection at
+  // or past 100% at reset (the pill's red →) is grumpy. Worst meter wins,
+  // across every account.
+  const now = 1_800_000_000;
+  const meter = (o = {}) => ({ percent: 40, projected_percent: 80, projected_recent: 90, hot: false, ...o });
+  const acct = (meters, o = {}) => ({ available: true, fetched_at: now - 60, meters, ...o });
+
+  it("is calm with no usage, an unavailable account, or every meter on pace", () => {
+    expect(codingMood(null, now).mood).toBe("calm");
+    expect(codingMood({ default: { available: false } }, now).mood).toBe("calm");
+    expect(codingMood({ default: acct({ week_all: meter() }) }, now).mood).toBe("calm");
+  });
+
+  it("is grumpy when a meter is on track to hit its limit by either projection", () => {
+    expect(codingMood({ default: acct({ week_all: meter({ projected_percent: 104 }) }) }, now).mood).toBe("grumpy");
+    expect(codingMood({ default: acct({ session: meter({ projected_recent: 130 }) }) }, now))
+      .toEqual({ mood: "grumpy", account: "default", meter: "session" });
+  });
+
+  it("is furious when a meter burns hot, over a grumpy one", () => {
+    const plan = { default: acct({ session: meter({ projected_recent: 130 }), week_all: meter({ hot: true }) }) };
+    expect(codingMood(plan, now)).toEqual({ mood: "furious", account: "default", meter: "week_all" });
+  });
+
+  it("takes the worst meter across every account", () => {
+    const plan = { default: acct({ week_all: meter() }), b: acct({ week_all: meter({ hot: true }) }) };
+    expect(codingMood(plan, now)).toEqual({ mood: "furious", account: "b", meter: "week_all" });
+  });
+
+  it("ignores a stale account rather than guess", () => {
+    const plan = { b: acct({ week_all: meter({ hot: true }) }, { fetched_at: now - 3600 }) };
+    expect(codingMood(plan, now).mood).toBe("calm");
+  });
+});
+
+describe("mood labels", () => {
+  const code = SCHEDULE.find((s) => s.id === "code" && !s.coffee);
+  const coffee = SCHEDULE.find((s) => s.coffee);
+  const run = SCHEDULE.find((s) => s.id === "run");
+
+  it("says how Claude is coding", () => {
+    expect(activityLabel(code, null, "furious")).toBe("coding furiously");
+    expect(activityLabel(coffee, null, "grumpy")).toBe("coding grumpily with a coffee");
+    expect(activityLabel(code, null, "calm")).toBe("coding");
+  });
+
+  it("leaves every other activity alone", () => {
+    expect(activityLabel(run, null, "furious")).toBe(run.label);
+    expect(activityLabel(run, { id: "halloween" }, "furious")).toBe("trick-or-treating");
+  });
+
+  it("names the meter behind the mood, and the account when there are several", () => {
+    expect(moodReason({ mood: "furious", account: "default", meter: "week_all" }, null)).toBe("week usage is burning 🔥");
+    expect(moodReason({ mood: "grumpy", account: "b", meter: "session" }, "B")).toBe("session usage on account B is on track to hit its limit");
+    expect(moodReason({ mood: "calm", account: null, meter: null }, null)).toBe(null);
   });
 });

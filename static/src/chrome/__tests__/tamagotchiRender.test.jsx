@@ -86,3 +86,47 @@ describe("coffee at the desk", () => {
     expect(render(<TamaScene activity="code" />)).not.toContain("tama-desk-mug");
   });
 });
+
+describe("coding moods", () => {
+  const code = (mood, o = {}) => render(<TamaScene activity="code" mood={mood} {...o} />);
+
+  it("stays calm by default: the usual eyes, no mood", () => {
+    const html = render(<TamaScene activity="code" />);
+    expect(html).toContain("tama-eyes");
+    expect(html).not.toContain("data-mood");
+    expect(html).not.toContain("tama-brows");
+  });
+
+  it("draws grumpy brows instead of the eyes, typing hands and one red line", () => {
+    const html = code("grumpy");
+    expect(html).toContain('data-mood="grumpy"');
+    expect(html).toContain("tama-brows");
+    expect(html).toContain("tama-hand");
+    expect(html).not.toContain("tama-eyes");
+    expect(html).not.toContain("tama-flush");
+  });
+
+  it("goes red-hot when furious: flush, scowl, smoke, heat shimmer, errors, flying keys", () => {
+    const html = code("furious");
+    for (const cls of ["tama-flush", "tama-scowl", "tama-smoke", "tama-shimmer", "tama-errors", "tama-flying-key"]) {
+      expect(html, cls).toContain(cls);
+    }
+  });
+
+  it("keeps the heat shimmer off a hat", () => {
+    expect(code("furious", { occasion: "yearend" })).not.toContain("tama-shimmer");
+  });
+
+  it("slops the 9am coffee only when furious", () => {
+    expect(code("furious", { coffee: true })).toContain("tama-spill");
+    expect(code("grumpy", { coffee: true })).not.toContain("tama-spill");
+  });
+
+  it("changes only the coding scene", () => {
+    for (const id of ["sleep", "coffee", "eat", "run", "read"]) {
+      const html = render(<TamaScene activity={id} mood="furious" />);
+      expect(html, id).not.toContain("data-mood");
+      expect(html, id).not.toContain("tama-brows");
+    }
+  });
+});

@@ -1,6 +1,8 @@
 // The header's Claude tamagotchi (Tamagotchi.jsx): the pure parts, so the
 // day schedule and the sprite unit-test without a clock or a DOM.
 
+import { meterLabel, STALE_AFTER_S } from "./usageSummary.js";
+
 // What Claude is up to, by local hour. Each window runs [from, to); every
 // boundary is on the hour, so the hour alone decides. `coffee` keeps the
 // morning's mug on the desk through the first coding hour.
@@ -110,10 +112,48 @@ export function headlineAt(date) {
   return occasionAt(date)?.headline || null;
 }
 
-// Halloween-week runs are trick-or-treat rounds.
-export function activityLabel(activity, occasion) {
+const MOOD_ADVERBS = { grumpy: "grumpily", furious: "furiously" };
+
+// Halloween-week runs are trick-or-treat rounds; coding says how it's going.
+export function activityLabel(activity, occasion, mood = "calm") {
   if (activity.id === "run" && occasion?.id === "halloween") return "trick-or-treating";
+  if (activity.id === "code" && MOOD_ADVERBS[mood]) {
+    return activity.label.replace(/^coding/, `coding ${MOOD_ADVERBS[mood]}`);
+  }
   return activity.label;
+}
+
+const MOOD_RANK = { calm: 0, grumpy: 1, furious: 2 };
+
+// Clawd's mood while coding follows the usage trend the usage pill already
+// shows, worst meter across every account: a meter burning at least twice
+// its even pace (`hot`, the pill's 🔥) is furious; one projected at or past
+// 100% at reset by either heuristic (the pill's red →) is grumpy; anything
+// else is calm. A stale or unavailable account counts as calm rather than
+// replaying an old reading.
+export function codingMood(plan, nowSec) {
+  let worst = { mood: "calm", account: null, meter: null };
+  for (const [account, entry] of Object.entries(plan || {})) {
+    if (!entry?.available || !entry.meters) continue;
+    if (entry.fetched_at && nowSec - entry.fetched_at > STALE_AFTER_S) continue;
+    for (const [meter, m] of Object.entries(entry.meters)) {
+      if (!m) continue;
+      const projected = Math.max(m.projected_percent ?? -1, m.projected_recent ?? -1);
+      const mood = m.hot ? "furious" : projected >= 100 ? "grumpy" : "calm";
+      if (MOOD_RANK[mood] > MOOD_RANK[worst.mood]) worst = { mood, account, meter };
+    }
+  }
+  return worst;
+}
+
+// The hover line's why: "week usage is burning 🔥". `accountName` is given
+// only when there are several accounts to tell apart.
+export function moodReason({ mood, meter }, accountName) {
+  if (mood === "calm" || !meter) return null;
+  const on = accountName ? ` on account ${accountName}` : "";
+  return mood === "furious"
+    ? `${meterLabel(meter)} usage${on} is burning 🔥`
+    : `${meterLabel(meter)} usage${on} is on track to hit its limit`;
 }
 
 export function hourLabel(h) {
