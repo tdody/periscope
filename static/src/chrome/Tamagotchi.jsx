@@ -14,13 +14,10 @@ import { useEffect, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
 import {
-  activityAt, activityLabel, BODY, codingMood, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
-  msUntilNextChange, occasionShown, seasonAt,
+  activityAt, activityLabel, BODY, codingMood, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
+  msUntilNextChange, occasionShown, SKIN, seasonAt, Y0,
 } from "./tamagotchi.js";
 
-const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
-const SKIN = "#d97757";
-const EYE = "#2b1d16";
 
 // Where the mascot stands per activity: centred on its feet by default; the
 // two sitting scenes shift it left to make room for the desk / fireplace, and
