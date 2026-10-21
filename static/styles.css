@@ -172,9 +172,9 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
-  /* Sized to content, so the spawn pins sit right after the meters instead
-     of being pushed to the far edge with a gap in the middle of the bar. */
-  flex: 0 1 auto;
+  /* Takes the slack, so the spawn pins land at the bar's far right, above
+     the counts at the end of the filters row. */
+  flex: 1;
   min-width: 0;
   cursor: pointer;
 }
