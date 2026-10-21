@@ -76,6 +76,17 @@ def test_patch_prefs_ui_rejects_absurd_pane_width(client, clean_state):
     assert r.status_code == 400
 
 
+def test_patch_prefs_ui_panel_visibility_round_trips(client, clean_state):
+    # The navigator / context-column toggles. False must survive too: it is
+    # how a hidden panel comes back, and exclude_none keeps it (None drops).
+    r = client.patch("/api/prefs/ui", json={"rail_hidden": True, "side_hidden": True})
+    assert r.status_code == 200
+    assert (r.json()["ui"]["rail_hidden"], r.json()["ui"]["side_hidden"]) == (True, True)
+    r = client.patch("/api/prefs/ui", json={"rail_hidden": False})
+    assert r.json()["ui"]["rail_hidden"] is False
+    assert r.json()["ui"]["side_hidden"] is True
+
+
 def test_put_window_annotation(client, clean_state):
     r = client.put("/api/prefs/windows/abc123", json={"notes": "hi", "tags": ["a", "b", "a"]})
     assert r.status_code == 200

@@ -7,6 +7,7 @@ import { startPolling } from "../poll.js";
 import { startAlertFeed } from "./alertFeed.js";
 import { Detail } from "./Detail.jsx";
 import { PANE_WIDTHS, storedWidth } from "./paneResize.js";
+import { railHidden, sideHidden } from "./panels.js";
 import { Rail } from "./Rail.jsx";
 import { ResizeHandle } from "./ResizeHandle.jsx";
 
@@ -38,6 +39,14 @@ export function Split() {
     });
     return () => { for (const dispose of disposers) dispose(); };
   }, []);
+
+  // Panel visibility as attributes for styles.css (the navigator collapses its
+  // grid column; the context column's width var drops to 0). Imperative for
+  // the same reason as the widths: no Split re-render.
+  useEffect(() => effect(() => {
+    ref.current?.toggleAttribute("data-rail-hidden", railHidden.value);
+    ref.current?.toggleAttribute("data-side-hidden", sideHidden.value);
+  }), []);
 
   return (
     <div id="split-view" ref={ref}>

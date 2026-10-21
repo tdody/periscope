@@ -66,6 +66,9 @@ class UIPatch(BaseModel):
     # Split-view column widths in CSS px, written when a splitter drag ends.
     rail_width: int | None = None
     side_width: int | None = None
+    # Navigator / context-column visibility (the filter bar's panel toggles).
+    rail_hidden: bool | None = None
+    side_hidden: bool | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
