@@ -144,3 +144,14 @@ describe("things that follow Clawd", () => {
     expect(html.indexOf("tama-snowcap")).toBeGreaterThan(html.indexOf("tama-body"));
   });
 });
+
+describe("coffee at the desk", () => {
+  it("puts a steaming mug on the desk for the first coding hour", () => {
+    const html = render(<TamaScene activity="code" coffee />);
+    expect(html).toContain("tama-desk-mug");
+    expect(html).toContain("tama-steam");
+  });
+  it("leaves the desk bare the rest of the day", () => {
+    expect(render(<TamaScene activity="code" />)).not.toContain("tama-desk-mug");
+  });
+});

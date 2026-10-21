@@ -11,7 +11,7 @@ describe("activityAt", () => {
     const cases = [
       [0, 0, "sleep"], [6, 59, "sleep"],
       [7, 0, "coffee"], [8, 59, "coffee"],
-      [9, 0, "code"], [11, 59, "code"],
+      [9, 0, "code"], [9, 59, "code"], [10, 0, "code"], [11, 59, "code"],
       [12, 0, "eat"], [12, 59, "eat"],
       [13, 0, "code"], [16, 59, "code"],
       [17, 0, "run"], [17, 59, "run"],
@@ -26,6 +26,19 @@ describe("activityAt", () => {
     for (let h = 0; h < 24; h++) {
       expect(SCHEDULE.filter((s) => h >= s.from && h < s.to)).toHaveLength(1);
     }
+  });
+});
+
+describe("the first coding hour", () => {
+  it("codes with a coffee on the desk from 9am to 10am, then plain", () => {
+    expect(activityAt(at(9, 0)).coffee).toBe(true);
+    expect(activityAt(at(9, 59)).coffee).toBe(true);
+    expect(activityAt(at(10, 0)).coffee).toBeFalsy();
+    expect(activityAt(at(13, 30)).coffee).toBeFalsy();
+    expect(activityAt(at(9, 30)).label).toBe("coding with a coffee");
+  });
+  it("ends the coffee window on the hour", () => {
+    expect(msUntilNextChange(at(9, 30))).toBe(30 * 60 * 1000);
   });
 });
 
