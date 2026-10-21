@@ -29,6 +29,7 @@
 import { computed, signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { multiAccount } from "../accounts.js";
+import { PIN_EFFORTS } from "../chrome/SpawnEffortPicker.jsx";
 import { useEscape } from "../hooks/useEscape.js";
 import { MODELS } from "../models.js";
 import * as prefs from "../prefs.js";
@@ -61,6 +62,12 @@ const profile = signal("default");
 // here changes one launch and is not remembered. Carried only by Claude agent
 // windows (same guard as the profile, `sendsProfile`).
 const model = signal("default");
+
+// Effort override for THIS launch ("default" | a config.EFFORT_LEVELS value).
+// Same lifecycle as `model`: seeded from launch_default on open, one launch
+// only, Claude agent windows only. Unlike the model, a level locks /effort in
+// the pane for its whole session (docs/wrapper-profiles.md).
+const effort = signal("default");
 
 // Whether a launch target should carry the account at all.
 //
@@ -213,6 +220,7 @@ export function openLauncher(trackId) {
   // launch: both values are sent explicitly.
   account.value = launchDefault.value?.account || "default";
   model.value = launchDefault.value?.model || "default";
+  effort.value = launchDefault.value?.effort || "default";
   profile.value = prefs.getLaunchProfile();
   track("overlay.open", { which: "launcher" });
   // Fetch fresh each open: worktrees and branches change outside periscope.
@@ -283,6 +291,7 @@ export function LauncherModal() {
     // only when the param is ABSENT, so sending "default" is the per-launch
     // opt-out. Omitting it would make the pin un-overridable from here.
     if (sendsProfile(t)) qs.set("model", model.value);
+    if (sendsProfile(t)) qs.set("effort", effort.value);
     const nb = newBranchName.value;
     if (nb?.trim()) {
       qs.set("branch", nb.trim());
@@ -433,6 +442,24 @@ export function LauncherModal() {
                 onClick={() => { model.value = m.id; }}
               >
                 {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div class="launcher-section">
+          <div class="launcher-section-label">Effort</div>
+          <div class="launcher-branches">
+            {PIN_EFFORTS.map((id) => (
+              <button
+                key={id}
+                class={`launcher-branch${effort.value === id ? " is-active" : ""}`}
+                title={id === "default"
+                  ? "no override — Claude's own choice for the model; /effort works in the pane (this launch only; the header pin is the standing default)"
+                  : `spawn this launch at ${id} (CLAUDE_CODE_EFFORT_LEVEL on the pane — it ignores /effort for its whole session)`}
+                onClick={() => { effort.value = id; }}
+              >
+                {id}
               </button>
             ))}
           </div>

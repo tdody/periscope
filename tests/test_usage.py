@@ -576,8 +576,17 @@ def test_choose_launch_sets_effort_even_without_usage(monkeypatch, clean_state):
 
 def test_choose_launch_passes_explicit_args_through(monkeypatch, clean_state):
     monkeypatch.setattr(usage, "cached_plan_usage", lambda: _plan(default=100, b=8))
-    launch = usage.choose_launch("default", "sonnet")
-    assert (launch.account, launch.model) == ("default", "sonnet")
+    launch = usage.choose_launch("default", "sonnet", "high")
+    assert (launch.account, launch.model, launch.effort) == ("default", "sonnet", "high")
+
+
+def test_choose_launch_explicit_effort_beats_the_pin(monkeypatch, clean_state):
+    monkeypatch.setattr(usage, "cached_plan_usage", lambda: _plan(default=100, b=8))
+    store.update_settings({"spawn_effort": "xhigh"})
+    assert usage.choose_launch(effort="low").effort == "low"
+    # "default" is the per-launch opt-out; an unknown level fails open to it.
+    assert usage.choose_launch(effort="default").effort is None
+    assert usage.choose_launch(effort="ultracode").effort is None
 
 
 def test_choose_launch_falls_back_to_default_when_nothing_is_known(monkeypatch, clean_state):
