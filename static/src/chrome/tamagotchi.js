@@ -1,7 +1,7 @@
 // The header's Claude tamagotchi (Tamagotchi.jsx): the pure parts, so the
 // day schedule and the sprite unit-test without a clock or a DOM.
 
-import { meterLabel, STALE_AFTER_S } from "./usageSummary.js";
+import { isStale, meterLabel, projectsPastLimit } from "./usageSummary.js";
 
 // What Claude is up to, by local hour. Each window runs [from, to); every
 // boundary is on the hour, so the hour alone decides. `coffee` keeps the
@@ -112,35 +112,38 @@ export function headlineAt(date) {
   return occasionAt(date)?.headline || null;
 }
 
-const MOOD_ADVERBS = { grumpy: "grumpily", furious: "furiously" };
+// Clawd's coding moods, in rank order: everything a mood means lives here.
+export const MOODS = {
+  calm: { rank: 0 },
+  grumpy: { rank: 1, adverb: "grumpily", why: "is on track to hit its limit" },
+  furious: { rank: 2, adverb: "furiously", why: "is burning 🔥" },
+};
 
-// Halloween-week runs are trick-or-treat rounds; coding says how it's going.
+// Halloween-week runs are trick-or-treat rounds; coding says how it's going,
+// the adverb after the verb ("coding furiously with a coffee").
 export function activityLabel(activity, occasion, mood = "calm") {
   if (activity.id === "run" && occasion?.id === "halloween") return "trick-or-treating";
-  if (activity.id === "code" && MOOD_ADVERBS[mood]) {
-    return activity.label.replace(/^coding/, `coding ${MOOD_ADVERBS[mood]}`);
-  }
-  return activity.label;
+  const adverb = activity.id === "code" && MOODS[mood]?.adverb;
+  if (!adverb) return activity.label;
+  const [verb, ...rest] = activity.label.split(" ");
+  return [verb, adverb, ...rest].join(" ");
 }
 
-const MOOD_RANK = { calm: 0, grumpy: 1, furious: 2 };
-
-// Clawd's mood while coding follows the usage trend the usage pill already
-// shows, worst meter across every account: a meter burning at least twice
-// its even pace (`hot`, the pill's 🔥) is furious; one projected at or past
-// 100% at reset by either heuristic (the pill's red →) is grumpy; anything
-// else is calm. A stale or unavailable account counts as calm rather than
-// replaying an old reading.
+// Clawd's mood while coding follows the usage trend, worst meter across every
+// account, by the pill's own rules (usageSummary.js): a meter burning at least
+// twice its even pace (`hot`, the pill's 🔥) is furious; one on track to hit
+// its limit (projectsPastLimit, the pill's red →) is grumpy; anything else is
+// calm. A stale or unavailable account counts as calm rather than replaying
+// an old reading. `atLimit` says the worst meter is already there, not on its
+// way.
 export function codingMood(plan, nowSec) {
-  let worst = { mood: "calm", account: null, meter: null };
+  let worst = { mood: "calm", account: null, meter: null, atLimit: false };
   for (const [account, entry] of Object.entries(plan || {})) {
-    if (!entry?.available || !entry.meters) continue;
-    if (entry.fetched_at && nowSec - entry.fetched_at > STALE_AFTER_S) continue;
+    if (!entry?.available || !entry.meters || isStale(entry, nowSec)) continue;
     for (const [meter, m] of Object.entries(entry.meters)) {
       if (!m) continue;
-      const projected = Math.max(m.projected_percent ?? -1, m.projected_recent ?? -1);
-      const mood = m.hot ? "furious" : projected >= 100 ? "grumpy" : "calm";
-      if (MOOD_RANK[mood] > MOOD_RANK[worst.mood]) worst = { mood, account, meter };
+      const mood = m.hot ? "furious" : projectsPastLimit(m) ? "grumpy" : "calm";
+      if (MOODS[mood].rank > MOODS[worst.mood].rank) worst = { mood, account, meter, atLimit: (m.percent ?? 0) >= 100 };
     }
   }
   return worst;
@@ -148,12 +151,11 @@ export function codingMood(plan, nowSec) {
 
 // The hover line's why: "week usage is burning 🔥". `accountName` is given
 // only when there are several accounts to tell apart.
-export function moodReason({ mood, meter }, accountName) {
-  if (mood === "calm" || !meter) return null;
+export function moodReason({ mood, meter, atLimit }, accountName) {
+  if (!MOODS[mood]?.why || !meter) return null;
   const on = accountName ? ` on account ${accountName}` : "";
-  return mood === "furious"
-    ? `${meterLabel(meter)} usage${on} is burning 🔥`
-    : `${meterLabel(meter)} usage${on} is on track to hit its limit`;
+  const why = mood === "grumpy" && atLimit ? "has hit its limit" : MOODS[mood].why;
+  return `${meterLabel(meter)} usage${on} ${why}`;
 }
 
 export function hourLabel(h) {
