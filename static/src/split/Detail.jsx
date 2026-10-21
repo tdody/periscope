@@ -302,18 +302,8 @@ export function PaneHeader({ w }) {
   if (w.api_error) {
     parts.push(<><span class="hsep">·</span><span class="header-api-error" title="last tool result was an API error">⚠ API error</span></>);
   }
-  if (w.agent === "claude") {
-    // Where the Transcript/Terminal toggle was (now in the tab bar): a hidden,
-    // zero-width copy of it keeps its line exactly as tall, so moving it
-    // shifted nothing below, and follows the toggle's styles if they change.
-    parts.push(
-      <span class="header-mode-slot" aria-hidden="true">
-        <span class="detail-mode-toggle"><button tabIndex={-1}>Transcript</button><button tabIndex={-1}>Terminal</button></span>
-      </span>
-    );
-  }
   return (
-    <header id="detail-pane-header" class="detail-pane-header">
+    <header id="detail-pane-header" class="detail-pane-header" data-agent={w.agent || undefined}>
       {parts.map((p, _i) => <>{p}</>)}
       {w.spawner_name && (
         <span

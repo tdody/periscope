@@ -2415,11 +2415,14 @@ body.col-resizing iframe { pointer-events: none; }
 @keyframes rail-pulse-done { 50% { box-shadow: 0 0 0 4px var(--s-done-bg); } }
 
 .detail-pane-header, .detail-review-header {
-  --hdr-gap: 8px;
   padding: 5px 14px; border-bottom: 1px solid var(--line);
-  display: flex; gap: var(--hdr-gap); align-items: baseline; font-size: 12px;
+  display: flex; gap: 8px; align-items: baseline; font-size: 12px;
   flex-wrap: wrap;
 }
+/* The one-line height the 21.6px Transcript/Terminal toggle gave a Claude
+   pane's header before it moved to the tab bar, kept so the move shifted
+   nothing below the header. */
+.detail-pane-header[data-agent="claude"] { min-height: 32.6px; }
 .detail-pane-header .hsep, .detail-review-header .hsep { opacity: .5; }
 .detail-pane-header .header-pr, .detail-pane-header .header-linear {
   color: var(--fg-1); text-decoration: none; font-family: var(--mono);
@@ -2448,13 +2451,6 @@ body.col-resizing iframe { pointer-events: none; }
 /* Narrator status in the detail header — untruncated, own wrapped line
    (flex-basis 100% forces the wrap in the flex-wrap header). */
 .detail-pane-header .header-status { flex-basis: 100%; color: var(--fg-3); }
-/* A hidden copy of the toggle at zero width holds its line's height; the
-   negative margin cancels the flex gap, so it never wraps a line the
-   toggle-less items fit. */
-.detail-pane-header .header-mode-slot {
-  display: flex; width: 0; overflow: hidden; visibility: hidden;
-  margin-left: calc(-1 * var(--hdr-gap)); align-self: center;
-}
 
 /* Auto-rename button inline at the left of the detail-pane-header, before
    the session name. Mirrors the modal-title-rename behavior (POST

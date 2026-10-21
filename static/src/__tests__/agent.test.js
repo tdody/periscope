@@ -37,20 +37,20 @@ describe("agent presentation", () => {
     const html = render(h(PaneHeader, { w }));
     expect(html).not.toContain("header-rename");
     expect(html).not.toContain("header-mem");
-    expect(html).not.toContain("header-mode-slot");
+    expect(html).toContain('data-agent="codex"');
   });
 
-  it("keeps the tab list to tabs, the toggle beside it, and only a hidden placeholder in the header", () => {
+  it("keeps the tab list to tabs and the toggle beside it, out of the header", () => {
     const w = { agent: "claude", pid: "claude-1", target: "dev:2", state: "idle" };
     const strip = render(h(TabStrip, { pid: w.pid, paneLabel: "dev" }));
     expect(strip).toContain('role="tablist"');
     expect(strip).not.toContain("Transcript");
     const toggle = render(h(ModeToggle, { mode: "terminal", onMode: () => {} }));
     expect(toggle).toMatch(/class="is-active"[^>]*>Terminal</);
-    // The header keeps a zero-width, aria-hidden copy for its line height, unclickable.
+    // The header names the agent (its CSS keeps the toggle's old line height) and holds no toggle.
     const header = render(h(PaneHeader, { w }));
-    expect(header).toMatch(/class="header-mode-slot" aria-hidden="true"/);
-    expect(header).not.toContain("is-active");
+    expect(header).toContain('data-agent="claude"');
+    expect(header).not.toContain("Transcript");
   });
 
   it("does not show Claude channel-link prompts for Codex", () => {
