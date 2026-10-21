@@ -54,6 +54,7 @@ def test_index_one_is_idempotent_when_content_unchanged(temp_db, fixture_dir):
         # Bump mtime by +100s; OLD_MTIME (1700000000, year 2023) gives years of
         # margin past the 60s LIVE_MTIME_S threshold, so _is_live stays False.
         import os
+
         new_mtime = result1["source_mtime"] + 100
         os.utime(str(fixture), (new_mtime, new_mtime))
         result2 = index_one(str(fixture), db_path=db_path)
@@ -65,11 +66,13 @@ def test_index_one_is_idempotent_when_content_unchanged(temp_db, fixture_dir):
 def test_index_one_skips_live_session(temp_db, fixture_dir, tmp_path):
     # Copy the fixture into a fresh tmp path; bump mtime to now -> looks live.
     import shutil
+
     src = fixture_dir / "normal_session.jsonl"
     dst = tmp_path / "live.jsonl"
     shutil.copy(src, dst)
     now = time.time()
     import os
+
     os.utime(dst, (now, now))
     conn, db_path = temp_db
     client = _fake_anthropic()
@@ -97,8 +100,11 @@ def test_index_one_handles_summarizer_failure(temp_db, fixture_dir):
     conn, db_path = temp_db
     # Client that never returns a valid tool_use block
     client = MagicMock()
-    bad_block = MagicMock(); bad_block.type = "text"; bad_block.text = "no"
-    bad_msg = MagicMock(); bad_msg.content = [bad_block]
+    bad_block = MagicMock()
+    bad_block.type = "text"
+    bad_block.text = "no"
+    bad_msg = MagicMock()
+    bad_msg.content = [bad_block]
     client.messages.create.return_value = bad_msg
     with patch("history.indexer.get_anthropic_client", return_value=client):
         result = index_one(str(fixture_dir / "normal_session.jsonl"), db_path=db_path)
@@ -174,11 +180,13 @@ def test_index_one_force_bypasses_live_skip(temp_db, fixture_dir, tmp_path, monk
     monkeypatch.setattr("history.indexer.ARCHIVE_DIR", archive_dir)
 
     import shutil
+
     src = fixture_dir / "normal_session.jsonl"
     dst = tmp_path / "live.jsonl"
     shutil.copy(src, dst)
     import os
     import time as _t
+
     now = _t.time()
     os.utime(dst, (now, now))  # mtime is now → would normally trigger live-skip
 
@@ -197,6 +205,7 @@ def test_index_one_force_bypasses_live_skip(temp_db, fixture_dir, tmp_path, monk
 def test_index_one_skips_scrape_session(tmp_path):
     """A transcript with no assistant turn (a /usage scrape) is not indexed."""
     from history import indexer
+
     # A minimal transcript: one user line, zero assistant lines.
     jp = tmp_path / "scrape.jsonl"
     jp.write_text(
@@ -208,6 +217,7 @@ def test_index_one_skips_scrape_session(tmp_path):
     res = indexer.index_one(str(jp), db_path=db, force=True)
     assert res["status"] == "skipped-scrape"
     from history.db import connect
+
     conn = connect(db)
     assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
     conn.close()
@@ -219,33 +229,47 @@ def test_index_one_persists_facets(tmp_path, monkeypatch):
 
     # Stub the Anthropic client + the summarizer call.
     monkeypatch.setattr(indexer, "get_anthropic_client", lambda: object())
-    monkeypatch.setattr(indexer, "call_summarizer", lambda client, rec, model=None:
-        SummaryResult(summary="s", tags=["t1", "t2", "t3"], model="m",
-                      outcome="shipped", category="bugfix",
-                      notable=True, topics=["periscope"]))
+    monkeypatch.setattr(
+        indexer,
+        "call_summarizer",
+        lambda client, rec, model=None: SummaryResult(
+            summary="s",
+            tags=["t1", "t2", "t3"],
+            model="m",
+            outcome="shipped",
+            category="bugfix",
+            notable=True,
+            topics=["periscope"],
+        ),
+    )
 
     # A non-trivial transcript: >=2 user msgs, an assistant turn, >60s span.
     jp = tmp_path / "real.jsonl"
-    jp.write_text("\n".join([
-        '{"type":"user","cwd":"/repo","sessionId":"r1","timestamp":"2026-05-20T10:00:00.000Z","message":{"role":"user","content":"first request please"}}',
-        '{"type":"assistant","sessionId":"r1","timestamp":"2026-05-20T10:01:00.000Z","message":{"role":"assistant","content":"working on it"}}',
-        '{"type":"user","cwd":"/repo","sessionId":"r1","timestamp":"2026-05-20T10:02:00.000Z","message":{"role":"user","content":"second request please"}}',
-        '{"type":"assistant","sessionId":"r1","timestamp":"2026-05-20T10:03:00.000Z","message":{"role":"assistant","content":"done"}}',
-    ]) + "\n")
+    jp.write_text(
+        "\n".join(
+            [
+                '{"type":"user","cwd":"/repo","sessionId":"r1","timestamp":"2026-05-20T10:00:00.000Z","message":{"role":"user","content":"first request please"}}',
+                '{"type":"assistant","sessionId":"r1","timestamp":"2026-05-20T10:01:00.000Z","message":{"role":"assistant","content":"working on it"}}',
+                '{"type":"user","cwd":"/repo","sessionId":"r1","timestamp":"2026-05-20T10:02:00.000Z","message":{"role":"user","content":"second request please"}}',
+                '{"type":"assistant","sessionId":"r1","timestamp":"2026-05-20T10:03:00.000Z","message":{"role":"assistant","content":"done"}}',
+            ]
+        )
+        + "\n"
+    )
     db = tmp_path / "h.db"
     res = indexer.index_one(str(jp), db_path=db, force=True)
     assert res["status"] == "summarized"
 
     from history.db import connect
+
     conn = connect(db)
-    row = conn.execute(
-        "SELECT outcome, category, notable, topics FROM sessions WHERE session_id='r1'"
-    ).fetchone()
+    row = conn.execute("SELECT outcome, category, notable, topics FROM sessions WHERE session_id='r1'").fetchone()
     conn.close()
     assert row["outcome"] == "shipped"
     assert row["category"] == "bugfix"
     assert row["notable"] == 1
     import json as _j
+
     assert _j.loads(row["topics"]) == ["periscope"]
 
 
@@ -255,20 +279,32 @@ def test_index_one_model_override_beats_meta_default(tmp_path, monkeypatch):
 
     seen = {}
     monkeypatch.setattr(indexer, "get_anthropic_client", lambda: object())
+
     def _fake(client, rec, model=None):
         seen["model"] = model
-        return SummaryResult(summary="s", tags=["a", "b", "c"], model=model or "?",
-                             outcome="explored", category="research",
-                             notable=False, topics=["x"])
+        return SummaryResult(
+            summary="s",
+            tags=["a", "b", "c"],
+            model=model or "?",
+            outcome="explored",
+            category="research",
+            notable=False,
+            topics=["x"],
+        )
+
     monkeypatch.setattr(indexer, "call_summarizer", _fake)
 
     jp = tmp_path / "real.jsonl"
-    jp.write_text("\n".join([
-        '{"type":"user","cwd":"/r","sessionId":"m1","timestamp":"2026-05-20T10:00:00.000Z","message":{"role":"user","content":"first request please"}}',
-        '{"type":"assistant","sessionId":"m1","timestamp":"2026-05-20T10:01:00.000Z","message":{"role":"assistant","content":"ok"}}',
-        '{"type":"user","cwd":"/r","sessionId":"m1","timestamp":"2026-05-20T10:02:00.000Z","message":{"role":"user","content":"second request please"}}',
-        '{"type":"assistant","sessionId":"m1","timestamp":"2026-05-20T10:03:00.000Z","message":{"role":"assistant","content":"done"}}',
-    ]) + "\n")
-    indexer.index_one(str(jp), db_path=tmp_path / "h.db", force=True,
-                      model="claude-sonnet-test")
+    jp.write_text(
+        "\n".join(
+            [
+                '{"type":"user","cwd":"/r","sessionId":"m1","timestamp":"2026-05-20T10:00:00.000Z","message":{"role":"user","content":"first request please"}}',
+                '{"type":"assistant","sessionId":"m1","timestamp":"2026-05-20T10:01:00.000Z","message":{"role":"assistant","content":"ok"}}',
+                '{"type":"user","cwd":"/r","sessionId":"m1","timestamp":"2026-05-20T10:02:00.000Z","message":{"role":"user","content":"second request please"}}',
+                '{"type":"assistant","sessionId":"m1","timestamp":"2026-05-20T10:03:00.000Z","message":{"role":"assistant","content":"done"}}',
+            ]
+        )
+        + "\n"
+    )
+    indexer.index_one(str(jp), db_path=tmp_path / "h.db", force=True, model="claude-sonnet-test")
     assert seen["model"] == "claude-sonnet-test"

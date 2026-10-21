@@ -72,10 +72,7 @@ async def _lgtm_fetch_items(client, slug: str) -> list[dict]:
             return []
         items = r.json().get("items", []) or []
         # Keep only the fields the frontend needs for tab rendering.
-        return [
-            {"id": i.get("id"), "type": i.get("type"), "title": i.get("title")}
-            for i in items if i.get("id")
-        ]
+        return [{"id": i.get("id"), "type": i.get("type"), "title": i.get("title")} for i in items if i.get("id")]
     except Exception:
         return []
 
@@ -186,6 +183,7 @@ async def _lgtm_sse_loop(slug: str) -> None:
                             # Real review-state delta — push it now instead of
                             # waiting out the hub's steady tick.
                             from periscope import state_hub
+
                             state_hub.kick()
         except asyncio.CancelledError:
             raise

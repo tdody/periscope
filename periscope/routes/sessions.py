@@ -85,7 +85,7 @@ def session_rename(session: str, body: RenameSessionBody):
     for stamps in (_focused_at, _acted_at):
         for old_t in list(stamps.keys()):
             if old_t.startswith(old_prefix):
-                stamps[new_prefix + old_t[len(old_prefix):]] = stamps.pop(old_t)
+                stamps[new_prefix + old_t[len(old_prefix) :]] = stamps.pop(old_t)
     if session in _active_per_session:
         _active_per_session[name] = _active_per_session.pop(session)
     return {"ok": True, "session": name}
@@ -149,8 +149,9 @@ def _session_from_disk(resume_id: str) -> dict | None:
     return {"project_path": cwd, "jsonl_path": str(path)}
 
 
-def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode: str,
-                       account: str | None = None, force: bool = False) -> dict:
+def _window_new_resume(
+    session: str, exec_cmd: str, resume_id: str | None, mode: str, account: str | None = None, force: bool = False
+) -> dict:
     """`mode=resume`: look up the original session's project dir via the
     history index and run `claude --resume <id>` there. The sentinel
     `session` is auto-created on first use. Returns the standard
@@ -170,6 +171,7 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
     if not resume_id:
         raise HTTPException(400, "resume_id required for mode=resume")
     from history.search import get_session
+
     config_dir = store.account_config_dir(account)
     resume_sess = get_session(resume_id) or _session_from_disk(resume_id)
     if resume_sess is None:
@@ -183,8 +185,8 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
         mtime_age = time.time() - os.path.getmtime(resume_sess["jsonl_path"])
         if not force and mtime_age < 60:
             raise HTTPException(
-                409, f"session looks live (written {int(mtime_age)}s ago); "
-                     "wait a minute or pick another")
+                409, f"session looks live (written {int(mtime_age)}s ago); wait a minute or pick another"
+            )
     # Already resumed elsewhere in this periscope process? Deliberately NOT
     # behind `force`.
     if resume_id in _resuming:
@@ -205,9 +207,16 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
         # stderr) — the user sees the session appear but claude never
         # launches.
         ok, msg = _tmux_mutate(
-            "new-session", "-d", "-s", session, "-c", cwd,
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            cwd,
             *tmux_mod.env_args(config_dir),
-            "-P", "-F", "#{window_index}",
+            "-P",
+            "-F",
+            "#{window_index}",
         )
         if not ok:
             raise HTTPException(500, f"failed to create session '{session}': {msg}")
@@ -232,9 +241,7 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
         # the branch below
         # deliberately keeps sending nothing for an empty exec_cmd
         # (channels.py relies on that).
-        cmd = exec_cmd.strip() or shlex.join(
-            config.build_agent_command("claude", cwd=cwd, resume_id=resume_id)
-        )
+        cmd = exec_cmd.strip() or shlex.join(config.build_agent_command("claude", cwd=cwd, resume_id=resume_id))
         _send_and_stamp(target, cmd)
         _resuming[resume_id] = {"target": target, "started_at": int(time.time())}
         return {
@@ -248,9 +255,15 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
 
     # Session exists — spawn a new window into it.
     ok, msg = _tmux_mutate(
-        "new-window", "-t", f"{session}:", "-c", cwd,
+        "new-window",
+        "-t",
+        f"{session}:",
+        "-c",
+        cwd,
         *tmux_mod.env_args(config_dir),
-        "-P", "-F", "#{window_index}",
+        "-P",
+        "-F",
+        "#{window_index}",
     )
     if not ok:
         raise HTTPException(500, msg)
@@ -276,8 +289,11 @@ def _window_new_resume(session: str, exec_cmd: str, resume_id: str | None, mode:
 
 
 def _window_new_plain(
-    track_id: str, exec_cmd: str, mode: str,
-    cwd_param: str | None = None, branch: str | None = None,
+    track_id: str,
+    exec_cmd: str,
+    mode: str,
+    cwd_param: str | None = None,
+    branch: str | None = None,
     agent: Literal["claude", "codex"] = "claude",
     account: str | None = None,
     profile: str | None = None,
@@ -337,9 +353,16 @@ def _window_new_plain(
     code, _ = _run(["tmux", "has-session", "-t", f"={MANAGED_SESSION}"])
     if code != 0:
         ok, msg = _tmux_mutate(
-            "new-session", "-d", "-s", MANAGED_SESSION, "-c", cwd,
+            "new-session",
+            "-d",
+            "-s",
+            MANAGED_SESSION,
+            "-c",
+            cwd,
             *tmux_mod.env_args(config_dir, profile_env, model_env),
-            "-P", "-F", "#{window_id}",
+            "-P",
+            "-F",
+            "#{window_id}",
         )
         if not ok:
             raise HTTPException(500, f"failed to create session '{MANAGED_SESSION}': {msg}")
@@ -351,9 +374,15 @@ def _window_new_plain(
             tmux_mod.scrub_session_env(MANAGED_SESSION)
     else:
         ok, msg = _tmux_mutate(
-            "new-window", "-t", f"={MANAGED_SESSION}:", "-c", cwd,
+            "new-window",
+            "-t",
+            f"={MANAGED_SESSION}:",
+            "-c",
+            cwd,
             *tmux_mod.env_args(config_dir, profile_env, model_env),
-            "-P", "-F", "#{window_id}",
+            "-P",
+            "-F",
+            "#{window_id}",
         )
         if not ok:
             raise HTTPException(500, msg)
@@ -378,24 +407,30 @@ def _window_new_plain(
     if mode in {"claude", "codex", "agent"}:
         cmd = shlex.join(config.build_agent_command(agent, cwd=cwd, effort=effort_level))
     _send_and_stamp(target, cmd)
-    return {"ok": True, "session": MANAGED_SESSION, "index": index,
-            "target": target, "mode": mode, "agent": agent, "exec": cmd,
-            "cwd": cwd, "profile": profile_env or "default",
-            "model": model_env or "default", "effort": effort_level if agent == "claude" and effort_level else "default"}
+    return {
+        "ok": True,
+        "session": MANAGED_SESSION,
+        "index": index,
+        "target": target,
+        "mode": mode,
+        "agent": agent,
+        "exec": cmd,
+        "cwd": cwd,
+        "profile": profile_env or "default",
+        "model": model_env or "default",
+        "effort": effort_level if agent == "claude" and effort_level else "default",
+    }
 
 
 def _codex_binding(session_id: str):
     with sqlite3.connect(str(config.ACTIVITY_DB), timeout=2.0) as conn:
         session_binding_db.ensure_schema(conn)
         conn.execute(
-            "DELETE FROM agent_sessions WHERE provider='codex' "
-            "AND evidence='launch-pending' AND updated_at < ?",
+            "DELETE FROM agent_sessions WHERE provider='codex' AND evidence='launch-pending' AND updated_at < ?",
             (int(time.time()) - 30,),
         )
         row = conn.execute(
-            "SELECT pane_id FROM agent_sessions "
-            "WHERE provider='codex' AND session_id=? "
-            "AND evidence='resume-explicit'",
+            "SELECT pane_id FROM agent_sessions WHERE provider='codex' AND session_id=? AND evidence='resume-explicit'",
             (session_id,),
         ).fetchone()
     if not row:
@@ -455,15 +490,11 @@ def _window_new_codex_resume(
         branch=branch,
         agent="codex",
     )
-    pane_id = tmux(
-        "display-message", "-t", result["target"], "-p", "#{pane_id}"
-    ).strip()
+    pane_id = tmux("display-message", "-t", result["target"], "-p", "#{pane_id}").strip()
     if not pane_id:
         raise HTTPException(500, "could not resolve pane for Codex resume")
     _write_resume_binding(pane_id, resume_id, str(meta.path))
-    cmd = shlex.join(
-        config.build_agent_command("codex", cwd=result["cwd"], resume_id=resume_id)
-    )
+    cmd = shlex.join(config.build_agent_command("codex", cwd=result["cwd"], resume_id=resume_id))
     time.sleep(0.1)
     ok, message = _tmux_mutate("send-keys", "-t", result["target"], cmd, "Enter")
     if not ok:
@@ -522,7 +553,10 @@ def window_new(
         # keeps its own model); before this it passed nothing and billed the
         # default account regardless of headroom.
         result = _window_new_resume(
-            session, exec_cmd, resume_id, mode,
+            session,
+            exec_cmd,
+            resume_id,
+            mode,
             account=usage.choose_launch(account).account,
         )
         return {**result, "agent": "claude"}
@@ -530,8 +564,16 @@ def window_new(
         launch = usage.choose_launch(account, model, effort)
         account, model, effort = launch.account, launch.model, launch.effort
     return _window_new_plain(
-        session, exec_cmd, mode, cwd_param=cwd, branch=branch, agent=agent,
-        account=account, profile=profile, model=model, effort=effort,
+        session,
+        exec_cmd,
+        mode,
+        cwd_param=cwd,
+        branch=branch,
+        agent=agent,
+        account=account,
+        profile=profile,
+        model=model,
+        effort=effort,
     )
 
 
@@ -572,8 +614,12 @@ def pane_move_account(pid: str, account: str, force: bool = False):
     track_id = tracks.resolve_track_for_window(window)
 
     result = _window_new_resume(
-        RESUME_SESSION, f"{CLAUDE_EXEC} --resume {session_id}", session_id,
-        "resume", account=account, force=force,
+        RESUME_SESSION,
+        f"{CLAUDE_EXEC} --resume {session_id}",
+        session_id,
+        "resume",
+        account=account,
+        force=force,
     )
     target = result["target"]
     new_pane_id = tmux("display-message", "-t", target, "-p", "#{pane_id}").strip()
@@ -588,8 +634,14 @@ def pane_move_account(pid: str, account: str, force: bool = False):
         # is track-anchored, so without the re-tag the moved session shows up in
         # the repo-default bucket instead of beside the pane it replaced.
         tracks.move_pane(new_pid, track_id)
-    return {**result, "pid": new_pid, "pane_id": new_pane_id,
-            "account": account, "track_id": track_id, "moved_from": pid}
+    return {
+        **result,
+        "pid": new_pid,
+        "pane_id": new_pane_id,
+        "account": account,
+        "track_id": track_id,
+        "moved_from": pid,
+    }
 
 
 @router.post("/api/window/move")

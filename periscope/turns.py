@@ -12,6 +12,7 @@ Falls back to newest-mtime-in-cwd when neither knows the pane's session (hook
 not yet installed, or the pane predates the first SessionStart firing).
 
 Imports only periscope.* / history.* — never `from server import`."""
+
 import periscope.activity as activity
 import periscope.session_status as session_status
 from history.search import messages_from_jsonl
@@ -34,8 +35,7 @@ def session_id_for_pane(pane_id: str) -> str | None:
     The row remains the fallback for panes with no live claude (exited, no
     session file, pid not a live claude) — that is the only reason it is still
     consulted."""
-    return (session_status.live_session_id_for_pane(pane_id)
-            or activity.get_pane_session(pane_id))
+    return session_status.live_session_id_for_pane(pane_id) or activity.get_pane_session(pane_id)
 
 
 def jsonl_for_session(session_id: str):
@@ -90,9 +90,14 @@ def channel_messages_from_jsonl(path: str) -> list[dict]:
         text = ev.user_text or ""
         if not text.startswith(CHANNEL_MARKER):
             continue
-        out.append({
-            "role": "channel", "uuid": ev.uuid, "ts_ms": ev.ts_ms, "text": text,
-        })
+        out.append(
+            {
+                "role": "channel",
+                "uuid": ev.uuid,
+                "ts_ms": ev.ts_ms,
+                "text": text,
+            }
+        )
     return out
 
 
@@ -105,8 +110,7 @@ def get_turns_for_pane(session: str, index: int) -> dict | None:
     {session_id, jsonl_path, messages} or None."""
     target = f"{session}:{index}"
     try:
-        meta = tmux("display-message", "-t", target, "-p",
-                    "#{pane_id}\t#{pane_current_path}").strip()
+        meta = tmux("display-message", "-t", target, "-p", "#{pane_id}\t#{pane_current_path}").strip()
     except Exception:
         return None
     pane_id, _, cwd = meta.partition("\t")

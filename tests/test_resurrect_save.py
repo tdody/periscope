@@ -1,5 +1,6 @@
 """continuum save trigger — periscope drives it because control-mode clients
 never expand the status line that continuum's save rides on."""
+
 from pathlib import Path
 
 from periscope import config, resurrect
@@ -17,7 +18,7 @@ def test_save_now_degrades_silently_when_continuum_absent(mocker):
     mocker.patch.object(config, "is_prod", return_value=True)
     mocker.patch.object(Path, "exists", return_value=False)
     run = mocker.patch("periscope.resurrect.subprocess.run")
-    resurrect.save_now()          # must not raise
+    resurrect.save_now()  # must not raise
     run.assert_not_called()
 
 

@@ -3,6 +3,7 @@
 The tmux-resolving variants (safe_read_for_pane / safe_reveal_for_pane)
 are tested in tests/routes/test_fs.py against route-level fixtures.
 """
+
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,7 @@ def test_safe_read_for_pane_404_when_tmux_binary_missing(monkeypatch):
     # except branch still gives 404 — that's the safety net.
     def boom(*a):
         raise FileNotFoundError("tmux")
+
     monkeypatch.setattr("periscope.fs.tmux", boom)
     with pytest.raises(HTTPException) as exc:
         fs.safe_read_for_pane("sess:1", "x.txt")
@@ -146,6 +148,7 @@ def test_safe_reveal_for_pane_invokes_open_R(tmp_path, monkeypatch):
 
     def fake_run(cmd, **kw):
         called.append(cmd)
+
     monkeypatch.setattr("periscope.fs.tmux", fake_tmux)
     monkeypatch.setattr("periscope.fs.subprocess.run", fake_run)
     fs.safe_reveal_for_pane("sess:1", "x.txt")

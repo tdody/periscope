@@ -33,9 +33,7 @@ def test_build_rename_prompt_includes_window_indices_and_names():
 
 def test_build_rename_prompt_omits_pr_when_missing():
     """Windows without a PR number shouldn't emit a `PR #` line."""
-    prompt = build_rename_prompt(
-        [{"index": 0, "current_name": "claude", "branch": "main"}]
-    )
+    prompt = build_rename_prompt([{"index": 0, "current_name": "claude", "branch": "main"}])
     assert "PR #" not in prompt
 
 
@@ -72,19 +70,28 @@ def test_claude_complete_skips_non_text_blocks(mocker):
 
 # ---- transcript_summary ----
 
+
 def test_transcript_summary_extracts_recent_signals(monkeypatch):
     fake = {
         "messages": [
             {"role": "user", "text": "old prompt"},
             {"role": "user", "text": "implement liveness check"},
-            {"role": "assistant", "text": "ok", "tool_uses": [
-                {"name": "Read", "input": {"file_path": "/repo/anthology/liveness.py"}},
-                {"name": "Edit", "input": {"file_path": "/repo/anthology/liveness.py"}},
-            ]},
+            {
+                "role": "assistant",
+                "text": "ok",
+                "tool_uses": [
+                    {"name": "Read", "input": {"file_path": "/repo/anthology/liveness.py"}},
+                    {"name": "Edit", "input": {"file_path": "/repo/anthology/liveness.py"}},
+                ],
+            },
             {"role": "user", "text": "now wire it into the pipeline"},
-            {"role": "assistant", "text": "", "tool_uses": [
-                {"name": "Bash", "input": {"command": "uv run pytest -k liveness"}},
-            ]},
+            {
+                "role": "assistant",
+                "text": "",
+                "tool_uses": [
+                    {"name": "Bash", "input": {"command": "uv run pytest -k liveness"}},
+                ],
+            },
         ],
     }
     monkeypatch.setattr("periscope.turns.get_turns_for_pane", lambda s, i: fake)
@@ -108,20 +115,23 @@ def test_transcript_summary_no_jsonl_returns_empty(monkeypatch):
 def test_transcript_summary_swallows_errors(monkeypatch):
     def boom(*a, **kw):
         raise RuntimeError("malformed jsonl")
+
     monkeypatch.setattr("periscope.turns.get_turns_for_pane", boom)
     # Rename request must NOT fail because of a bad transcript.
     assert transcript_summary("sess", 1) == {}
 
 
 def test_build_rename_prompt_uses_transcript_signals():
-    windows = [{
-        "index": 0,
-        "current_name": "claude",
-        "branch": "tc/foo",
-        "recent_user_prompts": ["implement liveness check"],
-        "recent_tool_calls": ["Edit anthology/liveness.py", "Bash pytest -k liveness"],
-        "files_touched": ["anthology/liveness.py"],
-    }]
+    windows = [
+        {
+            "index": 0,
+            "current_name": "claude",
+            "branch": "tc/foo",
+            "recent_user_prompts": ["implement liveness check"],
+            "recent_tool_calls": ["Edit anthology/liveness.py", "Bash pytest -k liveness"],
+            "files_touched": ["anthology/liveness.py"],
+        }
+    ]
     prompt = build_rename_prompt(windows)
     assert "implement liveness check" in prompt
     assert "Edit anthology/liveness.py" in prompt
@@ -132,25 +142,39 @@ def test_build_rename_prompt_uses_transcript_signals():
 
 # ---- transcript_summary_from_path + RENAME_RULES ----
 
+
 def _write_jsonl(path, entries):
     path.write_text("\n".join(_json.dumps(e) for e in entries) + "\n")
 
 
 def test_transcript_summary_from_path_extracts_signals(tmp_path):
     tf = tmp_path / "s.jsonl"
-    _write_jsonl(tf, [
-        {"type": "user", "message": {"role": "user", "content": "implement liveness check"}},
-        {"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "text", "text": "ok"},
-            {"type": "tool_use", "name": "Edit",
-             "input": {"file_path": "/repo/anthology/liveness.py"}},
-        ]}},
-        {"type": "user", "message": {"role": "user", "content": "now wire it up"}},
-        {"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "name": "Bash",
-             "input": {"command": "uv run pytest -k liveness"}},
-        ]}},
-    ])
+    _write_jsonl(
+        tf,
+        [
+            {"type": "user", "message": {"role": "user", "content": "implement liveness check"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "ok"},
+                        {"type": "tool_use", "name": "Edit", "input": {"file_path": "/repo/anthology/liveness.py"}},
+                    ],
+                },
+            },
+            {"type": "user", "message": {"role": "user", "content": "now wire it up"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "uv run pytest -k liveness"}},
+                    ],
+                },
+            },
+        ],
+    )
     out = transcript_summary_from_path(tf)
     assert out["recent_user_prompts"] == ["implement liveness check", "now wire it up"]
     assert "Edit /repo/anthology/liveness.py" in out["recent_tool_calls"]
@@ -160,15 +184,16 @@ def test_transcript_summary_from_path_extracts_signals(tmp_path):
 
 def test_transcript_summary_from_path_skips_meta_and_sidechain(tmp_path):
     tf = tmp_path / "s.jsonl"
-    _write_jsonl(tf, [
-        {"type": "user", "isMeta": True,
-         "message": {"role": "user", "content": "<expanded skill junk>"}},
-        {"type": "user", "isSidechain": True,
-         "message": {"role": "user", "content": "subagent chatter"}},
-        {"type": "user", "message": {"role": "user", "content": "the real ask"}},
-        # tool-result turns have list content — not a typed prompt; skipped.
-        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result"}]}},
-    ])
+    _write_jsonl(
+        tf,
+        [
+            {"type": "user", "isMeta": True, "message": {"role": "user", "content": "<expanded skill junk>"}},
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "subagent chatter"}},
+            {"type": "user", "message": {"role": "user", "content": "the real ask"}},
+            # tool-result turns have list content — not a typed prompt; skipped.
+            {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result"}]}},
+        ],
+    )
     out = transcript_summary_from_path(tf)
     assert out["recent_user_prompts"] == ["the real ask"]
 
@@ -176,8 +201,7 @@ def test_transcript_summary_from_path_skips_meta_and_sidechain(tmp_path):
 def test_transcript_summary_from_path_respects_tail_bound(tmp_path):
     tf = tmp_path / "big.jsonl"
     entries = [{"type": "user", "message": {"role": "user", "content": "early prompt"}}]
-    entries += [{"type": "assistant", "message": {"role": "assistant", "content": []}}
-                for _ in range(600)]
+    entries += [{"type": "assistant", "message": {"role": "assistant", "content": []}} for _ in range(600)]
     _write_jsonl(tf, entries)
     # 601 lines, tail of 500 — the line-1 prompt is outside the window.
     out = transcript_summary_from_path(tf, tail_lines=500)
@@ -190,9 +214,7 @@ def test_transcript_summary_from_path_missing_file_returns_empty(tmp_path):
 
 def test_transcript_summary_from_path_tolerates_garbage_lines(tmp_path):
     tf = tmp_path / "s.jsonl"
-    tf.write_text('not json\n'
-                  + _json.dumps({"type": "user",
-                                 "message": {"role": "user", "content": "ok"}}) + "\n")
+    tf.write_text("not json\n" + _json.dumps({"type": "user", "message": {"role": "user", "content": "ok"}}) + "\n")
     assert transcript_summary_from_path(tf)["recent_user_prompts"] == ["ok"]
 
 
@@ -205,7 +227,6 @@ def test_rename_rules_constant_is_spliced_into_rename_prompt():
 def test_rename_rules_shared_by_narrator_prompt():
     # The no-drift guard: every taste rule must appear verbatim in BOTH
     # prompt builders, so rename taste can't fork between the two surfaces.
-    narrator_prompt = build_narrator_prompt(
-        window_name="claude", branch=None, pr=None, cwd="/repo", signals={})
+    narrator_prompt = build_narrator_prompt(window_name="claude", branch=None, pr=None, cwd="/repo", signals={})
     for rule in RENAME_RULES:
         assert rule.strip() in narrator_prompt

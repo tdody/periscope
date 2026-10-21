@@ -24,8 +24,11 @@ from periscope.channels import (
 )
 
 _WINDOW = {
-    "pane_id": "%5", "session": "tc/x", "index": "0",
-    "name": "win", "cwd": "/tmp",
+    "pane_id": "%5",
+    "session": "tc/x",
+    "index": "0",
+    "name": "win",
+    "cwd": "/tmp",
 }
 
 
@@ -55,9 +58,7 @@ def test_recent_alerts_drops_panes_missing_from_windows():
 def test_recent_alerts_sorts_newest_first_and_caps_at_limit():
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS["%5"] = [
-            {"id": f"a{i}", "ts": i, "kind": "info",
-             "severity": "info", "message": f"m{i}"}
-            for i in range(5)
+            {"id": f"a{i}", "ts": i, "kind": "info", "severity": "info", "message": f"m{i}"} for i in range(5)
         ]
     items = recent_alerts([_WINDOW], limit=3)
     assert [it["message"] for it in items] == ["m4", "m3", "m2"]
@@ -108,6 +109,7 @@ def test_rehydrate_alerts_from_events(fresh_activity_db):
     import time as _t
 
     from periscope import activity
+
     base = int(_t.time()) - 100
     activity.record("pane", "%1", "alert", "tests pass", detail="done", at=base)
     activity.record("pane", "%1", "alert", "need a nudge", detail="need_human", at=base + 10)
@@ -121,7 +123,7 @@ def test_rehydrate_alerts_from_events(fresh_activity_db):
 
     n = rehydrate_alerts_from_events()
     assert n == 3
-    assert len(_CHANNEL_ALERTS["%1"]) == 2          # BOTH of %1's alerts, not one
+    assert len(_CHANNEL_ALERTS["%1"]) == 2  # BOTH of %1's alerts, not one
     assert _CHANNEL_UNREAD["%1"] == 2
     assert {a["kind"] for a in _CHANNEL_ALERTS["%1"]} == {"done", "need_human"}
     assert _CHANNEL_ALERTS["%2"][0]["message"] == "fyi"
@@ -133,6 +135,7 @@ def test_rehydrate_skips_panes_with_live_alerts(fresh_activity_db):
     import time as _t
 
     from periscope import activity
+
     base = int(_t.time()) - 100
     activity.record("pane", "%1", "alert", "old", detail="info", at=base)
     activity.record("pane", "%1", "alert", "older", detail="info", at=base - 50)
@@ -140,8 +143,7 @@ def test_rehydrate_skips_panes_with_live_alerts(fresh_activity_db):
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
         _CHANNEL_UNREAD.clear()
-        _CHANNEL_ALERTS["%1"] = [{"id": "live", "message": "fresh",
-                                  "kind": "info", "severity": "info", "ts": 999}]
+        _CHANNEL_ALERTS["%1"] = [{"id": "live", "message": "fresh", "kind": "info", "severity": "info", "ts": 999}]
         _CHANNEL_UNREAD["%1"] = 1
 
     n = rehydrate_alerts_from_events()
@@ -155,10 +157,9 @@ def test_rehydrate_respects_max_age(fresh_activity_db):
     import time as _t
 
     from periscope import activity
-    activity.record("pane", "%1", "alert", "ancient", detail="info",
-                    at=int(_t.time()) - 200000)
-    activity.record("pane", "%1", "alert", "recent", detail="info",
-                    at=int(_t.time()) - 10)
+
+    activity.record("pane", "%1", "alert", "ancient", detail="info", at=int(_t.time()) - 200000)
+    activity.record("pane", "%1", "alert", "recent", detail="info", at=int(_t.time()) - 10)
 
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
@@ -258,9 +259,7 @@ def test_link_linear_tool_clears_stale_metadata_on_relink(clean_state, mocker):
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="abc123")
     mocker.patch("periscope.store._write_state")
 
-    _do_link_linear_tool(
-        "%5", {"id": "FAR-1", "title": "First", "status": "Done"}
-    )
+    _do_link_linear_tool("%5", {"id": "FAR-1", "title": "First", "status": "Done"})
     _do_link_linear_tool("%5", {"id": "FAR-2"})
 
     entry = clean_state["windows"]["abc123"]
@@ -282,9 +281,7 @@ def test_open_document_tool_opens_persisted_tab(clean_state, mocker, tmp_path):
     assert entry["active_tab"] == f"file:{f}"
 
 
-def test_open_document_tool_resolves_relative_against_pane_cwd(
-    clean_state, mocker, tmp_path
-):
+def test_open_document_tool_resolves_relative_against_pane_cwd(clean_state, mocker, tmp_path):
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="abc123")
     mocker.patch("periscope.store._write_state")
     (tmp_path / "doc.md").write_text("hi")
@@ -307,9 +304,7 @@ def test_open_document_tool_rejects_missing_file(clean_state, tmp_path):
     assert clean_state["windows"] == {}
 
 
-def test_open_document_tool_errors_when_pane_unresolvable(
-    clean_state, mocker, tmp_path
-):
+def test_open_document_tool_errors_when_pane_unresolvable(clean_state, mocker, tmp_path):
     import json
 
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="")
@@ -338,24 +333,40 @@ def test_notify_tool_stamps_unique_id():
 
 # --- history tools ---
 
+
 def _body(result):
     import json
+
     return json.loads(result[0].text)
 
 
 def _row(**over):
     row = {
-        "session_id": "abc123", "jsonl_path": "/x.jsonl",
-        "project_path": "/Users/tom/dev/periscope", "branch": "main",
-        "started_at": 1700000000, "ended_at": 1700003600, "duration_s": 3600,
-        "user_msg_count": 10, "asst_msg_count": 20, "tool_use_count": 30,
-        "was_interrupted": False, "ended_cleanly": True,
-        "summary": "Fixed the spinner", "summary_model": "haiku",
-        "tags": ["bugfix"], "first_user_msg": "spinner flickers",
-        "last_user_msg": "thanks", "files_touched": [f"/f{i}.py" for i in range(25)],
-        "notable_cmds": ["pytest -q"], "tool_use_counts": {"Bash": 30},
-        "trivial": False, "is_live": False, "rank": 1,
-        "rerank_reason": None, "rerank_score": None,
+        "session_id": "abc123",
+        "jsonl_path": "/x.jsonl",
+        "project_path": "/Users/tom/dev/periscope",
+        "branch": "main",
+        "started_at": 1700000000,
+        "ended_at": 1700003600,
+        "duration_s": 3600,
+        "user_msg_count": 10,
+        "asst_msg_count": 20,
+        "tool_use_count": 30,
+        "was_interrupted": False,
+        "ended_cleanly": True,
+        "summary": "Fixed the spinner",
+        "summary_model": "haiku",
+        "tags": ["bugfix"],
+        "first_user_msg": "spinner flickers",
+        "last_user_msg": "thanks",
+        "files_touched": [f"/f{i}.py" for i in range(25)],
+        "notable_cmds": ["pytest -q"],
+        "tool_use_counts": {"Bash": 30},
+        "trivial": False,
+        "is_live": False,
+        "rank": 1,
+        "rerank_reason": None,
+        "rerank_score": None,
     }
     row.update(over)
     return row
@@ -363,28 +374,38 @@ def _row(**over):
 
 def test_search_history_tool_trims_fields_and_caps_files(mocker):
     from periscope.channels import _do_search_history_tool
+
     search = mocker.patch("history.search", return_value=[_row()])
 
     body = _body(_do_search_history_tool("%5", {"query": "spinner", "limit": 5}))
 
-    search.assert_called_once_with(
-        "spinner", project=None, since=None, limit=5)
+    search.assert_called_once_with("spinner", project=None, since=None, limit=5)
     assert body["ok"] is True
     r = body["results"][0]
-    assert set(r) == {"session_id", "project_path", "branch", "started_at",
-                      "duration_s", "summary", "tags", "files_touched",
-                      "first_user_msg"}
+    assert set(r) == {
+        "session_id",
+        "project_path",
+        "branch",
+        "started_at",
+        "duration_s",
+        "summary",
+        "tags",
+        "files_touched",
+        "first_user_msg",
+    }
     assert len(r["files_touched"]) == 10  # capped from 25
 
 
 def test_search_history_tool_requires_query():
     from periscope.channels import _do_search_history_tool
+
     body = _body(_do_search_history_tool("%5", {"query": "   "}))
     assert body["ok"] is False
 
 
 def test_get_history_session_tool_unknown_id(mocker):
     from periscope.channels import _do_get_history_session_tool
+
     mocker.patch("history.search.get_session", return_value=None)
     body = _body(_do_get_history_session_tool("%5", {"session_id": "nope"}))
     assert body["ok"] is False
@@ -393,33 +414,42 @@ def test_get_history_session_tool_unknown_id(mocker):
 
 def _session_data(n_msgs):
     return {
-        "session_id": "abc123", "jsonl_path": "/x.jsonl",
-        "project_path": "/p", "branch": "main",
-        "started_at": 1, "ended_at": 2, "duration_s": 1,
-        "user_msg_count": n_msgs, "asst_msg_count": 0, "tool_use_count": 0,
-        "was_interrupted": False, "ended_cleanly": True,
-        "summary": "s", "tags": [], "first_user_msg": "f",
-        "last_user_msg": "l", "final_assistant_msg": "fa",
-        "files_touched": [], "notable_cmds": [], "tool_use_counts": {},
+        "session_id": "abc123",
+        "jsonl_path": "/x.jsonl",
+        "project_path": "/p",
+        "branch": "main",
+        "started_at": 1,
+        "ended_at": 2,
+        "duration_s": 1,
+        "user_msg_count": n_msgs,
+        "asst_msg_count": 0,
+        "tool_use_count": 0,
+        "was_interrupted": False,
+        "ended_cleanly": True,
+        "summary": "s",
+        "tags": [],
+        "first_user_msg": "f",
+        "last_user_msg": "l",
+        "final_assistant_msg": "fa",
+        "files_touched": [],
+        "notable_cmds": [],
+        "tool_use_counts": {},
         "jsonl_missing": False,
-        "messages": [
-            {"role": "user", "uuid": f"u{i}", "ts_ms": i, "text": f"msg {i}"}
-            for i in range(n_msgs)
-        ],
+        "messages": [{"role": "user", "uuid": f"u{i}", "ts_ms": i, "text": f"msg {i}"} for i in range(n_msgs)],
     }
 
 
 def test_get_history_session_tool_default_tail_slice(mocker):
     from periscope.channels import _do_get_history_session_tool
-    mocker.patch("history.search.get_session",
-                 return_value=_session_data(100))
+
+    mocker.patch("history.search.get_session", return_value=_session_data(100))
 
     body = _body(_do_get_history_session_tool("%5", {"session_id": "abc123"}))
 
     assert body["ok"] is True
     assert body["total_messages"] == 100
     assert len(body["messages"]) == 30
-    assert body["messages"][0]["text"] == "msg 70"   # tail-30 by default
+    assert body["messages"][0]["text"] == "msg 70"  # tail-30 by default
     assert body["messages"][-1]["text"] == "msg 99"
     assert body.get("final_assistant_msg") != "messages"  # metadata present
     assert body["summary"] == "s"
@@ -427,21 +457,20 @@ def test_get_history_session_tool_default_tail_slice(mocker):
 
 def test_get_history_session_tool_explicit_offset_and_clamp(mocker):
     from periscope.channels import _do_get_history_session_tool
-    mocker.patch("history.search.get_session",
-                 return_value=_session_data(10))
 
-    body = _body(_do_get_history_session_tool(
-        "%5", {"session_id": "abc123", "offset": 2, "limit": 3}))
+    mocker.patch("history.search.get_session", return_value=_session_data(10))
+
+    body = _body(_do_get_history_session_tool("%5", {"session_id": "abc123", "offset": 2, "limit": 3}))
     assert [m["text"] for m in body["messages"]] == ["msg 2", "msg 3", "msg 4"]
 
     # negative offset beyond start clamps to 0
-    body = _body(_do_get_history_session_tool(
-        "%5", {"session_id": "abc123", "offset": -50, "limit": 5}))
+    body = _body(_do_get_history_session_tool("%5", {"session_id": "abc123", "offset": -50, "limit": 5}))
     assert body["messages"][0]["text"] == "msg 0"
 
 
 def test_get_history_session_tool_caps_notable_cmds(mocker):
     from periscope.channels import _do_get_history_session_tool
+
     data = _session_data(5)
     data["notable_cmds"] = ["x" * 500] * 25
     mocker.patch("history.search.get_session", return_value=data)
@@ -449,19 +478,24 @@ def test_get_history_session_tool_caps_notable_cmds(mocker):
     body = _body(_do_get_history_session_tool("%5", {"session_id": "abc123"}))
 
     assert len(body["notable_cmds"]) == 10
-    assert all(len(c) < 200 and c.endswith("…[truncated]")
-               for c in body["notable_cmds"])
+    assert all(len(c) < 200 and c.endswith("…[truncated]") for c in body["notable_cmds"])
 
 
 def test_resume_session_tool_wraps_window_new_resume(mocker):
     from periscope.channels import _do_resume_session_tool
+
     resume = mocker.patch(
         "periscope.routes.sessions._window_new_resume",
-        return_value={"ok": True, "target": "resumes:3", "session": "resumes",
-                      "index": 3, "mode": "resume",
-                      "resumed_session_id": "abc123"})
-    stamp = mocker.patch("periscope.channels.stamp_new_window",
-                         return_value="beef4242")
+        return_value={
+            "ok": True,
+            "target": "resumes:3",
+            "session": "resumes",
+            "index": 3,
+            "mode": "resume",
+            "resumed_session_id": "abc123",
+        },
+    )
+    stamp = mocker.patch("periscope.channels.stamp_new_window", return_value="beef4242")
 
     body = _body(_do_resume_session_tool("%5", {"session_id": "abc123"}))
 
@@ -471,9 +505,9 @@ def test_resume_session_tool_wraps_window_new_resume(mocker):
     # (repo-default/loose) track without a follow-up list_claudes.
     stamp.assert_called_once_with("resumes:3")
     assert body["pid"] == "beef4242"
-    assert body["track"]["kind"] == "loose"      # no cwd in the result → loose
+    assert body["track"]["kind"] == "loose"  # no cwd in the result → loose
     args = resume.call_args[0]
-    assert args[0] == "resumes"                  # default sentinel session
+    assert args[0] == "resumes"  # default sentinel session
     assert "--resume abc123" in args[1]
     assert args[2] == "abc123"
 
@@ -482,9 +516,11 @@ def test_resume_session_tool_maps_http_errors(mocker):
     from fastapi import HTTPException
 
     from periscope.channels import _do_resume_session_tool
+
     mocker.patch(
         "periscope.routes.sessions._window_new_resume",
-        side_effect=HTTPException(409, "session looks live; wait a minute"))
+        side_effect=HTTPException(409, "session looks live; wait a minute"),
+    )
 
     body = _body(_do_resume_session_tool("%5", {"session_id": "abc123"}))
 
@@ -496,6 +532,7 @@ def test_resume_session_tool_rejects_an_unregistered_account():
     # No schema enum to catch it, and store.account_config_dir fails OPEN to
     # the default account — so the handler must refuse, naming the valid ids.
     from periscope.channels import _do_resume_session_tool
+
     body = _body(_do_resume_session_tool("%5", {"session_id": "abc123", "account": "zz"}))
     assert body["ok"] is False
     assert "unknown account 'zz'" in body["error"]
@@ -506,6 +543,7 @@ def test_spawn_claude_tool_rejects_an_unregistered_account():
     import asyncio
 
     from periscope.channels import _do_spawn_claude_tool
+
     body = _body(asyncio.run(_do_spawn_claude_tool("%5", {"prompt": "hi", "account": "zz"})))
     assert body["ok"] is False
     assert "unknown account 'zz'" in body["error"]
@@ -513,6 +551,7 @@ def test_spawn_claude_tool_rejects_an_unregistered_account():
 
 def test_resume_session_tool_requires_session_id():
     from periscope.channels import _do_resume_session_tool
+
     body = _body(_do_resume_session_tool("%5", {"session_id": ""}))
     assert body["ok"] is False
 
@@ -521,17 +560,24 @@ def test_resume_session_tool_tags_pane_track(fresh_activity_db, mocker):
     # workspace_id on resume is a TRACK id: tag the resumed pane in pane_tracks.
     from periscope import activity, tracks
     from periscope.channels import _do_resume_session_tool
+
     tk = tracks.create_track(name="Auth")
     mocker.patch(
         "periscope.routes.sessions._window_new_resume",
-        return_value={"ok": True, "target": "resumes:3", "session": "resumes",
-                      "index": 3, "mode": "resume", "resumed_session_id": "abc"})
+        return_value={
+            "ok": True,
+            "target": "resumes:3",
+            "session": "resumes",
+            "index": 3,
+            "mode": "resume",
+            "resumed_session_id": "abc",
+        },
+    )
     # The tag keys on the @periscope_id stamped onto the brand-new window,
     # never a %N pane id.
     stamp = mocker.patch("periscope.channels.stamp_new_window", return_value="resu8888")
 
-    body = _body(_do_resume_session_tool(
-        "%5", {"session_id": "abc", "workspace_id": tk["id"]}))
+    body = _body(_do_resume_session_tool("%5", {"session_id": "abc", "workspace_id": tk["id"]}))
 
     assert body["ok"] is True and body["workspace_id"] == tk["id"]
     assert body["pid"] == "resu8888"
@@ -550,15 +596,16 @@ from unittest.mock import AsyncMock
 
 def test_resolve_window_by_pid_matches_stamped_handle(mocker):
     from periscope import channels
+
     rows = [
-        {"session": "s", "index": 2, "name": "w", "cwd": "/x",
-         "pane_id": "%7", "pid_raw": "abcd1234"},
+        {"session": "s", "index": 2, "name": "w", "cwd": "/x", "pane_id": "%7", "pid_raw": "abcd1234"},
     ]
     mocker.patch("periscope.channels.list_windows", return_value=rows)
 
     def _attach(ws, **kw):
         for w in ws:
             w["pid"] = w.pop("pid_raw")
+
     mocker.patch("periscope.channels._attach_git_then_resolve_pids", side_effect=_attach)
 
     pid, pane_id, window = channels._resolve_window_by_pid("abcd1234")
@@ -569,21 +616,27 @@ def test_resolve_window_by_pid_matches_stamped_handle(mocker):
 
 def test_resolve_window_by_pid_miss_returns_empty(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels.list_windows", return_value=[
-        {"session": "s", "index": 2, "pane_id": "%7", "pid_raw": "other"},
-    ])
+
+    mocker.patch(
+        "periscope.channels.list_windows",
+        return_value=[
+            {"session": "s", "index": 2, "pane_id": "%7", "pid_raw": "other"},
+        ],
+    )
     mocker.patch("periscope.channels._attach_git_then_resolve_pids")
     assert channels._resolve_window_by_pid("abcd1234") == ("", "", {})
 
 
 def test_resolve_window_by_pid_empty_handle_returns_empty(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels.list_windows")
     assert channels._resolve_window_by_pid("") == ("", "", {})
 
 
 def test_spawn_claude_writes_spawned_by(mocker):
     from periscope import channels
+
     # tmux session lookup for the caller pane → session|cwd
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels._run", return_value=(0, ""))  # has-session ok
@@ -613,6 +666,7 @@ def test_spawn_claude_tells_the_child_it_has_a_lead(mocker):
     """`report` is in the child's tool list regardless, but nothing tells it the
     tool applies to IT — so every brief hand-wrote 'report to your spawner'."""
     from periscope import channels
+
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "3"))
@@ -626,10 +680,10 @@ def test_spawn_claude_tells_the_child_it_has_a_lead(mocker):
     mocker.patch("periscope.channels.set_window_fields")
     mocker.patch("periscope.channels.tracks.resolve_track_for_window", return_value="tk_x")
     mocker.patch("periscope.channels.tracks.move_pane")
-    mocker.patch("periscope.channels.list_windows",
-                 return_value=[{"pid_raw": "parent11", "name": "world-model-driver"}])
-    emit = mocker.patch("periscope.channels.emit_channel_event",
-                        new=AsyncMock(return_value=True))
+    mocker.patch(
+        "periscope.channels.list_windows", return_value=[{"pid_raw": "parent11", "name": "world-model-driver"}]
+    )
+    emit = mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
 
@@ -643,6 +697,7 @@ def test_spawn_claude_tells_the_child_it_has_a_lead(mocker):
 def test_spawn_claude_no_parent_sends_no_provenance_push(mocker):
     """An unparented spawn must not be told to report to nobody."""
     from periscope import channels
+
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "3"))
@@ -655,8 +710,7 @@ def test_spawn_claude_no_parent_sends_no_provenance_push(mocker):
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="")  # no parent
     mocker.patch("periscope.channels.tracks.resolve_track_for_window", return_value="tk_x")
     mocker.patch("periscope.channels.tracks.move_pane")
-    emit = mocker.patch("periscope.channels.emit_channel_event",
-                        new=AsyncMock(return_value=True))
+    emit = mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
 
@@ -665,6 +719,7 @@ def test_spawn_claude_no_parent_sends_no_provenance_push(mocker):
 
 def test_spawn_claude_no_parent_tolerated(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "3"))
@@ -689,10 +744,12 @@ def test_spawn_claude_no_parent_tolerated(mocker):
 
 def test_spawn_commander_anchors_on_cwd(fresh_activity_db, monkeypatch, mocker):
     from periscope import bg_commander, channels, open_ops
-    bg_commander.insert_job(id="c1", text="x", cwd="/tmp", at=1)   # caller IS a live commander
+
+    bg_commander.insert_job(id="c1", text="x", cwd="/tmp", at=1)  # caller IS a live commander
     handle = "cmdr:c1"
-    monkeypatch.setattr(open_ops, "resolve_worktree_session",
-                        lambda cwd: ("proj-sess", {"repo": "/r"}))  # git cwd resolves
+    monkeypatch.setattr(
+        open_ops, "resolve_worktree_session", lambda cwd: ("proj-sess", {"repo": "/r"})
+    )  # git cwd resolves
     # Mirror the full mock set from test_spawn_claude_writes_spawned_by: the
     # spawn handler shells out heavily, so all of these must be stubbed or the
     # test hits real tmux.
@@ -716,10 +773,7 @@ def test_spawn_commander_anchors_on_cwd(fresh_activity_db, monkeypatch, mocker):
 
     # A commander handle is not a tmux target — the caller-context derivation
     # `display-message -t cmdr:c1` must be skipped entirely.
-    assert not any(
-        c.args and c.args[0] == "display-message" and handle in c.args
-        for c in tmux_mock.call_args_list
-    )
+    assert not any(c.args and c.args[0] == "display-message" and handle in c.args for c in tmux_mock.call_args_list)
     # The session the worker landed in must be the RESOLVED "proj-sess",
     # never a derived caller session. Inspect the new-session/new-window
     # _tmux_mutate call args for "proj-sess".
@@ -729,6 +783,7 @@ def test_spawn_commander_anchors_on_cwd(fresh_activity_db, monkeypatch, mocker):
 
 def test_spawn_commander_non_git_cwd_errors(fresh_activity_db, monkeypatch):
     from periscope import bg_commander, channels, open_ops
+
     bg_commander.insert_job(id="c1", text="x", cwd="/tmp", at=1)
     monkeypatch.setattr(open_ops, "resolve_worktree_session", lambda cwd: None)
     monkeypatch.setattr("os.path.isdir", lambda p: True)
@@ -738,13 +793,19 @@ def test_spawn_commander_non_git_cwd_errors(fresh_activity_db, monkeypatch):
 
 def test_spawn_with_branch_creates_worktree(fresh_activity_db, monkeypatch, mocker):
     from periscope import channels, open_ops, worktree_spawn
+
     created = {}
-    monkeypatch.setattr(worktree_spawn, "spawn_worktree",
-                        lambda repo, branch: created.update(repo=repo, branch=branch) or {"path": "/wt/foo"})
+    monkeypatch.setattr(
+        worktree_spawn,
+        "spawn_worktree",
+        lambda repo, branch: created.update(repo=repo, branch=branch) or {"path": "/wt/foo"},
+    )
     seen = {}
+
     def fake_resolve(cwd):
         seen["cwd"] = cwd
         return ("wt-sess", {"repo": "/r"})
+
     monkeypatch.setattr(open_ops, "resolve_worktree_session", fake_resolve)
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
@@ -760,17 +821,17 @@ def test_spawn_with_branch_creates_worktree(fresh_activity_db, monkeypatch, mock
     mocker.patch("periscope.channels.list_windows", return_value=[])
     mocker.patch.object(open_ops, "place_in_rail", return_value=None)
 
-    asyncio.run(channels._do_spawn_claude_tool(
-        "%C", {"prompt": "go", "repo": "/r", "branch": "tc/x"}))
+    asyncio.run(channels._do_spawn_claude_tool("%C", {"prompt": "go", "repo": "/r", "branch": "tc/x"}))
 
-    assert created == {"repo": "/r", "branch": "tc/x"}   # worktree created off repo+branch
-    assert seen["cwd"] == "/wt/foo"                      # cwd overridden to the new worktree
+    assert created == {"repo": "/r", "branch": "tc/x"}  # worktree created off repo+branch
+    assert seen["cwd"] == "/wt/foo"  # cwd overridden to the new worktree
     targets = [c.args for c in cap.call_args_list]
     assert any("wt-sess" in a for args in targets for a in args)
 
 
 def test_spawn_branch_without_repo_errors(fresh_activity_db, monkeypatch, mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels.tmux", return_value="sess|/home/tom")
     mocker.patch("periscope.channels.os.path.isdir", return_value=True)
     res = asyncio.run(channels._do_spawn_claude_tool("%C", {"prompt": "go", "branch": "tc/x"}))
@@ -778,6 +839,7 @@ def test_spawn_branch_without_repo_errors(fresh_activity_db, monkeypatch, mocker
 
 
 # --- account selection (which Claude subscription a spawn runs on) ---
+
 
 def _mock_spawn_plumbing(mocker, has_session=True):
     """Stub every shell-out `_do_spawn_claude_tool` makes. `has_session=False`
@@ -806,6 +868,7 @@ def _created_call(cap):
 
 def test_spawn_claude_account_sets_config_dir_env(mocker):
     from periscope import channels
+
     cap = _mock_spawn_plumbing(mocker)
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go", "account": "b"}))
@@ -818,6 +881,7 @@ def test_spawn_claude_account_sets_config_dir_env(mocker):
 
 def test_spawn_claude_default_account_sets_no_env(mocker, clean_state):
     from periscope import channels
+
     cap = _mock_spawn_plumbing(mocker)
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
@@ -829,6 +893,7 @@ def test_spawn_claude_new_session_scrubs_session_env(mocker):
     """`new-session -e` sets the SESSION env, so every later window in that
     session would inherit this account. Only that branch needs the scrub."""
     from periscope import channels
+
     cap = _mock_spawn_plumbing(mocker, has_session=False)
     scrub = mocker.patch("periscope.tmux.scrub_session_env")
 
@@ -840,6 +905,7 @@ def test_spawn_claude_new_session_scrubs_session_env(mocker):
 
 def test_spawn_claude_new_window_does_not_scrub(mocker):
     from periscope import channels
+
     _mock_spawn_plumbing(mocker, has_session=True)
     scrub = mocker.patch("periscope.tmux.scrub_session_env")
 
@@ -854,10 +920,18 @@ def test_resume_session_passes_account_through(mocker):
     # in the pane's process env. The command string carries no prefix — a prefix
     # would bind only the one invocation.
     from periscope.channels import _do_resume_session_tool
+
     resume = mocker.patch(
         "periscope.routes.sessions._window_new_resume",
-        return_value={"ok": True, "target": "resumes:3", "session": "resumes",
-                      "index": 3, "mode": "resume", "resumed_session_id": "abc"})
+        return_value={
+            "ok": True,
+            "target": "resumes:3",
+            "session": "resumes",
+            "index": 3,
+            "mode": "resume",
+            "resumed_session_id": "abc",
+        },
+    )
 
     _body(_do_resume_session_tool("%5", {"session_id": "abc", "account": "b"}))
 
@@ -874,12 +948,21 @@ def test_resume_session_binds_nothing_when_the_default_account_is_emptiest(mocke
     from periscope import usage
     from periscope.channels import _do_resume_session_tool
     from periscope.launch_policy import Launch
-    mocker.patch.object(usage, "choose_launch",
-                        side_effect=lambda account=None, model=None: Launch(account or "default", None, ""))
+
+    mocker.patch.object(
+        usage, "choose_launch", side_effect=lambda account=None, model=None: Launch(account or "default", None, "")
+    )
     resume = mocker.patch(
         "periscope.routes.sessions._window_new_resume",
-        return_value={"ok": True, "target": "resumes:3", "session": "resumes",
-                      "index": 3, "mode": "resume", "resumed_session_id": "abc"})
+        return_value={
+            "ok": True,
+            "target": "resumes:3",
+            "session": "resumes",
+            "index": 3,
+            "mode": "resume",
+            "resumed_session_id": "abc",
+        },
+    )
 
     _body(_do_resume_session_tool("%5", {"session_id": "abc"}))
 
@@ -891,6 +974,7 @@ def test_spawn_workspace_id_tags_pane_track(fresh_activity_db, mocker):
     # workspace_id is now a TRACK id: the spawned pane must be tagged in
     # pane_tracks (not pane_workspaces).
     from periscope import activity, channels, tracks
+
     tk = tracks.create_track(name="Auth")
     # tmux() returns the spawned pane id from display-message #{pane_id}; mock it
     # to a stable %N so we can assert the tag landed on it.
@@ -906,8 +990,7 @@ def test_spawn_workspace_id_tags_pane_track(fresh_activity_db, mocker):
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="parent11")
     mocker.patch("periscope.channels.set_window_fields")
 
-    res = _body(asyncio.run(
-        channels._do_spawn_claude_tool("%1", {"prompt": "go", "workspace_id": tk["id"]})))
+    res = _body(asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go", "workspace_id": tk["id"]})))
 
     assert res["ok"] is True
     assert res["workspace_id"] == tk["id"]
@@ -919,6 +1002,7 @@ def test_spawn_workspace_id_tags_pane_track(fresh_activity_db, mocker):
 
 def test_spawn_workspace_id_unknown_track_skips_tag(fresh_activity_db, mocker):
     from periscope import activity, channels
+
     mocker.patch("periscope.channels.tmux", return_value="%77")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "3"))
@@ -934,8 +1018,7 @@ def test_spawn_workspace_id_unknown_track_skips_tag(fresh_activity_db, mocker):
     # cwd default — keep it off real git.
     mocker.patch("periscope.git_pr.cached_git_state", return_value=None)
 
-    res = _body(asyncio.run(
-        channels._do_spawn_claude_tool("%1", {"prompt": "go", "workspace_id": "tk_nope"})))
+    res = _body(asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go", "workspace_id": "tk_nope"})))
 
     assert res["ok"] is True and res["workspace_id"] is None
     assert activity.get_pane_track("child99") is None
@@ -945,8 +1028,8 @@ def test_spawn_anchored_tags_repo_default_track(fresh_activity_db, monkeypatch, 
     # workspace="new" anchors the spawn to its cwd's worktree and tags the
     # spawned pane into the repo-default track for that repo.
     from periscope import activity, channels, open_ops, tracks
-    monkeypatch.setattr(open_ops, "resolve_worktree_session",
-                        lambda cwd: ("proj-sess", {"repo": "/r"}))
+
+    monkeypatch.setattr(open_ops, "resolve_worktree_session", lambda cwd: ("proj-sess", {"repo": "/r"}))
     mocker.patch("periscope.channels.tmux", return_value="%77")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "3"))
@@ -961,8 +1044,7 @@ def test_spawn_anchored_tags_repo_default_track(fresh_activity_db, monkeypatch, 
     mocker.patch("periscope.channels.list_windows", return_value=[])
     mocker.patch.object(open_ops, "place_in_rail", return_value=None)
 
-    res = _body(asyncio.run(channels._do_spawn_claude_tool(
-        "%1", {"prompt": "go", "cwd": "/r", "workspace": "new"})))
+    res = _body(asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go", "cwd": "/r", "workspace": "new"})))
 
     assert res["ok"] is True
     # repo_default_track keys the track id on the repo path; the tag keys on
@@ -984,10 +1066,8 @@ def _mock_same_mode_spawn(mocker, parent_pid="parent11"):
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value=parent_pid)
     mocker.patch("periscope.channels.set_window_fields")
     mocker.patch("periscope.channels.list_windows", return_value=[])
-    mocker.patch("periscope.channels.emit_channel_event",
-                 new=AsyncMock(return_value=True))
-    resolve = mocker.patch("periscope.channels.tracks.resolve_track_for_window",
-                           return_value="tk_caller")
+    mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
+    resolve = mocker.patch("periscope.channels.tracks.resolve_track_for_window", return_value="tk_caller")
     move = mocker.patch("periscope.channels.tracks.move_pane")
     return resolve, move
 
@@ -997,6 +1077,7 @@ def test_spawn_same_inherits_callers_track_by_pid(mocker):
     re-keyed input contract — never the %N pane id) and tags the SPAWNED
     window's stamped pid into the result."""
     from periscope import channels
+
     resolve, move = _mock_same_mode_spawn(mocker)
 
     res = asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
@@ -1014,6 +1095,7 @@ def test_spawn_same_vanished_caller_falls_to_cwd_default(mocker, caplog):
     import logging
 
     from periscope import channels
+
     resolve, move = _mock_same_mode_spawn(mocker, parent_pid="")
 
     with caplog.at_level(logging.INFO, logger="periscope"):
@@ -1026,10 +1108,9 @@ def test_spawn_same_vanished_caller_falls_to_cwd_default(mocker, caplog):
 
 def test_send_to_happy(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {"session": "s", "index": 2}))
-    emit = mocker.patch("periscope.channels.emit_channel_event",
-                        new=AsyncMock(return_value=True))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {"session": "s", "index": 2}))
+    emit = mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
 
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "ab12", "message": "hi"})))
 
@@ -1042,6 +1123,7 @@ def test_send_to_happy(mocker):
 
 def test_send_to_no_window(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("", "", {}))
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "ab12", "message": "hi"})))
     assert body["ok"] is False and "no live window" in body["error"]
@@ -1049,8 +1131,8 @@ def test_send_to_no_window(mocker):
 
 def test_send_to_not_attached(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {}))
     mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=False))
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "ab12", "message": "hi"})))
     assert body["ok"] is False and "not attached" in body["error"]
@@ -1058,8 +1140,8 @@ def test_send_to_not_attached(mocker):
 
 def test_send_to_self_refused(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%1", {}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%1", {}))
     emit = mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "ab12", "message": "hi"})))
     assert body["ok"] is False and "own pane" in body["error"]
@@ -1068,16 +1150,17 @@ def test_send_to_self_refused(mocker):
 
 def test_send_to_missing_args(mocker):
     from periscope import channels
+
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "", "message": "hi"})))
     assert body["ok"] is False and "handle" in body["error"]
 
 
 def test_report_routes_to_spawner(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="child99")
     mocker.patch("periscope.channels.get_window", return_value={"spawned_by": "parent11"})
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("parent11", "%2", {}))
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("parent11", "%2", {}))
     emit = mocker.patch("periscope.channels.emit_channel_event", new=AsyncMock(return_value=True))
 
     body = _body(asyncio.run(channels._do_report_tool("%9", {"message": "done"})))
@@ -1088,6 +1171,7 @@ def test_report_routes_to_spawner(mocker):
 
 def test_emit_channel_event_records_full_text_into_activity(fresh_activity_db):
     from periscope import activity, channels
+
     sess = AsyncMock()
     with _CHANNELS_LOCK:
         _MCP_SESSIONS["%5"] = sess
@@ -1099,11 +1183,12 @@ def test_emit_channel_event_records_full_text_into_activity(fresh_activity_db):
     assert len(out) == 1
     assert out[0]["src"] == "channel"
     assert out[0]["kind"] == "message"
-    assert out[0]["text"] == body   # untruncated
+    assert out[0]["text"] == body  # untruncated
 
 
 def test_emit_channel_event_unattached_records_nothing(fresh_activity_db):
     from periscope import activity, channels
+
     sent = asyncio.run(channels.emit_channel_event("%nope", "hi"))
     assert sent is False
     assert activity.events_for("%nope", None, None) == []
@@ -1114,6 +1199,7 @@ def test_report_without_a_spawner_surfaces_to_the_user(mocker):
     provenance was lost (or that was hand-created) still has work to hand
     back — it lands as an alert on its own card instead."""
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="child99")
     mocker.patch("periscope.channels.get_window", return_value={})  # no spawned_by
     alert = mocker.patch("periscope.channels._record_alert")
@@ -1128,6 +1214,7 @@ def test_report_to_an_exited_spawner_surfaces_to_the_user(mocker):
     """A lead that exits before its worker finishes is the NORM — leads
     delegate and quit. The worker's result must survive that."""
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="child99")
     mocker.patch("periscope.channels.get_window", return_value={"spawned_by": "parent11"})
     mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("", "", {}))
@@ -1143,10 +1230,10 @@ def test_report_to_a_deaf_spawner_surfaces_to_the_user(mocker):
     """The spawner is live but was started without the channel flag, so the
     push would be discarded. Fall back rather than lose the report."""
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_pid_for_pane", return_value="child99")
     mocker.patch("periscope.channels.get_window", return_value={"spawned_by": "parent11"})
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("parent11", "%2", {}))
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("parent11", "%2", {}))
     mocker.patch("periscope.channels.pane_channel_ready", return_value=False)
     alert = mocker.patch("periscope.channels._record_alert")
     body = _body(asyncio.run(channels._do_report_tool("%9", {"message": "done"})))
@@ -1157,6 +1244,7 @@ def test_report_to_a_deaf_spawner_surfaces_to_the_user(mocker):
 
 def test_list_claudes_filters_and_trims(mocker):
     from periscope import channels
+
     rows = [
         {"session": "s", "index": 1, "name": "lead", "cwd": "/a", "pane_id": "%2", "pid_raw": "p1"},
         {"session": "s", "index": 2, "name": "shell", "cwd": "/b", "pane_id": "%3", "pid_raw": "p2"},
@@ -1167,21 +1255,28 @@ def test_list_claudes_filters_and_trims(mocker):
         for w in ws:
             if "pid_raw" in w:
                 w["pid"] = w.pop("pid_raw")
+
     mocker.patch("periscope.channels._attach_git_then_resolve_pids", side_effect=_attach)
 
     # capture returns the target so parse_pane can tell windows apart; agent
     # true only for the "s:1" pane. This exercises the real per-pane probe path.
     mocker.patch("periscope.tmux.capture", side_effect=lambda target, *a, **k: target)
-    mocker.patch("periscope.panes.parse_pane",
-                 side_effect=lambda content: {"agent": ("claude" if content == "s:1" else None)})
-    mocker.patch("periscope.activity.pane_status_lines",
-                 return_value={"%2": ("reviewing PR", 123, None)})
+    mocker.patch(
+        "periscope.panes.parse_pane", side_effect=lambda content: {"agent": ("claude" if content == "s:1" else None)}
+    )
+    mocker.patch("periscope.activity.pane_status_lines", return_value={"%2": ("reviewing PR", 123, None)})
     mocker.patch("periscope.channels.channel_state_for", return_value={"attached": True})
     mocker.patch("periscope.channels.get_window", return_value={"spawned_by": "boss0"})
-    mocker.patch("periscope.git_pr.cached_git_signal", return_value={
-        "toplevel": "/a", "head": "9eab154", "head_subject": "label status",
-        "head_committed_at": 1700000000, "dirty": 6,
-    })
+    mocker.patch(
+        "periscope.git_pr.cached_git_signal",
+        return_value={
+            "toplevel": "/a",
+            "head": "9eab154",
+            "head_subject": "label status",
+            "head_committed_at": 1700000000,
+            "dirty": 6,
+        },
+    )
     # Untagged pid + mocked-out repo resolution → the LOOSE catchall, so the
     # exact-dict assertion stays hermetic (no real git run on the fake cwd).
     mocker.patch("periscope.git_pr.cached_git_state", return_value=None)
@@ -1195,11 +1290,18 @@ def test_list_claudes_filters_and_trims(mocker):
     assert len(body["claudes"]) == 1
     c = body["claudes"][0]
     assert c == {
-        "handle": "p1", "name": "lead", "session": "s", "cwd": "/a",
-        "status_line_inferred": "reviewing PR", "attached": True,
-        "spawned_by": "boss0", "head": "9eab154",
-        "head_subject": "label status", "head_committed_at": 1700000000,
-        "dirty": 6, "cwd_shared_with": [],
+        "handle": "p1",
+        "name": "lead",
+        "session": "s",
+        "cwd": "/a",
+        "status_line_inferred": "reviewing PR",
+        "attached": True,
+        "spawned_by": "boss0",
+        "head": "9eab154",
+        "head_subject": "label status",
+        "head_committed_at": 1700000000,
+        "dirty": 6,
+        "cwd_shared_with": [],
         "track": {"id": "loose", "label": "loose", "kind": "loose"},
         # None = no claude process resolved for the pane, so no assertion
         # either way about whether it registered the channel.
@@ -1215,10 +1317,11 @@ def test_list_claudes_filters_and_trims(mocker):
 
 def test_mark_shared_trees_pairs_panes_in_one_worktree():
     from periscope.channels import _mark_shared_trees
+
     rows = [{"handle": "a"}, {"handle": "b"}, {"handle": "c"}]
     out = _mark_shared_trees(rows, ["/w/one", "/w/one", "/w/two"])
     assert out[0]["cwd_shared_with"] == ["b"]
-    assert out[1]["cwd_shared_with"] == ["a"]   # never lists itself
+    assert out[1]["cwd_shared_with"] == ["a"]  # never lists itself
     assert out[2]["cwd_shared_with"] == []
 
 
@@ -1226,6 +1329,7 @@ def test_mark_shared_trees_groups_subdirs_of_one_tree():
     """Two panes in different subdirs of one worktree DO contend — grouping on
     raw cwd would have missed exactly the pair that collided."""
     from periscope.channels import _mark_shared_trees
+
     rows = [{"handle": "a"}, {"handle": "b"}]
     out = _mark_shared_trees(rows, ["/w/one", "/w/one"])
     assert out[0]["cwd_shared_with"] == ["b"]
@@ -1234,6 +1338,7 @@ def test_mark_shared_trees_groups_subdirs_of_one_tree():
 def test_mark_shared_trees_ignores_unresolvable_trees():
     """An empty tree key must not collapse every such pane into one group."""
     from periscope.channels import _mark_shared_trees
+
     rows = [{"handle": "a"}, {"handle": "b"}]
     out = _mark_shared_trees(rows, ["", ""])
     assert out[0]["cwd_shared_with"] == []
@@ -1243,11 +1348,13 @@ def test_mark_shared_trees_ignores_unresolvable_trees():
 def test_list_claudes_non_git_cwd_has_null_signal(mocker):
     """A pane outside a repo must still list, with the git fields absent."""
     from periscope import channels
-    rows = [{"session": "s", "index": 1, "name": "lead", "cwd": "/tmp",
-             "pane_id": "%2", "pid_raw": "p1"}]
+
+    rows = [{"session": "s", "index": 1, "name": "lead", "cwd": "/tmp", "pane_id": "%2", "pid_raw": "p1"}]
     mocker.patch("periscope.channels.list_windows", return_value=rows)
-    mocker.patch("periscope.channels._attach_git_then_resolve_pids",
-                 side_effect=lambda ws, **kw: [w.update(pid=w.pop("pid_raw")) for w in ws])
+    mocker.patch(
+        "periscope.channels._attach_git_then_resolve_pids",
+        side_effect=lambda ws, **kw: [w.update(pid=w.pop("pid_raw")) for w in ws],
+    )
     mocker.patch("periscope.tmux.capture", side_effect=lambda target, *a, **k: target)
     mocker.patch("periscope.panes.parse_pane", return_value={"agent": "claude"})
     mocker.patch("periscope.activity.pane_status_lines", return_value={})
@@ -1267,6 +1374,7 @@ def _mock_list_claudes_roster(mocker):
     both parsing as claude, git state mocked out so an untagged pane falls
     deterministically to LOOSE instead of shelling git on a fake cwd."""
     from periscope import channels
+
     rows = [
         {"session": "s", "index": 1, "name": "lead", "cwd": "/a", "pane_id": "%2", "pid_raw": "pa"},
         {"session": "s", "index": 2, "name": "peer", "cwd": "/b", "pane_id": "%3", "pid_raw": "pb"},
@@ -1277,6 +1385,7 @@ def _mock_list_claudes_roster(mocker):
         for w in ws:
             if "pid_raw" in w:
                 w["pid"] = w.pop("pid_raw")
+
     mocker.patch("periscope.channels._attach_git_then_resolve_pids", side_effect=_attach)
     mocker.patch("periscope.tmux.capture", side_effect=lambda target, *a, **k: target)
     mocker.patch("periscope.panes.parse_pane", return_value={"agent": "claude"})
@@ -1292,6 +1401,7 @@ def test_list_claudes_rows_carry_track_and_you(fresh_activity_db, mocker):
     """Each row carries its rail group; the response says who the CALLER is
     (handle + track) so `track: "mine"` and roster reasoning need no guessing."""
     from periscope import activity, tracks
+
     channels = _mock_list_claudes_roster(mocker)
     tk = tracks.create_track(name="Goal")
     activity.set_pane_track("pa", tk["id"])
@@ -1304,12 +1414,12 @@ def test_list_claudes_rows_carry_track_and_you(fresh_activity_db, mocker):
     # Untagged, non-git cwd → the LOOSE bucket, surfaced as a full track dict
     # so same-track comparisons never need a null-guard.
     assert by_handle["pb"]["track"] == {"id": "loose", "label": "loose", "kind": "loose"}
-    assert body["you"] == {"handle": "pa",
-                           "track": {"id": tk["id"], "label": "Goal", "kind": "goal"}}
+    assert body["you"] == {"handle": "pa", "track": {"id": tk["id"], "label": "Goal", "kind": "goal"}}
 
 
 def test_list_claudes_track_mine_filters(fresh_activity_db, mocker):
     from periscope import activity, tracks
+
     channels = _mock_list_claudes_roster(mocker)
     tk = tracks.create_track(name="Goal")
     activity.set_pane_track("pa", tk["id"])
@@ -1323,6 +1433,7 @@ def test_list_claudes_track_mine_filters(fresh_activity_db, mocker):
 def test_list_claudes_track_explicit_id_filters(fresh_activity_db, mocker):
     """An explicit track id filters regardless of which track the caller is in."""
     from periscope import activity, tracks
+
     channels = _mock_list_claudes_roster(mocker)
     tk = tracks.create_track(name="Goal")
     activity.set_pane_track("pa", tk["id"])
@@ -1351,8 +1462,8 @@ def test_list_claudes_track_mine_refused_without_you(fresh_activity_db, mocker):
 def _peek_msgs(mocker, msgs):
     """Wire a peek call down to `msgs` as the pane's parsed transcript."""
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {}))
     mocker.patch("periscope.turns.session_id_for_pane", return_value="sess-abc")
     mocker.patch("periscope.turns.jsonl_for_session", return_value="/x/sess-abc.jsonl")
     mocker.patch("periscope.turns.messages_from_jsonl", return_value=msgs)
@@ -1373,11 +1484,14 @@ def test_peek_happy_defaults_to_summary(mocker):
 
 def test_peek_summary_drops_tool_inputs_and_results(mocker):
     """The 52KB payload was tool inputs + results inlined on every turn."""
-    msgs = [{
-        "role": "assistant", "ts_ms": 1, "text": "reading",
-        "tool_uses": [{"id": "t1", "name": "Read", "input": {"file_path": "/a/b.rs"},
-                       "result": "x" * 50_000}],
-    }]
+    msgs = [
+        {
+            "role": "assistant",
+            "ts_ms": 1,
+            "text": "reading",
+            "tool_uses": [{"id": "t1", "name": "Read", "input": {"file_path": "/a/b.rs"}, "result": "x" * 50_000}],
+        }
+    ]
     channels = _peek_msgs(mocker, msgs)
 
     body = _body(channels._do_peek_tool("%1", {"handle": "ab12"}))
@@ -1388,9 +1502,14 @@ def test_peek_summary_drops_tool_inputs_and_results(mocker):
 
 
 def test_peek_full_detail_keeps_raw_turns(mocker):
-    msgs = [{"role": "assistant", "ts_ms": 1, "text": "hi",
-             "tool_uses": [{"id": "t1", "name": "Read",
-                            "input": {"file_path": "/a/b.rs"}, "result": "body"}]}]
+    msgs = [
+        {
+            "role": "assistant",
+            "ts_ms": 1,
+            "text": "hi",
+            "tool_uses": [{"id": "t1", "name": "Read", "input": {"file_path": "/a/b.rs"}, "result": "body"}],
+        }
+    ]
     channels = _peek_msgs(mocker, msgs)
 
     body = _body(channels._do_peek_tool("%1", {"handle": "ab12", "detail": "full"}))
@@ -1421,8 +1540,8 @@ def test_peek_rejects_bad_detail(mocker):
 
 def test_peek_no_session_refuses_without_transcript_read(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {}))
     mocker.patch("periscope.turns.session_id_for_pane", return_value=None)
     jsonl = mocker.patch("periscope.turns.jsonl_for_session")
     msgs = mocker.patch("periscope.turns.messages_from_jsonl")
@@ -1430,12 +1549,13 @@ def test_peek_no_session_refuses_without_transcript_read(mocker):
     body = _body(channels._do_peek_tool("%1", {"handle": "ab12"}))
 
     assert body["ok"] is False and "no recorded session" in body["error"]
-    jsonl.assert_not_called()   # the cwd-collision footgun is unreachable
+    jsonl.assert_not_called()  # the cwd-collision footgun is unreachable
     msgs.assert_not_called()
 
 
 def test_peek_no_window(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("", "", {}))
     body = _body(channels._do_peek_tool("%1", {"handle": "ab12"}))
     assert body["ok"] is False and "no live window" in body["error"]
@@ -1443,8 +1563,8 @@ def test_peek_no_window(mocker):
 
 def test_terminate_happy(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {"session": "s", "index": 4}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {"session": "s", "index": 4}))
     mut = mocker.patch("periscope.channels._tmux_mutate", return_value=(True, ""))
     body = _body(channels._do_terminate_tool("%1", {"handle": "ab12"}))
     mut.assert_called_once_with("kill-window", "-t", "s:4")
@@ -1453,8 +1573,8 @@ def test_terminate_happy(mocker):
 
 def test_terminate_self_refused(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%1", {"session": "s", "index": 4}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%1", {"session": "s", "index": 4}))
     mut = mocker.patch("periscope.channels._tmux_mutate")
     body = _body(channels._do_terminate_tool("%1", {"handle": "ab12"}))
     assert body["ok"] is False and "own pane" in body["error"]
@@ -1463,6 +1583,7 @@ def test_terminate_self_refused(mocker):
 
 def test_terminate_no_window(mocker):
     from periscope import channels
+
     mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("", "", {}))
     body = _body(channels._do_terminate_tool("%1", {"handle": "ab12"}))
     assert body["ok"] is False and "no live window" in body["error"]
@@ -1470,8 +1591,8 @@ def test_terminate_no_window(mocker):
 
 def test_terminate_mutate_failure(mocker):
     from periscope import channels
-    mocker.patch("periscope.channels._resolve_window_by_pid",
-                 return_value=("ab12", "%9", {"session": "s", "index": 4}))
+
+    mocker.patch("periscope.channels._resolve_window_by_pid", return_value=("ab12", "%9", {"session": "s", "index": 4}))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(False, "no such window"))
     body = _body(channels._do_terminate_tool("%1", {"handle": "ab12"}))
     assert body["ok"] is False and body["error"] == "no such window"
@@ -1479,8 +1600,10 @@ def test_terminate_mutate_failure(mocker):
 
 # --- commander identity ---
 
+
 def test_is_commander_checks_the_cmdr_prefix():
     from periscope import channels
+
     # prefix-only: the cmdr handle is a self-asserted token (owner-only socket);
     # it is NOT claude's session id, so there's no jobs-table cross-check.
     assert channels.is_commander("%3") is False
@@ -1493,25 +1616,26 @@ def test_list_workspaces_tool_returns_ids_and_live_counts(clean_state, fresh_act
     # list_workspaces lists TRACKS now (response key stays `workspaces`).
     from periscope import activity, tracks
     from periscope.channels import _do_list_workspaces_tool
+
     tk = tracks.create_track(name="Auth", repo="/d/fdy")
     # Tags key on the @periscope_id; liveness intersects live windows' pid_raw.
     activity.set_pane_track("aaaa0001", tk["id"])
-    activity.set_pane_track("aaaa0099", tk["id"])   # dead pane — excluded from count
-    mocker.patch("periscope.channels.list_windows",
-                 return_value=[{"pane_id": "%1", "pid_raw": "aaaa0001"}])
+    activity.set_pane_track("aaaa0099", tk["id"])  # dead pane — excluded from count
+    mocker.patch("periscope.channels.list_windows", return_value=[{"pane_id": "%1", "pid_raw": "aaaa0001"}])
     r = _body(_do_list_workspaces_tool("%1", {}))
     assert r["ok"] is True
     rows = {w["id"]: w for w in r["workspaces"]}
     assert tracks.LOOSE_KEY not in rows
     assert tk["id"] in rows
     assert rows[tk["id"]]["name"] == "Auth"
-    assert rows[tk["id"]]["base_repo"] == "/d/fdy"   # track.repo mapped to base_repo
-    assert rows[tk["id"]]["tagged_tabs"] == 1        # aaaa0099 dead, not counted
+    assert rows[tk["id"]]["base_repo"] == "/d/fdy"  # track.repo mapped to base_repo
+    assert rows[tk["id"]]["tagged_tabs"] == 1  # aaaa0099 dead, not counted
 
 
 def test_list_workspaces_tool_excludes_archived(clean_state, fresh_activity_db, mocker):
     from periscope import activity, tracks
     from periscope.channels import _do_list_workspaces_tool
+
     tk = tracks.create_track(name="Gone")
     activity.archive_track(tk["id"], ts=1)
     mocker.patch("periscope.channels.list_windows", return_value=[])
@@ -1522,6 +1646,7 @@ def test_list_workspaces_tool_excludes_archived(clean_state, fresh_activity_db, 
 def test_create_workspace_tool(fresh_activity_db):
     # create_workspace now creates a TRACK (response key stays `workspace_id`).
     from periscope import activity, channels
+
     res = channels._do_create_workspace_tool("%1", {"name": "x", "base_repo": "/r"})
     body = _body(res)
     assert body["ok"] is True and body["name"] == "x"
@@ -1531,11 +1656,21 @@ def test_create_workspace_tool(fresh_activity_db):
 
 def test_open_tool_dispatches_path(monkeypatch):
     from periscope import channels, open_ops
+
     seen = {}
+
     def fake_open(desc):
         seen["desc"] = desc
-        class R: tmux_session="s"; repo="/r"; claude_pid="@1"; claude_pane_id="%2"; ui={}
+
+        class R:
+            tmux_session = "s"
+            repo = "/r"
+            claude_pid = "@1"
+            claude_pane_id = "%2"
+            ui = {}
+
         return R()
+
     monkeypatch.setattr(open_ops, "open_target", fake_open)
     res = channels._do_open_tool("%1", {"path": "/r"})
     body = _body(res)
@@ -1544,12 +1679,14 @@ def test_open_tool_dispatches_path(monkeypatch):
 
 def test_open_tool_bad_args(monkeypatch):
     from periscope import channels
-    res = channels._do_open_tool("%1", {})   # none of path|repo+branch|repo+pr
+
+    res = channels._do_open_tool("%1", {})  # none of path|repo+branch|repo+pr
     assert _body(res)["ok"] is False
 
 
 def test_catalog_tool(monkeypatch):
     from periscope import channels, open_ops
+
     monkeypatch.setattr(open_ops, "build_catalog", lambda: {"repos": [], "worktrees": []})
     res = channels._do_catalog_tool("%1", {})
     assert _body(res)["ok"] is True
@@ -1562,10 +1699,13 @@ def test_spawn_claude_auto_picks_the_emptiest_account(mocker):
     account exists so work lands where the first has none left.
     """
     from periscope import channels, usage
+
     cap = _mock_spawn_plumbing(mocker)
     from periscope.launch_policy import Launch
-    mocker.patch.object(usage, "choose_launch",
-                        side_effect=lambda account=None, model=None: Launch(account or "b", None, ""))
+
+    mocker.patch.object(
+        usage, "choose_launch", side_effect=lambda account=None, model=None: Launch(account or "b", None, "")
+    )
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
 
@@ -1578,6 +1718,7 @@ def test_spawn_claude_without_model_honours_the_header_pin(mocker):
     """MCP spawns never see client prefs — the pin is a server setting so a
     lead's workers land on the pinned model too."""
     from periscope import channels, store
+
     cap = _mock_spawn_plumbing(mocker)
     mocker.patch.object(store, "get_settings", return_value={"spawn_model": "sonnet"})
 
@@ -1590,6 +1731,7 @@ def test_spawn_claude_honours_the_effort_pin(mocker):
     """A lead's workers land at the pinned effort too — the pin is a server
     setting precisely because MCP spawns never see client prefs."""
     from periscope import channels, store
+
     cap = _mock_spawn_plumbing(mocker)
     mocker.patch.object(store, "get_settings", return_value={"spawn_effort": "high"})
 
@@ -1602,6 +1744,7 @@ def test_spawn_claude_honours_the_effort_pin(mocker):
 
 def test_spawn_claude_explicit_model_overrides_the_pin(mocker):
     from periscope import channels, store
+
     cap = _mock_spawn_plumbing(mocker)
     mocker.patch.object(store, "get_settings", return_value={"spawn_model": "sonnet"})
 
@@ -1612,30 +1755,35 @@ def test_spawn_claude_explicit_model_overrides_the_pin(mocker):
 
 def test_spawn_claude_explicit_account_overrides_the_auto_pick(mocker):
     from periscope import channels, usage
+
     cap = _mock_spawn_plumbing(mocker)
     from periscope.launch_policy import Launch
-    mocker.patch.object(usage, "choose_launch",
-                        side_effect=lambda account=None, model=None: Launch(account or "b", None, ""))
 
-    asyncio.run(channels._do_spawn_claude_tool(
-        "%1", {"prompt": "go", "account": "default"}))
+    mocker.patch.object(
+        usage, "choose_launch", side_effect=lambda account=None, model=None: Launch(account or "b", None, "")
+    )
 
-    assert not any(str(a).startswith("CLAUDE_CONFIG_DIR=")
-                   for a in _created_call(cap))
+    asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go", "account": "default"}))
+
+    assert not any(str(a).startswith("CLAUDE_CONFIG_DIR=") for a in _created_call(cap))
 
 
 def test_resume_session_auto_picks_the_emptiest_account(mocker):
     """Resuming is a Claude launch like any other: with no account named it
     should land where there is room, not on the exhausted default."""
     from periscope import channels, usage
+
     seen = {}
     from periscope.launch_policy import Launch
-    mocker.patch.object(usage, "choose_launch",
-                        side_effect=lambda account=None, model=None: Launch(account or "b", None, ""))
+
     mocker.patch.object(
-        channels, "_resolve_window_by_pid", return_value=None, create=True)
-    mocker.patch("periscope.routes.sessions._window_new_resume",
-                 side_effect=lambda *a, **kw: seen.update(kw) or {"target": "resumes:1"})
+        usage, "choose_launch", side_effect=lambda account=None, model=None: Launch(account or "b", None, "")
+    )
+    mocker.patch.object(channels, "_resolve_window_by_pid", return_value=None, create=True)
+    mocker.patch(
+        "periscope.routes.sessions._window_new_resume",
+        side_effect=lambda *a, **kw: seen.update(kw) or {"target": "resumes:1"},
+    )
 
     channels._do_resume_session_tool("%1", {"session_id": "sid-1"})
 
@@ -1643,6 +1791,7 @@ def test_resume_session_auto_picks_the_emptiest_account(mocker):
 
 
 # --- MCP session registry: reconnect must not be evicted by its predecessor ---
+
 
 def test_connection_teardown_does_not_evict_a_successor_session(mocker):
     """The shim reconnects on the SAME pane after a periscope restart, so two
@@ -1678,9 +1827,7 @@ def test_connection_teardown_does_not_evict_a_successor_session(mocker):
     channels._MCP_SESSIONS.pop("%7", None)
     try:
         asyncio.run(channels._handle_mcp_connection(reader, writer))
-        assert channels._MCP_SESSIONS.get("%7") is new_sess, (
-            "predecessor's teardown evicted the live successor session"
-        )
+        assert channels._MCP_SESSIONS.get("%7") is new_sess, "predecessor's teardown evicted the live successor session"
     finally:
         channels._MCP_SESSIONS.pop("%7", None)
 
@@ -1716,6 +1863,7 @@ def test_connection_teardown_deregisters_its_own_session(mocker):
 
 
 # --- delivery refuses a target that cannot receive pushes ---
+
 
 def test_deliver_refuses_a_flagless_target_instead_of_reporting_success(mocker):
     """A Claude started without the channel flag accepts the push and discards
@@ -1773,11 +1921,12 @@ def test_resolve_window_by_pid_falls_back_to_pane_id(mocker):
     as a handle — one session read the dead handle as death and respawned a
     duplicate worker onto the live task."""
     from periscope import channels
-    rows = [{"session": "s", "index": 1, "name": "w", "cwd": "/a",
-             "pane_id": "%106", "pid_raw": "e42b3b40"}]
+
+    rows = [{"session": "s", "index": 1, "name": "w", "cwd": "/a", "pane_id": "%106", "pid_raw": "e42b3b40"}]
     mocker.patch.object(channels, "list_windows", return_value=rows)
-    mocker.patch.object(channels, "_attach_git_then_resolve_pids",
-                        side_effect=lambda ws, **kw: [w.update(pid=w["pid_raw"]) for w in ws])
+    mocker.patch.object(
+        channels, "_attach_git_then_resolve_pids", side_effect=lambda ws, **kw: [w.update(pid=w["pid_raw"]) for w in ws]
+    )
 
     # The stale spawn-time pid no longer resolves...
     assert channels._resolve_window_by_pid("3dc7686a") == ("", "", {})
@@ -1789,6 +1938,7 @@ def test_resolve_window_by_pid_falls_back_to_pane_id(mocker):
 def test_stale_handle_error_names_the_recovery():
     """The bare 'no live window' was read as 'the agent is dead'."""
     from periscope import channels
+
     msg = channels._stale_handle_error("3dc7686a")
     assert "NOT that the pane exited" in msg
     assert "list_claudes" in msg and "peek" in msg
@@ -1796,8 +1946,10 @@ def test_stale_handle_error_names_the_recovery():
 
 # --- peek surfaces delivered channel pushes (the delivery receipt) ---
 
+
 def _write_jsonl(tmp_path, rows):
     import json
+
     p = tmp_path / "sess.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in rows))
     return p
@@ -1807,17 +1959,32 @@ def test_channel_messages_from_jsonl_extracts_only_periscope_blocks(tmp_path):
     """A delivered push is a meta user turn opening with the channel marker.
     Ordinary meta turns and normal turns must not be mistaken for one."""
     from periscope.turns import channel_messages_from_jsonl
-    p = _write_jsonl(tmp_path, [
-        {"type": "user", "uuid": "u1", "timestamp": "2026-08-03T10:00:00.000Z",
-         "isMeta": True,
-         "message": {"role": "user", "content":
-                     '<channel source="periscope" kind="message">\nping'}},
-        {"type": "user", "uuid": "u2", "timestamp": "2026-08-03T10:00:01.000Z",
-         "isMeta": True,
-         "message": {"role": "user", "content": "<system-reminder>noise"}},
-        {"type": "user", "uuid": "u3", "timestamp": "2026-08-03T10:00:02.000Z",
-         "message": {"role": "user", "content": "a real user turn"}},
-    ])
+
+    p = _write_jsonl(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "uuid": "u1",
+                "timestamp": "2026-08-03T10:00:00.000Z",
+                "isMeta": True,
+                "message": {"role": "user", "content": '<channel source="periscope" kind="message">\nping'},
+            },
+            {
+                "type": "user",
+                "uuid": "u2",
+                "timestamp": "2026-08-03T10:00:01.000Z",
+                "isMeta": True,
+                "message": {"role": "user", "content": "<system-reminder>noise"},
+            },
+            {
+                "type": "user",
+                "uuid": "u3",
+                "timestamp": "2026-08-03T10:00:02.000Z",
+                "message": {"role": "user", "content": "a real user turn"},
+            },
+        ],
+    )
     out = channel_messages_from_jsonl(str(p))
     assert [m["uuid"] for m in out] == ["u1"]
     assert out[0]["role"] == "channel"
@@ -1829,16 +1996,26 @@ def test_peek_surfaces_channel_messages_merged_in_time_order(mocker, tmp_path):
     invisible to the exact tool reached for to confirm delivery — a sender read
     that as 'my message vanished' and re-sent the same directive four times."""
     from periscope import channels
-    p = _write_jsonl(tmp_path, [
-        {"type": "user", "uuid": "u0", "timestamp": "2026-08-03T10:00:00.000Z",
-         "message": {"role": "user", "content": "earlier real turn"}},
-        {"type": "user", "uuid": "c1", "timestamp": "2026-08-03T10:00:05.000Z",
-         "isMeta": True,
-         "message": {"role": "user", "content":
-                     '<channel source="periscope" kind="message">\nthe brief'}},
-    ])
-    mocker.patch.object(channels, "_resolve_window_by_pid",
-                        return_value=("h1", "%5", {}))
+
+    p = _write_jsonl(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "uuid": "u0",
+                "timestamp": "2026-08-03T10:00:00.000Z",
+                "message": {"role": "user", "content": "earlier real turn"},
+            },
+            {
+                "type": "user",
+                "uuid": "c1",
+                "timestamp": "2026-08-03T10:00:05.000Z",
+                "isMeta": True,
+                "message": {"role": "user", "content": '<channel source="periscope" kind="message">\nthe brief'},
+            },
+        ],
+    )
+    mocker.patch.object(channels, "_resolve_window_by_pid", return_value=("h1", "%5", {}))
     mocker.patch("periscope.turns.session_id_for_pane", return_value="sess")
     mocker.patch("periscope.turns.jsonl_for_session", return_value=p)
 
@@ -1858,8 +2035,8 @@ def test_send_to_reports_queued_not_delivered(mocker):
     from unittest.mock import AsyncMock
 
     from periscope import channels
-    mocker.patch.object(channels, "_resolve_window_by_pid",
-                        return_value=("h1", "%5", {}))
+
+    mocker.patch.object(channels, "_resolve_window_by_pid", return_value=("h1", "%5", {}))
     mocker.patch.object(channels, "pane_channel_ready", return_value=True)
     mocker.patch.object(channels, "emit_channel_event", new=AsyncMock(return_value=True))
     body = _body(asyncio.run(channels._do_send_to_tool("%1", {"handle": "h1", "message": "x"})))
@@ -1871,9 +2048,9 @@ def test_send_to_reports_queued_not_delivered(mocker):
 def test_spawn_claude_sets_the_model_the_chooser_picked(mocker):
     from periscope import channels, usage
     from periscope.launch_policy import Launch
+
     cap = _mock_spawn_plumbing(mocker)
-    mocker.patch.object(usage, "choose_launch",
-                        return_value=Launch("b", "opus[1m]", "b · fable walled"))
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("b", "opus[1m]", "b · fable walled"))
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
 

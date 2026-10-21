@@ -14,6 +14,7 @@ Install via ~/.claude/settings.json:
     }
   }
 """
+
 from __future__ import annotations
 
 import json

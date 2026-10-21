@@ -1,4 +1,5 @@
 """CLI verb dispatch: `python -m history <verb> [args]`."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +13,7 @@ from .db import connect, get_meta, set_meta
 
 def main(argv: list[str] | None = None) -> int:
     import logging
+
     logging.basicConfig(
         level=os.environ.get("HISTORY_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -22,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
         from pathlib import Path as _Path
 
         from dotenv import load_dotenv
+
         # Walk up from this file: history/cli.py → history/ → repo root
         load_dotenv(_Path(__file__).parent.parent / ".env")
     except ImportError:
@@ -52,13 +55,16 @@ def _print_help(*, file=None) -> None:
 
 # --- verb: hook ---------------------------------------------------------
 
+
 def _cmd_hook(_argv: list[str]) -> int:
     """Hook doesn't accept argv — it reads JSON from stdin."""
     from .hook import run_hook
+
     return run_hook()
 
 
 # --- verb: backfill -----------------------------------------------------
+
 
 def _cmd_backfill(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history backfill")
@@ -67,12 +73,12 @@ def _cmd_backfill(argv: list[str]) -> int:
     parser.add_argument("--db-path", default=None)
     parser.add_argument("--since", default=None, help="YYYY-MM-DD or unix ts")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--model", default=None,
-                        help="override the summarizer model for this run")
+    parser.add_argument("--model", default=None, help="override the summarizer model for this run")
     args = parser.parse_args(argv)
     from pathlib import Path
 
     from .backfill import backfill, find_jsonl_files
+
     projects = Path(args.projects_dir) if args.projects_dir else None
     since_ts = None
     if args.since:
@@ -80,13 +86,13 @@ def _cmd_backfill(argv: list[str]) -> int:
             since_ts = int(args.since)
         except ValueError:
             from datetime import datetime
+
             since_ts = int(datetime.fromisoformat(args.since).timestamp())
     if args.dry_run:
         paths = find_jsonl_files(projects) if projects is not None else find_jsonl_files()
         print(f"would scan {len(paths)} jsonl files")
         return 0
-    kwargs: dict[str, Any] = {"workers": args.workers, "db_path": args.db_path,
-              "since": since_ts, "model": args.model}
+    kwargs: dict[str, Any] = {"workers": args.workers, "db_path": args.db_path, "since": since_ts, "model": args.model}
     if projects is not None:
         kwargs["projects_dir"] = projects
     result = backfill(**kwargs)
@@ -94,6 +100,7 @@ def _cmd_backfill(argv: list[str]) -> int:
     conn = connect(args.db_path)
     try:
         import time as _t
+
         set_meta(conn, "last_full_scan_at", str(int(_t.time())))
     finally:
         conn.close()
@@ -108,6 +115,7 @@ def _cmd_backfill(argv: list[str]) -> int:
 
 # --- verb: search -------------------------------------------------------
 
+
 def _cmd_search(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history search")
     parser.add_argument("query", nargs="+")
@@ -119,6 +127,7 @@ def _cmd_search(argv: list[str]) -> int:
     parser.add_argument("--include-trivial", action="store_true")
     args = parser.parse_args(argv)
     from .search import search
+
     results = search(
         " ".join(args.query),
         db_path=args.db_path,
@@ -130,16 +139,21 @@ def _cmd_search(argv: list[str]) -> int:
     )
     for r in results:
         when = _fmt_ts(r["started_at"])
-        print("\t".join([
-            when,
-            r["session_id"],
-            r["project_path"],
-            (r["summary"] or r["first_user_msg"] or "")[:200].replace("\n", " "),
-        ]))
+        print(
+            "\t".join(
+                [
+                    when,
+                    r["session_id"],
+                    r["project_path"],
+                    (r["summary"] or r["first_user_msg"] or "")[:200].replace("\n", " "),
+                ]
+            )
+        )
     return 0
 
 
 # --- verb: stats --------------------------------------------------------
+
 
 def _cmd_stats(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history stats")
@@ -148,8 +162,12 @@ def _cmd_stats(argv: list[str]) -> int:
     conn = connect(args.db_path)
     try:
         total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        summarized = conn.execute("SELECT COUNT(*) FROM sessions WHERE summary IS NOT NULL AND summary_model IS NOT NULL").fetchone()[0]
-        heuristic = conn.execute("SELECT COUNT(*) FROM sessions WHERE summary IS NOT NULL AND summary_model IS NULL").fetchone()[0]
+        summarized = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE summary IS NOT NULL AND summary_model IS NOT NULL"
+        ).fetchone()[0]
+        heuristic = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE summary IS NOT NULL AND summary_model IS NULL"
+        ).fetchone()[0]
         null_summary = conn.execute("SELECT COUNT(*) FROM sessions WHERE summary IS NULL").fetchone()[0]
         last_scan = get_meta(conn, "last_full_scan_at")
         model = get_meta(conn, "haiku_model")
@@ -168,6 +186,7 @@ def _cmd_stats(argv: list[str]) -> int:
 
 
 # --- verb: clean --------------------------------------------------------
+
 
 def _cmd_clean(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history clean")
@@ -194,10 +213,12 @@ def _cmd_clean(argv: list[str]) -> int:
 
 # --- verb: reindex ------------------------------------------------------
 
+
 def _cmd_reindex(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history reindex")
-    parser.add_argument("--all", action="store_true", required=True,
-                        help="re-extract every row (mechanical_version bump effect)")
+    parser.add_argument(
+        "--all", action="store_true", required=True, help="re-extract every row (mechanical_version bump effect)"
+    )
     parser.add_argument("--db-path", default=None)
     parser.add_argument("--projects-dir", default=None)
     parser.add_argument("--workers", type=int, default=2)
@@ -209,6 +230,7 @@ def _cmd_reindex(argv: list[str]) -> int:
     from pathlib import Path
 
     from .backfill import backfill
+
     projects = Path(args.projects_dir) if args.projects_dir else None
     kwargs: dict[str, Any] = {"workers": args.workers, "db_path": args.db_path}
     if projects is not None:
@@ -220,17 +242,15 @@ def _cmd_reindex(argv: list[str]) -> int:
 
 # --- verb: resummarize --------------------------------------------------
 
+
 def _cmd_resummarize(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="history resummarize")
     grp = parser.add_mutually_exclusive_group(required=True)
-    grp.add_argument("--missing", action="store_true",
-                     help="only re-summarize rows where summary IS NULL")
-    grp.add_argument("--all", action="store_true",
-                     help="force re-summary of every row (clears summary_input_hash)")
+    grp.add_argument("--missing", action="store_true", help="only re-summarize rows where summary IS NULL")
+    grp.add_argument("--all", action="store_true", help="force re-summary of every row (clears summary_input_hash)")
     parser.add_argument("--db-path", default=None)
     parser.add_argument("--workers", type=int, default=2)
-    parser.add_argument("--model", default=None,
-                        help="override the summarizer model for this run")
+    parser.add_argument("--model", default=None, help="override the summarizer model for this run")
     args = parser.parse_args(argv)
     conn = connect(args.db_path)
     try:
@@ -240,9 +260,7 @@ def _cmd_resummarize(argv: list[str]) -> int:
             print("cleared summary_input_hash for all rows")
             paths = [r["jsonl_path"] for r in conn.execute("SELECT jsonl_path FROM sessions")]
         else:
-            paths = [r["jsonl_path"] for r in conn.execute(
-                "SELECT jsonl_path FROM sessions WHERE summary IS NULL"
-            )]
+            paths = [r["jsonl_path"] for r in conn.execute("SELECT jsonl_path FROM sessions WHERE summary IS NULL")]
     finally:
         conn.close()
     if not paths:
@@ -251,10 +269,10 @@ def _cmd_resummarize(argv: list[str]) -> int:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     from .indexer import index_one
+
     statuses: dict[str, int] = {}
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(index_one, p, db_path=args.db_path, model=args.model)
-                   for p in paths]
+        futures = [pool.submit(index_one, p, db_path=args.db_path, model=args.model) for p in paths]
         for fut in as_completed(futures):
             try:
                 status = fut.result().get("status", "?")
@@ -267,17 +285,19 @@ def _cmd_resummarize(argv: list[str]) -> int:
 
 # --- helpers ------------------------------------------------------------
 
+
 def _fmt_ts(ts: int) -> str:
     from datetime import datetime
+
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
 _VERBS = {
-    "hook":         _cmd_hook,
-    "backfill":     _cmd_backfill,
-    "search":       _cmd_search,
-    "stats":        _cmd_stats,
-    "clean":        _cmd_clean,
-    "reindex":      _cmd_reindex,
-    "resummarize":  _cmd_resummarize,
+    "hook": _cmd_hook,
+    "backfill": _cmd_backfill,
+    "search": _cmd_search,
+    "stats": _cmd_stats,
+    "clean": _cmd_clean,
+    "reindex": _cmd_reindex,
+    "resummarize": _cmd_resummarize,
 }

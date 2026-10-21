@@ -6,9 +6,18 @@ from history.db import connect
 from history.search import _build_fts_query, search
 
 
-def _seed_session(conn, session_id, summary, tags, project, branch="main",
-                   first_user="hello", final_asst="done", started_at=1000,
-                   summary_model="claude-haiku-5-5"):
+def _seed_session(
+    conn,
+    session_id,
+    summary,
+    tags,
+    project,
+    branch="main",
+    first_user="hello",
+    final_asst="done",
+    started_at=1000,
+    summary_model="claude-haiku-5-5",
+):
     """Insert a row representing a Haiku-summarized (non-trivial) session.
     Pass summary_model=None for a row that should be filtered by the default
     `include_trivial=False`."""
@@ -23,9 +32,24 @@ def _seed_session(conn, session_id, summary, tags, project, branch="main",
           indexed_at, mechanical_version, source_mtime, source_size
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', '{}', 0, 1, 0, 0)
         """,
-        (session_id, f"/p/{session_id}.jsonl", project, branch,
-         started_at, started_at + 60, 60, 3, 3, 2,
-         summary, tags, summary_model, first_user, first_user, final_asst),
+        (
+            session_id,
+            f"/p/{session_id}.jsonl",
+            project,
+            branch,
+            started_at,
+            started_at + 60,
+            60,
+            3,
+            3,
+            2,
+            summary,
+            tags,
+            summary_model,
+            first_user,
+            first_user,
+            final_asst,
+        ),
     )
     conn.execute(
         """
@@ -35,8 +59,7 @@ def _seed_session(conn, session_id, summary, tags, project, branch="main",
           files_touched, notable_cmds
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '')
         """,
-        (session_id, summary, tags, first_user, first_user, final_asst,
-         first_user, final_asst),
+        (session_id, summary, tags, first_user, first_user, final_asst, first_user, final_asst),
     )
     conn.commit()
 
@@ -45,12 +68,25 @@ def _seed_session(conn, session_id, summary, tags, project, branch="main",
 def seeded_db(tmp_path):
     db_path = tmp_path / "h.db"
     conn = connect(db_path)
-    _seed_session(conn, "s1", "Fixed slow cohort query by adding events.user_id index",
-                  "performance,postgres,cohorts", "/Users/tom/dev/fdy", started_at=2000)
-    _seed_session(conn, "s2", "Added OAuth login flow with Google provider",
-                  "auth,oauth,frontend", "/Users/tom/dev/web", started_at=1000)
-    _seed_session(conn, "s3", "Fixed timezone bug in date_parser.py",
-                  "bug,timezones,dates", "/Users/tom/dev/fdy", started_at=3000)
+    _seed_session(
+        conn,
+        "s1",
+        "Fixed slow cohort query by adding events.user_id index",
+        "performance,postgres,cohorts",
+        "/Users/tom/dev/fdy",
+        started_at=2000,
+    )
+    _seed_session(
+        conn,
+        "s2",
+        "Added OAuth login flow with Google provider",
+        "auth,oauth,frontend",
+        "/Users/tom/dev/web",
+        started_at=1000,
+    )
+    _seed_session(
+        conn, "s3", "Fixed timezone bug in date_parser.py", "bug,timezones,dates", "/Users/tom/dev/fdy", started_at=3000
+    )
     yield conn, db_path
     conn.close()
 
@@ -86,9 +122,14 @@ def test_search_excludes_trivial_by_default(tmp_path):
     db_path = tmp_path / "h.db"
     conn = connect(db_path)
     # Trivial sessions have summary_model IS NULL (heuristic-only summary).
-    _seed_session(conn, "trivial-1",
-                  "Short session (1 messages, 5s) — first user message: hi",
-                  None, "/Users/tom/dev/foo", summary_model=None)
+    _seed_session(
+        conn,
+        "trivial-1",
+        "Short session (1 messages, 5s) — first user message: hi",
+        None,
+        "/Users/tom/dev/foo",
+        summary_model=None,
+    )
     conn.execute("UPDATE sessions SET user_msg_count = 1, duration_s = 5 WHERE session_id = 'trivial-1'")
     conn.commit()
     results = search("session", db_path=db_path, rerank=False)
@@ -109,7 +150,9 @@ def test_rerank_reorders_and_annotates(seeded_db):
     _, db_path = seeded_db
     # Mock the Anthropic client so search.rerank picks it up via indexer.get_anthropic_client
     mock_client = MagicMock()
-    blk = MagicMock(); blk.type = "tool_use"; blk.name = "rank_search_results"
+    blk = MagicMock()
+    blk.type = "tool_use"
+    blk.name = "rank_search_results"
     blk.input = {
         "results": [
             # Reverse the FTS order: s3 first, then s1
@@ -117,7 +160,8 @@ def test_rerank_reorders_and_annotates(seeded_db):
             {"session_id": "s1", "reason": "weakly related", "score": 0.3},
         ],
     }
-    msg = MagicMock(); msg.content = [blk]
+    msg = MagicMock()
+    msg.content = [blk]
     mock_client.messages.create.return_value = msg
     with patch("history.indexer.get_anthropic_client", return_value=mock_client):
         # Query that matches both "fixed" sessions
@@ -147,13 +191,17 @@ def test_rerank_falls_back_to_fts_order_on_client_failure(seeded_db):
 def test_get_session_returns_full_row_and_messages(tmp_path, fixture_dir, monkeypatch):
     from history.indexer import index_one
     from history.search import get_session
+
     archive_dir = tmp_path / "archive"
     monkeypatch.setattr("history.indexer.ARCHIVE_DIR", archive_dir)
     db_path = tmp_path / "h.db"
     client = MagicMock()
-    blk = MagicMock(); blk.type = "tool_use"; blk.name = "save_session_summary"
+    blk = MagicMock()
+    blk.type = "tool_use"
+    blk.name = "save_session_summary"
     blk.input = {"summary": "fake", "tags": ["a", "b", "c"]}
-    m = MagicMock(); m.content = [blk]
+    m = MagicMock()
+    m.content = [blk]
     client.messages.create.return_value = m
     with patch("history.indexer.get_anthropic_client", return_value=client):
         index_one(str(fixture_dir / "normal_session.jsonl"), db_path=db_path)
@@ -177,8 +225,10 @@ def test_get_session_returns_full_row_and_messages(tmp_path, fixture_dir, monkey
 
 def test_get_session_returns_none_for_missing(tmp_path):
     from history.search import get_session
+
     db_path = tmp_path / "h.db"
     from history.db import connect
+
     connect(db_path).close()  # init schema
     assert get_session("does-not-exist", db_path=db_path) is None
 
@@ -186,6 +236,7 @@ def test_get_session_returns_none_for_missing(tmp_path):
 def test_get_session_marks_jsonl_missing(tmp_path):
     from history.db import connect
     from history.search import get_session
+
     db_path = tmp_path / "h.db"
     conn = connect(db_path)
     # Insert a row pointing at a path that doesn't exist
@@ -206,6 +257,7 @@ def test_get_session_marks_jsonl_missing(tmp_path):
 
 def test_messages_from_jsonl_pairs_filters_and_stamps_uuid(fixture_dir):
     from history.search import messages_from_jsonl
+
     msgs = messages_from_jsonl(str(fixture_dir / "turns_session.jsonl"))
 
     # Order preserved; isMeta(m1)/isSidechain(sc1)/tool-result-only(u2)/
@@ -237,44 +289,56 @@ def test_messages_from_jsonl_pairs_filters_and_stamps_uuid(fixture_dir):
 
 # --- compact_messages (MCP shaping) ---
 
+
 def _assistant(text="", tool_uses=None, ts=1000):
-    return {"role": "assistant", "uuid": "a", "ts_ms": ts,
-            "text": text, "tool_uses": tool_uses or []}
+    return {"role": "assistant", "uuid": "a", "ts_ms": ts, "text": text, "tool_uses": tool_uses or []}
 
 
 def test_compact_messages_keeps_text_and_summarizes_tools():
     from history.search import compact_messages
-    msgs = compact_messages([
-        {"role": "user", "uuid": "u", "ts_ms": 1, "text": "fix the bug"},
-        _assistant("on it", [
-            {"id": "t1", "name": "Bash", "input": {"command": "pytest -q"},
-             "result": "3 passed"},
-            {"id": "t2", "name": "Read", "input": {"file_path": "/a/b.py"},
-             "result": "x" * 9000},
-        ]),
-    ])
+
+    msgs = compact_messages(
+        [
+            {"role": "user", "uuid": "u", "ts_ms": 1, "text": "fix the bug"},
+            _assistant(
+                "on it",
+                [
+                    {"id": "t1", "name": "Bash", "input": {"command": "pytest -q"}, "result": "3 passed"},
+                    {"id": "t2", "name": "Read", "input": {"file_path": "/a/b.py"}, "result": "x" * 9000},
+                ],
+            ),
+        ]
+    )
     assert msgs[0] == {"role": "user", "ts_ms": 1, "text": "fix the bug"}
     a = msgs[1]
     assert a["text"] == "on it"
-    assert a["tools"][0] == {"name": "Bash", "summary": "pytest -q",
-                             "result": "3 passed"}
+    assert a["tools"][0] == {"name": "Bash", "summary": "pytest -q", "result": "3 passed"}
     # non-Bash results are dropped entirely, summary comes from file_path
     assert a["tools"][1] == {"name": "Read", "summary": "/a/b.py"}
 
 
 def test_compact_messages_skips_housekeeping_tools_and_empty_messages():
     from history.search import compact_messages
-    msgs = compact_messages([
-        _assistant("", [
-            {"id": "t1", "name": "Skill", "input": {"skill": "tdd"}, "result": "ok"},
-            {"id": "t2", "name": "TaskUpdate", "input": {"taskId": "1"}, "result": ""},
-            {"id": "t3", "name": "ToolSearch", "input": {"query": "x"}, "result": ""},
-            {"id": "t4", "name": "TodoWrite", "input": {}, "result": ""},
-        ]),
-        _assistant("real text", [
-            {"id": "t5", "name": "Skill", "input": {"skill": "tdd"}, "result": "ok"},
-        ]),
-    ])
+
+    msgs = compact_messages(
+        [
+            _assistant(
+                "",
+                [
+                    {"id": "t1", "name": "Skill", "input": {"skill": "tdd"}, "result": "ok"},
+                    {"id": "t2", "name": "TaskUpdate", "input": {"taskId": "1"}, "result": ""},
+                    {"id": "t3", "name": "ToolSearch", "input": {"query": "x"}, "result": ""},
+                    {"id": "t4", "name": "TodoWrite", "input": {}, "result": ""},
+                ],
+            ),
+            _assistant(
+                "real text",
+                [
+                    {"id": "t5", "name": "Skill", "input": {"skill": "tdd"}, "result": "ok"},
+                ],
+            ),
+        ]
+    )
     # first message had nothing left -> dropped wholesale
     assert len(msgs) == 1
     assert msgs[0]["text"] == "real text"
@@ -283,13 +347,18 @@ def test_compact_messages_skips_housekeeping_tools_and_empty_messages():
 
 def test_compact_messages_truncates_long_fields():
     from history.search import compact_messages
-    msgs = compact_messages([
-        {"role": "user", "uuid": "u", "ts_ms": 1, "text": "y" * 5000},
-        _assistant("", [
-            {"id": "t1", "name": "Bash", "input": {"command": "z" * 900},
-             "result": "r" * 900},
-        ]),
-    ])
+
+    msgs = compact_messages(
+        [
+            {"role": "user", "uuid": "u", "ts_ms": 1, "text": "y" * 5000},
+            _assistant(
+                "",
+                [
+                    {"id": "t1", "name": "Bash", "input": {"command": "z" * 900}, "result": "r" * 900},
+                ],
+            ),
+        ]
+    )
     assert len(msgs[0]["text"]) < 2100 and msgs[0]["text"].endswith("…[truncated]")
     tool = msgs[1]["tools"][0]
     assert len(tool["summary"]) < 300 and tool["summary"].endswith("…[truncated]")
@@ -298,16 +367,21 @@ def test_compact_messages_truncates_long_fields():
 
 def test_compact_messages_summary_fallback_and_compact_divider():
     from history.search import compact_messages
-    msgs = compact_messages([
-        {"role": "system", "kind": "compact", "uuid": "c", "ts_ms": 5},
-        _assistant("", [
-            # unknown tool: summary falls back to first string input value
-            {"id": "t1", "name": "mcp__foo__bar",
-             "input": {"n": 3, "query": "deploy logs"}, "result": "stuff"},
-            # in-flight Bash (result None) must not emit a result key
-            {"id": "t2", "name": "Bash", "input": {"command": "ls"}, "result": None},
-        ]),
-    ])
+
+    msgs = compact_messages(
+        [
+            {"role": "system", "kind": "compact", "uuid": "c", "ts_ms": 5},
+            _assistant(
+                "",
+                [
+                    # unknown tool: summary falls back to first string input value
+                    {"id": "t1", "name": "mcp__foo__bar", "input": {"n": 3, "query": "deploy logs"}, "result": "stuff"},
+                    # in-flight Bash (result None) must not emit a result key
+                    {"id": "t2", "name": "Bash", "input": {"command": "ls"}, "result": None},
+                ],
+            ),
+        ]
+    )
     assert msgs[0] == {"role": "system", "kind": "compact", "ts_ms": 5}
     tools = msgs[1]["tools"]
     assert tools[0] == {"name": "mcp__foo__bar", "summary": "deploy logs"}

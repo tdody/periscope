@@ -13,9 +13,7 @@ def test_fetch_pr_into_worktree_rejects_non_positive_pr(tmp_git_repo):
         projects.fetch_pr_into_worktree(str(tmp_git_repo), 0)
 
 
-def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(
-    tmp_git_repo, monkeypatch
-):
+def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(tmp_git_repo, monkeypatch):
     """If git worktree add fails after the branch was fetched, the orphan
     local branch is deleted so a retry doesn't hit a non-fast-forward 409.
     This is the critical rollback path that lived in the old pr-review route.
@@ -23,13 +21,22 @@ def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(
     # Create the local branch (simulating a successful _fetch_pr_branch).
     subprocess.run(
         ["git", "branch", "pr-42"],
-        cwd=tmp_git_repo, check=True, capture_output=True,
+        cwd=tmp_git_repo,
+        check=True,
+        capture_output=True,
     )
     wt_dest = str(tmp_git_repo.parent / "wt-pr-42")
     monkeypatch.setattr(projects, "worktree_path", lambda repo, slug: wt_dest)
-    monkeypatch.setattr(projects, "_resolve_pr_metadata",
-        lambda repo, pr: {"headRefName": "feature-x", "isCrossRepository": False,
-                          "baseRefName": "main", "state": "OPEN"})
+    monkeypatch.setattr(
+        projects,
+        "_resolve_pr_metadata",
+        lambda repo, pr: {
+            "headRefName": "feature-x",
+            "isCrossRepository": False,
+            "baseRefName": "main",
+            "state": "OPEN",
+        },
+    )
     monkeypatch.setattr(projects, "_fetch_pr_branch", lambda *a, **k: None)
 
     # Stub _run: let mkdir calls (routed via Path.mkdir, not _run) pass, but
@@ -44,6 +51,7 @@ def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(
     monkeypatch.setattr(projects, "_run", patched_run)
 
     from fastapi import HTTPException as FastHTTPException
+
     with pytest.raises(FastHTTPException) as exc_info:
         projects.fetch_pr_into_worktree(str(tmp_git_repo), 42)
     assert exc_info.value.status_code == 500
@@ -51,7 +59,8 @@ def test_fetch_pr_into_worktree_worktree_add_failure_cleans_up_branch(
     # The orphan branch must be gone — confirmed by running git branch.
     result = subprocess.run(
         ["git", "-C", str(tmp_git_repo), "branch", "--list", "pr-42"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert "pr-42" not in result.stdout, "orphan branch was not cleaned up after worktree add failure"
 
@@ -64,12 +73,20 @@ def test_fetch_pr_into_worktree_409_if_wt_path_exists(tmp_git_repo, monkeypatch)
     existing_wt = str(tmp_git_repo.parent / "wt-pr-99")
     os.makedirs(existing_wt, exist_ok=True)
     monkeypatch.setattr(projects, "worktree_path", lambda repo, slug: existing_wt)
-    monkeypatch.setattr(projects, "_resolve_pr_metadata",
-        lambda repo, pr: {"headRefName": "dup-branch", "isCrossRepository": False,
-                          "baseRefName": "main", "state": "OPEN"})
+    monkeypatch.setattr(
+        projects,
+        "_resolve_pr_metadata",
+        lambda repo, pr: {
+            "headRefName": "dup-branch",
+            "isCrossRepository": False,
+            "baseRefName": "main",
+            "state": "OPEN",
+        },
+    )
     monkeypatch.setattr(projects, "_fetch_pr_branch", lambda *a, **k: None)
 
     from fastapi import HTTPException as FastHTTPException
+
     with pytest.raises(FastHTTPException) as exc_info:
         projects.fetch_pr_into_worktree(str(tmp_git_repo), 99)
     assert exc_info.value.status_code == 409
@@ -85,11 +102,15 @@ def test_fetch_pr_into_worktree_returns_metadata(tmp_git_repo, monkeypatch):
     # created by _fetch_pr_branch (which we stub out).
     subprocess.run(
         ["git", "branch", "pr-7"],
-        cwd=tmp_git_repo, check=True, capture_output=True,
+        cwd=tmp_git_repo,
+        check=True,
+        capture_output=True,
     )
-    monkeypatch.setattr(projects, "_resolve_pr_metadata",
-        lambda repo, pr: {"headRefName": "pr-7", "isCrossRepository": False,
-                          "baseRefName": "main", "state": "OPEN"})
+    monkeypatch.setattr(
+        projects,
+        "_resolve_pr_metadata",
+        lambda repo, pr: {"headRefName": "pr-7", "isCrossRepository": False, "baseRefName": "main", "state": "OPEN"},
+    )
     monkeypatch.setattr(projects, "_fetch_pr_branch", lambda *a, **k: None)
     res = projects.fetch_pr_into_worktree(str(tmp_git_repo), 7)
     assert res.path and res.base_branch == "main" and res.is_fork is False
@@ -105,7 +126,7 @@ def test_ensure_project_registers_when_absent(tmp_git_repo, clean_state):
 def test_ensure_project_idempotent_no_409(tmp_git_repo, clean_state):
     repo = str(tmp_git_repo)
     first = open_ops.ensure_project(repo, repo)
-    again = open_ops.ensure_project(repo, repo)   # must NOT raise
+    again = open_ops.ensure_project(repo, repo)  # must NOT raise
     assert again["tmux_session"] == first["tmux_session"]
 
 
@@ -123,26 +144,29 @@ def test_ensure_session_focuses_when_live_and_ours(tmp_git_repo, clean_state, tm
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
     s1, pid1 = open_ops.ensure_session(proj, repo)
-    s2, pid2 = open_ops.ensure_session(proj, repo)   # must NOT spawn a 2nd window pair
+    s2, pid2 = open_ops.ensure_session(proj, repo)  # must NOT spawn a 2nd window pair
     assert s1 == s2 and pid1 == pid2
 
 
 @needs_tmux
-def test_ensure_session_two_repos_share_session_distinct_panes(
-    tmp_path, clean_state, tmux_test_server
-):
+def test_ensure_session_two_repos_share_session_distinct_panes(tmp_path, clean_state, tmux_test_server):
     """Core name-collision regression: two DIFFERENT repos both spawn into the
     one shared MANAGED_SESSION, yet each gets its OWN claude window — proving
     send-keys/stamp/select target by window id, not the ambiguous "claude"
     name (which would collapse onto the first match)."""
+
     def _repo(name: str) -> str:
         d = tmp_path / name
         d.mkdir()
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        }
         subprocess.run(["git", "init", "-q"], cwd=d, check=True)
-        subprocess.run(["git", "commit", "--allow-empty", "-qm", "i"],
-                       cwd=d, env=env, check=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-qm", "i"], cwd=d, env=env, check=True)
         return os.path.realpath(d)
 
     repo_a, repo_b = _repo("a"), _repo("b")
@@ -154,9 +178,10 @@ def test_ensure_session_two_repos_share_session_distinct_panes(
     assert sess_a == sess_b == config.MANAGED_SESSION
     assert pid_a and pid_b and pid_a != pid_b
     from periscope.tmux import tmux
+
     claude_count = sum(
-        1 for r in tmux("list-windows", "-t", config.MANAGED_SESSION,
-                        "-F", "#{window_name}").split("\n")
+        1
+        for r in tmux("list-windows", "-t", config.MANAGED_SESSION, "-F", "#{window_name}").split("\n")
         if r.strip() == "claude"
     )
     assert claude_count >= 2
@@ -168,46 +193,41 @@ def test_resolve_worktree_session_non_git_returns_none(tmp_path, clean_state):
 
 
 @needs_tmux
-def test_resolve_worktree_session_registers_and_keeps_name(
-    tmp_git_repo, clean_state, tmux_test_server
-):
+def test_resolve_worktree_session_registers_and_keeps_name(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     name, proj = open_ops.resolve_worktree_session(repo)
-    assert name == proj["tmux_session"]          # name free → kept as-is
+    assert name == proj["tmux_session"]  # name free → kept as-is
     assert proj["repo"] == repo
-    assert repo in projects.all_projects()       # project registered
+    assert repo in projects.all_projects()  # project registered
     # Creates no window — the caller spawns the pane itself.
     assert _tmux_mutate("has-session", "-t", name)[0] is False
 
 
 @needs_tmux
-def test_resolve_worktree_session_keeps_name_when_live_and_ours(
-    tmp_git_repo, clean_state, tmux_test_server
-):
+def test_resolve_worktree_session_keeps_name_when_live_and_ours(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
     # A live session that already owns the worktree → caller new-tabs into it.
     _tmux_mutate("new-session", "-d", "-s", proj["tmux_session"], "-c", repo)
     name, _ = open_ops.resolve_worktree_session(repo)
-    assert name == proj["tmux_session"]          # NOT deduped
+    assert name == proj["tmux_session"]  # NOT deduped
 
 
 @needs_tmux
-def test_resolve_worktree_session_dedupes_foreign_name(
-    tmp_git_repo, clean_state, tmux_test_server
-):
+def test_resolve_worktree_session_dedupes_foreign_name(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
     # The recorded name is occupied by an unrelated session in a different cwd.
     _tmux_mutate("new-session", "-d", "-s", proj["tmux_session"], "-c", "/tmp")
     name, _ = open_ops.resolve_worktree_session(repo)
-    assert name != proj["tmux_session"]          # deduped
+    assert name != proj["tmux_session"]  # deduped
     assert projects.get_project(repo)["tmux_session"] == name  # row updated
 
 
 def test_worktree_for_branch_matches_enumerated(tmp_git_repo, clean_state):
     repo = str(tmp_git_repo)
     from periscope.gitutil import detect_default_branch
+
     default = detect_default_branch(repo)
     assert open_ops.worktree_for_branch(repo, default) == os.path.realpath(repo)
     assert open_ops.worktree_for_branch(repo, "no-such-branch") is None
@@ -217,9 +237,9 @@ from periscope import store
 
 
 @needs_tmux
-def test_open_target_path_spawns_dormant_then_focuses(
-        tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server):
+def test_open_target_path_spawns_dormant_then_focuses(tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server):
     from periscope import tracks
+
     repo = str(tmp_git_repo)
     r1 = open_ops.open_target(open_ops.PathTarget(path=repo))
     assert r1.repo == repo and r1.claude_pid
@@ -231,7 +251,7 @@ def test_open_target_path_spawns_dormant_then_focuses(
     assert fresh_activity_db.get_pane_track(r1.claude_pid) == tid
     assert tid in r1.ui["track_order"]
     assert r1.claude_pid in r1.ui["tabs_by_track"][tid]
-    r2 = open_ops.open_target(open_ops.PathTarget(path=repo))   # idempotent focus
+    r2 = open_ops.open_target(open_ops.PathTarget(path=repo))  # idempotent focus
     assert r2.tmux_session == r1.tmux_session
     # The focus branch must still report the pane it focused — that identity is
     # what lets the client select it, so "already open" is visible, not a no-op.
@@ -258,7 +278,7 @@ def test_open_target_expands_tilde(monkeypatch, tmp_path, clean_state):
 
     def fake_toplevel(path):
         seen["path"] = path
-        raise ValueError("stop here")     # far enough: expansion already happened
+        raise ValueError("stop here")  # far enough: expansion already happened
 
     monkeypatch.setattr(open_ops, "_git_toplevel", fake_toplevel)
     (tmp_path / "proj").mkdir()
@@ -268,8 +288,7 @@ def test_open_target_expands_tilde(monkeypatch, tmp_path, clean_state):
 
 
 @needs_tmux
-def test_open_path_tags_only_its_own_panes(
-        tmp_path, clean_state, fresh_activity_db, tmux_test_server):
+def test_open_path_tags_only_its_own_panes(tmp_path, clean_state, fresh_activity_db, tmux_test_server):
     """Opening a project must tag ONLY the panes at its toplevel. The shared
     MANAGED_SESSION holds EVERY project's panes, so a session-wide re-tag
     moves the entire rail into the newly opened track (the sts2-seed-finder
@@ -279,11 +298,15 @@ def test_open_path_tags_only_its_own_panes(
     def _repo(name: str) -> str:
         d = tmp_path / name
         d.mkdir()
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        }
         subprocess.run(["git", "init", "-q"], cwd=d, check=True)
-        subprocess.run(["git", "commit", "--allow-empty", "-qm", "i"],
-                       cwd=d, env=env, check=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-qm", "i"], cwd=d, env=env, check=True)
         return os.path.realpath(d)
 
     repo_a, repo_b = _repo("a"), _repo("b")
@@ -293,9 +316,10 @@ def test_open_path_tags_only_its_own_panes(
     # stamped @periscope_id (pid_raw on raw rows), not the %N pane id.
     tk = tracks.create_track(name="my goal")
     moved_pid = next(
-        w["pid_raw"] for w in open_ops.list_windows()
-        if w.get("pid_raw") and w["pid_raw"] != r_a.claude_pid
-        and os.path.realpath(w.get("cwd") or "") == repo_a)
+        w["pid_raw"]
+        for w in open_ops.list_windows()
+        if w.get("pid_raw") and w["pid_raw"] != r_a.claude_pid and os.path.realpath(w.get("cwd") or "") == repo_a
+    )
     tracks.move_pane(moved_pid, tk["id"])
 
     r_b = open_ops.open_target(open_ops.PathTarget(path=repo_b))
@@ -311,10 +335,13 @@ def test_open_path_tags_only_its_own_panes(
 @needs_tmux
 def test_open_target_pr_stamps_linked_pr(tmp_git_repo, clean_state, tmux_test_server, monkeypatch):
     repo = str(tmp_git_repo)
-    monkeypatch.setattr(projects, "fetch_pr_into_worktree",
-        lambda r, pr: projects.PRWorktree(path=repo, base_branch="main",
-                                          is_fork=False, local_branch="pr-9",
-                                          pr_state="OPEN", name="pr-9"))
+    monkeypatch.setattr(
+        projects,
+        "fetch_pr_into_worktree",
+        lambda r, pr: projects.PRWorktree(
+            path=repo, base_branch="main", is_fork=False, local_branch="pr-9", pr_state="OPEN", name="pr-9"
+        ),
+    )
     res = open_ops.open_target(open_ops.PRTarget(repo=repo, pr=9))
     assert store.get_window(res.claude_pid).get("linked_pr") == 9
 
@@ -326,7 +353,7 @@ def test_place_in_rail_writes_track_keys(tmp_git_repo, clean_state):
     track_id = tracks.repo_default_track(proj["repo"])
     assert track_id in ui["track_order"]
     assert ui["tabs_by_track"][track_id] == ["p1", "p2"]
-    assert store.get_ui() == ui          # returns exactly what was persisted
+    assert store.get_ui() == ui  # returns exactly what was persisted
 
 
 def test_place_in_rail_writes_no_pre_tracks_keys(tmp_git_repo, clean_state):
@@ -347,7 +374,7 @@ def test_place_in_rail_is_idempotent(tmp_git_repo, clean_state):
     ui = open_ops.place_in_rail(proj["tmux_session"], proj, ["p1", "p2"])
     track_id = tracks.repo_default_track(proj["repo"])
     assert ui["track_order"].count(track_id) == 1
-    assert ui["tabs_by_track"][track_id] == ["p1", "p2"]   # p1 not duplicated
+    assert ui["tabs_by_track"][track_id] == ["p1", "p2"]  # p1 not duplicated
 
 
 def test_build_catalog_lists_repo_and_main_worktree(tmp_git_repo, clean_state, monkeypatch):
@@ -355,25 +382,32 @@ def test_build_catalog_lists_repo_and_main_worktree(tmp_git_repo, clean_state, m
     monkeypatch.setattr(open_ops, "discover_repos", lambda: {repo})
     cat = open_ops.build_catalog()
     assert any(r["repo"] == repo for r in cat["repos"])
-    assert any(w["path"] == os.path.realpath(repo) and w["is_main"]
-               for w in cat["worktrees"])
+    assert any(w["path"] == os.path.realpath(repo) and w["is_main"] for w in cat["worktrees"])
 
 
 def test_open_target_pr_rolls_back_worktree_on_open_failure(tmp_git_repo, clean_state, monkeypatch):
     repo = str(tmp_git_repo)
     discarded = {}
-    monkeypatch.setattr(projects, "fetch_pr_into_worktree",
-        lambda r, pr: projects.PRWorktree(path=repo, base_branch="main", is_fork=False,
-                                          local_branch="pr-13", pr_state="OPEN", name="pr-13"))
-    def boom(path):   # make the path-case fail
+    monkeypatch.setattr(
+        projects,
+        "fetch_pr_into_worktree",
+        lambda r, pr: projects.PRWorktree(
+            path=repo, base_branch="main", is_fork=False, local_branch="pr-13", pr_state="OPEN", name="pr-13"
+        ),
+    )
+
+    def boom(path):  # make the path-case fail
         raise RuntimeError("spawn failed")
+
     monkeypatch.setattr(open_ops, "_open_path", boom)
-    monkeypatch.setattr(projects, "_discard_pr_worktree",
-        lambda repo_, path, branch: discarded.update(repo=repo_, path=path, branch=branch))
+    monkeypatch.setattr(
+        projects,
+        "_discard_pr_worktree",
+        lambda repo_, path, branch: discarded.update(repo=repo_, path=path, branch=branch),
+    )
     with pytest.raises(RuntimeError):
         open_ops.open_target(open_ops.PRTarget(repo=repo, pr=13))
     assert discarded == {"repo": repo, "path": repo, "branch": "pr-13"}
-
 
 
 # --- account auto-selection on the unified-open surface ---------------------
@@ -381,40 +415,43 @@ def test_open_target_pr_rolls_back_worktree_on_open_failure(tmp_git_repo, clean_
 # this they pinned every pane to the default subscription — the one that fills
 # up first, and the reason the second account exists.
 
+
 def _capture_layout(monkeypatch):
     seen: dict = {}
     monkeypatch.setattr(open_ops, "_session_live", lambda _s: False)
-    monkeypatch.setattr(open_ops, "_layout_two_window",
-                        lambda *a, **kw: (seen.update(kw) or ("pidA", "pidB")))
+    monkeypatch.setattr(open_ops, "_layout_two_window", lambda *a, **kw: seen.update(kw) or ("pidA", "pidB"))
     return seen
 
 
 def test_ensure_session_auto_picks_the_emptiest_account(monkeypatch):
     from periscope import usage
+
     seen = _capture_layout(monkeypatch)
     from periscope.launch_policy import Launch
-    monkeypatch.setattr(usage, "choose_launch",
-                        lambda account=None, model=None: Launch(account or "b", None, ""))
+
+    monkeypatch.setattr(usage, "choose_launch", lambda account=None, model=None: Launch(account or "b", None, ""))
     open_ops.ensure_session({}, "/repo")
     assert seen.get("account") == "b"
 
 
 def test_ensure_session_explicit_account_wins(monkeypatch):
     from periscope import usage
+
     seen = _capture_layout(monkeypatch)
     from periscope.launch_policy import Launch
-    monkeypatch.setattr(usage, "choose_launch",
-                        lambda account=None, model=None: Launch(account or "b", None, ""))
+
+    monkeypatch.setattr(usage, "choose_launch", lambda account=None, model=None: Launch(account or "b", None, ""))
     open_ops.ensure_session({}, "/repo", account="default")
     assert seen.get("account") == "default"
 
 
 def test_ensure_session_passes_the_effort_pin_to_the_layout(monkeypatch):
     from periscope import usage
+
     seen = _capture_layout(monkeypatch)
     from periscope.launch_policy import Launch
-    monkeypatch.setattr(usage, "choose_launch",
-                        lambda account=None, model=None: Launch("b", None, "", effort="low"))
+
+    monkeypatch.setattr(usage, "choose_launch", lambda account=None, model=None: Launch("b", None, "", effort="low"))
     open_ops.ensure_session({}, "/repo")
     assert seen.get("effort") == "low"
 
@@ -422,10 +459,11 @@ def test_ensure_session_passes_the_effort_pin_to_the_layout(monkeypatch):
 def test_ensure_session_never_auto_picks_for_codex(monkeypatch):
     """Codex has no Claude subscription — binding one would be meaningless."""
     from periscope import usage
+
     seen = _capture_layout(monkeypatch)
     from periscope.launch_policy import Launch
-    monkeypatch.setattr(usage, "choose_launch",
-                        lambda account=None, model=None: Launch(account or "b", None, ""))
+
+    monkeypatch.setattr(usage, "choose_launch", lambda account=None, model=None: Launch(account or "b", None, ""))
     open_ops.ensure_session({}, "/repo", agent="codex")
     assert seen.get("account") in (None, "")
 
@@ -442,12 +480,10 @@ def test_worktree_for_branch_does_not_answer_from_a_stale_cache(tmp_git_repo, tm
     """
     repo = str(tmp_git_repo)
     wt = tmp_path / "wt-feat"
-    subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", "feat", str(wt)],
-                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", "feat", str(wt)], check=True, capture_output=True)
     assert open_ops.worktree_for_branch(repo, "feat") == os.path.realpath(wt)
 
-    subprocess.run(["git", "-C", str(wt), "switch", "-q", "-c", "elsewhere"],
-                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(wt), "switch", "-q", "-c", "elsewhere"], check=True, capture_output=True)
     assert open_ops.worktree_for_branch(repo, "feat") is None
     assert open_ops.worktree_for_branch(repo, "elsewhere") == os.path.realpath(wt)
 

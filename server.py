@@ -57,11 +57,13 @@ if __name__ == "__main__":
         _reclaim_existing_instance()
     _write_pidfile()
     atexit.register(_remove_pidfile)
+
     # SIGTERM otherwise bypasses atexit; install a handler that logs and
     # exits cleanly so atexit fires and the next start is idempotent.
     def _on_sigterm(signum, _frame):
         log.info("received signal %d; exiting", signum)
         sys.exit(0)
+
     signal.signal(signal.SIGTERM, _on_sigterm)
 
     # loop="asyncio" forces the stdlib selector loop instead of uvloop.
@@ -82,6 +84,7 @@ if __name__ == "__main__":
     # and direct browser hits pick up new static files without a restart.
     dev_mode = os.environ.get("PERISCOPE_DEV") == "1"
     from periscope.config import PORT
+
     uvicorn.run(
         "periscope.app:app",
         host="127.0.0.1",

@@ -121,11 +121,7 @@ def _reduce_line(cursor: RolloutCursor, raw: bytes, order: int) -> RolloutCursor
     if row.get("type") == "session_meta":
         session_id = payload.get("session_id") or payload.get("id")
         originator = payload.get("originator")
-        if (
-            not isinstance(session_id, str)
-            or not _UUID.fullmatch(session_id)
-            or originator != "codex-tui"
-        ):
+        if not isinstance(session_id, str) or not _UUID.fullmatch(session_id) or originator != "codex-tui":
             return replace(cursor, invalid=True)
         cli_version = payload.get("cli_version")
         return replace(
@@ -138,17 +134,13 @@ def _reduce_line(cursor: RolloutCursor, raw: bytes, order: int) -> RolloutCursor
         return cursor
     event = payload.get("type")
     turn_id = payload.get("turn_id")
-    if event not in {"task_started", "task_complete"} or not isinstance(
-        turn_id, str
-    ):
+    if event not in {"task_started", "task_complete"} or not isinstance(turn_id, str):
         return cursor
     if event == "task_started":
         return replace(
             cursor,
             active_turn_id=turn_id,
-            last_edge=StateEdge(
-                cursor.session_id, turn_id, "working", "rollout", order
-            ),
+            last_edge=StateEdge(cursor.session_id, turn_id, "working", "rollout", order),
             lifecycle_seen=True,
         )
     # A stale/unrelated completion is not an idle edge for the active turn.
@@ -162,9 +154,7 @@ def _reduce_line(cursor: RolloutCursor, raw: bytes, order: int) -> RolloutCursor
     )
 
 
-def rollout_edge_for(
-    path: Path, *, session_id: str, sessions_root: Path
-) -> StateEdge | None:
+def rollout_edge_for(path: Path, *, session_id: str, sessions_root: Path) -> StateEdge | None:
     """Read only appended rollout bytes and return the latest valid edge.
 
     Missing, unsafe, oversized, truncated-without-a-complete-rescan, or
@@ -203,13 +193,9 @@ def rollout_edge_for(
         complete, separator, partial = data.rpartition(b"\n")
         if not separator:
             if len(data) > MAX_LINE_BYTES:
-                cursor = replace(
-                    cursor, offset=cursor.offset + len(chunk), partial_line=b""
-                )
+                cursor = replace(cursor, offset=cursor.offset + len(chunk), partial_line=b"")
             else:
-                cursor = replace(
-                    cursor, offset=cursor.offset + len(chunk), partial_line=data
-                )
+                cursor = replace(cursor, offset=cursor.offset + len(chunk), partial_line=data)
         else:
             position = start_offset
             for line in complete.splitlines(keepends=True):
@@ -277,9 +263,7 @@ def reconcile_codex_state(
         edge = max(edges, key=lambda item: item.order)
         state = edge.kind
         source = edge.source
-    return ReconciledState(
-        state, session_id, turn_id if state == "working" else None, source
-    )
+    return ReconciledState(state, session_id, turn_id if state == "working" else None, source)
 
 
 def clear_rollout_cache() -> None:

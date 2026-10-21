@@ -44,42 +44,37 @@ REGEX_CASES: list[tuple[str, str, bool]] = [
     ("A2", "✶ Bootstrapping…", True),
     ("A3", "✳ Wiring resolve_pids into endpoints…", True),
     ("A4", "✳ Wiring resolve_pids into endpoints…(910m 2 · ↓ 14.78 tokens · thought for 10s)", True),
-
     # === Active markers — parens form with ↑ or ↓ arrow ===
     ("A5", "● Bootstrapping packages (7m 29s · ↑ 22.1k tokens · thought for 2s)", True),
     ("A6", "● Researching codebase (3m 12s · ↑ 5.2k tokens · thought for 8s)", True),
     ("A7", "  ●  Bootstrapping packages (7m · ↑ 1k tokens · ...)", True),
     ("A8", "✶ Combining results from agents (1m · ↓ 800 tokens · thought for 3s)", True),
-
     # === Tool-call headers (ellipsis is INSIDE parens — not active) ===
     ("N1", "⏺ Bash(cd /Users/tom/… --skip-glo…)", False),
     ("N2", "⏺ Glob(some/path/…)", False),
-
     # === Completed operation lines (parens but no arrow) ===
     ("N3", "  ⎿  Done (18 tool uses · 117.7k tokens · 2m 37s)", False),
     ("N4", "   Done (5 tool uses · 25.5k tokens · 21s)", False),
-
     # === Agent headers (parens but no token meter inside) ===
     ("N5", "● Agent(Combined review Task 2.2) Haiku 4.5", False),
     ("N6", "● Agent(Implement Task 2.3) Haiku 4.5", False),
-
     # === Other prose-in-parens that isn't an activity meter ===
     ("N7", "● Found 2 new diagnostic issues in 1 file (ctrl+o to expand)", False),
-
     # === Pane status line (has arrows but no parens-around-tokens) ===
     ("N8", "  32%  |  ↑130k ↓74  |  $34.87  |  Opus 4.7 (1M context)", False),
-
     # === Prose embedding the marker mid-sentence (anchoring guards) ===
     ("N9", "That literal ● Bootstrapping packages (... ↑ 22.1k tokens · thought for 2s) line ended up...", False),
     ("N10", "  Recap: the line ●  Bootstrapping packages (... ↑Nk tokens) was caught", False),
-    ("N11", "OK   active=True  verb=Bootstrapping  ●  Bootstrapping packages (7m 29s · ↑ 22.1k tokens · thought for 2s)", False),
-
+    (
+        "N11",
+        "OK   active=True  verb=Bootstrapping  ●  Bootstrapping packages (7m 29s · ↑ 22.1k tokens · thought for 2s)",
+        False,
+    ),
     # === Subtask / tool-output lines without a leading glyph ===
     ("N12", "     Running…", False),
     ("N13", "  ⎿  ◼ Task 2.3: Wire resolve_pids into /api/state", False),
     ("N14", "  ⎿  ◻ Task 2.4: Post-poll GC of stale id-only entries", False),
     ("N15", "      … +5 pending, 7 completed", False),
-
     # === Past-tense thought indicators ===
     ("N16", "✻ Brewed for 31s", False),
     ("N17", "✻ Brewed for 7m 16s", False),
@@ -97,7 +92,9 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
     # The screenshot Tom hit: multi-word phrase + trailing `…` + ↓-arrow
     # parens with garbled timing. Used to read as "waiting" because neither
     # old regex matched. Now should detect via SPINNER_RE.
-    ("screenshot", textwrap.dedent(f"""\
+    (
+        "screenshot",
+        textwrap.dedent(f"""\
         Agent(Combined review Task 2.2) Haiku 4.5
           ⎿  Done (18 tool uses · 117.7k tokens · 2m 37s)
           (ctrl+o to expand)
@@ -116,30 +113,42 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "working", "Wiring"),
-
+    """),
+        "working",
+        "Wiring",
+    ),
     # Idle Claude pane — status line present, no active marker.
-    ("idle", textwrap.dedent(f"""\
+    (
+        "idle",
+        textwrap.dedent(f"""\
         Some prior assistant output.
 
         ✻ Brewed for 7m 16s
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # No status line at all = shell pane.
-    ("shell", textwrap.dedent("""\
+    (
+        "shell",
+        textwrap.dedent("""\
         $ ls
         foo.py bar.py
         $ cat foo.py
         print('hello')
         $
-    """), "shell", None),
-
+    """),
+        "shell",
+        None,
+    ),
     # Prose embedding the active marker mid-sentence — was the self-quote
     # false-positive that took two iterations to fix via .match() anchoring.
-    ("prose-embed", textwrap.dedent(f"""\
+    (
+        "prose-embed",
+        textwrap.dedent(f"""\
         The previous fix added ACTIVE_OP_RE to catch the marker.
 
         That literal ● Bootstrapping packages (... ↑ 22.1k tokens · thought for 2s) line ended up in scrollback.
@@ -148,31 +157,43 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # Old single-word ellipsis form (the original spinner case).
-    ("old-ellipsis", textwrap.dedent(f"""\
+    (
+        "old-ellipsis",
+        textwrap.dedent(f"""\
         ✻ Envisioning…
 
         ❯
         {STATUS_LINE}
-    """), "working", "Envisioning"),
-
+    """),
+        "working",
+        "Envisioning",
+    ),
     # Parens form with ↑ arrow (the form added in iteration 2).
-    ("parens-up", textwrap.dedent(f"""\
+    (
+        "parens-up",
+        textwrap.dedent(f"""\
         ● Researching codebase (3m 12s · ↑ 5.2k tokens · thought for 8s)
           tool calls below the marker
 
         ❯
         {STATUS_LINE}
-    """), "working", "Researching"),
-
+    """),
+        "working",
+        "Researching",
+    ),
     # IDLE_INDICATOR_RE acts as a positional "stop searching" boundary.
     # Code-block marker quotes from the assistant's own response sit ABOVE
     # the past-tense indicator and must not false-positive as working.
     # (Iteration 6 — the bug that showed `working 3…` because a stale phrase
     # starting with a digit got picked up by the old first-word fallback.)
-    ("idle-with-code-block-marker", textwrap.dedent(f"""\
+    (
+        "idle-with-code-block-marker",
+        textwrap.dedent(f"""\
         Look at these Claude TUI active marker examples:
 
         ✻ Envisioning…
@@ -186,32 +207,50 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # Past-tense lines in the bottom rows for each verb form we know about.
-    ("idle-brewed", textwrap.dedent(f"""\
+    (
+        "idle-brewed",
+        textwrap.dedent(f"""\
         ● Some prior response.
         ✻ Brewed for 31s
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-    ("idle-thought", textwrap.dedent(f"""\
+    """),
+        "idle",
+        None,
+    ),
+    (
+        "idle-thought",
+        textwrap.dedent(f"""\
         ● Some prior response.
         ✻ Thought for 10s
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-    ("idle-pondered", textwrap.dedent(f"""\
+    """),
+        "idle",
+        None,
+    ),
+    (
+        "idle-pondered",
+        textwrap.dedent(f"""\
         ● Some prior response.
         ✻ Pondered for 2m 15s
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # Active marker present BELOW an older past-tense line from a prior
     # turn — iteration hits the active marker first (it's closer to the
     # bottom), so we correctly report working.
-    ("active-after-old-brewed", textwrap.dedent(f"""\
+    (
+        "active-after-old-brewed",
+        textwrap.dedent(f"""\
         First turn response.
         ✻ Brewed for 30s
 
@@ -222,32 +261,44 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "working", "Working"),
-
+    """),
+        "working",
+        "Working",
+    ),
     # Verb fallback: an active marker with a digit-starting phrase used to
     # surface `3…` via the first-word fallback. Now falls back to "working".
-    ("verb-fallback", textwrap.dedent(f"""\
+    (
+        "verb-fallback",
+        textwrap.dedent(f"""\
         ✻ 3 items remaining…
 
         ❯
         {STATUS_LINE}
-    """), "working", "working"),
-
+    """),
+        "working",
+        "working",
+    ),
     # Question-mark needs-input: Claude's last reply ends with `?`, no dialog
     # open, no active spinner. Should promote idle → needs-input so the card
     # shows the pane is awaiting a human reply.
-    ("question-mark-trailing", textwrap.dedent(f"""\
+    (
+        "question-mark-trailing",
+        textwrap.dedent(f"""\
         ⏺ I checked the codebase. Should I delete the obsolete helper?
 
         ✻ Brewed for 3s
 
         ❯
         {STATUS_LINE}
-    """), "needs-input", None),
-
+    """),
+        "needs-input",
+        None,
+    ),
     # Question mark with the question on a wrapped continuation line, last
     # visible line is the `?`-terminated sentence (not the leading prose).
-    ("question-mark-continuation", textwrap.dedent(f"""\
+    (
+        "question-mark-continuation",
+        textwrap.dedent(f"""\
         ⏺ Two paths here:
           - keep it as-is
           - rewrite the function
@@ -257,23 +308,31 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "needs-input", None),
-
+    """),
+        "needs-input",
+        None,
+    ),
     # Question mark NOT in the last line — `?` appears in the middle of the
     # reply but the reply ends with a statement. Must NOT trip needs-input.
-    ("question-mark-not-trailing", textwrap.dedent(f"""\
+    (
+        "question-mark-not-trailing",
+        textwrap.dedent(f"""\
         ⏺ Did you know X? Anyway, here is the answer: foo.
 
         ✻ Brewed for 2s
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # Tool-call header below the question — Claude proceeded to act, so the
     # question is no longer the most recent line above the prompt. The last
     # content line (the tool-call header) doesn't end with `?`.
-    ("question-followed-by-tool-call", textwrap.dedent(f"""\
+    (
+        "question-followed-by-tool-call",
+        textwrap.dedent(f"""\
         ⏺ Should I delete this file?
 
         ⏺ Bash(rm file.py)
@@ -283,22 +342,30 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # Shell panes: a `?` in normal output (man page snippet, error text)
     # must NOT promote to needs-input — only Claude panes get this treatment.
-    ("question-mark-shell", textwrap.dedent("""\
+    (
+        "question-mark-shell",
+        textwrap.dedent("""\
         $ man bash | head -3
         What are you looking for?
         $
-    """), "shell", None),
-
+    """),
+        "shell",
+        None,
+    ),
     # Stale indicator: Claude asked a question, the user replied, Claude is
     # now mid-new-turn (Bash tool call running). The OLD past-tense indicator
     # is still the latest visible one — but a submitted `❯ <text>` reply and
     # tool-call lines below it prove the conversation moved past the
     # question. Must NOT flag needs-input.
-    ("question-stale-indicator-user-replied", textwrap.dedent(f"""\
+    (
+        "question-stale-indicator-user-replied",
+        textwrap.dedent(f"""\
         ⏺ Ready to execute. Same subagent-driven flow?
 
         ✻ Brewed for 11m 1s
@@ -311,13 +378,17 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "idle", None),
-
+    """),
+        "idle",
+        None,
+    ),
     # TodoWrite list rendered below the past-tense indicator. The actual
     # question lives ABOVE the indicator; bottom-up scanning without anchor
     # would land on the last todo row (ends with `)`) and miss the `?`.
     # This is the real-world failure case from `lookup-undermatch-audit`.
-    ("question-with-todo-below-indicator", textwrap.dedent(f"""\
+    (
+        "question-with-todo-below-indicator",
+        textwrap.dedent(f"""\
         ⏺ I have enough to present the design. Walking through it in sections.
 
           1. Scope & architecture
@@ -337,7 +408,10 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 
         ❯
         {STATUS_LINE}
-    """), "needs-input", None),
+    """),
+        "needs-input",
+        None,
+    ),
 ]
 
 
@@ -351,67 +425,48 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 GHOST_CASES: list[tuple[str, str, str | None]] = [
     # Ghost text only — single fg color across the prompt line. The
     # visible text is Claude Code's suggestion, not user input.
-    ("ghost-leave-it",
-     f"\x1b[38;5;239m❯ leave it\x1b[39m\n{STATUS_LINE}\n",
-     None),
-
+    ("ghost-leave-it", f"\x1b[38;5;239m❯ leave it\x1b[39m\n{STATUS_LINE}\n", None),
     # Real input — prefix is dim grey, typed text switches to bright fg.
-    ("real-input",
-     f"\x1b[38;5;239m❯ \x1b[38;5;231mhello world\x1b[39m\n{STATUS_LINE}\n",
-     "hello world"),
-
+    ("real-input", f"\x1b[38;5;239m❯ \x1b[38;5;231mhello world\x1b[39m\n{STATUS_LINE}\n", "hello world"),
     # Empty prompt — no text after `❯ `, no pending input regardless of color.
-    ("empty-prompt",
-     f"\x1b[38;5;239m❯ \x1b[39m\n{STATUS_LINE}\n",
-     None),
-
+    ("empty-prompt", f"\x1b[38;5;239m❯ \x1b[39m\n{STATUS_LINE}\n", None),
     # Backward-compat: a fixture with no SGR escapes at all (existing tests
     # don't include them). Trust the visible text — can't distinguish ghost
     # from real without color info.
-    ("no-ansi-trust-visible",
-     f"❯ some text the user typed\n{STATUS_LINE}\n",
-     "some text the user typed"),
-
+    ("no-ansi-trust-visible", f"❯ some text the user typed\n{STATUS_LINE}\n", "some text the user typed"),
     # Realistic shape from periscope:4 capture: bg color escape mixed in
     # with fg escapes. Only fg codes count toward the distinct-color check.
-    ("real-with-bg-color",
-     f"\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231mreal user input\x1b[39m\n{STATUS_LINE}\n",
-     "real user input"),
-
+    (
+        "real-with-bg-color",
+        f"\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231mreal user input\x1b[39m\n{STATUS_LINE}\n",
+        "real user input",
+    ),
     # Claude Code 2.1.280: a typed draft shares the prompt glyph's DEFAULT fg
     # (39), with a no-break space after ❯. The old "≥2 fg colors" rule read
     # this as ghost text, and the per-pane /effort picker pasted onto the
     # draft and submitted it. Ghost text is the one that's dim or grey.
-    ("default-fg-draft",
-     f"\x1b[39m❯\xa0half a thought\n{STATUS_LINE}\n",
-     "half a thought"),
-
+    ("default-fg-draft", f"\x1b[39m❯\xa0half a thought\n{STATUS_LINE}\n", "half a thought"),
     # Dim (SGR 2) suggestion after the prompt — ghost, not input.
-    ("dim-ghost",
-     f"\x1b[39m❯\xa0\x1b[2mtry the tests\x1b[22m\n{STATUS_LINE}\n",
-     None),
-
+    ("dim-ghost", f"\x1b[39m❯\xa0\x1b[2mtry the tests\x1b[22m\n{STATUS_LINE}\n", None),
     # Bright-black (90) suggestion — ghost too.
-    ("bright-black-ghost",
-     f"\x1b[90m❯ try the tests\x1b[39m\n{STATUS_LINE}\n",
-     None),
-
+    ("bright-black-ghost", f"\x1b[90m❯ try the tests\x1b[39m\n{STATUS_LINE}\n", None),
     # A paste placeholder is drawn grey like a suggestion but IS the draft,
     # whether the user typed on after it or not. Deciding from the first
     # glyph alone would read either as ghost and let a slash command be
     # appended to the paste and submitted.
-    ("paste-placeholder-then-typed",
-     f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m and fix it\n{STATUS_LINE}\n",
-     "[Pasted text #1 +40 lines] and fix it"),
-    ("paste-placeholder-alone",
-     f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m\n{STATUS_LINE}\n",
-     "[Pasted text #1 +40 lines]"),
-
+    (
+        "paste-placeholder-then-typed",
+        f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m and fix it\n{STATUS_LINE}\n",
+        "[Pasted text #1 +40 lines] and fix it",
+    ),
+    (
+        "paste-placeholder-alone",
+        f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m\n{STATUS_LINE}\n",
+        "[Pasted text #1 +40 lines]",
+    ),
     # Grey prefix then default-fg text, with no placeholder: the ghost rule is
     # all-or-nothing, so one typed glyph makes it a draft.
-    ("grey-then-default-fg",
-     f"\x1b[39m❯\xa0\x1b[38;5;240mdraft\x1b[39m continues\n{STATUS_LINE}\n",
-     "draft continues"),
+    ("grey-then-default-fg", f"\x1b[39m❯\xa0\x1b[38;5;240mdraft\x1b[39m continues\n{STATUS_LINE}\n", "draft continues"),
 ]
 
 
@@ -422,44 +477,57 @@ GHOST_CASES: list[tuple[str, str, str | None]] = [
 LAST_LINE_CASES: list[tuple[str, str, str]] = [
     # Auto-mode footer at the bottom — must be filtered. Falls through to
     # the actual response content above.
-    ("filter-auto-mode", textwrap.dedent(f"""\
+    (
+        "filter-auto-mode",
+        textwrap.dedent(f"""\
         Some recent response text from the assistant.
         ✻ Brewed for 31s
         ❯
         ─────────────────────
         {STATUS_LINE}
         ⏵⏵ auto mode on (shift+tab to cycle)
-    """), "✻ Brewed for 31s"),
-
+    """),
+        "✻ Brewed for 31s",
+    ),
     # Auto-mode footer with the "← for agents" suffix — same filter.
-    ("filter-auto-mode-agents", textwrap.dedent(f"""\
+    (
+        "filter-auto-mode-agents",
+        textwrap.dedent(f"""\
         Some recent response text.
         ✻ Cooked for 1m 15s
         ❯
         {STATUS_LINE}
         ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
-    """), "✻ Cooked for 1m 15s"),
-
+    """),
+        "✻ Cooked for 1m 15s",
+    ),
     # Title bar at top + auto-mode at bottom — both filtered.
-    ("filter-title-bar", textwrap.dedent(f"""\
+    (
+        "filter-title-bar",
+        textwrap.dedent(f"""\
         periscope | main | +3 -26 4m * | github.com/tomplex/periscope/compare/master...main
         Assistant said something useful here.
         ✻ Brewed for 5s
         ❯
         {STATUS_LINE}
         ⏵⏵ auto mode on (shift+tab to cycle)
-    """), "✻ Brewed for 5s"),
-
+    """),
+        "✻ Brewed for 5s",
+    ),
     # Active spinner line shouldn't surface as snippet (duplicate of state
     # label). Falls through to whatever's below the spinner.
-    ("filter-active-spinner", textwrap.dedent(f"""\
+    (
+        "filter-active-spinner",
+        textwrap.dedent(f"""\
         ✳ Wiring resolve_pids into endpoints…
           ⎿  ◼ Task 2.3: subtask line
              ◻ Task 2.4: another subtask
         ❯
         {STATUS_LINE}
         ⏵⏵ auto mode on (shift+tab to cycle)
-    """), "◻ Task 2.4: another subtask"),
+    """),
+        "◻ Task 2.4: another subtask",
+    ),
 ]
 
 
@@ -475,7 +543,9 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
     # repeatedly typed `keep going`, and the bottom shows Claude resuming.
     # The latest tool result above the resumed turn is still the API
     # error → flag should be on so the card surfaces the stuck retry.
-    ("rate-limited-stuck", textwrap.dedent(f"""\
+    (
+        "rate-limited-stuck",
+        textwrap.dedent(f"""\
         Reshaping the query — payload columns are huge.
 
           Called fdy 5 times (ctrl+o to expand)
@@ -501,11 +571,14 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
 
         ⏺ Skipping reminder. One last lookup — there's a closest_store_by_address variant I haven't traced yet.
         {STATUS_LINE}
-    """), True),
-
+    """),
+        True,
+    ),
     # API Error appeared, but Claude retried and a fresh tool result
     # succeeded after it. Bottom-up scan hits the success first → flag off.
-    ("recovered-after-error", textwrap.dedent(f"""\
+    (
+        "recovered-after-error",
+        textwrap.dedent(f"""\
         ⏺ Bash(curl https://api.example.com/data)
           ⎿  API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited
 
@@ -516,29 +589,38 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
 
         ❯
         {STATUS_LINE}
-    """), False),
-
+    """),
+        False,
+    ),
     # Vanilla idle pane, no error anywhere → flag off (regression guard).
-    ("no-error", textwrap.dedent(f"""\
+    (
+        "no-error",
+        textwrap.dedent(f"""\
         ⏺ Some normal response.
 
         ✻ Brewed for 5s
 
         ❯
         {STATUS_LINE}
-    """), False),
-
+    """),
+        False,
+    ),
     # Shell pane that happens to mention "API Error" in prose must NOT
     # trip the flag — only Claude panes get the treatment.
-    ("shell-mentions-api-error", textwrap.dedent("""\
+    (
+        "shell-mentions-api-error",
+        textwrap.dedent("""\
         $ grep -r "API Error" .
         ./logs/yesterday.log: ⎿  API Error: foo
         $
-    """), False),
-
+    """),
+        False,
+    ),
     # API error mid-buffer with no later `⎿` tool results — Claude is
     # presumably retrying / waiting. Flag on.
-    ("error-then-only-text", textwrap.dedent(f"""\
+    (
+        "error-then-only-text",
+        textwrap.dedent(f"""\
           ⎿  API Error: Server is temporarily limiting requests · Rate limited
 
         ⏺ Retrying that lookup…
@@ -547,7 +629,9 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
 
         ❯
         {STATUS_LINE}
-    """), True),
+    """),
+        True,
+    ),
 ]
 
 
@@ -562,9 +646,7 @@ def test_regex_cases():
         got = bool(s_m or a_m)
         via = "SPINNER" if s_m else "ACTIVE" if a_m else "-"
         if got != want:
-            failures.append(
-                f"[{tag}] match={got} want={want} via={via}  {line[:80]}"
-            )
+            failures.append(f"[{tag}] match={got} want={want} via={via}  {line[:80]}")
     assert not failures, "\n".join(failures)
 
 
@@ -588,9 +670,7 @@ def test_ghost_cases():
         result = parse_pane(content)
         got = result.get("pending_input")
         if got != want_pending:
-            failures.append(
-                f"[{tag}] pending_input={got!r} (want {want_pending!r})"
-            )
+            failures.append(f"[{tag}] pending_input={got!r} (want {want_pending!r})")
     assert not failures, "\n".join(failures)
 
 
@@ -710,10 +790,7 @@ def test_update_focus_from_windows_stamps_active_window():
 
 
 def test_list_windows_parses_tmux_list_output(mocker):
-    sample = (
-        "main\t0\tshell\t1\t/home/tom/dev/foo\t1234abcd\t%5\n"
-        "main\t1\tclaude\t0\t/home/tom/dev/bar\t1235abcd\t%6\n"
-    )
+    sample = "main\t0\tshell\t1\t/home/tom/dev/foo\t1234abcd\t%5\nmain\t1\tclaude\t0\t/home/tom/dev/bar\t1235abcd\t%6\n"
     mocker.patch("periscope.panes.tmux", return_value=sample)
     out = list_windows()
     assert len(out) == 2
@@ -730,10 +807,7 @@ def test_list_windows_parses_tmux_list_output(mocker):
 
 
 def test_list_windows_appends_process_metadata(mocker):
-    sample = (
-        "main\t0\tcodex\t1\t/home/tom/dev/foo\t1234abcd\t%5"
-        "\t1717250000\t@9\t4242\tcodex\n"
-    )
+    sample = "main\t0\tcodex\t1\t/home/tom/dev/foo\t1234abcd\t%5\t1717250000\t@9\t4242\tcodex\n"
     mocker.patch("periscope.panes.tmux", return_value=sample)
     row = list_windows()[0]
     assert row["window_id"] == "@9"
@@ -745,12 +819,14 @@ def test_all_pane_ids_parses_and_dedupes(mocker):
     """list-panes -a yields every pane id (including a window's background
     panes, which list_windows collapses to just the active one)."""
     from periscope import panes
+
     mocker.patch("periscope.panes.tmux", return_value="%5\n%6\n%7\n")
     assert panes.all_pane_ids() == {"%5", "%6", "%7"}
 
 
 def test_all_pane_ids_empty_on_blank(mocker):
     from periscope import panes
+
     mocker.patch("periscope.panes.tmux", return_value="")
     assert panes.all_pane_ids() == set()
 
@@ -758,6 +834,7 @@ def test_all_pane_ids_empty_on_blank(mocker):
 def test_list_windows_parses_window_activity(mocker):
     """list_windows surfaces #{window_activity} as an int `activity` field."""
     from periscope import panes
+
     mocker.patch(
         "periscope.panes.tmux",
         return_value="sess\t0\twin\t1\t/cwd\tpid-abc\t%5\t1717250000\n",
@@ -769,6 +846,7 @@ def test_list_windows_parses_window_activity(mocker):
 def test_list_windows_activity_defaults_zero_when_absent(mocker):
     """A short row (no activity column) defaults activity to 0, not a crash."""
     from periscope import panes
+
     mocker.patch(
         "periscope.panes.tmux",
         return_value="sess\t0\twin\t1\t/cwd\tpid-abc\t%5\n",
@@ -782,6 +860,7 @@ def test_update_focus_ignores_window_activity(mocker):
     Two polls where only `activity` changes (same active window) must NOT
     re-stamp focus."""
     from periscope import panes
+
     panes._focused_at.clear()
     panes._active_per_session.clear()
     windows_t1 = [{"session": "s", "index": 0, "active": True, "activity": 100}]
@@ -793,10 +872,7 @@ def test_update_focus_ignores_window_activity(mocker):
 
 
 def test_list_windows_filters_input_ctl_session(mocker):
-    sample = (
-        "main\t0\tshell\t1\t/home/tom\t\t%5\n"
-        "periscope-input\t0\tshell\t1\t/tmp\t\t%6\n"
-    )
+    sample = "main\t0\tshell\t1\t/home/tom\t\t%5\nperiscope-input\t0\tshell\t1\t/tmp\t\t%6\n"
     mocker.patch("periscope.panes.tmux", return_value=sample)
     out = list_windows()
     # periscope's internal control-mode session is scaffolding, not state.
@@ -806,11 +882,12 @@ def test_list_windows_filters_input_ctl_session(mocker):
 
 def test_drop_target_focus_pops_both_dicts():
     from periscope import panes
+
     panes._focused_at["sess:1"] = 100
     panes._acted_at["sess:1"] = 100
     panes._focused_at["sess:2"] = 200
     panes.drop_target_focus("sess:1")
     assert "sess:1" not in panes._focused_at
     assert "sess:1" not in panes._acted_at
-    assert panes._focused_at["sess:2"] == 200   # untouched
-    panes._focused_at.pop("sess:2", None)        # cleanup
+    assert panes._focused_at["sess:2"] == 200  # untouched
+    panes._focused_at.pop("sess:2", None)  # cleanup

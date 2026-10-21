@@ -38,16 +38,12 @@ import json
 import os
 import sys
 
-SOCKET_PATH = os.environ.get(
-    "PERISCOPE_MCP_SOCKET_PATH", "/tmp/periscope-mcp.sock"
-)
+SOCKET_PATH = os.environ.get("PERISCOPE_MCP_SOCKET_PATH", "/tmp/periscope-mcp.sock")
 TMUX_PANE = os.environ.get("TMUX_PANE", "")
 # The caller handle: an explicit commander id (cmdr:<session_id>) when periscope
 # dispatched us via --bg, else the tmux pane id for a normal pane.
 CALLER_ID = os.environ.get("PERISCOPE_CALLER_ID", "") or TMUX_PANE
-RECONNECT_BACKOFF_S = float(
-    os.environ.get("PERISCOPE_MCP_RECONNECT_BACKOFF_S", "1.0")
-)
+RECONNECT_BACKOFF_S = float(os.environ.get("PERISCOPE_MCP_RECONNECT_BACKOFF_S", "1.0"))
 
 # Synthetic JSON-RPC ids the shim generates internally (currently just for
 # the post-reconnect tools/list). Picked well above any plausible client-
@@ -86,18 +82,13 @@ class Shim:
 
     async def run(self) -> None:
         if not (CALLER_ID.startswith(("%", "cmdr:"))):
-            _err(
-                f"caller id missing or malformed ({CALLER_ID!r}); "
-                "periscope MCP inactive for this session"
-            )
+            _err(f"caller id missing or malformed ({CALLER_ID!r}); periscope MCP inactive for this session")
             return
 
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
         try:
-            await loop.connect_read_pipe(
-                lambda: asyncio.StreamReaderProtocol(reader), sys.stdin
-            )
+            await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
         except Exception as e:
             _err(f"can't attach stdin reader ({e}); inactive")
             return
@@ -107,14 +98,9 @@ class Shim:
         try:
             while not self._stdin_eof.is_set():
                 try:
-                    sock_r, sock_w = await asyncio.open_unix_connection(
-                        SOCKET_PATH
-                    )
+                    sock_r, sock_w = await asyncio.open_unix_connection(SOCKET_PATH)
                 except (FileNotFoundError, ConnectionRefusedError, OSError) as e:
-                    _err(
-                        f"can't reach periscope at {SOCKET_PATH} ({e}); "
-                        f"retrying in {RECONNECT_BACKOFF_S}s"
-                    )
+                    _err(f"can't reach periscope at {SOCKET_PATH} ({e}); retrying in {RECONNECT_BACKOFF_S}s")
                     if await self._wait_or_eof(RECONNECT_BACKOFF_S):
                         return
                     continue
@@ -162,9 +148,7 @@ class Shim:
         except TimeoutError:
             return False
 
-    async def _serve(
-        self, sock_r: asyncio.StreamReader, sock_w: asyncio.StreamWriter
-    ) -> None:
+    async def _serve(self, sock_r: asyncio.StreamReader, sock_w: asyncio.StreamWriter) -> None:
         # 1. Hello frame — periscope reads one JSON line on accept() to learn
         # this connection's caller handle (%N for a pane, cmdr:<id> for a
         # commander). The JSON key stays "pane" (a private 2-file wire
@@ -194,17 +178,13 @@ class Shim:
             self._next_synthetic_id += 1
             syn_id = self._next_synthetic_id
             self._swallow_ids.add(syn_id)
-            sock_w.write(
-                (json.dumps({"jsonrpc": "2.0", "id": syn_id, "method": "tools/list"}) + "\n").encode()
-            )
+            sock_w.write((json.dumps({"jsonrpc": "2.0", "id": syn_id, "method": "tools/list"}) + "\n").encode())
             await sock_w.drain()
 
         # 4. Bidirectional pump until either side closes.
         out_task = asyncio.create_task(self._stdin_to_socket(sock_w))
         in_task = asyncio.create_task(self._socket_to_stdout(sock_r))
-        _, pending = await asyncio.wait(
-            {out_task, in_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        _, pending = await asyncio.wait({out_task, in_task}, return_when=asyncio.FIRST_COMPLETED)
         for t in pending:
             t.cancel()
             with contextlib.suppress(asyncio.CancelledError):

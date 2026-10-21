@@ -21,17 +21,28 @@ def _reset(monkeypatch):
 
 # --- check() ---------------------------------------------------------------
 
+
 def _git_stub(responses):
     """Map first-arg -> stdout. Returns None for anything unlisted."""
+
     def fake(*args, **kwargs):
         return responses.get(args[0])
+
     return fake
 
 
 def test_check_counts_commits_behind(monkeypatch):
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "12\t0",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "12\t0",
+            }
+        ),
+    )
     assert updater.check() == 12
     assert updater.summary()["behind"] == 12
 
@@ -45,9 +56,17 @@ def test_check_counts_local_commits_ahead(monkeypatch):
     reason nowhere in the UI (the fdy fork: one unpushed commit sat on `main`
     for two weeks while origin moved 10 ahead).
     """
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "10\t1",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "10\t1",
+            }
+        ),
+    )
     assert updater.check() == 10
     assert updater.summary()["ahead"] == 1
     assert updater.status()["ahead"] == 1
@@ -55,9 +74,17 @@ def test_check_counts_local_commits_ahead(monkeypatch):
 
 def test_check_keeps_last_ahead_when_it_cannot_answer(monkeypatch):
     # Same rule as the count it travels with: a failed probe leaves it standing.
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "4\t2",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "4\t2",
+            }
+        ),
+    )
     updater.check()
     monkeypatch.setattr(updater, "_git", _git_stub({"rev-parse": "origin/main", "fetch": None}))
     updater.check(force=True)
@@ -65,10 +92,18 @@ def test_check_keeps_last_ahead_when_it_cannot_answer(monkeypatch):
 
 
 def test_check_records_commit_subjects(monkeypatch):
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "2\t0",
-        "log": "abc1234\x1ffix the thing: a b\ndef5678\x1fsecond",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "2\t0",
+                "log": "abc1234\x1ffix the thing: a b\ndef5678\x1fsecond",
+            }
+        ),
+    )
     updater.check()
     assert updater.status()["commits"] == [
         {"sha": "abc1234", "subject": "fix the thing: a b"},
@@ -78,15 +113,27 @@ def test_check_records_commit_subjects(monkeypatch):
     assert "commits" not in updater.summary()
 
 
-@pytest.mark.parametrize("broken", [
-    {"rev-parse": "origin/main", "fetch": None},
-    # rev-list answered, git log didn't: the count refreshes, the list stands.
-    {"rev-parse": "origin/main", "fetch": "", "rev-list": "3\t0", "log": None},
-])
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {"rev-parse": "origin/main", "fetch": None},
+        # rev-list answered, git log didn't: the count refreshes, the list stands.
+        {"rev-parse": "origin/main", "fetch": "", "rev-list": "3\t0", "log": None},
+    ],
+)
 def test_check_keeps_last_commits_when_it_cannot_answer(monkeypatch, broken):
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "1\t0", "log": "abc1234\x1fone",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "1\t0",
+                "log": "abc1234\x1fone",
+            }
+        ),
+    )
     updater.check()
     monkeypatch.setattr(updater, "_git", _git_stub(broken))
     updater.check(force=True)
@@ -110,9 +157,17 @@ def test_check_is_throttled(monkeypatch):
 
 
 def test_check_force_bypasses_throttle(monkeypatch):
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "1\t0",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "1\t0",
+            }
+        ),
+    )
     updater.check()
     calls = []
 
@@ -132,12 +187,15 @@ def test_check_silent_without_upstream(monkeypatch):
     assert updater.summary()["behind"] == 0
 
 
-@pytest.mark.parametrize("broken", [
-    {"rev-parse": "origin/main", "fetch": None},                    # offline
-    {"rev-parse": None},                                            # no upstream
-    {"rev-parse": "origin/main", "fetch": "", "rev-list": ""},      # bad count
-    {"rev-parse": "origin/main", "fetch": "", "rev-list": "9"},     # one-sided count
-])
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {"rev-parse": "origin/main", "fetch": None},  # offline
+        {"rev-parse": None},  # no upstream
+        {"rev-parse": "origin/main", "fetch": "", "rev-list": ""},  # bad count
+        {"rev-parse": "origin/main", "fetch": "", "rev-list": "9"},  # one-sided count
+    ],
+)
 def test_check_keeps_last_count_when_it_cannot_answer(monkeypatch, broken):
     """A failed probe must LEAVE THE COUNT STANDING, not reset it to 0.
 
@@ -146,9 +204,17 @@ def test_check_keeps_last_count_when_it_cannot_answer(monkeypatch, broken):
     which is what the pill actually reads; check()'s return value alone would
     pass even if _behind were being clobbered.
     """
-    monkeypatch.setattr(updater, "_git", _git_stub({
-        "rev-parse": "origin/main", "fetch": "", "rev-list": "9\t0",
-    }))
+    monkeypatch.setattr(
+        updater,
+        "_git",
+        _git_stub(
+            {
+                "rev-parse": "origin/main",
+                "fetch": "",
+                "rev-list": "9\t0",
+            }
+        ),
+    )
     updater.check()
     assert updater.summary()["behind"] == 9
 
@@ -158,6 +224,7 @@ def test_check_keeps_last_count_when_it_cannot_answer(monkeypatch, broken):
 
 
 # --- start() ---------------------------------------------------------------
+
 
 def test_start_refuses_on_dev_instance(monkeypatch):
     # A dev instance runs from a worktree on a feature branch: a fast-forward
@@ -170,8 +237,12 @@ def test_start_refuses_on_dev_instance(monkeypatch):
 class LiveProc:
     pid = 999
     killed = False
-    def poll(self): return None              # still running
-    def kill(self): self.killed = True
+
+    def poll(self):
+        return None  # still running
+
+    def kill(self):
+        self.killed = True
 
 
 def test_start_refuses_when_already_running(monkeypatch):
@@ -193,10 +264,10 @@ def test_start_kills_a_wedged_updater(monkeypatch, tmp_path):
     wedged = LiveProc()
     monkeypatch.setattr(updater, "_proc", wedged)
     monkeypatch.setattr(updater, "_started_at", time.time() - updater.STALE_PROC_S - 1)
-    assert updater.running() is False        # past the cap, so no longer "live"
+    assert updater.running() is False  # past the cap, so no longer "live"
 
     monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: LiveProc())
-    updater.start()                          # must not raise
+    updater.start()  # must not raise
     assert wedged.killed is True
 
 
@@ -211,7 +282,9 @@ def test_start_spawns_detached(monkeypatch, tmp_path):
 
     class FakeProc:
         pid = 4242
-        def poll(self): return None
+
+        def poll(self):
+            return None
 
     def fake_popen(argv, **kwargs):
         seen["argv"] = argv
@@ -230,7 +303,8 @@ def test_start_spawns_detached(monkeypatch, tmp_path):
 
 def test_running_false_after_exit(monkeypatch):
     class DeadProc:
-        def poll(self): return 1
+        def poll(self):
+            return 1
 
     monkeypatch.setattr(updater, "_proc", DeadProc())
     monkeypatch.setattr(updater, "_started_at", time.time())
@@ -246,6 +320,7 @@ def test_summary_does_not_deadlock_on_the_hot_path(monkeypatch):
 
 
 # --- status()/summary() ----------------------------------------------------
+
 
 def test_summary_touches_no_disk(monkeypatch):
     """summary() rides every 3s /api/state poll; the log tail belongs to the

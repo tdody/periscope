@@ -135,8 +135,7 @@ def free_worktree_path(repo: str, slug: str) -> str:
 def _branch_exists(repo: str, branch: str) -> bool:
     """True when `branch` is already a local ref in `repo`."""
     code, _ = _run(
-        ["git", "-C", repo, "rev-parse", "--verify", "--quiet",
-         f"refs/heads/{branch}"],
+        ["git", "-C", repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
         timeout=10.0,
     )
     return code == 0
@@ -175,9 +174,7 @@ def spawn_worktree(
     if not branch:
         raise ValueError("branch is required")
     repo = os.path.realpath(repo)
-    if not os.path.isdir(os.path.join(repo, ".git")) and not os.path.isfile(
-        os.path.join(repo, ".git")
-    ):
+    if not os.path.isdir(os.path.join(repo, ".git")) and not os.path.isfile(os.path.join(repo, ".git")):
         # .git can be a dir (normal checkout) or a file (worktree itself).
         # Either way it must exist.
         raise ValueError(f"not a git repo: {repo}")
@@ -200,9 +197,7 @@ def spawn_worktree(
     # Phase-1's repo_locks.py:33-35 documents this: "Callers should hold
     # the lock only across the git mutation itself, not surrounding work."
     if fetch:
-        fetch_code, fetch_out = _run(
-            ["git", "-C", repo, "fetch", "origin", base], timeout=30.0
-        )
+        fetch_code, fetch_out = _run(["git", "-C", repo, "fetch", "origin", base], timeout=30.0)
         if fetch_code != 0:
             warning = f"fetch failed: origin/{base} may be stale ({fetch_out!r})"
             log.warning("worktree_spawn: %s", warning)
@@ -218,8 +213,7 @@ def spawn_worktree(
         # clicks race straight past it.
         existing = worktrees.for_branch(repo, branch)
         if existing:
-            result = {"path": existing, "base_branch": base,
-                      "branch": branch, "reused": True}
+            result = {"path": existing, "base_branch": base, "branch": branch, "reused": True}
             if warning:
                 result["warning"] = warning
             return result
@@ -251,8 +245,7 @@ def spawn_worktree(
 
     worktrees.invalidate(repo)
 
-    result = {"path": wt_path_str, "base_branch": base, "branch": branch,
-              "reused": False}
+    result = {"path": wt_path_str, "base_branch": base, "branch": branch, "reused": False}
     if warning:
         result["warning"] = warning
     return result
@@ -316,9 +309,18 @@ def _layout_two_window(
     model_env = config.model_env(model) if agent == "claude" else ""
     if not _tmux_mutate("has-session", "-t", tmux_session)[0]:
         ok, claude_win = _tmux_mutate(
-            "new-session", "-d", "-s", tmux_session, "-c", pinned_dir,
+            "new-session",
+            "-d",
+            "-s",
+            tmux_session,
+            "-c",
+            pinned_dir,
             *tmux_mod.env_args(config_dir, None, model_env),
-            "-n", agent_name, "-P", "-F", "#{window_id}",
+            "-n",
+            agent_name,
+            "-P",
+            "-F",
+            "#{window_id}",
         )
         if not ok:
             raise HTTPException(500, f"tmux new-session failed: {claude_win}")
@@ -330,9 +332,17 @@ def _layout_two_window(
             tmux_mod.scrub_session_env(tmux_session)
     else:
         ok, claude_win = _tmux_mutate(
-            "new-window", "-t", f"{tmux_session}:", "-c", pinned_dir,
+            "new-window",
+            "-t",
+            f"{tmux_session}:",
+            "-c",
+            pinned_dir,
             *tmux_mod.env_args(config_dir, None, model_env),
-            "-n", agent_name, "-P", "-F", "#{window_id}",
+            "-n",
+            agent_name,
+            "-P",
+            "-F",
+            "#{window_id}",
         )
         if not ok:
             raise HTTPException(500, f"tmux new-window (claude) failed: {claude_win}")
@@ -341,6 +351,7 @@ def _layout_two_window(
     # channels flag so the spawned Claude connects to periscope's MCP socket.
     from periscope.channels import dismiss_dev_channels_consent_bg
     from periscope.config import build_agent_command
+
     exec_cmd = shlex.join(build_agent_command(agent, cwd=pinned_dir, effort=effort))
     time.sleep(0.1)
     _tmux_mutate("send-keys", "-t", claude_win, exec_cmd, "Enter")
@@ -349,9 +360,17 @@ def _layout_two_window(
 
     # Second window: shell.
     ok, shell_win = _tmux_mutate(
-        "new-window", "-t", f"{tmux_session}:", "-c", pinned_dir,
+        "new-window",
+        "-t",
+        f"{tmux_session}:",
+        "-c",
+        pinned_dir,
         *tmux_mod.env_args(config_dir),
-        "-n", "shell", "-P", "-F", "#{window_id}",
+        "-n",
+        "shell",
+        "-P",
+        "-F",
+        "#{window_id}",
     )
     if not ok:
         # Session + claude window already exist; don't roll back.

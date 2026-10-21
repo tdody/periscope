@@ -1,5 +1,6 @@
 """Tests for periscope.tmux_persist — the ~/.tmux.conf line rules and the
 healthz status built from live tmux options."""
+
 import time
 from pathlib import Path
 
@@ -20,6 +21,7 @@ def home(tmp_path, monkeypatch):
 
 # --- ensure_sourced / remove_sourced ---------------------------------------
 
+
 def test_source_line_inserted_above_existing_tpm_run(home):
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on\nset -g @plugin 'tmux-plugins/tpm'\nrun '~/.tmux/plugins/tpm/tpm'\n")
@@ -32,7 +34,7 @@ def test_source_line_inserted_above_existing_tpm_run(home):
 
 def test_source_line_appended_with_tpm_run_when_absent(home):
     conf = home / ".tmux.conf"
-    conf.write_text("set -g mouse on")   # no trailing newline
+    conf.write_text("set -g mouse on")  # no trailing newline
     assert tp.ensure_sourced(conf) is True
     assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
 
@@ -91,12 +93,15 @@ def test_owned_conf_carries_this_checkouts_hook():
 
 # --- status ----------------------------------------------------------------
 
+
 def _stub_live(monkeypatch, options):
     """options=None simulates no tmux server."""
+
     def live(name):
         if options is None:
             return None
         return options.get(name, "")
+
     monkeypatch.setattr(tp, "_live_option", live)
 
 
@@ -124,7 +129,9 @@ def test_status_ok_when_everything_lines_up(home, monkeypatch):
 
 def test_status_reads_live_server_not_file(home, monkeypatch):
     _healthy_home(home)
-    _stub_live(monkeypatch, {**HEALTHY, "@resurrect-hook-post-save-layout": "~/old/periscope/bin/periscope resurrect-rewrite"})
+    _stub_live(
+        monkeypatch, {**HEALTHY, "@resurrect-hook-post-save-layout": "~/old/periscope/bin/periscope resurrect-rewrite"}
+    )
     s = tp.status(REPO)
     assert s["conf_sourced"] is True
     assert s["hook_current"] is False
@@ -133,7 +140,9 @@ def test_status_reads_live_server_not_file(home, monkeypatch):
 
 def test_status_accepts_tilde_hook_path(home, monkeypatch):
     _healthy_home(home)
-    _stub_live(monkeypatch, {**HEALTHY, "@resurrect-hook-post-save-layout": "~/periscope/bin/periscope resurrect-rewrite"})
+    _stub_live(
+        monkeypatch, {**HEALTHY, "@resurrect-hook-post-save-layout": "~/periscope/bin/periscope resurrect-rewrite"}
+    )
     assert tp.status(home / "periscope")["hook_current"] is True
 
 
@@ -154,8 +163,9 @@ def test_status_stale_save_flips_ok(home, monkeypatch):
     target = d / "tmux_resurrect_old.txt"
     target.write_text("")
     (d / "last").symlink_to(target.name)
-    stale_at = time.time() - 3 * 10 * 60   # 3 intervals at the live 10-min setting
+    stale_at = time.time() - 3 * 10 * 60  # 3 intervals at the live 10-min setting
     import os
+
     os.utime(target, (stale_at, stale_at))
     s = tp.status(REPO)
     assert s["last_save_stale"] is True

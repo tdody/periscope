@@ -36,9 +36,7 @@ class FakeServer:
     async def start(self) -> None:
         if os.path.exists(self._socket_path):
             os.unlink(self._socket_path)
-        self._server = await asyncio.start_unix_server(
-            self._handle, path=self._socket_path
-        )
+        self._server = await asyncio.start_unix_server(self._handle, path=self._socket_path)
 
     async def stop(self) -> None:
         if self._server is None:
@@ -57,9 +55,7 @@ class FakeServer:
         await asyncio.wait_for(self._conn_event.wait(), timeout=timeout)
         self._conn_event.clear()
 
-    async def _handle(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         record: dict = {"pane": None, "lines": []}
         self.records.append(record)
         try:
@@ -88,9 +84,7 @@ class FakeServer:
                     result = {"tools": []}
                 else:
                     result = {"echoed": method}
-                writer.write(
-                    (json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n").encode()
-                )
+                writer.write((json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n").encode())
                 try:
                     await writer.drain()
                 except (OSError, BrokenPipeError):
@@ -340,6 +334,7 @@ def test_caller_id_prefers_explicit_handle(monkeypatch):
     import importlib
 
     import channel_shim
+
     monkeypatch.setenv("PERISCOPE_CALLER_ID", "cmdr:abc")
     monkeypatch.setenv("TMUX_PANE", "%9")
     importlib.reload(channel_shim)

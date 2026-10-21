@@ -1,4 +1,5 @@
 """POST /api/open + GET /api/open/catalog — thin shim over open_ops."""
+
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -34,9 +35,14 @@ def open_endpoint(body: OpenBody):
         result = open_ops.open_target(descriptor, agent=body.agent)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return {"tmux_session": result.tmux_session, "repo": result.repo,
-            "agent_pid": result.agent_pid, "agent_pane_id": result.agent_pane_id,
-            "agent": result.agent, "ui": result.ui}
+    return {
+        "tmux_session": result.tmux_session,
+        "repo": result.repo,
+        "agent_pid": result.agent_pid,
+        "agent_pane_id": result.agent_pane_id,
+        "agent": result.agent,
+        "ui": result.ui,
+    }
 
 
 @router.get("/api/open/catalog")

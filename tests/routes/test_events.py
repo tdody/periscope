@@ -19,10 +19,15 @@ def _count(name=None):
 
 
 def test_post_events_inserts_batch(client):
-    r = client.post("/api/events", json={"events": [
-        {"name": "modal.open", "detail": {"tab": "terminal"}, "t": 100},
-        {"name": "app.open", "t": 101},
-    ]})
+    r = client.post(
+        "/api/events",
+        json={
+            "events": [
+                {"name": "modal.open", "detail": {"tab": "terminal"}, "t": 100},
+                {"name": "app.open", "t": 101},
+            ]
+        },
+    )
     assert r.status_code == 200
     assert r.json() == {"ok": True, "n": 2}
     assert _count() == 2

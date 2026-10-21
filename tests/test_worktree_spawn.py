@@ -15,6 +15,7 @@ def tmp_worktrees(tmp_path, monkeypatch):
     strays from May 2026 are still sitting in that directory.)
     """
     from periscope import worktree_spawn
+
     root = tmp_path / "worktrees"
     monkeypatch.setattr(worktree_spawn, "WORKTREES_DIR", root)
     return root
@@ -30,6 +31,7 @@ def _patch_layout(monkeypatch, *, has_session: bool = True) -> list[tuple]:
     """
     from periscope import channels, pids, worktree_spawn
     from periscope import tmux as tmux_mod
+
     calls: list[tuple] = []
 
     def fake_mutate(*args):
@@ -54,6 +56,7 @@ def test_layout_two_window_passes_account_env(monkeypatch):
     """The unified-open surface (⌘K omnibox, /api/open, PR review) lands here —
     without the env every pane it creates is silently on the default account."""
     from periscope.worktree_spawn import _layout_two_window
+
     calls = _patch_layout(monkeypatch)
 
     _layout_two_window("sess", "/tmp", account="b")
@@ -65,14 +68,14 @@ def test_layout_two_window_passes_account_env(monkeypatch):
     for call in created:
         flat = list(call)
         assert "-e" in flat, flat
-        assert any(a.startswith("CLAUDE_CONFIG_DIR=") and a.endswith("/.claude-b")
-                   for a in flat), flat
+        assert any(a.startswith("CLAUDE_CONFIG_DIR=") and a.endswith("/.claude-b") for a in flat), flat
 
 
 def test_layout_two_window_effort_rides_the_agent_command(monkeypatch):
     # A flag on the agent's own command line: the sibling shell inherits
     # nothing, and the pane's /effort keeps working (the env var would lock it).
     from periscope.worktree_spawn import _layout_two_window
+
     calls = _patch_layout(monkeypatch)
 
     _layout_two_window("sess", "/tmp", effort="max")
@@ -84,6 +87,7 @@ def test_layout_two_window_effort_rides_the_agent_command(monkeypatch):
 
 def test_layout_two_window_default_account_sends_no_env(monkeypatch):
     from periscope.worktree_spawn import _layout_two_window
+
     calls = _patch_layout(monkeypatch)
 
     _layout_two_window("sess", "/tmp")
@@ -97,13 +101,15 @@ def test_layout_two_window_scrubs_new_session_env(monkeypatch):
     """`new-session -e` sets the SESSION env — every later window in the one
     shared session would otherwise inherit this account."""
     from periscope.worktree_spawn import _layout_two_window
+
     calls = _patch_layout(monkeypatch, has_session=False)
 
     _layout_two_window("sess", "/tmp", account="b")
 
     assert _created(calls) and _created(calls)[0][0] == "new-session"
-    assert any(c[0] == "set-environment" and "-u" in c and "CLAUDE_CONFIG_DIR" in c
-               for c in calls), f"session env never scrubbed: {calls}"
+    assert any(c[0] == "set-environment" and "-u" in c and "CLAUDE_CONFIG_DIR" in c for c in calls), (
+        f"session env never scrubbed: {calls}"
+    )
 
 
 @needs_tmux
@@ -111,14 +117,14 @@ def test_layout_two_window_stamps_both_windows(tmp_git_repo, tmux_test_server):
     from periscope import config
     from periscope.tmux import tmux
     from periscope.worktree_spawn import _layout_two_window
+
     session = config.MANAGED_SESSION
     claude_pid, shell_pid = _layout_two_window(session, str(tmp_git_repo))
     assert claude_pid and shell_pid and claude_pid != shell_pid
     # Under one shared session there can be many windows named "claude"/"shell",
     # so look up the stamped ids by window id, not by session:name (ambiguous).
     stamped = {}
-    for row in tmux("list-windows", "-t", session, "-F",
-                    "#{window_id} #{@periscope_id}").split("\n"):
+    for row in tmux("list-windows", "-t", session, "-F", "#{window_id} #{@periscope_id}").split("\n"):
         if not row.strip():
             continue
         wid, _, pid = row.partition(" ")
@@ -136,12 +142,12 @@ def test_layout_two_window_stamps_recency_by_session_index(tmp_git_repo, tmux_te
     from periscope import config, panes
     from periscope.tmux import tmux
     from periscope.worktree_spawn import _layout_two_window
+
     session = config.MANAGED_SESSION
     claude_pid, _ = _layout_two_window(session, str(tmp_git_repo))
     # Find the freshly-stamped claude window's index via its @periscope_id.
     idx = ""
-    for row in tmux("list-windows", "-t", session, "-F",
-                    "#{window_index} #{@periscope_id}").split("\n"):
+    for row in tmux("list-windows", "-t", session, "-F", "#{window_index} #{@periscope_id}").split("\n"):
         wi, _, pid = row.partition(" ")
         if pid.strip() == claude_pid:
             idx = wi.strip()
@@ -161,6 +167,7 @@ def test_spawn_worktree_checks_out_an_existing_branch(tmp_git_repo, tmp_worktree
     import subprocess
 
     from periscope.worktree_spawn import spawn_worktree
+
     repo = str(tmp_git_repo)
     subprocess.run(["git", "-C", repo, "branch", "already-here"], check=True)
 
@@ -169,7 +176,9 @@ def test_spawn_worktree_checks_out_an_existing_branch(tmp_git_repo, tmp_worktree
     assert res["branch"] == "already-here"
     head = subprocess.run(
         ["git", "-C", res["path"], "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert head == "already-here"
 
@@ -178,13 +187,16 @@ def test_spawn_worktree_still_creates_a_brand_new_branch(tmp_git_repo, tmp_workt
     import subprocess
 
     from periscope.worktree_spawn import spawn_worktree
+
     repo = str(tmp_git_repo)
 
     res = spawn_worktree(repo, "brand-new", fetch=False)
 
     head = subprocess.run(
         ["git", "-C", res["path"], "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert head == "brand-new"
 
@@ -199,19 +211,21 @@ def test_spawn_worktree_de_collides_a_drifted_slug(tmp_git_repo, tmp_worktrees):
     import subprocess
 
     from periscope.worktree_spawn import spawn_worktree
+
     repo = str(tmp_git_repo)
 
     first = spawn_worktree(repo, "wip", fetch=False)
     # Drift: the dir is still called `wip`, the branch in it is not.
-    subprocess.run(["git", "-C", first["path"], "switch", "-q", "-c", "drifted"],
-                   check=True)
+    subprocess.run(["git", "-C", first["path"], "switch", "-q", "-c", "drifted"], check=True)
 
     res = spawn_worktree(repo, "wip", fetch=False)
 
     assert res["path"] != first["path"]
     head = subprocess.run(
         ["git", "-C", res["path"], "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert head == "wip"
 
@@ -229,6 +243,7 @@ def test_spawn_worktree_reuses_the_worktree_already_on_the_branch(tmp_git_repo, 
     under the repo lock that already serializes the mutation.
     """
     from periscope.worktree_spawn import spawn_worktree
+
     repo = str(tmp_git_repo)
 
     first = spawn_worktree(repo, "feat", fetch=False)

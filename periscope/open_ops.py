@@ -3,6 +3,7 @@ session. Plain functions over store.py singletons + tmux/git primitives —
 no HTTP here (routes/open.py is the thin shim). `open` is a builtin; the
 dispatch function is `open_target`, never `open`.
 """
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,15 +24,18 @@ from periscope.worktree_spawn import _layout_two_window, spawn_worktree
 class PathTarget:
     path: str
 
+
 @dataclass(frozen=True)
 class BranchTarget:
     repo: str
     branch: str
 
+
 @dataclass(frozen=True)
 class PRTarget:
     repo: str
     pr: int
+
 
 Descriptor = PathTarget | BranchTarget | PRTarget
 
@@ -82,20 +86,21 @@ def ensure_project(toplevel: str, repo: str) -> projects.Project:
     _, branch = resolve_repo_and_branch(toplevel)
     name = os.path.basename(toplevel)
     return projects.create_project(
-        toplevel, name=name, tmux_session=name, repo=repo,
+        toplevel,
+        name=name,
+        tmux_session=name,
+        repo=repo,
         base_branch=branch or None,
     )
 
 
 def _session_live(name: str) -> bool:
-    return _tmux_mutate("has-session", "-t", name)[0]   # socket-aware; False when missing
+    return _tmux_mutate("has-session", "-t", name)[0]  # socket-aware; False when missing
 
 
 def _session_owns_dir(name: str, pinned_dir: str) -> bool:
     """True if any window of session `name` sits at `pinned_dir` (realpath)."""
-    return any(w["session"] == name
-               and os.path.realpath(w.get("cwd") or "") == pinned_dir
-               for w in list_windows())
+    return any(w["session"] == name and os.path.realpath(w.get("cwd") or "") == pinned_dir for w in list_windows())
 
 
 def _agent_pid_for_dir(session: str, pinned_dir: str, agent: str) -> str:
@@ -103,9 +108,7 @@ def _agent_pid_for_dir(session: str, pinned_dir: str, agent: str) -> str:
     is `pinned_dir`. Under one shared session many claude windows coexist, so
     a session-wide "first claude" match is wrong here — filter by realpath'd
     cwd. Falls back to the first window at `pinned_dir`. '' if none."""
-    wins = [w for w in list_windows()
-            if w["session"] == session
-            and os.path.realpath(w.get("cwd") or "") == pinned_dir]
+    wins = [w for w in list_windows() if w["session"] == session and os.path.realpath(w.get("cwd") or "") == pinned_dir]
     if not wins:
         return ""
     match = next(
@@ -123,8 +126,7 @@ def _dedupe_name(base: str) -> str:
     return candidate
 
 
-def place_in_rail(tmux_session: str, project: projects.Project,
-                  pane_pids: list[str]) -> dict:
+def place_in_rail(tmux_session: str, project: projects.Project, pane_pids: list[str]) -> dict:
     """Append the opened panes to the rail prefs (idempotent) and return the
     full ui blob for the client to write into prefsSignal.
 
@@ -170,7 +172,7 @@ def resolve_worktree_session(path: str) -> tuple[str, projects.Project] | None:
     project = ensure_project(toplevel, repo)
     name = project["tmux_session"]
     if _session_live(name) and not _session_owns_dir(name, toplevel):
-        name = _dedupe_name(name)                          # live but foreign
+        name = _dedupe_name(name)  # live but foreign
         projects.update_project(toplevel, tmux_session=name)
     return name, project
 
@@ -202,13 +204,14 @@ def ensure_session(
         # when usage is unknown, so an open never waits on it.
         launch = usage.choose_launch(account)
         agent_pid, _ = _layout_two_window(
-            session, pinned_dir, account=launch.account, model=launch.model,
+            session,
+            pinned_dir,
+            account=launch.account,
+            model=launch.model,
             effort=launch.effort,
         )
     else:
-        agent_pid, _ = _layout_two_window(
-            session, pinned_dir, agent=agent, account=account
-        )
+        agent_pid, _ = _layout_two_window(session, pinned_dir, agent=agent, account=account)
     return session, agent_pid
 
 
@@ -224,8 +227,12 @@ def discover_repos() -> set[str]:
         if not root_path.is_dir():
             continue
         for child in root_path.iterdir():
-            if child.is_dir() and not child.name.startswith(".") \
-               and child.name != "worktrees" and (child / ".git").exists():
+            if (
+                child.is_dir()
+                and not child.name.startswith(".")
+                and child.name != "worktrees"
+                and (child / ".git").exists()
+            ):
                 repos.add(str(child.resolve()))
     return repos
 
@@ -248,20 +255,18 @@ def _open_path(
     # you looking for the wrong problem.
     if not os.path.isdir(path):
         raise ValueError(f"no such directory: {path}")
-    toplevel = _git_toplevel(path)                       # ValueError if non-git
-    repo = resolve_repo(toplevel)                        # --git-common-dir → parent
+    toplevel = _git_toplevel(path)  # ValueError if non-git
+    repo = resolve_repo(toplevel)  # --git-common-dir → parent
     project = ensure_project(toplevel, repo)
     session, agent_pid = ensure_session(project, toplevel, agent)
     # Rebuild the full pane list from the now-live session. list_windows()
     # is a live shell-out, so freshly-stamped windows are visible
     # synchronously; pid_raw is the @periscope_id, "" for unmanaged.
-    pane_pids = [w["pid_raw"] for w in list_windows()
-                 if w["session"] == session and w["pid_raw"]]
+    pane_pids = [w["pid_raw"] for w in list_windows() if w["session"] == session and w["pid_raw"]]
     # Recover the claude window's tmux pane_id (%N) for the result payload —
     # the terminal WS targets panes by %N even though identity keys on the pid.
     agent_pane_id = next(
-        (w["pane_id"] for w in list_windows()
-         if w.get("pid_raw") == agent_pid and w.get("pane_id")),
+        (w["pane_id"] for w in list_windows() if w.get("pid_raw") == agent_pid and w.get("pane_id")),
         "",
     )
     ui = place_in_rail(session, project, pane_pids or [agent_pid])
@@ -272,17 +277,22 @@ def _open_path(
     # track (the sts2-seed-finder clobber); an existing tag is either already
     # right or a user's goal-track move — never overwrite it here.
     from periscope import activity, tracks
+
     tid = tracks.repo_default_track(repo)
     for w in list_windows():
         # Membership keys on the stamped @periscope_id (pid_raw on raw rows);
         # unstamped windows have no durable identity to tag yet — skip them.
         p = (w.get("pid_raw") or "").strip()
-        if (p and w.get("session") == session
-                and os.path.realpath(w.get("cwd") or "") == toplevel
-                and activity.get_pane_track(p) is None):
+        if (
+            p
+            and w.get("session") == session
+            and os.path.realpath(w.get("cwd") or "") == toplevel
+            and activity.get_pane_track(p) is None
+        ):
             tracks.move_pane(p, tid)
-    return OpenResult(tmux_session=session, repo=repo, agent_pid=agent_pid,
-                      agent_pane_id=agent_pane_id, agent=agent, ui=ui)
+    return OpenResult(
+        tmux_session=session, repo=repo, agent_pid=agent_pid, agent_pane_id=agent_pane_id, agent=agent, ui=ui
+    )
 
 
 def open_target(
@@ -298,9 +308,7 @@ def open_target(
                   Rolls back the worktree if the open fails after the fetch.
     """
     if isinstance(descriptor, PathTarget):
-        return _open_path(descriptor.path) if agent == "claude" else _open_path(
-            descriptor.path, agent
-        )
+        return _open_path(descriptor.path) if agent == "claude" else _open_path(descriptor.path, agent)
 
     if isinstance(descriptor, BranchTarget):
         wt = worktree_for_branch(descriptor.repo, descriptor.branch)
@@ -311,16 +319,13 @@ def open_target(
     if isinstance(descriptor, PRTarget):
         prwt = projects.fetch_pr_into_worktree(descriptor.repo, descriptor.pr)
         try:
-            result = _open_path(prwt.path) if agent == "claude" else _open_path(
-                prwt.path, agent
-            )
+            result = _open_path(prwt.path) if agent == "claude" else _open_path(prwt.path, agent)
         except Exception:
             # Any failure after the worktree exists must roll it back so the
             # caller can retry without hitting a stale orphan. Re-raise unchanged.
             projects._discard_pr_worktree(descriptor.repo, prwt.path, prwt.local_branch)
             raise
-        store.set_window_fields(result.agent_pid, linked_pr=descriptor.pr,
-                                is_fork=prwt.is_fork)
+        store.set_window_fields(result.agent_pid, linked_pr=descriptor.pr, is_fork=prwt.is_fork)
         return result
 
     raise ValueError(f"unknown descriptor: {descriptor!r}")
@@ -338,18 +343,33 @@ def build_catalog() -> dict:
         # by refname, which made the 100-cap keep the alphabetically-first 100 —
         # on a repo with 130 branches that silently dropped the ones actually
         # being worked on.
-        code, out = _run([
-            "git", "-C", repo, "for-each-ref", "--sort=-committerdate",
-            "--format=%(refname:short)", "refs/heads/",
-        ])
-        branches = (out.split("\n")[:100] if (code == 0 and out) else [])
-        repos_out.append({"repo": repo, "label": os.path.basename(repo),
-                          "default_branch": detect_default_branch(repo),
-                          "branches": branches})
+        code, out = _run(
+            [
+                "git",
+                "-C",
+                repo,
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)",
+                "refs/heads/",
+            ]
+        )
+        branches = out.split("\n")[:100] if (code == 0 and out) else []
+        repos_out.append(
+            {
+                "repo": repo,
+                "label": os.path.basename(repo),
+                "default_branch": detect_default_branch(repo),
+                "branches": branches,
+            }
+        )
         for path, branch in worktrees._cached_worktrees(repo):
-            worktrees_out.append({
-                "path": os.path.realpath(path), "repo": repo,
-                "branch": branch,
-                "is_main": os.path.realpath(path) == os.path.realpath(repo),
-            })
+            worktrees_out.append(
+                {
+                    "path": os.path.realpath(path),
+                    "repo": repo,
+                    "branch": branch,
+                    "is_main": os.path.realpath(path) == os.path.realpath(repo),
+                }
+            )
     return {"repos": repos_out, "worktrees": worktrees_out, "roots": store.repo_roots()}

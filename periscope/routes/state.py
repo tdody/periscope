@@ -101,9 +101,7 @@ def build_state() -> dict:
                 if rail:
                     view["status_rail"] = rail
 
-    stamp_updates: list[tuple[str, int, int]] = [
-        stamp for _, stamp in built if stamp is not None
-    ]
+    stamp_updates: list[tuple[str, int, int]] = [stamp for _, stamp in built if stamp is not None]
 
     # GC against ALL live panes, not the active-pane-per-window set `windows`
     # carries — otherwise a split window's background Claude pane has its alerts
@@ -116,10 +114,9 @@ def build_state() -> dict:
     # Batched stamp persistence: single lock + single write across every
     # pane in this poll. set_window_fields_bulk skips the write when no
     # field actually changed.
-    set_window_fields_bulk({
-        pid: {"completed_at": completed, "acked_at": acked}
-        for pid, completed, acked in stamp_updates
-    })
+    set_window_fields_bulk(
+        {pid: {"completed_at": completed, "acked_at": acked} for pid, completed, acked in stamp_updates}
+    )
 
     # Garbage-collect stale resumes: targets that are no longer in tmux's
     # list-windows output, or older than 30 min.
@@ -134,25 +131,19 @@ def build_state() -> dict:
     # detection: any session that appears in `windows` but isn't owned by
     # any non-archived project gets the adopt affordance.
     projects = all_projects()
-    projects_view = [
-        {"pinned_dir": k, **v}
-        for k, v in projects.items()
-        if not v.get("archived_at")
-    ]
+    projects_view = [{"pinned_dir": k, **v} for k, v in projects.items() if not v.get("archived_at")]
 
     from periscope.workspaces import all_workspaces
-    workspaces_view = [
-        v for v in all_workspaces().values() if not v.get("archived_at")
-    ]
+
+    workspaces_view = [v for v in all_workspaces().values() if not v.get("archived_at")]
 
     # Track registry rows (non-archived), so the rail can render EMPTY goal
     # tracks — live windows alone can't surface a track with no tabs yet, and
     # a freshly created track must be visible to receive its first tab.
     from periscope.activity import all_tracks
+
     tracks_view = [
-        {"id": t["id"], "name": t["name"], "repo": t["repo"]}
-        for t in all_tracks()
-        if not t.get("archived_at")
+        {"id": t["id"], "name": t["name"], "repo": t["repo"]} for t in all_tracks() if not t.get("archived_at")
     ]
 
     # Alerts ride the state blob so the dashboard has one transport and one
@@ -180,8 +171,7 @@ def build_state() -> dict:
         "launch_default": dataclasses.asdict(usage.choose_launch()),
         # The registry minus config dirs. Every account-naming surface reads
         # this, and hides itself when it holds a single account.
-        "accounts": [{"id": a["id"], "label": a.get("label") or a["id"]}
-                     for a in store.get_accounts() if a.get("id")],
+        "accounts": [{"id": a["id"], "label": a.get("label") or a["id"]} for a in store.get_accounts() if a.get("id")],
         # current account id -> where the rail's move chip sends a pane on it.
         "move_targets": usage.move_targets(),
         # Each account's most recent session poke; the pill tooltip shows it.

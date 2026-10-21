@@ -1,4 +1,5 @@
 """Generate session summaries via the Anthropic SDK with forced tool-use."""
+
 from __future__ import annotations
 
 import json
@@ -10,8 +11,7 @@ from .extract import SessionRecord
 log = logging.getLogger(__name__)
 
 _OUTCOMES = {"shipped", "partial", "abandoned", "explored", "blocked"}
-_CATEGORIES = {"feature", "bugfix", "refactor", "debugging",
-               "research", "ops", "docs", "review"}
+_CATEGORIES = {"feature", "bugfix", "refactor", "debugging", "research", "ops", "docs", "review"}
 
 SUMMARIZE_TOOL = {
     "name": "save_session_summary",
@@ -46,8 +46,7 @@ SUMMARIZE_TOOL = {
             },
             "category": {
                 "type": "string",
-                "enum": ["feature", "bugfix", "refactor", "debugging",
-                         "research", "ops", "docs", "review"],
+                "enum": ["feature", "bugfix", "refactor", "debugging", "research", "ops", "docs", "review"],
                 "description": "The primary kind of work in the session.",
             },
             "notable": {
@@ -106,30 +105,32 @@ def build_summary_prompt(rec: SessionRecord) -> str:
     if len(user_msgs) > MAX_USER_MSGS_CHARS:
         # Keep head and tail; drop the middle.
         head = user_msgs[: MAX_USER_MSGS_CHARS // 2]
-        tail = user_msgs[-MAX_USER_MSGS_CHARS // 2:]
+        tail = user_msgs[-MAX_USER_MSGS_CHARS // 2 :]
         user_msgs = f"{head}\n\n[... truncated ...]\n\n{tail}"
     final_msg = (rec.final_assistant_msg or "").strip()
-    return "\n".join([
-        "SESSION:",
-        f"  project: {rec.project_path}",
-        f"  branch: {rec.branch or '(none)'}",
-        f"  duration: {rec.duration_s // 60} min",
-        f"  files touched: {files}",
-        f"  notable commands: {cmds}",
-        "",
-        "USER MESSAGES (concatenated, may be truncated):",
-        user_msgs,
-        "",
-        "FINAL ASSISTANT MESSAGE (outcome signal, truncated):",
-        final_msg,
-        "",
-        "Call save_session_summary with concrete details from this session.",
-    ])
+    return "\n".join(
+        [
+            "SESSION:",
+            f"  project: {rec.project_path}",
+            f"  branch: {rec.branch or '(none)'}",
+            f"  duration: {rec.duration_s // 60} min",
+            f"  files touched: {files}",
+            f"  notable commands: {cmds}",
+            "",
+            "USER MESSAGES (concatenated, may be truncated):",
+            user_msgs,
+            "",
+            "FINAL ASSISTANT MESSAGE (outcome signal, truncated):",
+            final_msg,
+            "",
+            "Call save_session_summary with concrete details from this session.",
+        ]
+    )
 
 
-def call_summarizer(client, rec: SessionRecord, *,
-                    model: str = "claude-haiku-5-5",
-                    max_retries: int = 3) -> SummaryResult | None:
+def call_summarizer(
+    client, rec: SessionRecord, *, model: str = "claude-haiku-5-5", max_retries: int = 3
+) -> SummaryResult | None:
     """Single Haiku call with forced tool-use. Returns None on persistent failure
     (caller stores summary=NULL and logs)."""
     body = build_summary_prompt(rec)
@@ -144,24 +145,26 @@ def call_summarizer(client, rec: SessionRecord, *,
                 # together fall short. Task 13 verifies actual caching via
                 # response.usage.cache_*_input_tokens — if cache_read is 0 we
                 # either expand the prefix or drop this marker.
-                system=[{
-                    "type": "text",
-                    "text": SUMMARIZE_SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }],
+                system=[
+                    {
+                        "type": "text",
+                        "text": SUMMARIZE_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
                 tools=[SUMMARIZE_TOOL],
                 tool_choice={"type": "tool", "name": SUMMARIZE_TOOL["name"]},
                 messages=[{"role": "user", "content": body}],
             )
         except Exception as e:
             last_failure = f"API error: {e!r}"
-            log.warning("summarize: API error on attempt %d for %s: %s",
-                        attempt + 1, rec.session_id, e)
+            log.warning("summarize: API error on attempt %d for %s: %s", attempt + 1, rec.session_id, e)
             # If the API surfaced a 429 even after the SDK's own backoff,
             # sleep longer before our wrapper retries — bursting another call
             # immediately would just re-trigger the same limit.
             if "429" in str(e) or "rate_limit" in str(e).lower():
                 import time as _t
+
                 sleep_s = 30 * (attempt + 1)  # 30s, 60s, 90s...
                 log.info("summarize: rate-limited, sleeping %ds before retry", sleep_s)
                 _t.sleep(sleep_s)
@@ -201,15 +204,18 @@ def call_summarizer(client, rec: SessionRecord, *,
                 category = None
             notable = bool(data.get("notable"))
             raw_topics = data.get("topics")
-            topics = ([s for s in (str(t).lower().strip() for t in raw_topics) if s]
-                      if isinstance(raw_topics, list) else [])
-            return SummaryResult(summary=summary.strip(),
-                                  tags=norm_tags,
-                                  model=model,
-                                  outcome=outcome,
-                                  category=category,
-                                  notable=notable,
-                                  topics=topics)
+            topics = (
+                [s for s in (str(t).lower().strip() for t in raw_topics) if s] if isinstance(raw_topics, list) else []
+            )
+            return SummaryResult(
+                summary=summary.strip(),
+                tags=norm_tags,
+                model=model,
+                outcome=outcome,
+                category=category,
+                notable=notable,
+                topics=topics,
+            )
         stop_reason = getattr(msg, "stop_reason", "?")
         if not found_block:
             last_failure = f"no tool_use block in response (stop_reason={stop_reason})"
@@ -217,10 +223,8 @@ def call_summarizer(client, rec: SessionRecord, *,
             last_failure = f"tool_use block malformed: {bad_block_reason} (stop_reason={stop_reason})"
         else:
             last_failure = f"tool_use block found but skipped (stop_reason={stop_reason})"
-        log.warning("summarize: %s on attempt %d for %s",
-                    last_failure, attempt + 1, rec.session_id)
+        log.warning("summarize: %s on attempt %d for %s", last_failure, attempt + 1, rec.session_id)
     # All attempts exhausted — always emit a single ERROR so backfill summaries
     # of failures are countable via `grep ERROR` on the log stream.
-    log.error("summarize: gave up after %d attempts for %s — %s",
-              max_retries + 1, rec.session_id, last_failure)
+    log.error("summarize: gave up after %d attempts for %s — %s", max_retries + 1, rec.session_id, last_failure)
     return None

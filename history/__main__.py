@@ -1,4 +1,5 @@
 """Entry point for `python -m history <verb> [args]`."""
+
 import sys
 
 from .cli import main

@@ -13,11 +13,19 @@ from periscope.pids import (
 )
 
 
-def _mkwin(session="periscope", index=1, name="w", branch="main",
-           cwd="/repo", pane_id="%1", window_id="@1", pid_raw=""):
-    return {"session": session, "index": index, "name": name, "branch": branch,
-            "cwd": cwd, "pane_id": pane_id, "window_id": window_id,
-            "pid_raw": pid_raw}
+def _mkwin(
+    session="periscope", index=1, name="w", branch="main", cwd="/repo", pane_id="%1", window_id="@1", pid_raw=""
+):
+    return {
+        "session": session,
+        "index": index,
+        "name": name,
+        "branch": branch,
+        "cwd": cwd,
+        "pane_id": pane_id,
+        "window_id": window_id,
+        "pid_raw": pid_raw,
+    }
 
 
 def test_gc_windows_keeps_spawned_by_only_entry():
@@ -90,7 +98,11 @@ def test_rebind_pid_strong_match_on_session_and_name():
         }
     }
     pid, pass_name = _rebind_pid(
-        wblock, session="main", name="shell", branch=None, cwd=None,
+        wblock,
+        session="main",
+        name="shell",
+        branch=None,
+        cwd=None,
         taken_pids=set(),
     )
     assert pid == "deadbeef"
@@ -99,7 +111,11 @@ def test_rebind_pid_strong_match_on_session_and_name():
 
 def test_rebind_pid_returns_none_when_no_match():
     pid = _rebind_pid(
-        {}, session="main", name="shell", branch=None, cwd=None,
+        {},
+        session="main",
+        name="shell",
+        branch=None,
+        cwd=None,
         taken_pids=set(),
     )
     assert pid is None
@@ -110,13 +126,20 @@ def test_rebind_pid_skips_taken_pids():
     wblock = {
         "deadbeef": {
             "last_seen": {
-                "session": "main", "name": "shell",
-                "branch": None, "cwd": None, "ts": now,
+                "session": "main",
+                "name": "shell",
+                "branch": None,
+                "cwd": None,
+                "ts": now,
             }
         }
     }
     pid = _rebind_pid(
-        wblock, session="main", name="shell", branch=None, cwd=None,
+        wblock,
+        session="main",
+        name="shell",
+        branch=None,
+        cwd=None,
         taken_pids={"deadbeef"},
     )
     assert pid is None
@@ -134,14 +157,21 @@ def test_rebind_pid_skips_entries_older_than_rebind_ttl():
     wblock = {
         "deadbeef": {
             "last_seen": {
-                "session": "periscope", "name": "old-goal",
-                "branch": "master", "cwd": "/repo", "ts": stale,
+                "session": "periscope",
+                "name": "old-goal",
+                "branch": "master",
+                "cwd": "/repo",
+                "ts": stale,
             }
         }
     }
     pid = _rebind_pid(
-        wblock, session="periscope", name="fresh-claude",
-        branch="master", cwd="/repo", taken_pids=set(),
+        wblock,
+        session="periscope",
+        name="fresh-claude",
+        branch="master",
+        cwd="/repo",
+        taken_pids=set(),
     )
     assert pid is None, "stale entry must not capture a fresh pane"
 
@@ -153,14 +183,21 @@ def test_rebind_pid_still_matches_within_rebind_ttl():
     wblock = {
         "deadbeef": {
             "last_seen": {
-                "session": "periscope", "name": "old-goal",
-                "branch": "master", "cwd": "/repo", "ts": recent,
+                "session": "periscope",
+                "name": "old-goal",
+                "branch": "master",
+                "cwd": "/repo",
+                "ts": recent,
             }
         }
     }
     pid, pass_name = _rebind_pid(
-        wblock, session="periscope", name="fresh-claude",
-        branch="master", cwd="/repo", taken_pids=set(),
+        wblock,
+        session="periscope",
+        name="fresh-claude",
+        branch="master",
+        cwd="/repo",
+        taken_pids=set(),
     )
     assert pid == "deadbeef"
     assert pass_name == "branch+cwd"
@@ -172,13 +209,20 @@ def test_rebind_pid_skips_expired_entries():
     wblock = {
         "deadbeef": {
             "last_seen": {
-                "session": "main", "name": "shell",
-                "branch": None, "cwd": None, "ts": old,
+                "session": "main",
+                "name": "shell",
+                "branch": None,
+                "cwd": None,
+                "ts": old,
             }
         }
     }
     pid = _rebind_pid(
-        wblock, session="main", name="shell", branch=None, cwd=None,
+        wblock,
+        session="main",
+        name="shell",
+        branch=None,
+        cwd=None,
         taken_pids=set(),
     )
     assert pid is None
@@ -199,8 +243,12 @@ def test_rebind_pid_secondary_match_on_branch_and_cwd():
         }
     }
     pid, pass_name = _rebind_pid(
-        wblock, session="new-session", name="new-name",
-        branch="feature", cwd="/tmp", taken_pids=set(),
+        wblock,
+        session="new-session",
+        name="new-name",
+        branch="feature",
+        cwd="/tmp",
+        taken_pids=set(),
     )
     assert pid == "deadbeef"
     assert pass_name == "branch+cwd"
@@ -212,8 +260,11 @@ def test_resolve_pids_uses_existing_periscope_id_when_well_formed(clean_state, m
     mock_stamp = mocker.patch("periscope.pids._stamp_pid")
     windows = [
         {
-            "session": "main", "index": 0, "name": "shell",
-            "cwd": "/tmp", "pid_raw": "deadbeef",
+            "session": "main",
+            "index": 0,
+            "name": "shell",
+            "cwd": "/tmp",
+            "pid_raw": "deadbeef",
         },
     ]
     resolve_pids(windows)
@@ -228,8 +279,11 @@ def test_resolve_pids_mints_when_periscope_id_missing(clean_state, mocker):
     mocker.patch("periscope.pids._mint_pid", return_value="aaaabbbb")
     windows = [
         {
-            "session": "main", "index": 0, "name": "shell",
-            "cwd": "/tmp", "pid_raw": "",
+            "session": "main",
+            "index": 0,
+            "name": "shell",
+            "cwd": "/tmp",
+            "pid_raw": "",
         },
     ]
     resolve_pids(windows)
@@ -245,10 +299,8 @@ def test_resolve_pids_assigns_unique_pids_to_each_window(clean_state, mocker):
         side_effect=[f"pid{i:05x}" for i in range(10)],
     )
     windows = [
-        {"session": "main", "index": 0, "name": "shell",
-         "cwd": "/x", "pid_raw": ""},
-        {"session": "main", "index": 1, "name": "claude",
-         "cwd": "/y", "pid_raw": ""},
+        {"session": "main", "index": 0, "name": "shell", "cwd": "/x", "pid_raw": ""},
+        {"session": "main", "index": 1, "name": "claude", "cwd": "/y", "pid_raw": ""},
     ]
     resolve_pids(windows)
     for w in windows:
@@ -263,9 +315,7 @@ def test_resolve_pids_handles_empty_windows_list(clean_state):
     # Did not raise; nothing else to assert.
 
 
-def test_resolve_pids_re_mints_when_two_windows_share_periscope_id(
-    clean_state, mocker
-):
+def test_resolve_pids_re_mints_when_two_windows_share_periscope_id(clean_state, mocker):
     """Real-world failure: tmux can end up with the same @periscope_id
     stamped on multiple windows (e.g. after session-copy or set-option
     races). resolve_pids must keep that id for the first window only and
@@ -283,12 +333,23 @@ def test_resolve_pids_re_mints_when_two_windows_share_periscope_id(
         side_effect=[f"minted{i:02x}" for i in range(10)],
     )
     windows = [
-        {"session": "lgtm", "index": 1, "name": "shell",
-         "cwd": "/x", "pid_raw": "deadbeef", "window_id": "@11"},
-        {"session": "lgtm", "index": 2, "name": "walkthrough-pr-review",
-         "cwd": "/x", "pid_raw": "deadbeef", "window_id": "@12"},
-        {"session": "lgtm", "index": 3, "name": "walkthrough-design",
-         "cwd": "/x", "pid_raw": "deadbeef", "window_id": "@13"},
+        {"session": "lgtm", "index": 1, "name": "shell", "cwd": "/x", "pid_raw": "deadbeef", "window_id": "@11"},
+        {
+            "session": "lgtm",
+            "index": 2,
+            "name": "walkthrough-pr-review",
+            "cwd": "/x",
+            "pid_raw": "deadbeef",
+            "window_id": "@12",
+        },
+        {
+            "session": "lgtm",
+            "index": 3,
+            "name": "walkthrough-design",
+            "cwd": "/x",
+            "pid_raw": "deadbeef",
+            "window_id": "@13",
+        },
     ]
     resolve_pids(windows)
     pids = [w["pid"] for w in windows]
@@ -311,16 +372,32 @@ def test_rebind_pass0_sid_beats_branch_cwd(clean_state, mocker):
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "aaaa1111": {"last_seen": {"session": "old", "name": "a", "branch": "b1",
-                                   "cwd": "/wt", "ts": now - 60, "sid": "sid-A",
-                                   "pane_id": "%90"}},
-        "bbbb2222": {"last_seen": {"session": "old", "name": "b", "branch": "b1",
-                                   "cwd": "/wt", "ts": now - 30, "sid": "sid-B",
-                                   "pane_id": "%91"}},
+        "aaaa1111": {
+            "last_seen": {
+                "session": "old",
+                "name": "a",
+                "branch": "b1",
+                "cwd": "/wt",
+                "ts": now - 60,
+                "sid": "sid-A",
+                "pane_id": "%90",
+            }
+        },
+        "bbbb2222": {
+            "last_seen": {
+                "session": "old",
+                "name": "b",
+                "branch": "b1",
+                "cwd": "/wt",
+                "ts": now - 30,
+                "sid": "sid-B",
+                "pane_id": "%91",
+            }
+        },
     }
-    w = _mkwin(session="resumes", name="fresh", branch="b1", cwd="/wt",
-               pane_id="%5")
+    w = _mkwin(session="resumes", name="fresh", branch="b1", cwd="/wt", pane_id="%5")
     resolve_pids([w], session_hints={"%5": {"sid": "sid-B", "resume": None}})
     assert w["pid"] == "bbbb2222"
 
@@ -332,11 +409,20 @@ def test_rebind_pass0_ignores_rebind_ttl(clean_state, mocker):
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "cccc3333": {"last_seen": {"session": "x", "name": "y", "branch": None,
-                                   "cwd": "/z", "ts": now - _REBIND_TTL_S * 10,
-                                   "sid": "sid-OLD", "pane_id": "%2"},
-                     "linked_pr": 777},
+        "cccc3333": {
+            "last_seen": {
+                "session": "x",
+                "name": "y",
+                "branch": None,
+                "cwd": "/z",
+                "ts": now - _REBIND_TTL_S * 10,
+                "sid": "sid-OLD",
+                "pane_id": "%2",
+            },
+            "linked_pr": 777,
+        },
     }
     w = _mkwin(pane_id="%6", branch=None, cwd="/z")
     resolve_pids([w], session_hints={"%6": {"sid": "sid-OLD", "resume": None}})
@@ -349,17 +435,32 @@ def test_rebind_pass0_sid_beats_session_name(clean_state, mocker):
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "ffff6666": {"last_seen": {"session": "periscope", "name": "fresh",
-                                   "branch": "b1", "cwd": "/other",
-                                   "ts": now - 30, "sid": "sid-OTHER",
-                                   "pane_id": "%92"}},
-        "abcd7777": {"last_seen": {"session": "old", "name": "elsewhere",
-                                   "branch": "b2", "cwd": "/wt", "ts": now - 60,
-                                   "sid": "sid-MINE", "pane_id": "%93"}},
+        "ffff6666": {
+            "last_seen": {
+                "session": "periscope",
+                "name": "fresh",
+                "branch": "b1",
+                "cwd": "/other",
+                "ts": now - 30,
+                "sid": "sid-OTHER",
+                "pane_id": "%92",
+            }
+        },
+        "abcd7777": {
+            "last_seen": {
+                "session": "old",
+                "name": "elsewhere",
+                "branch": "b2",
+                "cwd": "/wt",
+                "ts": now - 60,
+                "sid": "sid-MINE",
+                "pane_id": "%93",
+            }
+        },
     }
-    w = _mkwin(session="periscope", name="fresh", branch="b1", cwd="/wt",
-               pane_id="%9")
+    w = _mkwin(session="periscope", name="fresh", branch="b1", cwd="/wt", pane_id="%9")
     resolve_pids([w], session_hints={"%9": {"sid": "sid-MINE", "resume": None}})
     assert w["pid"] == "abcd7777"
 
@@ -370,16 +471,21 @@ def test_rebind_pass0_never_steals_a_carried_pid(clean_state, mocker):
     carries must not hand that pid to an unstamped window — same duplicate
     factory as the (session, name) / (branch, cwd) steal, just via sid."""
     mocker.patch("periscope.pids._stamp_pid")
-    mocker.patch("periscope.pids._mint_pid",
-                 side_effect=[f"fresh{i:03x}" for i in range(10)])
+    mocker.patch("periscope.pids._mint_pid", side_effect=[f"fresh{i:03x}" for i in range(10)])
     from periscope import store
 
     now = int(time.time())
     store._STATE["windows"] = {
         "beef0002": {
-            "last_seen": {"session": "periscope", "name": "claude",
-                          "branch": "main", "cwd": "/repo", "ts": now,
-                          "sid": "sid-LIVE", "pane_id": "%40"},
+            "last_seen": {
+                "session": "periscope",
+                "name": "claude",
+                "branch": "main",
+                "cwd": "/repo",
+                "ts": now,
+                "sid": "sid-LIVE",
+                "pane_id": "%40",
+            },
             "linked_pr": 4321,
         },
     }
@@ -388,16 +494,16 @@ def test_rebind_pass0_never_steals_a_carried_pid(clean_state, mocker):
         # live window's entry.
         _mkwin(index=1, name="claude", pane_id="%41", window_id="@30"),
         # The live window that actually owns beef0002.
-        _mkwin(index=2, name="claude", pane_id="%40", window_id="@31",
-               pid_raw="beef0002"),
+        _mkwin(index=2, name="claude", pane_id="%40", window_id="@31", pid_raw="beef0002"),
     ]
-    resolve_pids(windows, session_hints={
-        "%41": {"sid": "sid-LIVE", "resume": None},
-        "%40": {"sid": "sid-LIVE", "resume": None},
-    })
-    assert windows[1]["pid"] == "beef0002", (
-        f"live window lost its identity: {windows[1]['pid']}"
+    resolve_pids(
+        windows,
+        session_hints={
+            "%41": {"sid": "sid-LIVE", "resume": None},
+            "%40": {"sid": "sid-LIVE", "resume": None},
+        },
     )
+    assert windows[1]["pid"] == "beef0002", f"live window lost its identity: {windows[1]['pid']}"
     assert windows[0]["pid"] != "beef0002"
 
 
@@ -407,14 +513,22 @@ def test_rebind_pass0b_resume_lineage_with_cwd_corroboration(clean_state, mocker
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "dddd4444": {"last_seen": {"session": "x", "name": "y", "branch": None,
-                                   "cwd": "/z", "ts": now - 60,
-                                   "sid": "sid-PRE", "pane_id": "%3"}},
+        "dddd4444": {
+            "last_seen": {
+                "session": "x",
+                "name": "y",
+                "branch": None,
+                "cwd": "/z",
+                "ts": now - 60,
+                "sid": "sid-PRE",
+                "pane_id": "%3",
+            }
+        },
     }
     w = _mkwin(pane_id="%7", branch=None, cwd="/z")
-    resolve_pids([w], session_hints={
-        "%7": {"sid": "sid-ROTATED", "resume": "sid-PRE"}})
+    resolve_pids([w], session_hints={"%7": {"sid": "sid-ROTATED", "resume": "sid-PRE"}})
     assert w["pid"] == "dddd4444"
 
 
@@ -425,21 +539,30 @@ def test_rebind_pass0b_refuses_without_cwd_match(clean_state, mocker):
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "eeee5555": {"last_seen": {"session": "x", "name": "y", "branch": None,
-                                   "cwd": "/somewhere-else", "ts": now - 60,
-                                   "sid": "sid-DEAD", "pane_id": "%4"},
-                     "linked_pr": 123},
+        "eeee5555": {
+            "last_seen": {
+                "session": "x",
+                "name": "y",
+                "branch": None,
+                "cwd": "/somewhere-else",
+                "ts": now - 60,
+                "sid": "sid-DEAD",
+                "pane_id": "%4",
+            },
+            "linked_pr": 123,
+        },
     }
     w = _mkwin(pane_id="%8", branch=None, cwd="/fresh")
-    resolve_pids([w], session_hints={
-        "%8": {"sid": "sid-NEW", "resume": "sid-DEAD"}})
+    resolve_pids([w], session_hints={"%8": {"sid": "sid-NEW", "resume": "sid-DEAD"}})
     assert w["pid"] != "eeee5555"
 
 
 def test_last_seen_records_sid_and_pane_id(clean_state, mocker):
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import store
+
     w = _mkwin(pane_id="%8")
     resolve_pids([w], session_hints={"%8": {"sid": "sid-X", "resume": None}})
     entry = store._STATE["windows"][w["pid"]]["last_seen"]
@@ -447,8 +570,7 @@ def test_last_seen_records_sid_and_pane_id(clean_state, mocker):
     assert entry["pane_id"] == "%8"
 
 
-def test_duplicate_arbitration_sid_picks_keeper_regardless_of_order(
-        clean_state, mocker):
+def test_duplicate_arbitration_sid_picks_keeper_regardless_of_order(clean_state, mocker):
     """2026-08-05 20:06→20:11: the same pid duplicated across two windows and
     the dedup gate kept whichever came FIRST in list order — which flipped
     between polls, ping-ponging the identity. The keeper must be the window
@@ -456,21 +578,31 @@ def test_duplicate_arbitration_sid_picks_keeper_regardless_of_order(
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     for order in (False, True):
         store._STATE["windows"] = {
-            "eeee5555": {"last_seen": {"session": "s", "name": "n",
-                                       "branch": "b", "cwd": "/w", "ts": now,
-                                       "sid": "sid-OWNER", "pane_id": "%10"}},
+            "eeee5555": {
+                "last_seen": {
+                    "session": "s",
+                    "name": "n",
+                    "branch": "b",
+                    "cwd": "/w",
+                    "ts": now,
+                    "sid": "sid-OWNER",
+                    "pane_id": "%10",
+                }
+            },
         }
-        rightful = _mkwin(session="resumes", index=4, pane_id="%10",
-                          window_id="@10", pid_raw="eeee5555")
-        imposter = _mkwin(session="periscope", index=4, pane_id="%11",
-                          window_id="@11", pid_raw="eeee5555")
+        rightful = _mkwin(session="resumes", index=4, pane_id="%10", window_id="@10", pid_raw="eeee5555")
+        imposter = _mkwin(session="periscope", index=4, pane_id="%11", window_id="@11", pid_raw="eeee5555")
         windows = [imposter, rightful] if order else [rightful, imposter]
-        resolve_pids(windows, session_hints={
-            "%10": {"sid": "sid-OWNER", "resume": None},
-            "%11": {"sid": "sid-OTHER", "resume": None},
-        })
+        resolve_pids(
+            windows,
+            session_hints={
+                "%10": {"sid": "sid-OWNER", "resume": None},
+                "%11": {"sid": "sid-OTHER", "resume": None},
+            },
+        )
         assert rightful["pid"] == "eeee5555", f"order={order}"
         assert imposter["pid"] != "eeee5555", f"order={order}"
 
@@ -479,6 +611,7 @@ def test_duplicate_arbitration_no_sid_falls_back_to_first(clean_state, mocker):
     """No sid evidence on any window → status quo (first-in-list keeps it)."""
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import store
+
     store._STATE["windows"] = {}
     first = _mkwin(index=1, pane_id="%20", window_id="@20", pid_raw="ffff6666")
     second = _mkwin(index=2, pane_id="%21", window_id="@21", pid_raw="ffff6666")
@@ -487,8 +620,7 @@ def test_duplicate_arbitration_no_sid_falls_back_to_first(clean_state, mocker):
     assert second["pid"] != "ffff6666"
 
 
-def test_duplicate_arbitration_recorded_sid_not_on_screen(
-        clean_state, mocker, caplog):
+def test_duplicate_arbitration_recorded_sid_not_on_screen(clean_state, mocker, caplog):
     """The entry DOES record a sid but no on-screen window carries it
     (rotation / dead pane) — a different incident story from "no recorded
     sid", and the log must keep them apart: the greppable reason string is
@@ -497,20 +629,30 @@ def test_duplicate_arbitration_recorded_sid_not_on_screen(
     mocker.patch("periscope.pids._stamp_pid")
     now = int(time.time())
     from periscope import store
+
     store._STATE["windows"] = {
-        "abab1212": {"last_seen": {"session": "s", "name": "n", "branch": "b",
-                                   "cwd": "/w", "ts": now, "sid": "sid-GONE",
-                                   "pane_id": "%30"}},
+        "abab1212": {
+            "last_seen": {
+                "session": "s",
+                "name": "n",
+                "branch": "b",
+                "cwd": "/w",
+                "ts": now,
+                "sid": "sid-GONE",
+                "pane_id": "%30",
+            }
+        },
     }
-    first = _mkwin(session="a", index=1, pane_id="%30", window_id="@40",
-                   pid_raw="abab1212")
-    second = _mkwin(session="b", index=2, pane_id="%31", window_id="@41",
-                    pid_raw="abab1212")
+    first = _mkwin(session="a", index=1, pane_id="%30", window_id="@40", pid_raw="abab1212")
+    second = _mkwin(session="b", index=2, pane_id="%31", window_id="@41", pid_raw="abab1212")
     with caplog.at_level("INFO", logger="periscope"):
-        resolve_pids([first, second], session_hints={
-            "%30": {"sid": "sid-NEW", "resume": None},
-            "%31": {"sid": "sid-OTHER", "resume": None},
-        })
+        resolve_pids(
+            [first, second],
+            session_hints={
+                "%30": {"sid": "sid-NEW", "resume": None},
+                "%31": {"sid": "sid-OTHER", "resume": None},
+            },
+        )
     assert first["pid"] == "abab1212"
     assert second["pid"] != "abab1212"
     assert "recorded sid not on screen" in caplog.text
@@ -540,32 +682,43 @@ def test_rebind_never_steals_a_pid_a_live_window_still_carries(clean_state, mock
     now = int(time.time())
     _store._STATE["windows"] = {
         "beef0001": {
-            "last_seen": {"session": "periscope", "name": "claude",
-                          "branch": "main", "cwd": "/repo", "ts": now},
+            "last_seen": {"session": "periscope", "name": "claude", "branch": "main", "cwd": "/repo", "ts": now},
             "linked_pr": 1234,
         },
     }
     windows = [
         # Brand-new spawn, not yet stamped, sharing the caller's worktree.
-        {"session": "periscope", "index": 1, "name": "claude",
-         "branch": "main", "cwd": "/repo", "pid_raw": "", "window_id": "@20"},
+        {
+            "session": "periscope",
+            "index": 1,
+            "name": "claude",
+            "branch": "main",
+            "cwd": "/repo",
+            "pid_raw": "",
+            "window_id": "@20",
+        },
         # The live window that actually owns livepid0.
-        {"session": "periscope", "index": 2, "name": "claude",
-         "branch": "main", "cwd": "/repo", "pid_raw": "beef0001", "window_id": "@21"},
+        {
+            "session": "periscope",
+            "index": 2,
+            "name": "claude",
+            "branch": "main",
+            "cwd": "/repo",
+            "pid_raw": "beef0001",
+            "window_id": "@21",
+        },
     ]
     resolve_pids(windows)
-    assert windows[1]["pid"] == "beef0001", (
-        f"live window lost its identity to a rebind steal: {windows[1]['pid']}"
-    )
+    assert windows[1]["pid"] == "beef0001", f"live window lost its identity to a rebind steal: {windows[1]['pid']}"
     assert windows[0]["pid"] != "beef0001"
 
 
-def test_resolve_migrates_legacy_pane_track_row(clean_state, fresh_activity_db,
-                                                mocker):
+def test_resolve_migrates_legacy_pane_track_row(clean_state, fresh_activity_db, mocker):
     """A %-keyed pane_tracks row (pre-re-key) converts to the window's pid on
     first sight; the % row is deleted."""
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import activity, pids
+
     activity.set_pane_track("%30", "tk_x")
     pids._TRACKS_MAINTAINED = False
     w = _mkwin(pane_id="%30", window_id="@30", pid_raw="feed0001")
@@ -574,29 +727,29 @@ def test_resolve_migrates_legacy_pane_track_row(clean_state, fresh_activity_db,
     assert activity.get_pane_track("%30") is None
 
 
-def test_resolve_migration_never_clobbers_pid_row(clean_state,
-                                                  fresh_activity_db, mocker):
+def test_resolve_migration_never_clobbers_pid_row(clean_state, fresh_activity_db, mocker):
     """A pid-keyed row wins over a legacy % row for the same window — a user
     move made after the re-key must not be undone by stale legacy data."""
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import activity, pids
+
     activity.set_pane_track("%31", "tk_old")
     activity.set_pane_track("feed0002", "tk_new")
     pids._TRACKS_MAINTAINED = False
     w = _mkwin(pane_id="%31", window_id="@31", pid_raw="feed0002")
     resolve_pids([w], full_roster=True)
     assert activity.get_pane_track("feed0002") == "tk_new"
-    assert activity.get_pane_track("%31") is None   # legacy row still cleaned
+    assert activity.get_pane_track("%31") is None  # legacy row still cleaned
 
 
-def test_prune_gated_on_completed_resolve(clean_state, fresh_activity_db,
-                                          mocker):
+def test_prune_gated_on_completed_resolve(clean_state, fresh_activity_db, mocker):
     """Boot pruned pane_tracks BEFORE any resolve pass — post-tmux-restart the
     live-pid set is unknowable until rebind runs, so that prune deleted every
     tag at exactly the moment rebind could reattach them. Prune only fires
     from a completed resolve pass, using its taken set."""
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import activity, pids
+
     activity.set_pane_track("feed0003", "tk_live")
     activity.set_pane_track("dead0004", "tk_dead")
     pids._TRACKS_MAINTAINED = False
@@ -613,8 +766,7 @@ def test_prune_gated_on_completed_resolve(clean_state, fresh_activity_db,
     assert activity.get_pane_track("dead0005") == "tk_late"
 
 
-def test_maintenance_never_runs_on_partial_pass(clean_state, fresh_activity_db,
-                                                mocker):
+def test_maintenance_never_runs_on_partial_pass(clean_state, fresh_activity_db, mocker):
     """resolve_pids is also called with SINGLE windows (channels.py:311,
     routes/pane.py:70, routes/auto_rename.py:119). If one of those lands
     before the first full poll, pruning against its one-pid taken set would
@@ -622,17 +774,17 @@ def test_maintenance_never_runs_on_partial_pass(clean_state, fresh_activity_db,
     documents as real data loss. Maintenance requires full_roster=True."""
     mocker.patch("periscope.pids._stamp_pid")
     from periscope import activity, pids
+
     activity.set_pane_track("feed0005", "tk_a")
     activity.set_pane_track("feed0006", "tk_b")
     pids._TRACKS_MAINTAINED = False
     w = _mkwin(pane_id="%33", window_id="@33", pid_raw="feed0005")
-    resolve_pids([w])                       # default: partial pass
-    assert activity.get_pane_track("feed0006") == "tk_b"   # untouched
+    resolve_pids([w])  # default: partial pass
+    assert activity.get_pane_track("feed0006") == "tk_b"  # untouched
     assert pids._TRACKS_MAINTAINED is False
 
 
-def test_identity_merge_scenario_end_to_end(clean_state, fresh_activity_db,
-                                            mocker):
+def test_identity_merge_scenario_end_to_end(clean_state, fresh_activity_db, mocker):
     """The 2026-08-05 incident: two same-worktree panes; a restart rotates
     pane ids AND tmux session names. sid-carrying entries must reattach to the
     right windows and track tags must survive the pane-id rotation."""
@@ -640,13 +792,16 @@ def test_identity_merge_scenario_end_to_end(clean_state, fresh_activity_db,
     from periscope import activity, pids
 
     # Before: two panes in one worktree, distinct sids, one in a goal track.
-    hub = _mkwin(session="periscope", index=1, name="pit-architecture",
-                 branch="spike", cwd="/wt", pane_id="%50", window_id="@50")
-    impl = _mkwin(session="periscope", index=2, name="pit-optimization",
-                  branch="spike", cwd="/wt", pane_id="%51", window_id="@51")
-    resolve_pids([hub, impl], session_hints={
-        "%50": {"sid": "sid-hub", "resume": None},
-        "%51": {"sid": "sid-impl", "resume": None}})
+    hub = _mkwin(
+        session="periscope", index=1, name="pit-architecture", branch="spike", cwd="/wt", pane_id="%50", window_id="@50"
+    )
+    impl = _mkwin(
+        session="periscope", index=2, name="pit-optimization", branch="spike", cwd="/wt", pane_id="%51", window_id="@51"
+    )
+    resolve_pids(
+        [hub, impl],
+        session_hints={"%50": {"sid": "sid-hub", "resume": None}, "%51": {"sid": "sid-impl", "resume": None}},
+    )
     hub_pid, impl_pid = hub["pid"], impl["pid"]
     assert hub_pid != impl_pid
     activity.set_pane_track(hub_pid, "tk_pit")
@@ -656,19 +811,19 @@ def test_identity_merge_scenario_end_to_end(clean_state, fresh_activity_db,
     # windows share (branch, cwd), so the occupancy passes can't tell them
     # apart; only the sid can).
     pids._TRACKS_MAINTAINED = False
-    hub2 = _mkwin(session="resumes", index=1, name="claude",
-                  branch="spike", cwd="/wt", pane_id="%60", window_id="@60")
-    impl2 = _mkwin(session="resumes", index=2, name="claude",
-                   branch="spike", cwd="/wt", pane_id="%61", window_id="@61")
-    resolve_pids([impl2, hub2], session_hints={
-        "%60": {"sid": "sid-hub", "resume": None},
-        "%61": {"sid": "sid-impl", "resume": None}}, full_roster=True)
+    hub2 = _mkwin(session="resumes", index=1, name="claude", branch="spike", cwd="/wt", pane_id="%60", window_id="@60")
+    impl2 = _mkwin(session="resumes", index=2, name="claude", branch="spike", cwd="/wt", pane_id="%61", window_id="@61")
+    resolve_pids(
+        [impl2, hub2],
+        session_hints={"%60": {"sid": "sid-hub", "resume": None}, "%61": {"sid": "sid-impl", "resume": None}},
+        full_roster=True,
+    )
 
-    assert hub2["pid"] == hub_pid      # identity survived by sid, not order
+    assert hub2["pid"] == hub_pid  # identity survived by sid, not order
     assert impl2["pid"] == impl_pid
     # The full-roster maintenance pass ran (taken = {hub_pid, impl_pid}): the
     # hub's tag is on a LIVE pid so prune keeps it, and the impl pane —
     # never tagged — must not have grown one.
-    assert activity.get_pane_track(hub_pid) == "tk_pit"   # tag keyed on pid
+    assert activity.get_pane_track(hub_pid) == "tk_pit"  # tag keyed on pid
     assert activity.get_pane_track(impl_pid) is None
     assert pids._TRACKS_MAINTAINED is True

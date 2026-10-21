@@ -13,6 +13,7 @@ Safety (do NOT relax — the 2026-06-24 wrong-kill incident):
 - Gated on BOTH config.is_prod() AND a persisted flag — never fires in dev or
   tests. The flag is set only after a successful pass.
 """
+
 from __future__ import annotations
 
 from periscope import config, store, tracks
@@ -36,8 +37,7 @@ def run_if_needed() -> None:
     moved = _move_managed_windows()
     seeded = tracks.seed_tracks(list_windows())
     _mark_done()
-    log.info("single-session migration: moved %d window(s), seeded %d track tag(s)",
-             moved, seeded)
+    log.info("single-session migration: moved %d window(s), seeded %d track tag(s)", moved, seeded)
 
 
 def _move_managed_windows() -> int:
@@ -63,8 +63,13 @@ def _move_managed_windows() -> int:
     created_blank_id = ""
     if not _tmux_mutate("has-session", "-t", f"={config.MANAGED_SESSION}")[0]:
         ok, msg = _tmux_mutate(
-            "new-session", "-d", "-s", config.MANAGED_SESSION,
-            "-P", "-F", "#{window_id}",
+            "new-session",
+            "-d",
+            "-s",
+            config.MANAGED_SESSION,
+            "-P",
+            "-F",
+            "#{window_id}",
         )
         if not ok:
             raise RuntimeError(f"failed to create {config.MANAGED_SESSION}: {msg}")
@@ -84,18 +89,20 @@ def _move_managed_windows() -> int:
         # by session:index would race renumber-windows as siblings move.
         window_id = tmux("display-message", "-t", pane_id, "-p", "#{window_id}").strip()
         if not window_id:
-            log.warning("single-session migration: no window_id for pane %s (%s); skipping",
-                        pane_id, session)
+            log.warning("single-session migration: no window_id for pane %s (%s); skipping", pane_id, session)
             continue
         ok, msg = _tmux_mutate(
-            "move-window", "-s", window_id, "-t", f"={config.MANAGED_SESSION}:",
+            "move-window",
+            "-s",
+            window_id,
+            "-t",
+            f"={config.MANAGED_SESSION}:",
         )
         if ok:
             moved += 1
         else:
             # One bad move must not abort the batch — log loudly, keep going.
-            log.warning("single-session migration: move-window %s failed: %s",
-                        window_id, msg)
+            log.warning("single-session migration: move-window %s failed: %s", window_id, msg)
 
     # Kill the auto-created blank window — but only if we actually moved real
     # windows in (don't leave an empty session AND don't kill its last window).

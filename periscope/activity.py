@@ -160,14 +160,17 @@ def _conn() -> sqlite3.Connection:
     return _CONN
 
 
-def record(scope_kind, scope_key, event_kind, text, *,
-           at=None, detail=None, url=None, payload=None, dedup_key=None):
+def record(scope_kind, scope_key, event_kind, text, *, at=None, detail=None, url=None, payload=None, dedup_key=None):
     """Persist one event. INSERT OR IGNORE on dedup_key, so a non-None
     dedup_key already present makes this a no-op. dedup_key=None inserts."""
     row = (
-        scope_kind, scope_key, event_kind,
+        scope_kind,
+        scope_key,
+        event_kind,
         int(at if at is not None else time.time()),
-        text, detail, url,
+        text,
+        detail,
+        url,
         json.dumps(payload) if payload is not None else None,
         dedup_key,
     )
@@ -264,6 +267,7 @@ def checkpoint() -> None:
 # connection on Claude's SessionStart/UserPromptSubmit). Readers are
 # periscope.turns and any future code that needs the mapping.
 
+
 def get_pane_session(pane_id: str) -> str | None:
     """The Claude session id last recorded for this tmux pane, or None."""
     if not pane_id:
@@ -314,8 +318,7 @@ def set_session_base(session_id: str, repo: str, base_sha: str) -> bool:
     with _LOCK:
         c = _conn()
         cur = c.execute(
-            "INSERT OR IGNORE INTO session_bases "
-            "(session_id, repo, base_sha, created_at) VALUES (?,?,?,?)",
+            "INSERT OR IGNORE INTO session_bases (session_id, repo, base_sha, created_at) VALUES (?,?,?,?)",
             (session_id, repo, base_sha, int(time.time())),
         )
         c.commit()
@@ -332,8 +335,7 @@ def prune_pane_sessions(alive_pane_ids: set[str]) -> int:
         dead = existing - alive_pane_ids
         if not dead:
             return 0
-        c.executemany("DELETE FROM pane_sessions WHERE pane_id=?",
-                      [(p,) for p in dead])
+        c.executemany("DELETE FROM pane_sessions WHERE pane_id=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
 
@@ -343,6 +345,7 @@ def prune_pane_sessions(alive_pane_ids: set[str]) -> int:
 # The per-tab membership tag for workspaces (state['workspaces'] entity).
 # Keyed on tmux pane_id exactly like pane_sessions/pane_status, so it reuses
 # the dead-pane prune verbatim.
+
 
 def set_pane_workspace(pane_id: str, workspace_id: str | None) -> None:
     """Tag a tab into a workspace, or clear the tag when workspace_id is None."""
@@ -390,8 +393,7 @@ def prune_pane_workspaces(alive_pane_ids: set[str]) -> int:
         dead = existing - alive_pane_ids
         if not dead:
             return 0
-        c.executemany("DELETE FROM pane_workspaces WHERE pane_id=?",
-                      [(p,) for p in dead])
+        c.executemany("DELETE FROM pane_workspaces WHERE pane_id=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
 
@@ -416,9 +418,7 @@ def get_pane_track(pid: str) -> str | None:
     if not pid:
         return None
     with _LOCK:
-        row = _conn().execute(
-            "SELECT track_id FROM pane_tracks WHERE pid=?", (pid,)
-        ).fetchone()
+        row = _conn().execute("SELECT track_id FROM pane_tracks WHERE pid=?", (pid,)).fetchone()
         return row[0] if row else None
 
 
@@ -434,10 +434,8 @@ def prune_pane_tracks(alive_pids: set[str]) -> int:
         # %N rows predate the pid re-key and are the sweep's business — judged
         # against a pid set they would ALWAYS look dead and lose their tag
         # before resolve's lazy migration could carry it over.
-        dead = [p for p in existing
-                if not p.startswith("%") and p not in alive_pids]
-        c.executemany("DELETE FROM pane_tracks WHERE pid=?",
-                      [(p,) for p in dead])
+        dead = [p for p in existing if not p.startswith("%") and p not in alive_pids]
+        c.executemany("DELETE FROM pane_tracks WHERE pid=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
 
@@ -451,10 +449,10 @@ def sweep_legacy_pane_track_rows(live_pane_ids: set[str]) -> int:
         c = _conn()
         # Filter in Python: the table is tens of rows, and a SQL LIKE on a
         # literal '%' needs ESCAPE gymnastics.
-        rows = [r[0] for r in c.execute("SELECT pid FROM pane_tracks")
-                if r[0].startswith("%") and r[0] not in live_pane_ids]
-        c.executemany("DELETE FROM pane_tracks WHERE pid=?",
-                      [(p,) for p in rows])
+        rows = [
+            r[0] for r in c.execute("SELECT pid FROM pane_tracks") if r[0].startswith("%") and r[0] not in live_pane_ids
+        ]
+        c.executemany("DELETE FROM pane_tracks WHERE pid=?", [(p,) for p in rows])
         c.commit()
         return len(rows)
 
@@ -467,28 +465,28 @@ def insert_track(row: dict) -> None:
     with _LOCK:
         c = _conn()
         c.execute(
-            "INSERT OR REPLACE INTO tracks (id,name,repo,created_at,archived_at) "
-            "VALUES (?,?,?,?,?)",
-            (row["id"], row["name"], row.get("repo"),
-             row["created_at"], row.get("archived_at")),
+            "INSERT OR REPLACE INTO tracks (id,name,repo,created_at,archived_at) VALUES (?,?,?,?,?)",
+            (row["id"], row["name"], row.get("repo"), row["created_at"], row.get("archived_at")),
         )
         c.commit()
 
 
 def get_track(track_id: str) -> dict | None:
     with _LOCK:
-        r = _conn().execute(
-            "SELECT id,name,repo,created_at,archived_at FROM tracks WHERE id=?",
-            (track_id,),
-        ).fetchone()
+        r = (
+            _conn()
+            .execute(
+                "SELECT id,name,repo,created_at,archived_at FROM tracks WHERE id=?",
+                (track_id,),
+            )
+            .fetchone()
+        )
         return dict(zip(_TRACK_COLS, r, strict=True)) if r else None
 
 
 def all_tracks() -> list[dict]:
     with _LOCK:
-        rows = _conn().execute(
-            "SELECT id,name,repo,created_at,archived_at FROM tracks ORDER BY created_at"
-        ).fetchall()
+        rows = _conn().execute("SELECT id,name,repo,created_at,archived_at FROM tracks ORDER BY created_at").fetchall()
         return [dict(zip(_TRACK_COLS, r, strict=True)) for r in rows]
 
 
@@ -548,6 +546,7 @@ def migrate_legacy_pane_sessions() -> int:
     # if a hook race left an unreadable file, we still don't want the
     # legacy path to keep coming back on every restart.
     import shutil
+
     try:
         shutil.rmtree(legacy)
     except OSError:
@@ -563,8 +562,7 @@ def migrate_legacy_pane_sessions() -> int:
 # Writer is periscope/narrator.py (worker tick); readers are the narrator
 # and routes/state.py's bulk merge. Statuses survive restarts by design.
 
-_PANE_STATUS_COLS = ("pane_id, session_id, status, generated_at, "
-                     "jsonl_size, seen_name, renamed_at, rail, goal, history")
+_PANE_STATUS_COLS = "pane_id, session_id, status, generated_at, jsonl_size, seen_name, renamed_at, rail, goal, history"
 
 
 @dataclass(frozen=True)
@@ -578,7 +576,7 @@ class PaneStatusRow:
     renamed_at: int | None
     rail: str | None = None
     goal: str | None = None
-    history: str | None = None    # JSON arc; narrator owns the shape
+    history: str | None = None  # JSON arc; narrator owns the shape
 
 
 def get_pane_status(pane_id: str) -> PaneStatusRow | None:
@@ -610,9 +608,18 @@ def upsert_pane_status(row: PaneStatusRow) -> None:
             "  generated_at=excluded.generated_at, jsonl_size=excluded.jsonl_size, "
             "  seen_name=excluded.seen_name, renamed_at=excluded.renamed_at, "
             "  rail=excluded.rail, goal=excluded.goal, history=excluded.history",
-            (row.pane_id, row.session_id, row.status, row.generated_at,
-             row.jsonl_size, row.seen_name, row.renamed_at, row.rail,
-             row.goal, row.history),
+            (
+                row.pane_id,
+                row.session_id,
+                row.status,
+                row.generated_at,
+                row.jsonl_size,
+                row.seen_name,
+                row.renamed_at,
+                row.rail,
+                row.goal,
+                row.history,
+            ),
         )
         c.commit()
 
@@ -642,10 +649,7 @@ def pane_status_lines() -> dict[str, tuple[str, int, str | None]]:
     rows."""
     with _LOCK:
         c = _conn()
-        rows = c.execute(
-            "SELECT pane_id, status, generated_at, rail FROM pane_status "
-            "WHERE status != ''"
-        ).fetchall()
+        rows = c.execute("SELECT pane_id, status, generated_at, rail FROM pane_status WHERE status != ''").fetchall()
     return {p: (s, int(g), r) for p, s, g, r in rows}
 
 
@@ -658,8 +662,7 @@ def prune_pane_status(alive_pane_ids: set[str]) -> int:
         dead = existing - alive_pane_ids
         if not dead:
             return 0
-        c.executemany("DELETE FROM pane_status WHERE pane_id=?",
-                      [(p,) for p in dead])
+        c.executemany("DELETE FROM pane_status WHERE pane_id=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
 
@@ -674,30 +677,27 @@ def prune_pane_status(alive_pane_ids: set[str]) -> int:
 # meter names on the same cadence — without it their series interleave into
 # one nonsense slope, retroactively unseparable.
 
-def record_usage_samples(
-        rows: list[tuple[int, str, str, float, int | None]]) -> None:
+
+def record_usage_samples(rows: list[tuple[int, str, str, float, int | None]]) -> None:
     """Bulk-insert (at, account, meter, percent, resets_at) samples."""
     if not rows:
         return
     with _LOCK:
         c = _conn()
         c.executemany(
-            "INSERT OR IGNORE INTO usage_samples "
-            "(at, account, meter, percent, resets_at) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO usage_samples (at, account, meter, percent, resets_at) VALUES (?,?,?,?,?)",
             rows,
         )
         c.commit()
 
 
-def usage_samples_since(account: str, meter: str,
-                        since: int) -> list[tuple[int, float]]:
+def usage_samples_since(account: str, meter: str, since: int) -> list[tuple[int, float]]:
     """(at, percent) samples for one account's meter at/after `since`,
     oldest first."""
     with _LOCK:
         c = _conn()
         rows = c.execute(
-            "SELECT at, percent FROM usage_samples "
-            "WHERE account=? AND meter=? AND at>=? ORDER BY at",
+            "SELECT at, percent FROM usage_samples WHERE account=? AND meter=? AND at>=? ORDER BY at",
             (account, meter, since),
         ).fetchall()
     return [(int(a), float(p)) for a, p in rows]
@@ -719,6 +719,7 @@ def prune_usage_samples(max_age_days: int = 14) -> None:
 # to POST /api/events (routes/events.py), which calls record_ui_events.
 # Single-user, low volume; SQLite-by-hand is the readout (no UI). ui_events
 # is a separate tenant in periscope.db, like pane_sessions above.
+
 
 def record_ui_events(events: list, dev: bool) -> int:
     """Bulk-insert UI instrumentation rows. Each event is a dict with keys
@@ -774,8 +775,7 @@ def _row_to_event(event_kind, at, text, detail, url):
         # kind (message / interrupt / ...); text is the full message body.
         return {"src": "channel", "kind": detail or "message", "at": at, "text": text}
     # reset — session-sourced rows.
-    return {"src": "session", "kind": event_kind, "at": at,
-            "text": text, "state": detail, "url": url}
+    return {"src": "session", "kind": event_kind, "at": at, "text": text, "state": detail, "url": url}
 
 
 # --- Read path: merge persisted events with computed git events --------
@@ -823,8 +823,7 @@ def cached_pane_activity(target, pane_id, path, branch, limit=40):
     # Per-target "opened in periscope" anchor.
     opened_at = _acted_at.get(target, 0)
     if opened_at:
-        events.append({"src": "git", "kind": "open", "at": opened_at,
-                       "text": "opened in periscope"})
+        events.append({"src": "git", "kind": "open", "at": opened_at, "text": "opened in periscope"})
     events.sort(key=lambda e: e.get("at", 0), reverse=True)
     return events[:limit]
 
@@ -873,8 +872,7 @@ def live_transcript_for(cwd: str) -> Path | None:
     d = _PROJECTS_DIR / _encode_cwd(cwd)
     if not d.is_dir():
         return None
-    files = sorted(d.glob("*.jsonl"),
-                   key=lambda f: f.stat().st_mtime, reverse=True)
+    files = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
     for f in files:
         if _transcript_cwd(f) == cwd:
             return f
@@ -886,6 +884,7 @@ def live_transcript_for(cwd: str) -> Path | None:
 # Both /clear and a compaction reset Claude's context. /clear leaves no
 # transcript marker, so detection keys off the status-line context %,
 # which climbs monotonically during a session and drops only on a reset.
+
 
 def _human_tokens(n) -> str:
     try:
@@ -964,7 +963,7 @@ def _check_reset(pane_id: str, cwd: str, context_pct, last_ctx: dict) -> bool:
 # it captures each active Claude pane, runs the context-reset check, and
 # drives the narrator (semantic status + auto-rename).
 
-_FD_WARN = 512   # half the launchd SoftResourceLimits NumberOfFiles cap (1024)
+_FD_WARN = 512  # half the launchd SoftResourceLimits NumberOfFiles cap (1024)
 
 
 def _fd_count() -> int | None:
@@ -988,19 +987,20 @@ def _worker_tick(last_ctx: dict) -> None:
         if parsed.get("agent") != "claude":
             continue
         panes.append((w, parsed))
-        _check_reset(w.get("pane_id") or "", w.get("cwd") or "",
-                     parsed.get("context_pct"), last_ctx)
+        _check_reset(w.get("pane_id") or "", w.get("cwd") or "", parsed.get("context_pct"), last_ctx)
     # Narrator: one semantic-status pass over the same Claude panes.
     try:
         # Function-level import — narrator imports activity; a top-level
         # import here would be a cycle.
         from periscope import narrator
+
         narrator.tick(panes)
     except Exception:
         log.exception("narrator tick failed")
     # bg commander job status sync (prod-only, same as the narrator above).
     try:
         from periscope import bg_commander
+
         bg_commander.sync_jobs()
     except Exception:
         log.exception("bg_commander sync failed")
@@ -1009,6 +1009,7 @@ def _worker_tick(last_ctx: dict) -> None:
     # it from here instead; the script self-gates on its own interval + lock.
     try:
         from periscope import resurrect
+
         resurrect.save_now()
     except Exception:
         log.exception("continuum save failed")
@@ -1016,6 +1017,7 @@ def _worker_tick(last_ctx: dict) -> None:
     # Self-throttled to hourly; the tick is just a convenient heartbeat.
     try:
         from periscope import updater
+
         updater.check()
     except Exception:
         log.exception("update check failed")

@@ -10,7 +10,8 @@ def _fake_anthropic():
     ok_block.type = "tool_use"
     ok_block.name = "save_session_summary"
     ok_block.input = {"summary": "fake", "tags": ["a", "b", "c"]}
-    msg = MagicMock(); msg.content = [ok_block]
+    msg = MagicMock()
+    msg.content = [ok_block]
     client.messages.create.return_value = msg
     return client
 
@@ -38,6 +39,7 @@ def test_backfill_indexes_each_jsonl(tmp_path, fixture_dir):
     shutil.copy(fixture_dir / "short_session.jsonl", cwd_dir / "s1.jsonl")
     # Back-date the copied fixtures so live-skip doesn't trigger
     import os
+
     for p in cwd_dir.glob("*.jsonl"):
         os.utime(p, (1700000000, 1700000000))
     db_path = tmp_path / "h.db"
@@ -48,11 +50,12 @@ def test_backfill_indexes_each_jsonl(tmp_path, fixture_dir):
     # short_session is trivial → no Haiku call. normal_session → 1 Haiku call.
     assert client.messages.create.call_count == 1
     from history.db import connect
+
     conn = connect(db_path)
     try:
         rows = conn.execute("SELECT session_id FROM sessions ORDER BY session_id").fetchall()
         ids = [r["session_id"] for r in rows]
-        assert "abc-001" in ids       # from short_session
+        assert "abc-001" in ids  # from short_session
         assert "normal-001" in ids
     finally:
         conn.close()
@@ -65,6 +68,7 @@ def test_backfill_resumable(tmp_path, fixture_dir):
     shutil.copy(fixture_dir / "normal_session.jsonl", cwd_dir / "n1.jsonl")
     # Back-date
     import os
+
     os.utime(cwd_dir / "n1.jsonl", (1700000000, 1700000000))
     db_path = tmp_path / "h.db"
     client = _fake_anthropic()
@@ -88,13 +92,13 @@ def test_backfill_walks_archive_dir_too(tmp_path, fixture_dir, monkeypatch):
     # Place a fixture only in the archive (simulating a rotated-out session)
     (archive / "-Users-tom-dev-foo").mkdir(parents=True)
     import shutil
-    shutil.copy(fixture_dir / "short_session.jsonl",
-                archive / "-Users-tom-dev-foo" / "short_session.jsonl")
+
+    shutil.copy(fixture_dir / "short_session.jsonl", archive / "-Users-tom-dev-foo" / "short_session.jsonl")
     # And one only in the live projects dir
     (projects / "-Users-tom-dev-bar").mkdir(parents=True)
-    shutil.copy(fixture_dir / "normal_session.jsonl",
-                projects / "-Users-tom-dev-bar" / "normal_session.jsonl")
+    shutil.copy(fixture_dir / "normal_session.jsonl", projects / "-Users-tom-dev-bar" / "normal_session.jsonl")
     from history.backfill import find_jsonl_files
+
     found = find_jsonl_files()  # no arg → walks both dirs
     names = sorted(p.name for p in found)
     assert "short_session.jsonl" in names
@@ -114,6 +118,7 @@ def test_backfill_prefers_archive_over_live(tmp_path, fixture_dir, monkeypatch):
     (archive / "-Users-tom-foo" / "session.jsonl").write_text('{"src":"archive"}')
     (projects / "-Users-tom-foo" / "session.jsonl").write_text('{"src":"projects"}')
     from history.backfill import find_jsonl_files
+
     found = find_jsonl_files()
     assert len(found) == 1  # deduplicated
     assert "archive" in found[0].read_text()  # archive wins

@@ -1,4 +1,5 @@
 """SQLite connection management + schema migration."""
+
 import os
 import sqlite3
 import threading
@@ -8,8 +9,7 @@ SCHEMA_VERSION = 2
 MECHANICAL_VERSION = 1
 DEFAULT_HAIKU_MODEL = "claude-haiku-5-5"
 
-DEFAULT_DB_PATH = Path(os.environ.get("CLAUDE_HISTORY_DB") or
-                       Path.home() / ".claude" / "history.db")
+DEFAULT_DB_PATH = Path(os.environ.get("CLAUDE_HISTORY_DB") or Path.home() / ".claude" / "history.db")
 
 _SCHEMA_SQL = (Path(__file__).parent / "schema.sql").read_text()
 _LOCK = threading.Lock()
@@ -17,8 +17,7 @@ _LOCK = threading.Lock()
 
 # Columns added after schema_version 1. SQLite has no ADD COLUMN IF NOT
 # EXISTS, so the migration is a guarded PRAGMA-checked ALTER — idempotent.
-_V2_COLUMNS = (("outcome", "TEXT"), ("category", "TEXT"),
-               ("notable", "INTEGER"), ("topics", "TEXT"))
+_V2_COLUMNS = (("outcome", "TEXT"), ("category", "TEXT"), ("notable", "INTEGER"), ("topics", "TEXT"))
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -39,16 +38,13 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     cur = conn.execute("SELECT key FROM meta")
     existing = {row[0] for row in cur}
     if "mechanical_version" not in existing:
-        conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)",
-                     ("mechanical_version", str(MECHANICAL_VERSION)))
+        conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("mechanical_version", str(MECHANICAL_VERSION)))
     # Code-owned keys overwrite the stored value: a DB seeded under an older
     # Haiku kept summarizing on it after the constant moved, since the
     # indexer reads the meta row first.
-    for key, value in (("schema_version", str(SCHEMA_VERSION)),
-                       ("haiku_model", DEFAULT_HAIKU_MODEL)):
+    for key, value in (("schema_version", str(SCHEMA_VERSION)), ("haiku_model", DEFAULT_HAIKU_MODEL)):
         conn.execute(
-            "INSERT INTO meta(key, value) VALUES (?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
     conn.commit()
@@ -79,8 +75,7 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.execute(
-        "INSERT INTO meta(key, value) VALUES (?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (key, value),
     )
     conn.commit()

@@ -45,6 +45,7 @@ def test_git_state_for_returns_none_for_missing_path(tmp_path):
 
 def test_git_state_for_returns_branch_for_mocked_git_repo(tmp_path, mocker):
     """When git rev-parse / diff / rev-list succeed, build the expected dict."""
+
     def fake_run(cmd, cwd=None, timeout=3.0):
         # cmd is a list like ["git", "-C", path, ...]
         if "rev-parse" in cmd and "--git-dir" in cmd:
@@ -58,6 +59,7 @@ def test_git_state_for_returns_branch_for_mocked_git_repo(tmp_path, mocker):
         if "rev-parse" in cmd and "--short" in cmd:
             return (0, "abcd1234")
         return (0, "")
+
     # git_pr imports _run as a module-level name; patch the live binding.
     mocker.patch("periscope.git_pr._run", side_effect=fake_run)
     out = git_state_for(str(tmp_path))
@@ -68,6 +70,7 @@ def test_git_state_for_returns_branch_for_mocked_git_repo(tmp_path, mocker):
 
 def _mock_git(mocker, *, diff="", untracked="", ahead="0"):
     """Patch _run so git_state_for sees a controlled repo shape."""
+
     def fake_run(cmd, cwd=None, timeout=3.0):
         if "rev-parse" in cmd and "--git-dir" in cmd:
             return (0, ".git")
@@ -80,6 +83,7 @@ def _mock_git(mocker, *, diff="", untracked="", ahead="0"):
         if "rev-list" in cmd:
             return (0, ahead)
         return (0, "")
+
     mocker.patch("periscope.git_pr._run", side_effect=fake_run)
 
 
@@ -174,10 +178,12 @@ def test_ci_glyph_rollup():
 def _fake_gh(mocker, *, state, rollup=None):
     """Patch _run so linked_pr_state_for sees `gh pr view` returning one PR."""
     import json as _json
+
     payload = _json.dumps({"state": state, "statusCheckRollup": rollup or []})
 
     def fake_run(cmd, cwd=None, timeout=3.0):
         return (0, payload)
+
     mocker.patch("periscope.git_pr._run", side_effect=fake_run)
     mocker.patch("periscope.git_pr._GH_AVAILABLE", True)
 
@@ -209,28 +215,24 @@ from periscope.gitutil import github_slug
 
 
 def _git(repo, *args):
-    subprocess.run(["git", "-C", str(repo), *args], check=True,
-                   capture_output=True)
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
 def test_github_slug_ssh_form(tmp_path):
     _git(tmp_path, "init")
-    _git(tmp_path, "remote", "add", "origin",
-         "git@github.com:faradayio/periscope.git")
+    _git(tmp_path, "remote", "add", "origin", "git@github.com:faradayio/periscope.git")
     assert github_slug(str(tmp_path)) == "faradayio/periscope"
 
 
 def test_github_slug_https_form(tmp_path):
     _git(tmp_path, "init")
-    _git(tmp_path, "remote", "add", "origin",
-         "https://github.com/faradayio/periscope.git")
+    _git(tmp_path, "remote", "add", "origin", "https://github.com/faradayio/periscope.git")
     assert github_slug(str(tmp_path)) == "faradayio/periscope"
 
 
 def test_github_slug_none_for_non_github(tmp_path):
     _git(tmp_path, "init")
-    _git(tmp_path, "remote", "add", "origin",
-         "https://gitlab.com/x/y.git")
+    _git(tmp_path, "remote", "add", "origin", "https://gitlab.com/x/y.git")
     assert github_slug(str(tmp_path)) is None
 
 
@@ -242,6 +244,7 @@ def test_github_slug_none_when_no_remote(tmp_path):
 def test_git_state_includes_repo_key_and_label(tmp_path, mocker):
     """git_state_for() returns repo_key (full path) + repo_label (basename)."""
     import periscope.git_pr as gp
+
     # git_state_for short-circuits when the path is not a directory, so
     # build a real worktree-like directory tree under tmp_path.
     repo_dir = tmp_path / "foo"
@@ -277,8 +280,8 @@ def test_git_state_includes_repo_key_and_label(tmp_path, mocker):
 
 # --- git_signal_for: the progress signal list_claudes carries ---------------
 
-def _mock_signal(mocker, *, toplevel="/w/tree", head="abc1234\t1700000000\tfix thing",
-                 head_code=0, porcelain=""):
+
+def _mock_signal(mocker, *, toplevel="/w/tree", head="abc1234\t1700000000\tfix thing", head_code=0, porcelain=""):
     def fake_run(cmd, cwd=None, timeout=3.0):
         if "--show-toplevel" in cmd:
             return (0, toplevel)
@@ -287,6 +290,7 @@ def _mock_signal(mocker, *, toplevel="/w/tree", head="abc1234\t1700000000\tfix t
         if "status" in cmd:
             return (0, porcelain)
         return (0, "")
+
     mocker.patch("periscope.git_pr._run", side_effect=fake_run)
 
 
@@ -324,6 +328,7 @@ def test_git_signal_empty_repo_has_no_head(tmp_path, mocker):
 def test_git_signal_non_git_path_is_none(tmp_path, mocker):
     def fake_run(cmd, cwd=None, timeout=3.0):
         return (128, "")
+
     mocker.patch("periscope.git_pr._run", side_effect=fake_run)
     assert git_signal_for(str(tmp_path)) is None
     assert git_signal_for(str(tmp_path / "nope")) is None
@@ -333,6 +338,7 @@ def test_git_signal_non_git_path_is_none(tmp_path, mocker):
 def test_git_signal_toplevel_is_the_worktree_not_the_repo(tmp_path, mocker):
     """Grouping by repo root would flag two linked worktrees as sharing a tree
     when they have separate build dirs and indexes and never contend."""
-    wt = tmp_path / "wt"; wt.mkdir()
+    wt = tmp_path / "wt"
+    wt.mkdir()
     _mock_signal(mocker, toplevel=str(wt))
     assert git_signal_for(str(tmp_path))["toplevel"] == str(wt.resolve())

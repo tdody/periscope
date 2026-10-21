@@ -23,21 +23,27 @@ def test_user_text_extraction(fixture_dir):
     # Second user event is a tool_result wrapper, not real user text
     assert user_events[0].user_text == "hi, run ls"
     assert user_events[1].user_text is None
-    assert user_events[1].tool_results == [{"tool_use_id": "tu-1", "content": "total 0\ndrwx 3 tom staff 96 Apr 13 10:00 ."}]
+    assert user_events[1].tool_results == [
+        {"tool_use_id": "tu-1", "content": "total 0\ndrwx 3 tom staff 96 Apr 13 10:00 ."}
+    ]
 
 
 def test_assistant_blocks_classified(fixture_dir):
     events = list(parse_jsonl(str(fixture_dir / "short_session.jsonl")))
     assistants = [e for e in events if e.type == "assistant"]
     assert assistants[0].assistant_text == "on it"
-    assert assistants[0].tool_uses == [{"id": "tu-1", "name": "Bash", "input": {"command": "ls -la /tmp/foo", "description": "List foo"}}]
+    assert assistants[0].tool_uses == [
+        {"id": "tu-1", "name": "Bash", "input": {"command": "ls -la /tmp/foo", "description": "List foo"}}
+    ]
     assert assistants[1].assistant_text == "directory is empty"
     assert assistants[1].tool_uses == []
 
 
 def test_unknown_types_pass_through(tmp_path):
     p = tmp_path / "novel.jsonl"
-    p.write_text('{"type":"future-feature","x":1}\n{"type":"user","sessionId":"s","message":{"role":"user","content":[{"type":"text","text":"hi"}]}}\n')
+    p.write_text(
+        '{"type":"future-feature","x":1}\n{"type":"user","sessionId":"s","message":{"role":"user","content":[{"type":"text","text":"hi"}]}}\n'
+    )
     events = list(parse_jsonl(str(p)))
     assert [e.type for e in events] == ["future-feature", "user"]
 

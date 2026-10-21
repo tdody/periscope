@@ -9,16 +9,29 @@ def test_catalog_reads_uuid_metadata_and_ignores_names(monkeypatch, tmp_path):
     sessions.mkdir(parents=True)
     sid = "019fb027-5e13-74c3-9ed9-0c69e1914367"
     good = sessions / "rollout-good.jsonl"
-    good.write_text(json.dumps({
-        "timestamp": "2026-07-30T12:00:00Z",
-        "type": "session_meta",
-        "payload": {
-            "id": sid, "cwd": "/tmp/project", "cli_version": "0.146.0",
-        },
-    }) + "\n")
-    (sessions / "rollout-name.jsonl").write_text(json.dumps({
-        "type": "session_meta", "payload": {"id": "friendly-name", "cwd": "/tmp"},
-    }) + "\n")
+    good.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-07-30T12:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": sid,
+                    "cwd": "/tmp/project",
+                    "cli_version": "0.146.0",
+                },
+            }
+        )
+        + "\n"
+    )
+    (sessions / "rollout-name.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"id": "friendly-name", "cwd": "/tmp"},
+            }
+        )
+        + "\n"
+    )
     monkeypatch.setenv("CODEX_HOME", str(home))
 
     result = codex_sessions.catalog()

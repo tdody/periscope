@@ -15,12 +15,14 @@ def test_post_open_path_returns_contract(client, tmp_git_repo, clean_state, tmux
     assert body["agent"] == "claude"
     # agent_pid is the contract the client selects on, so create-or-focus is
     # visible in both branches; ui carries the TRACK-era rail keys.
-    assert repo in body["ui"]["track_order"]        # repo-default track id == repo
+    assert repo in body["ui"]["track_order"]  # repo-default track id == repo
     assert body["agent_pid"] in body["ui"]["tabs_by_track"][repo]
+
 
 def test_post_open_non_git_400(client, tmp_path, clean_state):
     r = client.post("/api/open", json={"path": str(tmp_path)})
     assert r.status_code == 400
+
 
 def test_post_open_missing_path_400_with_reason(client, tmp_path, clean_state):
     # apiCall surfaces `detail` in a toast, so the message is user-facing.
@@ -28,9 +30,11 @@ def test_post_open_missing_path_400_with_reason(client, tmp_path, clean_state):
     assert r.status_code == 400
     assert "no such directory" in r.json()["detail"]
 
+
 def test_post_open_bad_descriptor_400(client, clean_state):
     assert client.post("/api/open", json={}).status_code == 400
     assert client.post("/api/open", json={"branch": "x"}).status_code == 400  # repo missing
+
 
 def test_get_catalog(client, clean_state):
     r = client.get("/api/open/catalog")

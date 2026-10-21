@@ -80,6 +80,7 @@ def test_hook_returns_0_on_non_string_transcript_path(monkeypatch):
 def test_hook_passes_force_to_index_one(monkeypatch, tmp_path):
     """SessionEnd hook must bypass the indexer's live-skip guard."""
     import json as _json
+
     jsonl = tmp_path / "x.jsonl"
     jsonl.write_text('{"type":"permission-mode","permissionMode":"default","sessionId":"x"}\n')
     payload = _json.dumps({"transcript_path": str(jsonl)})

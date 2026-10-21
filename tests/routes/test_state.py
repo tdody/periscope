@@ -28,9 +28,14 @@ def test_state_empty(client, mocker, clean_state):
 def test_state_with_window(client, mocker, clean_state):
     fake_windows = [
         {
-            "session": "main", "index": 0, "name": "x",
-            "active": True, "cwd": "/tmp", "pid_raw": "",
-            "pane_id": "%7", "pid": "abc123",
+            "session": "main",
+            "index": 0,
+            "name": "x",
+            "active": True,
+            "cwd": "/tmp",
+            "pid_raw": "",
+            "pane_id": "%7",
+            "pid": "abc123",
         },
     ]
     _patch(mocker, "list_windows", return_value=fake_windows)
@@ -78,6 +83,7 @@ def test_state_skips_channel_gc_when_no_panes(client, mocker, clean_state):
 def test_state_resume_gc_drops_stale(client, mocker, clean_state):
     """_resuming entries pointing at dead targets get cleaned up."""
     from periscope.panes import _resuming
+
     _resuming.clear()
     _resuming["sid-1"] = {"target": "dead:0", "started_at": 0}  # ancient + missing
     _patch(mocker, "list_windows", return_value=[])
@@ -93,15 +99,13 @@ def test_state_resume_gc_drops_stale(client, mocker, clean_state):
 def test_state_preserves_window_order_across_fanout(client, mocker, clean_state):
     """The parallel fan-out must return views in the same order as list_windows."""
     windows = [
-        {"session": "s", "index": i, "active": i == 0, "activity": 0, "pane_id": f"%{i}", "cwd": ""}
-        for i in range(5)
+        {"session": "s", "index": i, "active": i == 0, "activity": 0, "pane_id": f"%{i}", "cwd": ""} for i in range(5)
     ]
     _patch(mocker, "list_windows", return_value=windows)
     _patch(mocker, "update_focus_from_windows")
     _patch(mocker, "_attach_git_then_resolve_pids")
     _patch(mocker, "all_projects", return_value={})
-    _patch(mocker, "build_window_view",
-           side_effect=lambda w, now_ts: ({"index": w["index"]}, None))
+    _patch(mocker, "build_window_view", side_effect=lambda w, now_ts: ({"index": w["index"]}, None))
     resp = client.get("/api/state")
     assert [v["index"] for v in resp.json()["windows"]] == [0, 1, 2, 3, 4]
 
@@ -110,15 +114,15 @@ def test_state_writes_stamps_once_after_join(client, mocker, clean_state):
     """All _STATE mutation stays single-threaded post-join: set_window_fields_bulk
     is called exactly once with every pane's stamp."""
     windows = [
-        {"session": "s", "index": i, "active": False, "activity": 0, "pane_id": f"%{i}", "cwd": ""}
-        for i in range(3)
+        {"session": "s", "index": i, "active": False, "activity": 0, "pane_id": f"%{i}", "cwd": ""} for i in range(3)
     ]
     _patch(mocker, "list_windows", return_value=windows)
     _patch(mocker, "update_focus_from_windows")
     _patch(mocker, "_attach_git_then_resolve_pids")
     _patch(mocker, "all_projects", return_value={})
-    _patch(mocker, "build_window_view",
-           side_effect=lambda w, now_ts: ({"index": w["index"]}, (f"pid{w['index']}", 10, 5)))
+    _patch(
+        mocker, "build_window_view", side_effect=lambda w, now_ts: ({"index": w["index"]}, (f"pid{w['index']}", 10, 5))
+    )
     bulk = _patch(mocker, "set_window_fields_bulk")
     client.get("/api/state")
     assert bulk.call_count == 1
@@ -146,21 +150,26 @@ def test_state_isolates_one_pane_build_failure(client, mocker, clean_state):
     _patch(mocker, "build_window_view", side_effect=fake_build)
     resp = client.get("/api/state")
     views = {v["index"]: v for v in resp.json()["windows"]}
-    assert views[0]["state"] == "error"   # _safe_build caught the raise
+    assert views[0]["state"] == "error"  # _safe_build caught the raise
     assert views[1]["state"] == "idle"
 
 
-def test_state_merges_narrator_status_lines(client, mocker, clean_state,
-                                            fresh_activity_db):
+def test_state_merges_narrator_status_lines(client, mocker, clean_state, fresh_activity_db):
     activity = fresh_activity_db
-    activity.upsert_pane_status(activity.PaneStatusRow(
-        pane_id="%7", session_id="sid", status="fixing flaky reconcile test",
-        generated_at=1234, jsonl_size=10, seen_name="claude", renamed_at=None))
+    activity.upsert_pane_status(
+        activity.PaneStatusRow(
+            pane_id="%7",
+            session_id="sid",
+            status="fixing flaky reconcile test",
+            generated_at=1234,
+            jsonl_size=10,
+            seen_name="claude",
+            renamed_at=None,
+        )
+    )
     windows = [
-        {"session": "s", "index": 0, "active": True, "activity": 0,
-         "pane_id": "%7", "cwd": ""},
-        {"session": "s", "index": 1, "active": False, "activity": 0,
-         "pane_id": "%8", "cwd": ""},
+        {"session": "s", "index": 0, "active": True, "activity": 0, "pane_id": "%7", "cwd": ""},
+        {"session": "s", "index": 1, "active": False, "activity": 0, "pane_id": "%8", "cwd": ""},
     ]
     _patch(mocker, "list_windows", return_value=windows)
     _patch(mocker, "update_focus_from_windows")
@@ -171,9 +180,11 @@ def test_state_merges_narrator_status_lines(client, mocker, clean_state,
     # as test_state_empty / test_state_with_window).
     _patch(mocker, "cached_claude_usage", return_value={})
     _patch(mocker, "cached_plan_usage", return_value=None)
-    _patch(mocker, "build_window_view",
-           side_effect=lambda w, now_ts: (
-               {"index": w["index"], "pane_id": w["pane_id"]}, None))
+    _patch(
+        mocker,
+        "build_window_view",
+        side_effect=lambda w, now_ts: ({"index": w["index"], "pane_id": w["pane_id"]}, None),
+    )
 
     body = client.get("/api/state").json()
     views = {v["index"]: v for v in body["windows"]}
@@ -181,19 +192,25 @@ def test_state_merges_narrator_status_lines(client, mocker, clean_state,
     assert views[0]["status_at"] == 1234
     assert "status_line" not in views[1]
     assert "status_at" not in views[1]
-    assert "status_rail" not in views[0]   # row exists but rail is NULL
+    assert "status_rail" not in views[0]  # row exists but rail is NULL
 
 
-def test_state_merges_status_rail_when_present(client, mocker, clean_state,
-                                               fresh_activity_db):
+def test_state_merges_status_rail_when_present(client, mocker, clean_state, fresh_activity_db):
     activity = fresh_activity_db
-    activity.upsert_pane_status(activity.PaneStatusRow(
-        pane_id="%7", session_id="sid", status="comparing figv2 lookup hit rates",
-        generated_at=1234, jsonl_size=10, seen_name="claude", renamed_at=None,
-        rail="comparing hit rates"))
+    activity.upsert_pane_status(
+        activity.PaneStatusRow(
+            pane_id="%7",
+            session_id="sid",
+            status="comparing figv2 lookup hit rates",
+            generated_at=1234,
+            jsonl_size=10,
+            seen_name="claude",
+            renamed_at=None,
+            rail="comparing hit rates",
+        )
+    )
     windows = [
-        {"session": "s", "index": 0, "active": True, "activity": 0,
-         "pane_id": "%7", "cwd": ""},
+        {"session": "s", "index": 0, "active": True, "activity": 0, "pane_id": "%7", "cwd": ""},
     ]
     _patch(mocker, "list_windows", return_value=windows)
     _patch(mocker, "update_focus_from_windows")
@@ -202,9 +219,11 @@ def test_state_merges_status_rail_when_present(client, mocker, clean_state,
     # Hermeticity: same usage patches as test_state_merges_narrator_status_lines.
     _patch(mocker, "cached_claude_usage", return_value={})
     _patch(mocker, "cached_plan_usage", return_value=None)
-    _patch(mocker, "build_window_view",
-           side_effect=lambda w, now_ts: (
-               {"index": w["index"], "pane_id": w["pane_id"]}, None))
+    _patch(
+        mocker,
+        "build_window_view",
+        side_effect=lambda w, now_ts: ({"index": w["index"], "pane_id": w["pane_id"]}, None),
+    )
 
     body = client.get("/api/state").json()
     w = body["windows"][0]
@@ -216,6 +235,7 @@ def test_state_merges_status_rail_when_present(client, mocker, clean_state,
 def test_state_includes_workspaces(client, mocker, clean_state, fresh_activity_db):
     """The /api/state payload carries non-archived workspaces."""
     from periscope.workspaces import create_workspace
+
     ws = create_workspace(name="WS", base_repo="/dev/fdy")
     _patch(mocker, "list_windows", return_value=[])
     _patch(mocker, "update_focus_from_windows")
@@ -232,9 +252,10 @@ def test_state_includes_tracks_registry(client, mocker, clean_state, fresh_activ
     """The payload carries non-archived track rows — the rail needs them to
     render EMPTY goal tracks (live windows can't surface a track with no tabs)."""
     from periscope import tracks
+
     kept = tracks.create_track(name="Fresh goal", repo="/dev/fdy")
     gone = tracks.create_track(name="Old goal")
-    tracks.dissolve_track(gone["id"])          # archived → excluded
+    tracks.dissolve_track(gone["id"])  # archived → excluded
     _patch(mocker, "list_windows", return_value=[])
     _patch(mocker, "update_focus_from_windows")
     _patch(mocker, "_attach_git_then_resolve_pids")
@@ -247,9 +268,7 @@ def test_state_includes_tracks_registry(client, mocker, clean_state, fresh_activ
     assert gone["id"] not in rows
 
 
-def test_state_includes_alerts_so_the_dashboard_needs_no_alert_poll(
-    client, mocker, clean_state
-):
+def test_state_includes_alerts_so_the_dashboard_needs_no_alert_poll(client, mocker, clean_state):
     """Alerts ride the state blob — that's what lets the frontend drop its
     own /api/alerts/recent loop and inherit the hub's push transport."""
     _patch(mocker, "list_windows", return_value=[])
@@ -263,9 +282,7 @@ def test_state_includes_alerts_so_the_dashboard_needs_no_alert_poll(
     )
 
     body = client.get("/api/state").json()
-    assert body["alerts"] == [
-        {"id": "a1", "kind": "need_human", "message": "blocked"}
-    ]
+    assert body["alerts"] == [{"id": "a1", "kind": "need_human", "message": "blocked"}]
 
 
 def test_state_publishes_the_chooser_answer(client, mocker, clean_state):
@@ -281,7 +298,10 @@ def test_state_publishes_the_chooser_answer(client, mocker, clean_state):
     # covers the route's own binding); under clean_state + the autouse
     # no-refresh guard that is {available: False} per account → default, no override.
     assert body["launch_default"] == {
-        "account": "default", "model": None, "reason": "no usage data", "effort": None,
+        "account": "default",
+        "model": None,
+        "reason": "no usage data",
+        "effort": None,
     }
 
 
@@ -289,6 +309,7 @@ def test_state_publishes_the_effort_pin(client, mocker, clean_state):
     # The header's effort picker renders from this; unset must read as null so
     # the picker shows "default", and a set pin must come back verbatim.
     from periscope import store
+
     _patch(mocker, "list_windows", return_value=[])
     _patch(mocker, "update_focus_from_windows")
     _patch(mocker, "_attach_git_then_resolve_pids")
@@ -303,6 +324,7 @@ def test_state_publishes_the_effort_pin(client, mocker, clean_state):
 
 def test_state_carries_the_poke_log(client, mocker, clean_state):
     from periscope import store
+
     _patch(mocker, "list_windows", return_value=[])
     _patch(mocker, "update_focus_from_windows")
     _patch(mocker, "_attach_git_then_resolve_pids")
@@ -322,8 +344,7 @@ def test_state_serves_the_registry_without_config_dirs_and_move_targets(client, 
     clean_state["accounts"].append({"id": "c", "config_dir": "/x/.claude-c"})
 
     body = client.get("/api/state").json()
-    assert body["accounts"] == [{"id": "default", "label": "A"}, {"id": "b", "label": "B"},
-                                {"id": "c", "label": "c"}]
+    assert body["accounts"] == [{"id": "default", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "c"}]
     # No usage data: each account moves to the first other registered one.
     assert body["move_targets"] == {"default": "b", "b": "default", "c": "default"}
 

@@ -12,8 +12,11 @@ from periscope import cleanup
 
 def _project(name, session, repo):
     return {
-        "name": name, "tmux_session": session, "repo": repo,
-        "archived_at": None, "base_branch": "main",
+        "name": name,
+        "tmux_session": session,
+        "repo": repo,
+        "archived_at": None,
+        "base_branch": "main",
     }
 
 
@@ -37,8 +40,12 @@ def test_signal1_linked_pr_keys_on_worktree_cwd(mocker):
     }
 
     cand = cleanup._evaluate_worktree(
-        "/repo/a", "feat-a", "/repo", "main",
-        project_by_pinned, windows_snapshot,
+        "/repo/a",
+        "feat-a",
+        "/repo",
+        "main",
+        project_by_pinned,
+        windows_snapshot,
         alive_worktree_cwds={"/repo/a", "/repo/b"},
         idle_threshold=14,
     )
@@ -61,15 +68,30 @@ def test_signal4_idle_keys_on_live_pane_cwd(mocker):
     project_by_pinned = {"/repo/a": _project("a", "shared", "/repo")}
 
     # A live pane sits in the worktree → NOT idle → healthy → no candidate.
-    assert cleanup._evaluate_worktree(
-        "/repo/a", "feat-a", "/repo", "main",
-        project_by_pinned, {}, alive_worktree_cwds={"/repo/a"}, idle_threshold=14,
-    ) is None
+    assert (
+        cleanup._evaluate_worktree(
+            "/repo/a",
+            "feat-a",
+            "/repo",
+            "main",
+            project_by_pinned,
+            {},
+            alive_worktree_cwds={"/repo/a"},
+            idle_threshold=14,
+        )
+        is None
+    )
 
     # No live pane in the worktree → idle fires.
     cand = cleanup._evaluate_worktree(
-        "/repo/a", "feat-a", "/repo", "main",
-        project_by_pinned, {}, alive_worktree_cwds={"/repo/other"}, idle_threshold=14,
+        "/repo/a",
+        "feat-a",
+        "/repo",
+        "main",
+        project_by_pinned,
+        {},
+        alive_worktree_cwds={"/repo/other"},
+        idle_threshold=14,
     )
     assert cand is not None
     assert any(s["kind"] == "idle" for s in cand["signals"])

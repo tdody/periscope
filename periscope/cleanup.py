@@ -49,6 +49,7 @@ def _now() -> float:
 
 # === Signal helpers ========================================================
 
+
 def _detect_default_branch(repo: str) -> str:
     """Cached default-branch lookup — 5-min TTL, repo defaults don't churn.
     The uncached resolution lives in `gitutil.detect_default_branch`."""
@@ -78,7 +79,8 @@ def _pr_state(repo: str, pr_number: int) -> str | None:
     if code == 0 and out:
         try:
             import json
-            state = (json.loads(out).get("state") or None)
+
+            state = json.loads(out).get("state") or None
         except Exception as e:
             log.warning("cleanup: gh pr view %s parse error: %s", pr_number, e)
     with _lock:
@@ -135,9 +137,7 @@ def _last_commit_age_days(wt_path: str) -> int:
     failure (treat as 'very idle')."""
     if not os.path.isdir(wt_path):
         return 9999
-    code, out = _run(
-        ["git", "-C", wt_path, "log", "-1", "--format=%ct"], timeout=3.0
-    )
+    code, out = _run(["git", "-C", wt_path, "log", "-1", "--format=%ct"], timeout=3.0)
     if code != 0 or not out.strip().isdigit():
         return 9999
     try:
@@ -148,6 +148,7 @@ def _last_commit_age_days(wt_path: str) -> int:
 
 
 # === Candidate types =======================================================
+
 
 class Signal(TypedDict):
     kind: str  # "pr_merged" | "pr_closed" | "branch_merged" | "remote_gone" | "idle"
@@ -193,10 +194,7 @@ def _evaluate_worktree(
 
     # Match against a project row (if any).
     matched = next(
-        (
-            (p, row) for p, row in project_by_pinned.items()
-            if os.path.realpath(p) == wt_path
-        ),
+        ((p, row) for p, row in project_by_pinned.items() if os.path.realpath(p) == wt_path),
         (None, None),
     )
     pinned_dir, project_row = matched
@@ -241,12 +239,7 @@ def _evaluate_worktree(
 
     # Signal 3: remote branch deleted. Skipped for fork PRs
     # where the local branch was never on origin.
-    if (
-        branch != "(detached)"
-        and branch != default
-        and not is_fork
-        and not _remote_branch_exists(repo, branch)
-    ):
+    if branch != "(detached)" and branch != default and not is_fork and not _remote_branch_exists(repo, branch):
         signals.append({"kind": "remote_gone", "label": f"origin/{branch} deleted"})
 
     # Signal 4: idle. Days since last commit on the worktree's HEAD;
@@ -292,9 +285,7 @@ def compute_candidates(repo_filter: str | None = None) -> list[Candidate]:
     # Build (repo → project_rows) so we can correlate worktrees with
     # their owning project rows. We also need to surface UNTRACKED
     # worktrees: ones on disk via `git worktree list` with no matching project row.
-    project_by_pinned: dict[str, Project] = {
-        k: v for k, v in projects.items() if k != MAIN_KEY
-    }
+    project_by_pinned: dict[str, Project] = {k: v for k, v in projects.items() if k != MAIN_KEY}
     project_by_repo: dict[str, list[tuple[str, Project]]] = {}
     repos: set[str] = set()
     for pinned, row in project_by_pinned.items():
@@ -315,10 +306,9 @@ def compute_candidates(repo_filter: str | None = None) -> list[Candidate]:
     # tell which worktree is in use.
     from periscope.panes import list_windows
     from periscope.store import all_windows
+
     windows_snapshot = all_windows()
-    alive_worktree_cwds: set[str] = {
-        os.path.realpath(w["cwd"]) for w in list_windows() if w.get("cwd")
-    }
+    alive_worktree_cwds: set[str] = {os.path.realpath(w["cwd"]) for w in list_windows() if w.get("cwd")}
     idle_threshold = int(get_settings().get("cleanup_idle_days") or IDLE_THRESHOLD_DAYS)
 
     candidates: list[Candidate] = []
@@ -327,9 +317,14 @@ def compute_candidates(repo_filter: str | None = None) -> list[Candidate]:
         # `_cached_worktrees` returns [(realpath, branch_or_none), ...]
         for wt_path, branch in worktrees._cached_worktrees(repo):
             cand = _evaluate_worktree(
-                wt_path, branch, repo, default,
-                project_by_pinned, windows_snapshot,
-                alive_worktree_cwds, idle_threshold,
+                wt_path,
+                branch,
+                repo,
+                default,
+                project_by_pinned,
+                windows_snapshot,
+                alive_worktree_cwds,
+                idle_threshold,
             )
             if cand is not None:
                 candidates.append(cand)

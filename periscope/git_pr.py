@@ -77,8 +77,9 @@ def git_state_for(path: str) -> dict | None:
     # whose only change is brand-new files reported "clean" — and isDirty()
     # then suppressed the chip, so nothing surfaced at all. --directory
     # collapses a wholly-untracked dir to one entry instead of walking it.
-    _, untracked = _run(["git", "-C", path, "ls-files", "-o", "--exclude-standard",
-                         "--directory", "--no-empty-directory"])
+    _, untracked = _run(
+        ["git", "-C", path, "ls-files", "-o", "--exclude-standard", "--directory", "--no-empty-directory"]
+    )
     new = sum(1 for line in untracked.splitlines() if line.strip())
     # Unpushed commits ahead of upstream.
     code, ahead_s = _run(["git", "-C", path, "rev-list", "--count", "@{u}..HEAD"])
@@ -97,6 +98,7 @@ def git_state_for(path: str) -> dict | None:
     # worktree layouts via gitutil.resolve_repo). repo_label is the
     # basename for human-readable display in the rail.
     from periscope.gitutil import resolve_repo
+
     repo_key = resolve_repo(path)
     repo_label = os.path.basename(repo_key.rstrip("/")) if repo_key else ""
     return {
@@ -179,8 +181,7 @@ def cached_git_signal(path: str) -> dict | None:
 def _ci_glyph(rollup: list | None) -> str | None:
     """Roll a PR's statusCheckRollup up to a single glyph: ✗ if anything failed,
     ⟳ if anything's still running, ✓ if everything landed clean, else None."""
-    states = {(c.get("conclusion") or c.get("status") or "").upper()
-              for c in (rollup or [])}
+    states = {(c.get("conclusion") or c.get("status") or "").upper() for c in (rollup or [])}
     states.discard("")
     if states & _CI_FAILED_CONCLUSIONS:
         return "✗"
@@ -199,12 +200,17 @@ def pr_state_for(path: str, branch: str) -> dict | None:
         return None
     code, out = _run(
         [
-            "gh", "pr", "list",
-            "--head", branch,
-            "--state", "open",
+            "gh",
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "open",
             "--json",
             "number,title,isDraft,additions,deletions,reviewRequests,statusCheckRollup",
-            "--limit", "1",
+            "--limit",
+            "1",
         ],
         cwd=path,
         timeout=8.0,
@@ -285,9 +291,7 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
     # %ct = committer unix time, %H = full sha, %s = subject. Tab-separated
     # so subjects with spaces survive the split.
     code, out = _run(
-        ["git", "-C", path, "log", "-20",
-         f"--since={config.ACTIVITY_DAYS}d",
-         "--pretty=format:%ct%x09%H%x09%s"],
+        ["git", "-C", path, "log", "-20", f"--since={config.ACTIVITY_DAYS}d", "--pretty=format:%ct%x09%H%x09%s"],
         timeout=3.0,
     )
     if code == 0 and out:
@@ -309,8 +313,17 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
 
     if _GH_AVAILABLE and branch:
         code, out = _run(
-            ["gh", "run", "list", "--branch", branch, "--limit", "10",
-             "--json", "conclusion,status,createdAt,displayTitle,name,url"],
+            [
+                "gh",
+                "run",
+                "list",
+                "--branch",
+                branch,
+                "--limit",
+                "10",
+                "--json",
+                "conclusion,status,createdAt,displayTitle,name,url",
+            ],
             cwd=path,
             timeout=5.0,
         )
@@ -320,15 +333,14 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
             except Exception:
                 runs = []
             from datetime import datetime
+
             for run in runs:
                 state = _gh_run_state(run)
                 if state is None:
                     continue
                 created = run.get("createdAt") or ""
                 try:
-                    at = int(
-                        datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
-                    )
+                    at = int(datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp())
                 except Exception:
                     continue
                 name = run.get("displayTitle") or run.get("name") or "workflow"

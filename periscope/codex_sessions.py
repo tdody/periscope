@@ -94,8 +94,7 @@ def catalog() -> dict[str, CodexSessionMeta]:
             seen.add(path)
             meta = _metadata(path)
             if meta and (
-                meta.session_id not in result
-                or path.stat().st_mtime > result[meta.session_id].path.stat().st_mtime
+                meta.session_id not in result or path.stat().st_mtime > result[meta.session_id].path.stat().st_mtime
             ):
                 result[meta.session_id] = meta
         for stale in set(_cache) - seen:

@@ -142,10 +142,14 @@ def _rebind_pid(
 # channels-MCP fields so archiving a project doesn't silently erase its
 # PR/Linear linkage.
 _IMMUNITY_FIELDS = (
-    "notes", "tags",
-    "linked_pr", "linked_linear",
-    "acked_at", "completed_at",
-    "alias", "is_fork",
+    "notes",
+    "tags",
+    "linked_pr",
+    "linked_linear",
+    "acked_at",
+    "completed_at",
+    "alias",
+    "is_fork",
     # spawned_by is written by spawn_claude's provenance step the instant the
     # child window is created — BEFORE any poll stamps the entry's last_seen.
     # Without immunity, a GC pass straddling the spawn reaps the fresh
@@ -160,7 +164,11 @@ _IMMUNITY_FIELDS = (
 
 
 def _resolve_one(
-    w: dict, wblock: dict, taken: set[str], carried: set[str], now_ts: int,
+    w: dict,
+    wblock: dict,
+    taken: set[str],
+    carried: set[str],
+    now_ts: int,
     hint: dict | None = None,
 ) -> bool:
     """Resolve one window's pid in place and refresh its `last_seen`.
@@ -194,9 +202,7 @@ def _resolve_one(
             # silently detaches. Reported as "detail pane closes on cd";
             # never caught in the act — this tripwire names the window if
             # it happens again.
-            log.warning(
-                "duplicate @periscope_id %s on %s — re-minting", pid_raw, target
-            )
+            log.warning("duplicate @periscope_id %s on %s — re-minting", pid_raw, target)
     if pid is None:
         # Exclude `carried` as well as `taken`: a pid that ANY window in this
         # pass still has stamped in tmux is not an orphan, even though this
@@ -224,8 +230,7 @@ def _resolve_one(
             # The theft path was silent in the 2026-08-05 identity merge — only
             # the duplicate cleanup logged. Every rebind decision is loud now;
             # `grep rebind` is the regression signal.
-            log.info("rebind %s -> %s via %s (was %s)", pid, target,
-                     matched_on, (wblock[pid].get("last_seen") or {}))
+            log.info("rebind %s -> %s via %s (was %s)", pid, target, matched_on, (wblock[pid].get("last_seen") or {}))
     if pid is None:
         pid = _mint_pid()
     dirty = False
@@ -261,10 +266,8 @@ def _resolve_one(
         "sid": hint.get("sid") or prev.get("sid"),
         "ts": now_ts,
     }
-    identity_changed = (
-        "last_seen" not in entry
-        or any(prev.get(k) != new_seen[k]
-               for k in ("session", "name", "branch", "cwd", "pane_id", "sid"))
+    identity_changed = "last_seen" not in entry or any(
+        prev.get(k) != new_seen[k] for k in ("session", "name", "branch", "cwd", "pane_id", "sid")
     )
     entry["last_seen"] = new_seen
     if identity_changed:
@@ -334,8 +337,7 @@ def _gc_workspaces(workspaces: dict, now_ts: int) -> bool:
     return dirty
 
 
-def _arbitrate_duplicates(windows: list[dict], wblock: dict,
-                          hints: dict[str, dict]) -> None:
+def _arbitrate_duplicates(windows: list[dict], wblock: dict, hints: dict[str, dict]) -> None:
     """Phase 0: duplicate arbitration. The same @periscope_id stamped on
     two windows used to be resolved by list order — which is not stable
     across polls, so the identity ping-ponged between the windows
@@ -366,20 +368,30 @@ def _arbitrate_duplicates(windows: list[dict], wblock: dict,
         # named the keeper; the entry never recorded a sid; or a sid IS
         # recorded but no on-screen window carries it — rotation/dead-pane
         # territory, a very different investigation from "no evidence".
-        reason = ("sid evidence" if keeper is not None
-                  else "no recorded sid" if not recorded_sid
-                  else "recorded sid not on screen — first-in-list")
+        reason = (
+            "sid evidence"
+            if keeper is not None
+            else "no recorded sid"
+            if not recorded_sid
+            else "recorded sid not on screen — first-in-list"
+        )
         if keeper is None:
-            keeper = group[0]   # no evidence → status quo, but logged
+            keeper = group[0]  # no evidence → status quo, but logged
         losers = [w for w in group if w is not keeper]
         for w in losers:
             w["pid_raw"] = ""
         # Name the demoted windows too: their phase-1 mints are silent, so
         # without this the victims leave no trace in the log — and they're
         # exactly what an incident hunt is looking for.
-        log.info("duplicate @periscope_id %s on %d windows — keeper %s:%s (%s); demoted %s",
-                 raw, len(group), keeper["session"], keeper["index"], reason,
-                 ", ".join(f"{w['session']}:{w['index']}" for w in losers))
+        log.info(
+            "duplicate @periscope_id %s on %d windows — keeper %s:%s (%s); demoted %s",
+            raw,
+            len(group),
+            keeper["session"],
+            keeper["index"],
+            reason,
+            ", ".join(f"{w['session']}:{w['index']}" for w in losers),
+        )
 
 
 def _maintain_track_rows(windows: list[dict], taken: set[str]) -> None:
@@ -413,17 +425,14 @@ def _maintain_track_rows(windows: list[dict], taken: set[str]) -> None:
             continue
         if pid not in tag_map:
             activity.set_pane_track(pid, legacy_tid)
-            log.info("pane_tracks: migrated %s -> %s (%s)",
-                     pane_id, pid, legacy_tid)
-        activity.set_pane_track(pane_id, None)   # delete the % row
+            log.info("pane_tracks: migrated %s -> %s (%s)", pane_id, pid, legacy_tid)
+        activity.set_pane_track(pane_id, None)  # delete the % row
     activity.sweep_legacy_pane_track_rows(live_pane_ids)
     activity.prune_pane_tracks(taken)
     _TRACKS_MAINTAINED = True
 
 
-def resolve_pids(windows: list[dict],
-                 session_hints: dict[str, dict] | None = None,
-                 full_roster: bool = False) -> None:
+def resolve_pids(windows: list[dict], session_hints: dict[str, dict] | None = None, full_roster: bool = False) -> None:
     """Mutates `windows` in place, adding a `pid` field to every entry.
 
     For each window:
@@ -475,8 +484,7 @@ def resolve_pids(windows: list[dict],
         _arbitrate_duplicates(windows, wblock, hints)
         # Phase 1: per-window pid resolution + last_seen refresh.
         for w in windows:
-            if _resolve_one(w, wblock, taken, carried, now_ts,
-                            hints.get(w.get("pane_id") or "", {})):
+            if _resolve_one(w, wblock, taken, carried, now_ts, hints.get(w.get("pane_id") or "", {})):
                 dirty = True
         # Phase 2: window-entry GC.
         if _gc_windows(wblock, taken, now_ts):
@@ -498,8 +506,7 @@ def resolve_pids(windows: list[dict],
             _maintain_track_rows(windows, taken)
 
 
-def _attach_git_then_resolve_pids(windows: list[dict],
-                                  full_roster: bool = False) -> None:
+def _attach_git_then_resolve_pids(windows: list[dict], full_roster: bool = False) -> None:
     """resolve_pids relies on `branch` for its secondary match and on session
     hints (live sid + resume lineage) for its primary one. Both are attached
     HERE, before resolve takes _STATE_LOCK: hint-building forks tmux/ps on a

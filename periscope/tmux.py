@@ -32,9 +32,7 @@ def tmux(*args: str) -> str:
 
 def _run(cmd: list[str], cwd: str | None = None, timeout: float = 3.0) -> tuple[int, str]:
     try:
-        r = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
-        )
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
         return r.returncode, r.stdout.strip()
     except Exception:
         return -1, ""
@@ -51,12 +49,15 @@ def _tmux_mutate(*args: str) -> tuple[bool, str]:
     # reflects it on the next event-loop tick instead of waiting out the
     # steady interval. Thread-safe + a no-op when the hub isn't running.
     from periscope import state_hub
+
     state_hub.kick()
     return True, r.stdout.strip()
 
 
 def env_args(
-    config_dir: str | None, profile: str | None = None, model: str | None = None,
+    config_dir: str | None,
+    profile: str | None = None,
+    model: str | None = None,
 ) -> list[str]:
     """`-e VAR=...` args for new-window/new-session, or [].
 
@@ -101,9 +102,12 @@ def scrub_session_env(session: str) -> bool:
         if not got:
             ok = False
             from periscope.log import log
+
             log.error(
-                "FAILED to scrub %s from session %s (%s) — later panes in this "
-                "session may silently inherit it", var, session, msg,
+                "FAILED to scrub %s from session %s (%s) — later panes in this session may silently inherit it",
+                var,
+                session,
+                msg,
             )
     return ok
 
@@ -120,7 +124,10 @@ def pane_meta(target: str) -> tuple[str, str]:
     surface it (auto-rename). For `(pane_id, cwd)` see turns.py, which queries
     a different field."""
     meta = tmux(
-        "display-message", "-t", target, "-p",
+        "display-message",
+        "-t",
+        target,
+        "-p",
         "#{window_name}\t#{pane_current_path}",
     ).strip()
     window_name, _, cwd = meta.partition("\t")
@@ -135,7 +142,10 @@ def window_identity(target: str) -> tuple[str, str, str]:
     flaps None↔%N against the real poll, dirtying state.json on each flip
     (observed 2026-08-06, post session-keyed-identity deploy)."""
     meta = tmux(
-        "display-message", "-t", target, "-p",
+        "display-message",
+        "-t",
+        target,
+        "-p",
         "#{@periscope_id}\t#{pane_id}\t#{window_id}",
     )
     # rstrip newline ONLY — .strip() would eat the leading tab of an
@@ -170,15 +180,20 @@ def deliver_input(target: str, text: str) -> None:
         hexes = [f"{b:02x}" for b in encoded]
         subprocess.run(
             ["tmux", "send-keys", "-t", target, "-H", *hexes],
-            check=False, timeout=5,
+            check=False,
+            timeout=5,
         )
         return
     buf = f"wd-in-{uuid.uuid4().hex[:8]}"
     subprocess.run(
         ["tmux", "load-buffer", "-b", buf, "-"],
-        input=text, text=True, check=False, timeout=5,
+        input=text,
+        text=True,
+        check=False,
+        timeout=5,
     )
     subprocess.run(
         ["tmux", "paste-buffer", "-d", "-b", buf, "-t", target],
-        check=False, timeout=5,
+        check=False,
+        timeout=5,
     )

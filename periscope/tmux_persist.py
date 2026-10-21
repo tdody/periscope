@@ -18,6 +18,7 @@ existing `run ... tpm/tpm`, or appended together with one.
 Import discipline: stdlib + `periscope.config` only. The shell verb runs this
 under plain `python3`, outside the uv environment.
 """
+
 import json
 import os
 import re
@@ -35,9 +36,7 @@ TPM_RUN_LINE = "run '~/.tmux/plugins/tpm/tpm'"
 _DEFAULT_SAVE_INTERVAL_MIN = 15
 
 _TPM_RUN_RE = re.compile(r"^\s*run(-shell)?\b.*tpm/tpm")
-_SOURCE_RE = re.compile(
-    r"^\s*source(-file)?\s+(-q+\s+)?['\"]?(?P<path>[^'\"\s]+)"
-)
+_SOURCE_RE = re.compile(r"^\s*source(-file)?\s+(-q+\s+)?['\"]?(?P<path>[^'\"\s]+)")
 
 
 def plugins_dir() -> Path:
@@ -75,6 +74,7 @@ def owned_conf_text(repo: Path) -> str:
 
 
 # --- ~/.tmux.conf line management -----------------------------------------
+
 
 def _sources_owned(line: str) -> bool:
     m = _SOURCE_RE.match(line)
@@ -119,11 +119,17 @@ def remove_sourced(path: Path) -> bool:
 
 # --- install / uninstall ----------------------------------------------------
 
+
 def _tmux_server_running() -> bool:
     try:
-        return subprocess.run(
-            ["tmux", "list-sessions"], capture_output=True, check=False,
-        ).returncode == 0
+        return (
+            subprocess.run(
+                ["tmux", "list-sessions"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
     except OSError:
         return False
 
@@ -146,7 +152,9 @@ def install(repo: Path) -> list[str]:
         tpm.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "clone", "--depth", "1", TPM_REPO, str(tpm)],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
         actions.append(f"cloned tpm into {tpm}")
@@ -161,7 +169,9 @@ def install(repo: Path) -> list[str]:
     if _tmux_server_running():
         subprocess.run(
             ["tmux", "source-file", str(user_conf())],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         actions.append("re-sourced ~/.tmux.conf on the running server")
     return actions
@@ -180,13 +190,17 @@ def uninstall() -> list[str]:
 
 # --- status (healthz) ---------------------------------------------------------
 
+
 def _live_option(name: str) -> str | None:
     """Value of a global tmux option on the running server; None when there
     is no server. `-q` makes an unset option print empty rather than error."""
     try:
         out = subprocess.run(
             ["tmux", "show-options", "-gqv", name],
-            capture_output=True, text=True, check=False, timeout=2.0,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2.0,
         )
     except (OSError, subprocess.SubprocessError):
         return None

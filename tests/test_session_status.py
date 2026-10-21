@@ -1,6 +1,7 @@
 """Tests for periscope.session_status — authoritative pane state from
 ~/.claude/sessions/<pid>.json, replacing TUI scraping for the
 working/needs-input/idle signal."""
+
 import json
 import time
 
@@ -36,8 +37,7 @@ def _seed(tmp_path, monkeypatch, *sessions, live_pids=None):
 
 
 def _sess(pid, sid, status, waitingFor=None):
-    d = {"pid": pid, "sessionId": sid, "status": status,
-         "cwd": "/x", "kind": "interactive"}
+    d = {"pid": pid, "sessionId": sid, "status": status, "cwd": "/x", "kind": "interactive"}
     if waitingFor is not None:
         d["waitingFor"] = waitingFor
     return d
@@ -45,11 +45,15 @@ def _sess(pid, sid, status, waitingFor=None):
 
 # ── status → state mapping ───────────────────────────────────────────────
 
-@pytest.mark.parametrize("status,state", [
-    ("busy", "working"),
-    ("waiting", "needs-input"),
-    ("idle", "idle"),
-])
+
+@pytest.mark.parametrize(
+    "status,state",
+    [
+        ("busy", "working"),
+        ("waiting", "needs-input"),
+        ("idle", "idle"),
+    ],
+)
 def test_maps_trusted_statuses(tmp_path, monkeypatch, status, state):
     _seed(tmp_path, monkeypatch, _sess(100, "sid-a", status))
     out = ss.session_state_for("sid-a")
@@ -57,14 +61,14 @@ def test_maps_trusted_statuses(tmp_path, monkeypatch, status, state):
 
 
 def test_waiting_for_passed_through(tmp_path, monkeypatch):
-    _seed(tmp_path, monkeypatch,
-          _sess(101, "sid-w", "waiting", waitingFor="approve AskUserQuestion"))
+    _seed(tmp_path, monkeypatch, _sess(101, "sid-w", "waiting", waitingFor="approve AskUserQuestion"))
     out = ss.session_state_for("sid-w")
     assert out["state"] == "needs-input"
     assert out["waiting_for"] == "approve AskUserQuestion"
 
 
 # ── statuses we don't trust → None (caller falls back to scraping) ───────
+
 
 @pytest.mark.parametrize("status", ["shell", "spinning", "", "weird"])
 def test_untrusted_status_returns_none(tmp_path, monkeypatch, status):
@@ -73,6 +77,7 @@ def test_untrusted_status_returns_none(tmp_path, monkeypatch, status):
 
 
 # ── resolution guards ────────────────────────────────────────────────────
+
 
 def test_unmapped_sid_returns_none(tmp_path, monkeypatch):
     _seed(tmp_path, monkeypatch, _sess(103, "sid-known", "busy"))
@@ -97,6 +102,7 @@ def test_recycled_pid_excluded(tmp_path, monkeypatch):
 
 
 # ── robustness ───────────────────────────────────────────────────────────
+
 
 def test_malformed_file_skipped(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, "_SESSIONS_DIR", tmp_path)
@@ -146,20 +152,25 @@ def test_claude_procs_carry_rss_and_age(monkeypatch):
 
 # ── etime parsing ([[dd-]hh:]mm:ss) ──────────────────────────────────────
 
-@pytest.mark.parametrize("s,secs", [
-    ("05:33", 5 * 60 + 33),
-    ("22:09:53", 22 * 3600 + 9 * 60 + 53),
-    ("01-02:08:58", 86400 + 2 * 3600 + 8 * 60 + 58),
-    ("3-00:00:01", 3 * 86400 + 1),
-    ("", 0),
-    ("garbage", 0),
-    ("1:2:3:4", 0),
-])
+
+@pytest.mark.parametrize(
+    "s,secs",
+    [
+        ("05:33", 5 * 60 + 33),
+        ("22:09:53", 22 * 3600 + 9 * 60 + 53),
+        ("01-02:08:58", 86400 + 2 * 3600 + 8 * 60 + 58),
+        ("3-00:00:01", 3 * 86400 + 1),
+        ("", 0),
+        ("garbage", 0),
+        ("1:2:3:4", 0),
+    ],
+)
 def test_parse_etime(s, secs):
     assert ss.parse_etime(s) == secs
 
 
 # ── claude_proc_for: measurement independent of status trust ─────────────
+
 
 def _seed_procs(tmp_path, monkeypatch, session, procs):
     monkeypatch.setattr(ss, "_SESSIONS_DIR", tmp_path)
@@ -170,10 +181,8 @@ def _seed_procs(tmp_path, monkeypatch, session, procs):
 def test_claude_proc_for_returns_stats(tmp_path, monkeypatch):
     # status "shell" is untrusted for STATE, but measurement still applies —
     # a bloated claude deserves the hint regardless of what it's doing.
-    _seed_procs(tmp_path, monkeypatch, _sess(300, "sid-m", "shell"),
-                {300: (4_500_000, 4 * 86400)})
-    assert ss.claude_proc_for("sid-m") == {
-        "pid": 300, "rss_kb": 4_500_000, "age_s": 4 * 86400}
+    _seed_procs(tmp_path, monkeypatch, _sess(300, "sid-m", "shell"), {300: (4_500_000, 4 * 86400)})
+    assert ss.claude_proc_for("sid-m") == {"pid": 300, "rss_kb": 4_500_000, "age_s": 4 * 86400}
 
 
 def test_claude_proc_for_dead_pid_none(tmp_path, monkeypatch):
@@ -189,6 +198,7 @@ def test_claude_proc_for_unmapped_none(tmp_path, monkeypatch):
 
 # ── pane -> claude pid walk ──────────────────────────────────────────────
 
+
 def _seed_walk(monkeypatch, panes, kids, cmds):
     monkeypatch.setattr(ss, "_tmux_pane_pids", lambda: panes)
     monkeypatch.setattr(ss, "proc_table", lambda: (kids, cmds))
@@ -200,8 +210,13 @@ def test_pane_claude_pids_finds_first_claude_descendant(monkeypatch):
         monkeypatch,
         {"%1": 10, "%2": 20},
         {10: [11], 20: [21], 21: [22]},
-        {10: "-zsh", 11: "/Users/tom/.local/bin/claude", 20: "-zsh",
-         21: "node script.js", 22: "/Users/tom/.local/bin/claude"},
+        {
+            10: "-zsh",
+            11: "/Users/tom/.local/bin/claude",
+            20: "-zsh",
+            21: "node script.js",
+            22: "/Users/tom/.local/bin/claude",
+        },
     )
     assert ss.pane_claude_pids() == {"%1": 11, "%2": 22}
 
@@ -224,12 +239,16 @@ def test_pane_claude_pids_skips_shell_only_panes(monkeypatch):
 
 def test_pane_claude_pids_empty_without_tmux(monkeypatch):
     monkeypatch.setattr(ss, "_tmux_pane_pids", dict)
-    monkeypatch.setattr(ss, "proc_table", lambda: (_ for _ in ()).throw(
-        AssertionError("proc_table must not fork when there are no panes")))
+    monkeypatch.setattr(
+        ss,
+        "proc_table",
+        lambda: (_ for _ in ()).throw(AssertionError("proc_table must not fork when there are no panes")),
+    )
     assert ss.pane_claude_pids() == {}
 
 
 # ── pane -> CLAUDE_CONFIG_DIR scan (moved from resurrect) ────────────────
+
 
 def test_pane_config_dirs_cached_at_15s(mocker):
     """pane_config_dirs snapshots once per 15s window: env is immutable for a
@@ -238,8 +257,8 @@ def test_pane_config_dirs_cached_at_15s(mocker):
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude"}))
     envs = mocker.patch.object(
-        ss, "_env_by_pid",
-        return_value={111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b PATH=/x"})
+        ss, "_env_by_pid", return_value={111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b PATH=/x"}
+    )
     first = ss.pane_config_dirs()
     second = ss.pane_config_dirs()
     assert first == {"%1": "/Users/t/.claude-b"}
@@ -253,12 +272,9 @@ def test_env_tail_strips_the_command():
     alt = "/Users/tom/.claude-b"
     cmd = "grep -o :CLAUDE_CONFIG_DIR=[^\\011]*|:claude"
     # command mentions it, environment does not
-    assert ss._CONFIG_DIR_RE.search(
-        ss._env_tail(cmd, f"{cmd} PATH=/usr/bin SHELL=/bin/zsh") or "") is None
+    assert ss._CONFIG_DIR_RE.search(ss._env_tail(cmd, f"{cmd} PATH=/usr/bin SHELL=/bin/zsh") or "") is None
     # genuine env value is found
-    tail = ss._env_tail(
-        "claude --resume x",
-        f"claude --resume x PATH=/usr/bin CLAUDE_CONFIG_DIR={alt} TERM=xterm")
+    tail = ss._env_tail("claude --resume x", f"claude --resume x PATH=/usr/bin CLAUDE_CONFIG_DIR={alt} TERM=xterm")
     assert ss._CONFIG_DIR_RE.search(tail or "").group(1) == alt
     # command prefix mismatch (ps raced / truncated) yields nothing rather than a guess
     assert ss._env_tail("claude", f"something-else CLAUDE_CONFIG_DIR={alt}") is None
@@ -271,10 +287,14 @@ def test_pane_profiles_reads_the_wrapper_profile_from_env(mocker):
     ss._config_dirs_cache = None
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111, "%2": 222})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude", 222: "claude"}))
-    mocker.patch.object(ss, "_env_by_pid", return_value={
-        111: "claude PATH=/x CLAUDE_WRAPPER_PROFILE=lab TERM=xterm",
-        222: "claude PATH=/x TERM=xterm",
-    })
+    mocker.patch.object(
+        ss,
+        "_env_by_pid",
+        return_value={
+            111: "claude PATH=/x CLAUDE_WRAPPER_PROFILE=lab TERM=xterm",
+            222: "claude PATH=/x TERM=xterm",
+        },
+    )
     # Only the lab pane gets an entry; a default-profile pane has none.
     assert ss.pane_profiles() == {"%1": "lab"}
 
@@ -283,10 +303,14 @@ def test_pane_models_reads_the_spawn_model_from_env(mocker):
     ss._config_dirs_cache = None
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111, "%2": 222})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude", 222: "claude"}))
-    mocker.patch.object(ss, "_env_by_pid", return_value={
-        111: "claude PATH=/x ANTHROPIC_MODEL=opus TERM=xterm",
-        222: "claude PATH=/x TERM=xterm",
-    })
+    mocker.patch.object(
+        ss,
+        "_env_by_pid",
+        return_value={
+            111: "claude PATH=/x ANTHROPIC_MODEL=opus TERM=xterm",
+            222: "claude PATH=/x TERM=xterm",
+        },
+    )
     assert ss.pane_models() == {"%1": "opus"}
 
 
@@ -297,8 +321,9 @@ def test_pane_profiles_and_config_dirs_share_one_ps_fork(mocker):
     ss._config_dirs_cache = None
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude"}))
-    envs = mocker.patch.object(ss, "_env_by_pid", return_value={
-        111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b CLAUDE_WRAPPER_PROFILE=lab"})
+    envs = mocker.patch.object(
+        ss, "_env_by_pid", return_value={111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b CLAUDE_WRAPPER_PROFILE=lab"}
+    )
     assert ss.pane_config_dirs() == {"%1": "/Users/t/.claude-b"}
     assert ss.pane_profiles() == {"%1": "lab"}
     assert envs.call_count == 1
@@ -315,6 +340,7 @@ def test_pane_profiles_ignores_a_command_that_merely_mentions_the_var(mocker):
 
 
 # ── live_session_id_for_pane: the pane's CURRENT session id ──────────────
+
 
 def test_live_session_id_for_pane(tmp_path, monkeypatch):
     _seed(tmp_path, monkeypatch, _sess(400, "sid-live", "busy"))
@@ -344,6 +370,7 @@ def test_live_session_id_for_pane_ignores_dead_pid(tmp_path, monkeypatch):
 
 
 # ── multi-account sessions-dir scan ──────────────────────────────────────
+
 
 def test_build_index_scans_every_live_config_dir(tmp_path, mocker):
     """A pane on CLAUDE_CONFIG_DIR=~/.claude-b writes sessions/<pid>.json
@@ -382,6 +409,7 @@ def test_by_pid_mtime_fallback_when_pane_dir_unknown(tmp_path, mocker):
     """When the ps scan missed the pane's config dir, prefer the newest file —
     a live claude rewrites its session file; a stale one never does."""
     import os
+
     a, b = tmp_path / "a", tmp_path / "b"
     (a / "sessions").mkdir(parents=True)
     (b / "sessions").mkdir(parents=True)
@@ -391,35 +419,46 @@ def test_by_pid_mtime_fallback_when_pane_dir_unknown(tmp_path, mocker):
     os.utime(old, (1000, 1000))
     os.utime(new, (2000, 2000))
     mocker.patch.object(ss, "_SESSIONS_DIR", a / "sessions")
-    mocker.patch.object(ss, "pane_config_dirs",
-                        return_value={"%1": str(b)})   # dirs to scan
-    mocker.patch.object(ss, "pane_claude_pids",
-                        return_value={"%5": 400})       # %5's dir unknown
+    mocker.patch.object(ss, "pane_config_dirs", return_value={"%1": str(b)})  # dirs to scan
+    mocker.patch.object(ss, "pane_claude_pids", return_value={"%5": 400})  # %5's dir unknown
     mocker.patch.object(ss, "_live_claude_pids", return_value={400})
     assert ss.live_session_id_for_pane("%5") == "new-sid"
 
 
 # ── resume lineage from argv ─────────────────────────────────────────────
 
+
 def test_pane_resume_ids_reads_resume_uuid_from_argv(mocker):
     """`--resume <uuid>` in the claude argv names the session lineage even if
     the live sid rotates — the safety net for the documented rotation-on-resume
     case (CLAUDE.md pane→session section)."""
-    mocker.patch.object(ss, "pane_claude_pids",
-                        return_value={"%3": 500, "%4": 501})
-    mocker.patch.object(ss, "proc_table", return_value=({}, {
-        500: "claude --resume 828e314f-76fe-42af-a750-e48d1f0a5316",
-        501: "claude --system-prompt xyz",
-    }))
-    assert ss.pane_resume_ids() == {
-        "%3": "828e314f-76fe-42af-a750-e48d1f0a5316"}
+    mocker.patch.object(ss, "pane_claude_pids", return_value={"%3": 500, "%4": 501})
+    mocker.patch.object(
+        ss,
+        "proc_table",
+        return_value=(
+            {},
+            {
+                500: "claude --resume 828e314f-76fe-42af-a750-e48d1f0a5316",
+                501: "claude --system-prompt xyz",
+            },
+        ),
+    )
+    assert ss.pane_resume_ids() == {"%3": "828e314f-76fe-42af-a750-e48d1f0a5316"}
 
 
 def test_pane_efforts_reads_the_launch_effort_from_argv(mocker):
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111, "%2": 222, "%3": 333})
-    mocker.patch.object(ss, "proc_table", return_value=({}, {
-        111: "claude --dangerously-load-development-channels server:periscope --effort xhigh",
-        222: "claude --dangerously-load-development-channels server:periscope",
-        333: "claude --effort=low",
-    }))
+    mocker.patch.object(
+        ss,
+        "proc_table",
+        return_value=(
+            {},
+            {
+                111: "claude --dangerously-load-development-channels server:periscope --effort xhigh",
+                222: "claude --dangerously-load-development-channels server:periscope",
+                333: "claude --effort=low",
+            },
+        ),
+    )
     assert ss.pane_efforts() == {"%1": "xhigh", "%3": "low"}

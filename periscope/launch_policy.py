@@ -24,6 +24,7 @@ from typing import TypedDict
 
 class Meter(TypedDict, total=False):
     """One meter as `usage.parse_plan_usage` + `attach_projections` emit it."""
+
     label: str
     percent: int
     utilization: float
@@ -36,6 +37,7 @@ class Meter(TypedDict, total=False):
 
 class AccountUsage(TypedDict, total=False):
     """One account's entry in `usage.cached_plan_usage()`."""
+
     available: bool
     meters: dict[str, Meter]
     fetched_at: int
@@ -52,9 +54,9 @@ _TOKEN = re.compile(r"[a-z]+")
 
 @dataclass(frozen=True)
 class Launch:
-    account: str            # account id
-    model: str | None       # ANTHROPIC_MODEL value; None = no override
-    reason: str             # one line for the header chip's hover
+    account: str  # account id
+    model: str | None  # ANTHROPIC_MODEL value; None = no override
+    reason: str  # one line for the header chip's hover
     # `--effort` level; None = Claude's own default. Not routed —
     # usage.choose_launch fills it from the pin after the policy has run.
     effort: str | None = None
@@ -62,13 +64,13 @@ class Launch:
 
 @dataclass(frozen=True)
 class LaunchInputs:
-    accounts: tuple[str, ...]              # registry order — the tie-break
+    accounts: tuple[str, ...]  # registry order — the tie-break
     usage: Mapping[str, AccountUsage]
-    account_arg: str | None                # a call site's explicit account
-    model_arg: str | None                  # a call site's explicit model
-    account_pin: str | None                # settings.spawn_account
-    model_pin: str | None                  # settings.spawn_model, incl. "auto"
-    now: float                             # epoch seconds; the pressure horizon is measured from here
+    account_arg: str | None  # a call site's explicit account
+    model_arg: str | None  # a call site's explicit model
+    account_pin: str | None  # settings.spawn_account
+    model_pin: str | None  # settings.spawn_model, incl. "auto"
+    now: float  # epoch seconds; the pressure horizon is measured from here
 
 
 # A projected session wall counts as pressure only when it is this close. The
@@ -167,8 +169,7 @@ def _clock(ts: int | None) -> str:
     return datetime.fromtimestamp(ts).strftime("%a %H:%M") if ts else "—"
 
 
-def _reason(aid: str, model: str | None, meters: Mapping[str, Meter],
-            skipped: list[str]) -> str:
+def _reason(aid: str, model: str | None, meters: Mapping[str, Meter], skipped: list[str]) -> str:
     resets = (meters.get("week_all") or {}).get("resets_at")
     head = f"{aid} · week resets {_clock(resets)} · {model or 'default'}"
     return head if not skipped else f"{head} (skipped {', '.join(skipped)})"
@@ -227,8 +228,15 @@ def choose_move(inputs: LaunchInputs, current: str) -> str | None:
         return None
     if all(_meters(inputs, a) is None for a in others):
         return others[0]
-    pick = choose(LaunchInputs(
-        accounts=others, usage=inputs.usage, account_arg=None, model_arg=None,
-        account_pin=None, model_pin=None, now=inputs.now,
-    )).account
+    pick = choose(
+        LaunchInputs(
+            accounts=others,
+            usage=inputs.usage,
+            account_arg=None,
+            model_arg=None,
+            account_pin=None,
+            model_pin=None,
+            now=inputs.now,
+        )
+    ).account
     return pick if pick in others else others[0]

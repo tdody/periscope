@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 def test_clear_unread_resets_count(client):
     from periscope.channels import _CHANNEL_UNREAD, _CHANNELS_LOCK
+
     with _CHANNELS_LOCK:
         _CHANNEL_UNREAD["%42"] = 5
     r = client.post("/api/channel/clear-unread?pane_id=%2542")
