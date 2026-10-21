@@ -277,7 +277,7 @@ function Confetti() {
 }
 
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity, season, occasion, ghost }) {
+function Behind({ activity, season, occasion, ghost, coffee }) {
   switch (activity) {
     case "sleep":
       return (
@@ -321,6 +321,20 @@ function Behind({ activity, season, occasion, ghost }) {
             <rect class="tama-cursor" x="28.6" y="9.8" width="0.6" height="0.6" fill="#e6e9ef" />
             <rect x="20.4" y="12.6" width="4.2" height="0.6" rx="0.2" fill="#c9ced6" />
           </g>
+          {coffee && (
+            // The morning's mug, between the keyboard and the monitor stand.
+            <g class="tama-desk-mug">
+              <rect class="tama-steam" x="25.2" y="9.4" width="0.4" height="1.4" fill="var(--fg-3)" />
+              <rect class="tama-steam tama-steam2" x="25.9" y="8.8" width="0.4" height="1.4" fill="var(--fg-3)" />
+              <g fill="#efe6d8">
+                <rect x="24.9" y="11.3" width="1.5" height="1.9" rx="0.25" />
+                <rect x="26.4" y="11.8" width="0.5" height="0.35" />
+                <rect x="26.6" y="11.8" width="0.3" height="1" />
+                <rect x="26.4" y="12.5" width="0.5" height="0.35" />
+              </g>
+              <rect x="24.9" y="11.3" width="1.5" height="0.45" fill="#7a4e2d" />
+            </g>
+          )}
         </g>
       );
     case "read":
@@ -403,7 +417,7 @@ function InFront({ activity }) {
   );
 }
 
-export function TamaScene({ activity, season = "summer", occasion = null, petted = false, petKey = 0 }) {
+export function TamaScene({ activity, season = "summer", occasion = null, coffee = false, petted = false, petKey = 0 }) {
   const { x0, sitting } = POSES[activity] || STANDING;
   const ghost = occasion === "halloween" && activity === "run";
   const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
@@ -412,7 +426,7 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
          data-activity={activity} data-occasion={occasion || undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {occasion === "newyear" && <Fireworks />}
-      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} />
+      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
@@ -441,8 +455,10 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
 }
 
 // Everything the scene and its hover line are drawn from.
+// Keyed on the window start, not the activity id: two adjacent windows can share
+// an id and differ in a prop (9–10am codes with the coffee mug).
 const sceneKey = (d) =>
-  `${activityAt(d).id}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
+  `${activityAt(d).from}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
@@ -483,7 +499,8 @@ export function Tamagotchi() {
       aria-label={label}
       onClick={() => { setPets((n) => n + 1); setPetted(true); }}
     >
-      <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} petted={petted} petKey={pets} />
+      <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
+                 petted={petted} petKey={pets} />
     </button>
   );
 }

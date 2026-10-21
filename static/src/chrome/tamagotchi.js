@@ -2,11 +2,13 @@
 // day schedule and the sprite unit-test without a clock or a DOM.
 
 // What Claude is up to, by local hour. Each window runs [from, to); every
-// boundary is on the hour, so the hour alone decides.
+// boundary is on the hour, so the hour alone decides. `coffee` keeps the
+// morning's mug on the desk through the first coding hour.
 export const SCHEDULE = [
   { from: 0, to: 7, id: "sleep", label: "sleeping" },
   { from: 7, to: 9, id: "coffee", label: "having coffee" },
-  { from: 9, to: 12, id: "code", label: "coding" },
+  { from: 9, to: 10, id: "code", label: "coding with a coffee", coffee: true },
+  { from: 10, to: 12, id: "code", label: "coding" },
   { from: 12, to: 13, id: "eat", label: "having lunch" },
   { from: 13, to: 17, id: "code", label: "coding" },
   { from: 17, to: 18, id: "run", label: "out for a run" },
