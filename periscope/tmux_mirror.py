@@ -270,7 +270,9 @@ class _SessionMirror:
         # ignore-size: a control client is a real client; without the flag
         # it would participate in window sizing for the session's
         # non-viewed windows (viewed panes are already window-size manual).
-        # read-only: belt and braces — the mirror only ever reads.
+        # NOT read-only: tmux 3.8 sends a read-only control client no
+        # %output at all (replies still arrive), so the mirror froze on its
+        # connect-time frame. The mirror never sends keys; nothing is lost.
         self._proc = await asyncio.create_subprocess_exec(
             *_TMUX,
             "-C",
@@ -278,7 +280,7 @@ class _SessionMirror:
             "-t",
             self.session,
             "-f",
-            "ignore-size,read-only",
+            "ignore-size",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
