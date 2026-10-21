@@ -66,3 +66,25 @@ differ from the profile:
   a prefix on a resumed pane would clobber a later `/model` switch with the
   spawn-time choice. With no session to resume, the spawn-time choice is all
   that is left of the intent, so it is kept there.
+
+**Effort override (`CLAUDE_CODE_EFFORT_LEVEL`) is the fourth binding.** The
+header's **spawn-effort pin** (`settings.spawn_effort`; rides `/api/state` as
+`spawn_effort`) is `"default"` (unset: no var, Claude picks per model and
+settings.json) or one of `config.EFFORT_LEVELS` (low, medium, high, xhigh,
+max). `usage.choose_launch` copies it onto `Launch.effort`, so the same three
+spawn paths honour it. Like the model, only the agent window carries it, it
+is scrubbed off the session by `scrub_session_env`, and dashboard resume
+doesn't apply it. There is no per-launch override and no rail chip. One
+difference shapes everything downstream: **while the var is set, Claude
+refuses `/effort` for the whole session** ("Not applied:
+CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this session"). So:
+
+- **Pinning a level locks `/effort` in the panes it spawns.** The picker's
+  hover says so. `default` is how you keep `/effort` usable.
+- **Resurrect re-emits it on BOTH paths**, unlike the model. It can't drift
+  in-session, so the var was the pane's effort for its whole life. Dropping
+  it on `--resume` would quietly restore the pane at the default effort.
+  `session_status.pane_efforts` reads it back for resurrect.
+- **`config.effort_env` validates against the closed list**, not a character
+  set. The levels don't move the way model aliases do, and an unknown value
+  (a stale pin) fails open to the default.

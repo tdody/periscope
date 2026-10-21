@@ -280,7 +280,25 @@ def test_state_publishes_the_chooser_answer(client, mocker, clean_state):
     # The chooser reads usage.cached_plan_usage directly (the _patch above only
     # covers the route's own binding); under clean_state + the autouse
     # no-refresh guard that is {available: False} per account → default, no override.
-    assert body["launch_default"] == {"account": "default", "model": None, "reason": "no usage data"}
+    assert body["launch_default"] == {
+        "account": "default", "model": None, "reason": "no usage data", "effort": None,
+    }
+
+
+def test_state_publishes_the_effort_pin(client, mocker, clean_state):
+    # The header's effort picker renders from this; unset must read as null so
+    # the picker shows "default", and a set pin must come back verbatim.
+    from periscope import store
+    _patch(mocker, "list_windows", return_value=[])
+    _patch(mocker, "update_focus_from_windows")
+    _patch(mocker, "_attach_git_then_resolve_pids")
+    _patch(mocker, "cached_claude_usage", return_value={})
+    _patch(mocker, "cached_plan_usage", return_value={})
+    assert client.get("/api/state").json()["spawn_effort"] is None
+    store.update_settings({"spawn_effort": "high"})
+    body = client.get("/api/state").json()
+    assert body["spawn_effort"] == "high"
+    assert body["launch_default"]["effort"] == "high"
 
 
 def test_state_carries_the_poke_log(client, mocker, clean_state):

@@ -142,7 +142,7 @@ html, body {
   color: var(--fg-3);
   letter-spacing: 0.04em;
   margin-right: 3px;
-  min-width: 34px;
+  min-width: 40px;   /* fits "effort" (38.4px), the longest label */
 }
 .spawn-acct-btn {
   font-size: 10px;

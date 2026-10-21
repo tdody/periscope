@@ -55,6 +55,9 @@ class Launch:
     account: str            # account id
     model: str | None       # ANTHROPIC_MODEL value; None = no override
     reason: str             # one line for the header chip's hover
+    # CLAUDE_CODE_EFFORT_LEVEL value; None = Claude's own default. Not routed —
+    # usage.choose_launch fills it from the pin after the policy has run.
+    effort: str | None = None
 
 
 @dataclass(frozen=True)

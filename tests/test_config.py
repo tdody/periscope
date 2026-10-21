@@ -140,3 +140,15 @@ def test_claude_subprocess_env_strips_api_credit_auth_and_binds_the_account(monk
     env = config.claude_subprocess_env(config_dir="/Users/x/.claude-b")
     assert env["CLAUDE_CONFIG_DIR"] == "/Users/x/.claude-b"
     assert env["PATH"] == os.environ["PATH"]   # the rest of the environment is inherited
+
+
+def test_effort_env_passes_the_levels_claude_accepts():
+    for level in ("low", "medium", "high", "xhigh", "max"):
+        assert config.effort_env(level) == level
+
+
+def test_effort_env_fails_open_to_default():
+    # "default" is the pin's "leave it to Claude" value, and anything unknown
+    # (a stale level, a typo, shell metacharacters) must not reach a `-e` arg.
+    for v in (None, "", "default", "auto", "ultracode", "HIGH", "high; rm -rf"):
+        assert config.effort_env(v) == ""

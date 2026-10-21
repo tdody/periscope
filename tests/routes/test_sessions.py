@@ -457,6 +457,31 @@ def test_window_new_explicit_default_beats_the_header_pin(client, mocker, fresh_
     assert "-e" not in list(_created(calls)[0])
 
 
+def test_window_new_honours_the_effort_pin(client, mocker, fresh_activity_db):
+    calls: list[tuple] = []
+    _patch_account_path(mocker, calls)
+    mocker.patch("periscope.store.get_settings", return_value={"spawn_effort": "xhigh"})
+
+    r = client.post("/api/window/new?session=/repo&mode=claude")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["effort"] == "xhigh"
+    assert "CLAUDE_CODE_EFFORT_LEVEL=xhigh" in list(_created(calls)[0])
+
+
+def test_window_new_codex_gets_no_effort(client, mocker, fresh_activity_db):
+    # Codex isn't Claude: CLAUDE_CODE_EFFORT_LEVEL would be meaningless there.
+    calls: list[tuple] = []
+    _patch_account_path(mocker, calls)
+    mocker.patch("periscope.store.get_settings", return_value={"spawn_effort": "xhigh"})
+
+    r = client.post("/api/window/new?session=/repo&mode=agent&agent=codex")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["effort"] == "default"
+    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for a in _created(calls)[0])
+
+
 def test_window_new_rejects_unsafe_model_string_to_default(client, mocker, fresh_activity_db):
     """Lands in a tmux -e arg and a resurrect shell prefix: anything outside
     the model-id character set fails OPEN to the default, like profile."""

@@ -202,7 +202,8 @@ def ensure_session(
         # when usage is unknown, so an open never waits on it.
         launch = usage.choose_launch(account)
         agent_pid, _ = _layout_two_window(
-            session, pinned_dir, account=launch.account, model=launch.model
+            session, pinned_dir, account=launch.account, model=launch.model,
+            effort=launch.effort,
         )
     else:
         agent_pid, _ = _layout_two_window(

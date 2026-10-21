@@ -134,6 +134,25 @@ def test_patch_spawn_model_stores_auto_and_default_literally_and_null_clears(cli
     ]
 
 
+def test_patch_spawn_effort_accepts_levels_default_and_null(client, mocker):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    mocker.patch("periscope.routes.settings.get_settings", return_value={})
+    for v in ("high", "max", "default", None):
+        assert client.patch("/api/settings", json={"spawn_effort": v}).status_code == 200
+    assert [c.args[0] for c in update_spy.call_args_list] == [
+        {"spawn_effort": "high"}, {"spawn_effort": "max"},
+        {"spawn_effort": "default"}, {"spawn_effort": None},
+    ]
+
+
+def test_patch_spawn_effort_rejects_unknown_level(client, mocker):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    r = client.patch("/api/settings", json={"spawn_effort": "ultracode"})
+    assert r.status_code == 400
+    assert "spawn_effort" in r.json()["detail"]
+    update_spy.assert_not_called()
+
+
 def test_patch_editor_accepts_a_detected_app(client, mocker):
     update_spy = mocker.patch("periscope.routes.settings.update_settings")
     mocker.patch("periscope.routes.settings.get_settings", return_value={})

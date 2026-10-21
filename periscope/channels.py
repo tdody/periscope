@@ -615,11 +615,12 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     launch = usage.choose_launch(arguments.get("account"), arguments.get("model"))
     config_dir = store.account_config_dir(launch.account)
     model_env = config.model_env(launch.model)
+    effort_env = config.effort_env(launch.effort)
     code, _ = _run(["tmux", "has-session", "-t", session])
     if code != 0:
         ok, msg = _tmux_mutate(
             "new-session", "-d", "-s", session, "-c", cwd,
-            *tmux_mod.env_args(config_dir, None, model_env),
+            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
             "-P", "-F", "#{window_index}",
             *(["-n", name] if name else []),
         )
@@ -627,12 +628,12 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         # window spawned into this session inherits this account — silently
         # billing them to the wrong subscription. This window's shell already
         # forked with the value; `new-window -e` has no such spillover.
-        if ok and (config_dir or model_env):
+        if ok and (config_dir or model_env or effort_env):
             tmux_mod.scrub_session_env(session)
     else:
         ok, msg = _tmux_mutate(
             "new-window", "-t", f"{session}:", "-c", cwd,
-            *tmux_mod.env_args(config_dir, None, model_env),
+            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
             "-P", "-F", "#{window_index}",
             *(["-n", name] if name else []),
         )

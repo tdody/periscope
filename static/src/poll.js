@@ -17,6 +17,7 @@ import {
   moveTargets,
   projects,
   spawnAccount,
+  spawnEffort,
   spawnModel,
   syncTabsFromWindows,
   tracks,
@@ -62,6 +63,7 @@ function applyState(data) {
   moveTargets.value = data.move_targets || {};
   spawnAccount.value = data.spawn_account || null;
   spawnModel.value = data.spawn_model || null;
+  spawnEffort.value = data.spawn_effort || null;
   launchDefault.value = data.launch_default || null;
   editorSignal.value = data.editor || "";
 }

@@ -1586,6 +1586,18 @@ def test_spawn_claude_without_model_honours_the_header_pin(mocker):
     assert "ANTHROPIC_MODEL=sonnet" in [str(a) for a in _created_call(cap)]
 
 
+def test_spawn_claude_honours_the_effort_pin(mocker):
+    """A lead's workers land at the pinned effort too — the pin is a server
+    setting precisely because MCP spawns never see client prefs."""
+    from periscope import channels, store
+    cap = _mock_spawn_plumbing(mocker)
+    mocker.patch.object(store, "get_settings", return_value={"spawn_effort": "high"})
+
+    asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
+
+    assert "CLAUDE_CODE_EFFORT_LEVEL=high" in [str(a) for a in _created_call(cap)]
+
+
 def test_spawn_claude_explicit_model_overrides_the_pin(mocker):
     from periscope import channels, store
     cap = _mock_spawn_plumbing(mocker)

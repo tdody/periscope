@@ -18,6 +18,7 @@ import { windows } from "../store.js";
 import { track } from "../track.js";
 import { FilterBar } from "./FilterBar.jsx";
 import { SpawnAccountPicker } from "./SpawnAccountPicker.jsx";
+import { SpawnEffortPicker } from "./SpawnEffortPicker.jsx";
 import { SpawnModelPicker } from "./SpawnModelPicker.jsx";
 import { UpdatePill } from "./UpdatePill.jsx";
 import { UsagePill } from "./UsagePill.jsx";
@@ -127,13 +128,14 @@ export function Header() {
           periscope<i class="brand-cursor"></i>
         </span>
         <UsagePill />
-        {/* The two spawn pins stack as one block to the right of the usage
+        {/* The spawn pins stack as one block to the right of the usage
             meters (.usage flexes, so this block sits at the meters' far edge):
-            account on top, model below, labels aligned so the chips read as a
-            2-row table. */}
+            account, model, effort, labels aligned so the chips read as a
+            3-row table. */}
         <div class="spawn-pins">
           <SpawnAccountPicker />
           <SpawnModelPicker />
+          <SpawnEffortPicker />
         </div>
         <UpdatePill />
         <div class="meta">

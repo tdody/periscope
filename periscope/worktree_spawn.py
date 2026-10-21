@@ -264,6 +264,7 @@ def _layout_two_window(
     agent: Literal["claude", "codex"] = "claude",
     account: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
 ) -> tuple[str, str]:
     """Add the trellis-style 2-window pair (a 'claude' window + a 'shell'
     window) into `tmux_session`, creating the session on first use. The
@@ -285,9 +286,10 @@ def _layout_two_window(
     fresh worktree, and an unbound shell would silently land on the default
     account.
 
-    `model` is the already-resolved ANTHROPIC_MODEL value (or None): callers
-    run `usage.choose_launch` first — this layout primitive applies no pin of
-    its own.
+    `model` is the already-resolved ANTHROPIC_MODEL value (or None), and
+    `effort` the CLAUDE_CODE_EFFORT_LEVEL one: callers run
+    `usage.choose_launch` first — this layout primitive applies no pin of its
+    own.
 
     Returns `(claude_pid, shell_pid)` — both windows stamped (by window id).
     Phase 4's PR-review endpoint uses claude_pid to write
@@ -307,14 +309,15 @@ def _layout_two_window(
     # same-named sibling window.
     agent_name = agent
     config_dir = store.account_config_dir(account)
-    # Only the agent window carries the model (the shell below gets the account
-    # alone): a hand-typed `claude` in the shell would otherwise run on the
-    # override with nothing on the card saying so.
+    # Only the agent window carries the model and effort (the shell below gets
+    # the account alone): a hand-typed `claude` in the shell would otherwise
+    # run on the override with nothing on the card saying so.
     model_env = config.model_env(model) if agent == "claude" else ""
+    effort_env = config.effort_env(effort) if agent == "claude" else ""
     if not _tmux_mutate("has-session", "-t", tmux_session)[0]:
         ok, claude_win = _tmux_mutate(
             "new-session", "-d", "-s", tmux_session, "-c", pinned_dir,
-            *tmux_mod.env_args(config_dir, None, model_env),
+            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
             "-n", agent_name, "-P", "-F", "#{window_id}",
         )
         if not ok:
@@ -323,12 +326,12 @@ def _layout_two_window(
         # window in the one shared session inherits this account — silently
         # billing account-A panes to account B. This window already forked
         # with the value; `new-window -e` has no such spillover.
-        if config_dir or model_env:
+        if config_dir or model_env or effort_env:
             tmux_mod.scrub_session_env(tmux_session)
     else:
         ok, claude_win = _tmux_mutate(
             "new-window", "-t", f"{tmux_session}:", "-c", pinned_dir,
-            *tmux_mod.env_args(config_dir, None, model_env),
+            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
             "-n", agent_name, "-P", "-F", "#{window_id}",
         )
         if not ok:
