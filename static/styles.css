@@ -87,6 +87,9 @@ html, body {
 
 /* Single sticky parent so the two rows stack without computing offsets. */
 .periscope-header {
+  /* The left column's right gutter (.topbar, .filters) — also how far the
+     tamagotchi at 5x can widen into that column (.tama). */
+  --header-gutter: 20px;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -106,7 +109,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 12px 20px 10px;
+  padding: 12px var(--header-gutter) 10px;
   background: linear-gradient(to bottom, oklch(0.25 0.008 250), transparent);
 }
 
@@ -358,24 +361,29 @@ html, body {
    as tall as the two of them together. */
 .tama {
   box-sizing: content-box; width: 136px; height: 96px; padding: 0;
-  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px 20px 4px 0;
+  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px var(--header-gutter) 4px 0;
   border: 1px solid var(--line); border-radius: 16px;
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }
 .tama:hover { border-color: var(--fg-3); }
-/* As big as the corner allows. Width is the limit: the spawn pins and the
-   counts end at their column's 20px gutter at every window width, so the
-   widget can widen 17px into it and no further — room for 5x (170×120), the
-   largest integer scale. Height then needs the 124px header the account row
-   gives (three rows of pins); there it fills the corner with ~3px gaps and
-   hangs 3px over the pane header, into its top padding and clear of its
-   content at any width — the corner the Transcript/Terminal toggle gave up
-   for the tab strip. The negative margins hold the column at 158px and leave
-   the rows to their own content, so nothing else moves. One account means a
-   107px header, and the widget stays at 4x. */
-.periscope-header:has(.spawn-pins > :nth-child(3)) .tama {
+/* As big as the corner allows: 5x (170×120), when the header is tall enough.
+   Width is the limit: the spawn pins and the counts end at the left column's
+   gutter at every window width, so the widget widens into that gutter, leaving
+   --tama-gap to them and to the window edge — room for 5x, the largest integer
+   scale. Height needs the 124px header that three rows of pins give (the
+   account row, data-pin-rows="3", set by Header.jsx); with one account the
+   header is 107px and the widget stays at 4x.
+   The overhang is a decision, not a side effect: 4px from the top, the 122px
+   widget ends 2px below the 124px header, inside the pane header's 5px top
+   padding — the corner the Transcript/Terminal toggle gave up for the tab bar
+   — and above the pane header's content at any width. The negative bottom
+   margin keeps the widget's margin box (120px) under the rows' 123px, so it
+   never sets the header's height. */
+.periscope-header[data-pin-rows="3"] .tama {
+  --tama-gap: 3px;
   width: 170px; height: 120px; border-radius: 18px;
-  align-self: start; margin: 4px 3px -6px -17px;
+  align-self: start;
+  margin: 4px var(--tama-gap) -6px calc(var(--tama-gap) - var(--header-gutter));
 }
 .tama svg { display: block; width: 100%; height: 100%; }
 .tama g, .tama rect, .tama path, .tama text, .tama circle, .tama ellipse, .tama polygon, .tama line { transform-box: fill-box; }
@@ -463,7 +471,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px;
+  padding: 10px var(--header-gutter);
 }
 
 .filter-btn {
