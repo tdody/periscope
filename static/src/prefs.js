@@ -347,6 +347,16 @@ export function setPaneWidth(pref, px) {
   return patchUI({ [pref]: px });
 }
 
+// Whether the navigator ("rail") or context column ("side") is hidden — the
+// filter bar's panel toggles and ⌘B / ⌥⌘B.
+export function getPanelHidden(which) {
+  return !!P().ui?.[`${which}_hidden`];
+}
+
+export function setPanelHidden(which, hidden) {
+  return patchUI({ [`${which}_hidden`]: hidden });
+}
+
 // Per-pane detail-mode toggle (split view). Reactive via prefsSignal — read
 // directly in components for live updates. Map shape: { [pid]: "terminal" | "transcript" }.
 export function getDetailMode(pid) {

@@ -32,6 +32,7 @@ import { TerminalSearch } from "../terminal/TerminalSearch.jsx";
 import { isTerminalAtBottom, scrollTerminalToBottom, setTerminalFileCallback, writeTerminalLine } from "../terminal/terminalCore.js";
 import { track } from "../track.js";
 import { apiCall, memHint, paneLabel, prStateMeta, prUrl, relTime, rewriteLgtmHost, targetQuery } from "../util.js";
+import { sideHidden } from "./panels.js";
 import { ResizeHandle } from "./ResizeHandle.jsx";
 import { TranscriptView } from "./Transcript.jsx";
 
@@ -372,6 +373,15 @@ function PaneDetail({ w }) {
     activeTarget.value = w.target;
   }, [w.target]);
 
+  // "You looked at this pane" clears its unread count. On selection, not in
+  // the Inspector: the context column unmounts while hidden (⌥⌘B), and the
+  // badge must still clear for a pane the user is plainly looking at.
+  useEffect(() => {
+    if (w.pane_id && (w.channel_unread || 0) > 0) {
+      fetch(`/api/channel/clear-unread?pane_id=${encodeURIComponent(w.pane_id)}`, { method: "POST" });
+    }
+  }, [w.pane_id, w.channel_unread]);
+
   // Wire the terminal's file-link callback. Cmd+click on a path → add
   // (or focus) a preview tab for the active pane.
   useEffect(() => {
@@ -492,8 +502,10 @@ function PaneDetail({ w }) {
         {/* Keyed on target so switching panes wipes paneData rather than
             showing the previous pane's PR/notes for ~1.5s until the new tick
             lands. SidePanel takes `target`, NOT `w`. */}
-        <SidePanel key={w.target} target={w.target} />
-        <ResizeHandle which="side" />
+        {/* Unmounted, not CSS-hidden, while the context column is toggled off:
+            that also stops its 1.5s /api/pane poll. */}
+        {!sideHidden.value && <SidePanel key={w.target} target={w.target} />}
+        {!sideHidden.value && <ResizeHandle which="side" />}
       </div>
       {paneTabActive && mode === "terminal" && !atBottom && (
         <button
