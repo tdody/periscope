@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { accounts } from "../../store.js";
-import { STALE_AFTER_S, summarizeAccounts, WASTE_HORIZON_S, wasteMark } from "../usageSummary.js";
+import { hiddenAlerts, isStale, projectsPastLimit, STALE_AFTER_S, summarizeAccounts, WASTE_HORIZON_S, wasteMark } from "../usageSummary.js";
 
 const NOW = 1_800_000_000;
 
@@ -120,5 +120,44 @@ describe("wasteMark", () => {
     expect(wasteMark(fable(null, 30 * H), NOW)).toBe(false);
     expect(wasteMark({ available: true, meters: { week_all: { percent: 9, projected_percent: 11, resets_at: NOW + 30 * H } } }, NOW)).toBe(false);
     expect(wasteMark({ available: false }, NOW)).toBe(false);
+  });
+});
+
+// The pill's rules, shared with Clawd's coding mood (tamagotchi.codingMood).
+describe("isStale / projectsPastLimit", () => {
+  it("calls an account stale past two refresh intervals", () => {
+    expect(isStale({ fetched_at: 1000 }, 1600)).toBe(false);
+    expect(isStale({ fetched_at: 1000 }, 1601)).toBe(true);
+    expect(isStale({}, 99999)).toBe(false);
+  });
+
+  it("is on track to hit the limit at a 100% projection by either heuristic", () => {
+    expect(projectsPastLimit({ percent: 40, projected_percent: 100, projected_recent: 60 })).toBe(true);
+    expect(projectsPastLimit({ percent: 40, projected_percent: 80, projected_recent: 130 })).toBe(true);
+    expect(projectsPastLimit({ percent: 40, projected_percent: 99, projected_recent: 99 })).toBe(false);
+    expect(projectsPastLimit({ percent: 40 })).toBe(false);
+  });
+
+  it("draws no arrow once the projection adds nothing over the bar", () => {
+    expect(projectsPastLimit({ percent: 100, projected_percent: 100, projected_recent: null })).toBe(false);
+    expect(projectsPastLimit({ percent: 100, projected_percent: 175, projected_recent: null })).toBe(true);
+  });
+});
+
+describe("hiddenAlerts", () => {
+  const row = (meters) => {
+    const list = Object.entries(meters).map(([key, m]) => ({ key, label: key, m: { percent: 10, ...m } }));
+    return { meters: list, headline: list.reduce((a, b) => (b.m.percent > a.m.percent ? b : a)) };
+  };
+
+  it("names the meters the collapsed row hides that burn or are on track to blow", () => {
+    const a = row({ session: { percent: 35, hot: true }, week_all: { percent: 81 }, week_fable: { percent: 20, projected_percent: 140 } });
+    expect(hiddenAlerts(a).hot.map((x) => x.key)).toEqual(["session"]);
+    expect(hiddenAlerts(a).blow.map((x) => x.key)).toEqual(["week_fable"]);
+  });
+
+  it("leaves out the headline, which the collapsed row already marks", () => {
+    const a = row({ session: { percent: 10 }, week_all: { percent: 81, hot: true } });
+    expect(hiddenAlerts(a)).toEqual({ hot: [], blow: [] });
   });
 });

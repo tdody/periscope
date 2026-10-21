@@ -254,6 +254,9 @@ html, body {
 .usage-acct.is-stale .usage-item-fill { background: var(--fg-3); }
 .usage-stale-mark { cursor: help; }
 .usage-acct-waste { cursor: help; opacity: 0.8; }
+/* A collapsed row's mark for a meter it doesn't draw (UsagePill HiddenAlerts). */
+.usage-acct-more { cursor: help; }
+.usage-acct-more.blow { color: var(--s-danger); font-weight: 600; }
 
 /* "N behind → update" pill. Absent (returns null) when the checkout is
    current, so it only ever draws when there is something to say. Accent-tinted

@@ -14,6 +14,23 @@ import { accounts } from "../store.js";
 // dead credential must not grey out the other subscription's live numbers.
 export const STALE_AFTER_S = 600;
 
+// The one home of the stale rule: the pill greys the row out on it, and
+// Clawd's coding mood (tamagotchi.codingMood) leaves the account out.
+export function isStale(entry, nowSec) {
+  return !!entry?.fetched_at && nowSec - entry.fetched_at > STALE_AFTER_S;
+}
+
+// On track to hit the limit by either projection heuristic: the pill's red
+// arrow and Clawd's grumpy. No arrow when the projection adds nothing over
+// the bar itself, which is also why a meter already pinned at 100% only stays
+// red while its projection still runs past it.
+export function projectsPastLimit(m) {
+  const cands = [m?.projected_percent, m?.projected_recent].filter((v) => v != null);
+  if (!cands.length) return false;
+  const hi = Math.max(...cands);
+  return hi > (m.percent ?? 0) && hi >= 100;
+}
+
 const KNOWN_METERS = ["session", "week_all", "week_opus", "week_sonnet"];
 const METER_LABELS = {
   session: "session",
@@ -63,12 +80,24 @@ export function summarizeAccounts(plan, nowSec) {
       id,
       label: accountLabel(id),
       available,
-      stale: available && !!entry.fetched_at && nowSec - entry.fetched_at > STALE_AFTER_S,
+      stale: available && isStale(entry, nowSec),
       fetchedAt: entry.fetched_at || null,
       meters,
       headline,
     };
   });
+}
+
+// What the collapsed row hides: the account's other meters that are burning
+// (🔥) or on track to hit their limit (red →). Clawd's mood reads every meter,
+// so the collapsed pill marks these too rather than leave Clawd furious next
+// to a pill with no 🔥 on it.
+export function hiddenAlerts(a) {
+  const others = (a.meters || []).filter((x) => x !== a.headline);
+  return {
+    hot: others.filter((x) => x.m.hot),
+    blow: others.filter((x) => !x.m.hot && projectsPastLimit(x.m)),
+  };
 }
 
 // Whether an account's Fable budget is on pace to go unused: its week_fable*
