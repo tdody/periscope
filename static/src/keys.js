@@ -36,9 +36,11 @@ export function isRefreshKey(e) {
 
 // ⌘B → "rail" (navigator), ⌥⌘B → "side" (context column), else null — VS
 // Code's primary / secondary side bar chords. e.code, not e.key: holding ⌥ on a
-// Mac turns e.key for B into "∫". Ctrl too, for a non-mac keyboard.
+// Mac turns e.key for B into "∫". Ctrl too, for a non-mac keyboard. A held
+// chord auto-repeats; each repeat would be another PATCH /api/prefs/ui, and
+// their responses land out of order.
 export function panelToggleFor(e) {
-  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyB") return null;
+  if (e.repeat || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyB") return null;
   return e.altKey ? "side" : "rail";
 }
 

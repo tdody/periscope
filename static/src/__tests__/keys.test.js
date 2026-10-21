@@ -81,4 +81,7 @@ describe("panelToggleFor", () => {
     expect(panelToggleFor(b({ metaKey: true, shiftKey: true }))).toBe(null);
     expect(panelToggleFor(b({ metaKey: true, code: "KeyN", key: "n" }))).toBe(null);
   });
+  it("ignores key-repeat, so a held chord toggles once", () => {
+    expect(panelToggleFor(b({ metaKey: true, repeat: true }))).toBe(null);
+  });
 });
