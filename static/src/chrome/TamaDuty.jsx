@@ -352,10 +352,10 @@ export function WallScreen({ day, time }) {
   return (
     <g>
       <Screen fill="#16181d" />
-      <Label x="27.5" y="8" size="1.5" fill="#a4acb9" weight={500} anchor="middle">{day ? `back ${day}` : "back at"}</Label>
+      <Label x="24.1" y="7.9" size="1.3" fill="#a4acb9" weight={500}>{day ? `back ${day}` : "back at"}</Label>
       <Label x="27.5" y="10.9" size={size.toFixed(2)} fill="#f2c14e" anchor="middle">{time}</Label>
-      <circle cx="30.4" cy="7" r="0.6" fill="#f3e9c6" />
-      <circle cx="30.7" cy="6.8" r="0.5" fill="#16181d" />
+      <circle cx="30.85" cy="6.95" r="0.5" fill="#f3e9c6" />
+      <circle cx="31.1" cy="6.8" r="0.42" fill="#16181d" />
     </g>
   );
 }
