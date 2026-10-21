@@ -249,13 +249,46 @@ describe("Clawd on duty", () => {
   });
 
   it("lights one split per working agent, up to four", () => {
-    expect(count(scene("code", null, { working: 2 }), "tama-type")).toBe(6);
-    expect(count(scene("code", null, { working: 3 }), "tama-type")).toBe(6);
+    const vertical = 'x="27.45"';
+    const horizontal = 'y="8.45"';
+    const one = scene("code", null, { working: 1 });
+    expect(count(one, "tama-type")).toBe(3);
+    expect(one).not.toContain(vertical);
+    const two = scene("code", null, { working: 2 });
+    expect(count(two, "tama-type")).toBe(6);
+    expect(two).toContain(vertical);
+    expect(two).not.toContain(horizontal);
+    // Three: a 2×2 grid, three lit, the fourth (bottom right, x ≥ 28) dark.
+    const three = scene("code", null, { working: 3 });
+    expect(count(three, "tama-type")).toBe(6);
+    expect(three).toContain(horizontal);
+    expect(three).not.toMatch(/class="tama-type"[^>]*x="28\.00" y="9\.10"/);
     const busy = scene("code", null, { working: 7 });
     expect(count(busy, "tama-type")).toBe(8);
+    expect(busy).toMatch(/class="tama-type"[^>]*x="28\.00" y="9\.10"/); // the fourth cell, lit
     expect(busy).toContain('data-working="4"');
     expect(scene("code", null, { working: 0 })).toContain('data-working="0"');
     expect(scene("code", null)).not.toContain("data-working");
+  });
+
+  it("keeps mirroring the agents under the bell and the parcel, not under a screen kind", () => {
+    expect(scene("code", { kind: "bell" }, { working: 2 })).toContain('data-working="2"');
+    expect(scene("code", { kind: "update" }, { working: 2 })).toContain('data-working="2"');
+    const done = scene("code", { kind: "done" }, { working: 2 });
+    expect(done).not.toContain("data-working");
+    expect(done).not.toContain("tama-type");
+  });
+
+  it("draws the duty screens inside the desk, under the 9am mug", () => {
+    const html = scene("code", { kind: "ci" }, { coffee: true });
+    const at = (needle) => html.indexOf(needle);
+    expect(at("tama-errors")).toBeGreaterThan(at('class="tama-desk"'));
+    expect(at("tama-errors")).toBeLessThan(at("tama-desk-mug"));
+  });
+
+  it("asks for a compact when the context is costly rather than full", () => {
+    expect(scene("code", { kind: "ctx", label: "1", cost: true })).toContain(">compact?<");
+    expect(scene("code", { kind: "ctx", label: "87%", pct: 87 })).toContain(">87%<");
   });
 
   it("keeps the party hat on through a higher item, without the fireworks", () => {
