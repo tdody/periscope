@@ -82,3 +82,46 @@ describe("reading chair", () => {
     expect(render(<TamaScene activity="read" />)).toContain("tama-chair-legs");
   });
 });
+
+describe("occasions", () => {
+  const scene = (activity, occasion, season = "autumn") =>
+    render(<TamaScene activity={activity} season={season} occasion={occasion} />);
+
+  it("sends Clawd trick-or-treating as a little ghost in Halloween week", () => {
+    const html = scene("run", "halloween");
+    expect(html).toContain("tama-ghost");
+    expect(html).toContain("tama-pail");
+    expect(html).toContain("tama-moon");
+    expect(html).not.toContain("tama-sun");
+  });
+
+  it("puts a jack-o'-lantern in every other Halloween scene", () => {
+    for (const id of ["sleep", "coffee", "code", "eat", "read"]) {
+      expect(scene(id, "halloween"), id).toContain("tama-jack");
+    }
+  });
+
+  it("gives the year-end wind-down a Christmas tree, stockings and a Santa hat", () => {
+    const html = scene("read", "yearend", "winter");
+    expect(html).toContain("tama-xmas-tree");
+    expect(html).toContain("tama-stocking");
+    expect(html).toContain("tama-hat-santa");
+    expect(scene("code", "yearend", "winter")).toContain("tama-hat-santa");
+  });
+
+  it("throws a party for the new year", () => {
+    const html = scene("sleep", "newyear", "winter");
+    expect(html).toContain("tama-hat-party");
+    expect(html).toContain("tama-firework");
+    expect(html).toContain("tama-confetti");
+  });
+
+  it("stays plain outside an occasion", () => {
+    for (const id of ["run", "read", "code"]) {
+      const html = scene(id, null);
+      for (const cls of ["tama-ghost", "tama-jack", "tama-xmas-tree", "tama-hat-", "tama-firework"]) {
+        expect(html, `${id} ${cls}`).not.toContain(cls);
+      }
+    }
+  });
+});

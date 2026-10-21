@@ -10,7 +10,10 @@
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
 import { useEffect, useState } from "preact/hooks";
-import { activityAt, BODY, EYES, gridCells, hourLabel, LEGS, msUntilNextChange, seasonAt } from "./tamagotchi.js";
+import {
+  activityAt, activityLabel, BODY, EYES, gridCells, headlineAt, hourLabel, LEGS, msUntilNextChange,
+  occasionAt, seasonAt,
+} from "./tamagotchi.js";
 
 const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
 const SKIN = "#d97757";
@@ -52,13 +55,27 @@ const SEASONS = {
 };
 const FALLING = [[3, 0], [11, -0.7], [18, -1.6], [25.5, -0.3], [32, -1.1]];
 
-function Scenery({ season }) {
+function Scenery({ season, night }) {
   const sc = SEASONS[season] || SEASONS.summer;
   return (
     <g class="tama-scenery" data-season={season}>
       <rect x="0" y="0" width="34" height="19.2" fill={sc.sky} opacity="0.13" />
       <rect x="0" y="19.4" width="34" height="4.6" fill={sc.ground} opacity={season === "winter" ? 0.85 : 0.55} />
-      {season === "summer" && <circle class="tama-sun" cx="4.5" cy="4" r="2.1" fill="#ffd166" />}
+      {night && (
+        <g>
+          <rect x="0" y="0" width="34" height="24" fill="#0b0a1a" opacity="0.5" />
+          <g class="tama-moon">
+            <circle cx="5" cy="4.2" r="2" fill="#f3e9c6" />
+            <circle cx="4.3" cy="3.7" r="0.4" fill="#d8ccaa" />
+            <circle cx="5.7" cy="4.9" r="0.3" fill="#d8ccaa" />
+          </g>
+          <g transform="translate(19 3.2)">
+            <path class="tama-bat" fill="#1a1626"
+                  d="M0 0.6 q1 -1 2 0 q0.4 -0.8 1 -0.2 q0.6 -0.6 1 0.2 q1 -1 2 0 q-1.2 0.1 -2 1 q-0.6 -0.4 -1 0 q-0.4 -0.4 -1 0 q-0.8 -0.9 -2 -1z" />
+          </g>
+        </g>
+      )}
+      {season === "summer" && !night && <circle class="tama-sun" cx="4.5" cy="4" r="2.1" fill="#ffd166" />}
       <rect x="30.2" y="11.6" width="1.4" height="7.6" fill="#6b4a33" />
       {sc.canopy ? (
         <g>
@@ -111,8 +128,155 @@ function Scenery({ season }) {
   );
 }
 
+// Occasions (tamagotchi.OCCASIONS), from Faraday's standup bot: Halloween week
+// turns the run into a ghostly trick-or-treat round and lights a
+// jack-o'-lantern everywhere else; the year-end wind-down brings a Santa hat,
+// a tree and stockings; the new year a party hat, fireworks and confetti.
+function JackOLantern({ x, y }) {
+  return (
+    <g class="tama-jack" shape-rendering="geometricPrecision">
+      <rect x={x + 1.3} y={y} width="0.5" height="0.7" fill="#4f7a2c" />
+      <rect x={x} y={y + 0.4} width="3.1" height="2.2" rx="1" fill="#ef8a2c" />
+      <rect x={x + 1} y={y + 0.5} width="0.15" height="2" fill="#d9741f" />
+      <rect x={x + 1.95} y={y + 0.5} width="0.15" height="2" fill="#d9741f" />
+      <path class="tama-jack-face" fill="#ffcf5a"
+            d={`M${x + 0.6} ${y + 1.4} l0.4 -0.6 l0.4 0.6z M${x + 2.1} ${y + 1.4} l0.4 -0.6 l0.4 0.6z M${x + 0.6} ${y + 1.8} h1.9 l-0.3 0.5 h-1.3z`} />
+    </g>
+  );
+}
+
+// Where the jack-o'-lantern sits in each non-run scene: on the floor, under
+// the desk, on the mantel.
+const JACK_SPOTS = {
+  sleep: { x: 1.5, y: 16.4 },
+  coffee: { x: 1.5, y: 16.4 },
+  eat: { x: 1.5, y: 16.4 },
+  code: { x: 25.5, y: 16.4 },
+  read: { x: 24.6, y: 3.4 },
+};
+
+function ChristmasTree() {
+  return (
+    <g class="tama-xmas-tree" shape-rendering="geometricPrecision">
+      <rect x="2.9" y="18.2" width="1" height="0.8" fill="#5a3a26" />
+      <polygon points="3.4,12 7.6,18.2 -0.8,18.2" fill="#276b3e" />
+      <polygon points="3.4,8.6 7.2,14.6 -0.4,14.6" fill="#2f7d4a" />
+      <polygon points="3.4,5.2 6.8,10.8 0,10.8" fill="#276b3e" />
+      <polygon points="3.4,2.4 6.2,7.2 0.6,7.2" fill="#2f7d4a" />
+      <polygon class="tama-twinkle" points="3.4,0.8 3.8,1.8 4.8,1.9 4,2.5 4.3,3.4 3.4,2.9 2.5,3.4 2.8,2.5 2,1.9 3,1.8" fill="#ffd166" />
+      <circle cx="2.6" cy="6.2" r="0.42" fill="#e05252" />
+      <circle class="tama-twinkle" cx="4.6" cy="9.4" r="0.42" fill="#7fb6e6" />
+      <circle cx="1.4" cy="10" r="0.42" fill="#ffd166" />
+      <circle class="tama-twinkle tama-twinkle2" cx="5.6" cy="12.8" r="0.42" fill="#e05252" />
+      <circle cx="0.8" cy="13.8" r="0.42" fill="#c792ea" />
+      <circle cx="6.6" cy="16.6" r="0.42" fill="#ffd166" />
+    </g>
+  );
+}
+
+function Stockings() {
+  return (
+    <g class="tama-stocking">
+      {[25.4, 30.2].map((x) => (
+        <g key={x}>
+          <rect x={x} y="7.1" width="1.2" height="2.1" fill="#c0392b" />
+          <rect x={x} y="8.6" width="2" height="0.9" rx="0.4" fill="#c0392b" />
+          <rect x={x - 0.1} y="7.1" width="1.4" height="0.6" fill="#f4f4f6" />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function SantaHat({ x0 }) {
+  return (
+    <g class="tama-hat-santa">
+      <g fill="#d03a3a">
+        <rect x={x0 + 4} y="6.8" width="10" height="1.5" />
+        <rect x={x0 + 5.6} y="5.6" width="6.6" height="1.3" />
+        <rect x={x0 + 7.4} y="4.6" width="3.6" height="1.1" />
+        <rect x={x0 + 10.6} y="4.6" width="3" height="1" />
+        <rect x={x0 + 13} y="5.2" width="1.2" height="1" />
+      </g>
+      <rect x={x0 + 3} y="8.2" width="12" height="1.3" rx="0.5" fill="#f4f4f6" />
+      <rect x={x0 + 13.6} y="5.6" width="1.6" height="1.6" rx="0.8" fill="#f4f4f6" />
+    </g>
+  );
+}
+
+function PartyHat({ x0 }) {
+  return (
+    <g class="tama-hat-party" shape-rendering="geometricPrecision">
+      <polygon points={`${x0 + 6.6},9 ${x0 + 11.4},9 ${x0 + 9},3.8`} fill="#5aa9e6" />
+      <rect x={x0 + 7.5} y="6.8" width="3" height="0.6" fill="#ffd166" />
+      <rect x={x0 + 8.25} y="5.2" width="1.5" height="0.5" fill="#ffd166" />
+      <circle cx={x0 + 9} cy="3.6" r="0.8" fill="#f28ab2" />
+    </g>
+  );
+}
+
+// Clawd under a sheet: rounded top, a scalloped hem above the running legs,
+// eye holes; its arm stubs poke out to hold the candy pail.
+function GhostSheet({ x0 }) {
+  const L = x0 + 2.2;
+  const R = x0 + 15.8;
+  const hem = "q-0.85 1.1 -1.7 0 ".repeat(8);
+  return (
+    <g class="tama-ghost" shape-rendering="geometricPrecision">
+      <path fill="#f5f5f7" d={`M${L} 17.6 V10.4 Q${L} 7.6 ${(L + R) / 2} 7.6 Q${R} 7.6 ${R} 10.4 V17.6 ${hem}Z`} />
+      <ellipse cx={x0 + 5.6} cy="11.6" rx="0.7" ry="1" fill={EYE} />
+      <ellipse cx={x0 + 12.4} cy="11.6" rx="0.7" ry="1" fill={EYE} />
+      <ellipse cx={x0 + 9} cy="14" rx="0.6" ry="0.8" fill={EYE} />
+    </g>
+  );
+}
+
+function Pail({ x0 }) {
+  const x = x0 + 16.4;
+  return (
+    <g class="tama-pail" shape-rendering="geometricPrecision">
+      <path d={`M${x + 0.3} 13.8 Q${x + 1.8} 11.2 ${x + 3.3} 13.8`} fill="none" stroke="#3a2a1a" stroke-width="0.35" />
+      <rect x={x + 0.9} y="13.1" width="0.7" height="0.7" fill="#e05252" />
+      <rect x={x + 1.9} y="12.9" width="0.7" height="0.7" fill="#7fb6e6" />
+      <rect x={x} y="13.6" width="3.6" height="3.2" rx="1.2" fill="#ef8a2c" />
+      <path fill="#3a1e0e" d={`M${x + 0.7} 14.9 l0.5 -0.7 l0.5 0.7z M${x + 2} 14.9 l0.5 -0.7 l0.5 0.7z M${x + 0.7} 15.5 h2.2 l-0.4 0.6 h-1.4z`} />
+    </g>
+  );
+}
+
+function Fireworks() {
+  const burst = (cx, cy, color, delay) => (
+    <g class="tama-firework" style={{ animationDelay: `${delay}s` }} fill={color}>
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+        const a = (deg * Math.PI) / 180;
+        return <rect key={deg} x={cx + Math.cos(a) * 1.8 - 0.25} y={cy + Math.sin(a) * 1.8 - 0.25} width="0.5" height="0.5" />;
+      })}
+      <rect x={cx - 0.25} y={cy - 0.25} width="0.5" height="0.5" />
+    </g>
+  );
+  return (
+    <g>
+      {burst(5, 4, "#ffd166", 0)}
+      {burst(22, 2.6, "#f28ab2", -0.9)}
+    </g>
+  );
+}
+
+const CONFETTI = ["#ffd166", "#f28ab2", "#7fb6e6", "#9be38f", "#c792ea"];
+
+function Confetti() {
+  return (
+    <g class="tama-confetti">
+      {[[2.5, 0], [9, -0.6], [15, -1.4], [21, -0.3], [27, -1.9], [32, -1]].map(([x, delay], i) => (
+        <rect key={x} class="tama-fall" x={x} y="-1" width="0.6" height="0.6" fill={CONFETTI[i % CONFETTI.length]}
+              style={{ animationDelay: `${delay}s` }} />
+      ))}
+    </g>
+  );
+}
+
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity, season }) {
+function Behind({ activity, season, occasion, hat, ghost }) {
   switch (activity) {
     case "sleep":
       return (
@@ -178,6 +342,8 @@ function Behind({ activity, season }) {
             <path class="tama-flame tama-flame2" d="M28 19 q-0.2 -1.6 0.9 -2.8 q0.3 1.1 0.9 1.4 q0.5 -0.8 0.6 -1.4 q0.9 1.6 0.2 2.8z" fill="#ffd166" />
             <rect x="26.6" y="18.4" width="5" height="0.6" rx="0.3" fill="#5a3a26" />
           </g>
+          {occasion === "yearend" && <Stockings />}
+          {occasion === "yearend" && <ChristmasTree />}
           <g class="tama-chair" fill="#8e3b3b">
             <rect x="1" y="8.6" width="3.2" height="9.6" rx="1" />
             <rect x="3.6" y="16.8" width="16.8" height="1.5" rx="0.6" />
@@ -202,15 +368,14 @@ function Behind({ activity, season }) {
     case "run":
       return (
         <g>
-          <Scenery season={season} />
+          <Scenery season={season} night={occasion === "halloween"} />
           <g class="tama-motion" fill="var(--fg-3)">
             <rect x="1" y="10.6" width="4" height="0.5" />
             <rect x="2.4" y="13.6" width="3.6" height="0.5" />
             <rect x="0.6" y="16.6" width="4.6" height="0.5" />
           </g>
-          {season === "winter"
-            ? <rect x="11" y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
-            : <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
+          {season === "winter" && !hat && !ghost && <rect x="11" y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />}
+          {season !== "winter" && !ghost && <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
         </g>
       );
     default:
@@ -241,20 +406,29 @@ function InFront({ activity }) {
   );
 }
 
-export function TamaScene({ activity, season = "summer", petted = false, petKey = 0 }) {
+export function TamaScene({ activity, season = "summer", occasion = null, petted = false, petKey = 0 }) {
   const { x0, sitting } = POSES[activity] || STANDING;
   const legRows = (frame) => [...BODY.map(() => ""), frame];
+  const ghost = occasion === "halloween" && activity === "run";
+  const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
   return (
-    <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true" data-activity={activity}>
+    <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
+         data-activity={activity} data-occasion={occasion || undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
-      <Behind activity={activity} season={season} />
+      {occasion === "newyear" && <Fireworks />}
+      <Behind activity={activity} season={season} occasion={occasion} hat={hat} ghost={ghost} />
+      {occasion === "halloween" && !ghost && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells rows={BODY} cls="tama-body" x0={x0} />
-        <Eyes closed={activity === "sleep"} x0={x0} />
+        {ghost ? <GhostSheet x0={x0} /> : <Eyes closed={activity === "sleep"} x0={x0} />}
         {!sitting && <Cells rows={legRows(LEGS[0])} cls="tama-legs-a" x0={x0} />}
         {activity === "run" && <Cells rows={legRows(LEGS[1])} cls="tama-legs-b" x0={x0} />}
+        {ghost && <Pail x0={x0} />}
+        {hat === "santa" && <SantaHat x0={x0} />}
+        {hat === "party" && <PartyHat x0={x0} />}
       </g>
       <InFront activity={activity} />
+      {occasion === "newyear" && <Confetti />}
       {petted && (
         <path key={`heart-${petKey}`} class="tama-heart" fill="#e8657a" shape-rendering="geometricPrecision"
               transform={`translate(${x0 - 8} 0)`}
@@ -285,7 +459,9 @@ export function Tamagotchi() {
   }, [petted, pets]);
 
   const a = activityAt(now);
-  const label = `Claude is ${a.label} (${hourLabel(a.from)}–${hourLabel(a.to)})`;
+  const occasion = occasionAt(now);
+  const headline = headlineAt(now);
+  const label = `Claude is ${activityLabel(a, occasion)} (${hourLabel(a.from)}–${hourLabel(a.to)})${headline ? ` · ${headline}` : ""}`;
   return (
     <button
       type="button"
@@ -294,7 +470,7 @@ export function Tamagotchi() {
       aria-label={label}
       onClick={() => { setPets((n) => n + 1); setPetted(true); }}
     >
-      <TamaScene activity={a.id} season={seasonAt(now)} petted={petted} petKey={pets} />
+      <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} petted={petted} petKey={pets} />
     </button>
   );
 }

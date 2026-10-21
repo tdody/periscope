@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { activityAt, BODY, gridCells, hourLabel, LEGS, msUntilNextChange, SCHEDULE, seasonAt } from "../tamagotchi.js";
+import {
+  activityAt, activityLabel, BODY, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,
+  msUntilNextChange, occasionAt, SCHEDULE, seasonAt, seasonStart,
+} from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0);
 
@@ -54,11 +57,58 @@ describe("sprite", () => {
 });
 
 describe("seasonAt", () => {
-  it("uses meteorological seasons (northern hemisphere)", () => {
-    const month = (m) => seasonAt(new Date(2026, m, 15));
-    expect([11, 0, 1].map(month)).toEqual(["winter", "winter", "winter"]);
-    expect([2, 3, 4].map(month)).toEqual(["spring", "spring", "spring"]);
-    expect([5, 6, 7].map(month)).toEqual(["summer", "summer", "summer"]);
-    expect([8, 9, 10].map(month)).toEqual(["autumn", "autumn", "autumn"]);
+  // Astronomical, like the standup bot: the season turns on the local day of
+  // the equinox / solstice. Dates sit two days off each boundary so the test
+  // doesn't depend on the machine's time zone.
+  it("turns on the equinoxes and solstices", () => {
+    const d = (m, day) => seasonAt(new Date(2026, m - 1, day, 12));
+    expect([d(3, 18), d(3, 22)]).toEqual(["winter", "spring"]);
+    expect([d(6, 19), d(6, 23)]).toEqual(["spring", "summer"]);
+    expect([d(9, 20), d(9, 24)]).toEqual(["summer", "autumn"]);
+    expect([d(12, 19), d(12, 23)]).toEqual(["autumn", "winter"]);
+    expect(d(1, 15)).toBe("winter");
+  });
+
+  it("puts each start within a day of the textbook date", () => {
+    const start = (s) => seasonStart(s, 2026);
+    expect(start("spring").getUTCMonth()).toBe(2);
+    expect(Math.abs(start("spring").getUTCDate() - 20)).toBeLessThanOrEqual(1);
+    expect(Math.abs(start("winter").getUTCDate() - 21)).toBeLessThanOrEqual(1);
+  });
+
+  it("knows the first day of a season", () => {
+    const solstice = seasonStart("winter", 2026);
+    const local = new Date(solstice.getFullYear(), solstice.getMonth(), solstice.getDate(), 12);
+    expect(isFirstDayOfSeason(local)).toBe(true);
+    expect(isFirstDayOfSeason(new Date(local.getTime() + 86400000))).toBe(false);
+  });
+});
+
+describe("occasionAt", () => {
+  const on = (m, day) => occasionAt(new Date(2026, m - 1, day, 12))?.id ?? null;
+  it("matches the standup bot's windows, inclusive", () => {
+    expect([on(10, 23), on(10, 24), on(10, 31), on(11, 1)]).toEqual([null, "halloween", "halloween", null]);
+    expect([on(12, 17), on(12, 18), on(12, 26), on(12, 27)]).toEqual([null, "yearend", "yearend", null]);
+  });
+  it("wraps the new year across December 31", () => {
+    expect([on(12, 30), on(12, 31), on(1, 1), on(1, 2), on(1, 3)]).toEqual([null, "newyear", "newyear", "newyear", null]);
+  });
+});
+
+describe("headlines and labels", () => {
+  it("adds the occasion's headline to the hover line", () => {
+    expect(headlineAt(new Date(2026, 9, 28, 12))).toMatch(/Halloween/);
+    expect(headlineAt(new Date(2026, 6, 10, 12))).toBe(null);
+  });
+  it("lets the first day of a season outrank an occasion, as the bot does", () => {
+    const solstice = seasonStart("winter", 2026); // lands inside the year-end window
+    const local = new Date(solstice.getFullYear(), solstice.getMonth(), solstice.getDate(), 12);
+    expect(occasionAt(local)?.id).toBe("yearend");
+    expect(headlineAt(local)).toMatch(/winter solstice/);
+  });
+  it("turns a Halloween-week run into trick-or-treating", () => {
+    const run = SCHEDULE.find((s) => s.id === "run");
+    expect(activityLabel(run, { id: "halloween" })).toBe("trick-or-treating");
+    expect(activityLabel(run, null)).toBe(run.label);
   });
 });

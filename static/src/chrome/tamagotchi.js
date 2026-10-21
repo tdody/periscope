@@ -28,14 +28,84 @@ export function msUntilNextChange(date) {
   return end - date;
 }
 
-// The run's backdrop. Meteorological seasons (whole months), northern
-// hemisphere — the hemisphere isn't knowable from the browser clock.
+// Seasons and occasions follow Faraday's slack-standup-bot (seasons.js), so the
+// dashboard and the morning standup agree on what time of year it is: a season
+// turns on the local day of its equinox / solstice, and a few narrow occasions
+// outrank it. Northern hemisphere, like the bot.
+const MEAN_SEASON_TERMS = {
+  spring: [2451623.80984, 365242.37404, 0.05169, -0.00411, -0.00057],
+  summer: [2451716.56767, 365241.62603, 0.00325, 0.00888, -0.0003],
+  autumn: [2451810.21715, 365242.01767, -0.11575, 0.00337, 0.00078],
+  winter: [2451900.05952, 365242.74049, -0.06223, -0.00823, 0.00032],
+};
+const SEASONS = ["spring", "summer", "autumn", "winter"];
+
+// Mean equinox / solstice instant (Meeus, Astronomical Algorithms ch. 27):
+// well under an hour off, plenty for a whole-day theme.
+export function seasonStart(season, year) {
+  const [a, b, c, d, e] = MEAN_SEASON_TERMS[season];
+  const y = (year - 2000) / 1000;
+  const julianDay = a + b * y + c * y ** 2 + d * y ** 3 + e * y ** 4;
+  return new Date((julianDay - 2440587.5) * 86400000);
+}
+
+const dayNumber = (d) => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+
+// The season in effect on `date`'s local day, with the instant it began.
+function currentSeason(date) {
+  const year = date.getFullYear();
+  const today = dayNumber(date);
+  return [year - 1, year]
+    .flatMap((y) => SEASONS.map((season) => ({ season, start: seasonStart(season, y) })))
+    .sort((a, b) => a.start - b.start)
+    .filter((s) => dayNumber(s.start) <= today)
+    .pop();
+}
+
 export function seasonAt(date) {
-  const m = date.getMonth();
-  if (m === 11 || m <= 1) return "winter";
-  if (m <= 4) return "spring";
-  if (m <= 7) return "summer";
-  return "autumn";
+  return currentSeason(date).season;
+}
+
+export function isFirstDayOfSeason(date) {
+  return dayNumber(currentSeason(date).start) === dayNumber(date);
+}
+
+const FIRST_DAY_HEADLINES = {
+  winter: "❄️ The winter solstice arrives — the longest night is upon us",
+  spring: "🌱 The spring equinox arrives — light and dark stand in balance",
+  summer: "☀️ The summer solstice arrives — the sun holds the sky the longest",
+  autumn: "🍂 The autumn equinox arrives — the harvest season begins",
+};
+
+// [month, day] windows, inclusive; one whose end sorts before its start wraps
+// across December 31. Same windows and headlines as the standup bot.
+export const OCCASIONS = [
+  { id: "halloween", start: [10, 24], end: [10, 31], headline: "🎃 Halloween week — the veil is at its thinnest" },
+  { id: "yearend", start: [12, 18], end: [12, 26], headline: "🌟 The year-end wind-down — code freeze, hearts warm" },
+  { id: "newyear", start: [12, 31], end: [1, 2], headline: "🎆 The year turns — the ledger resets" },
+];
+
+export function occasionAt(date) {
+  const today = (date.getMonth() + 1) * 100 + date.getDate();
+  const found = OCCASIONS.find(({ start, end }) => {
+    const from = start[0] * 100 + start[1];
+    const to = end[0] * 100 + end[1];
+    return from <= to ? today >= from && today <= to : today >= from || today <= to;
+  });
+  return found || null;
+}
+
+// The hover line's extra: a season's first-day headline outranks an occasion,
+// as it does in the bot.
+export function headlineAt(date) {
+  if (isFirstDayOfSeason(date)) return FIRST_DAY_HEADLINES[seasonAt(date)];
+  return occasionAt(date)?.headline || null;
+}
+
+// Halloween-week runs are trick-or-treat rounds.
+export function activityLabel(activity, occasion) {
+  if (activity.id === "run" && occasion?.id === "halloween") return "trick-or-treating";
+  return activity.label;
 }
 
 export function hourLabel(h) {
