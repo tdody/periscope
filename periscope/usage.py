@@ -666,14 +666,16 @@ def move_targets() -> dict[str, str]:
     return {aid: t for aid in ids if (t := launch_policy.choose_move(base, aid))}
 
 
-def choose_launch(account: str | None = None, model: str | None = None) -> Launch:
+def choose_launch(
+    account: str | None = None, model: str | None = None, effort: str | None = None,
+) -> Launch:
     """The account and model a new pane lands on. The one choke point every
     unnamed spawn path shares — launcher New Tab, unified open, MCP
     spawn_claude / resume_session — so the header pins are honored
     server-side and MCP spawns see them without any client pref.
 
-    Explicit args win over the pins (an explicit "default" model means no
-    override — that is how a single launch opts out of a model pin). The
+    Explicit args win over the pins (an explicit "default" model or effort
+    means no override — that is how a single launch opts out of a pin). The
     policy itself is `launch_policy.choose`; this gathers its inputs.
     `cached_plan_usage` never blocks, so a launch never waits on usage.
     """
@@ -689,4 +691,5 @@ def choose_launch(account: str | None = None, model: str | None = None) -> Launc
     ))
     # No meter depends on effort, so the policy never sees it; the pin rides on
     # the answer so every spawn path gets it from the same call as the model.
-    return replace(launch, effort=config.effort_env(settings.get("spawn_effort")) or None)
+    pick = effort if effort is not None else settings.get("spawn_effort")
+    return replace(launch, effort=config.effort_env(pick) or None)

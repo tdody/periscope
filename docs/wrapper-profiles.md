@@ -74,7 +74,10 @@ settings.json) or one of `config.EFFORT_LEVELS` (low, medium, high, xhigh,
 max). `usage.choose_launch` copies it onto `Launch.effort`, so the same three
 spawn paths honour it. Like the model, only the agent window carries it, it
 is scrubbed off the session by `scrub_session_env`, and dashboard resume
-doesn't apply it. There is no per-launch override and no rail chip. One
+doesn't apply it. The launcher's Effort picker is the per-launch override,
+shaped like its Model picker (seeds from `launch_default.effort`, always
+sends a value — `default` is the opt-out — and is not remembered). There is
+no rail chip. One
 difference shapes everything downstream: **while the var is set, Claude
 refuses `/effort` for the whole session** ("Not applied:
 CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this session"). So:

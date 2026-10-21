@@ -491,6 +491,7 @@ def window_new(
     account: str | None = None,
     profile: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
 ):
     """Spawn a window in `session`. `exec` param sends a command to the new
     window; legacy `mode` maps to `exec` for backwards-compat. `mode=resume`
@@ -523,9 +524,8 @@ def window_new(
             account=usage.choose_launch(account).account,
         )
         return {**result, "agent": "claude"}
-    effort = None
     if agent == "claude":
-        launch = usage.choose_launch(account, model)
+        launch = usage.choose_launch(account, model, effort)
         account, model, effort = launch.account, launch.model, launch.effort
     return _window_new_plain(
         session, exec_cmd, mode, cwd_param=cwd, branch=branch, agent=agent,

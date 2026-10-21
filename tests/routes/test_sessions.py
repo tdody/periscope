@@ -469,6 +469,25 @@ def test_window_new_honours_the_effort_pin(client, mocker, fresh_activity_db):
     assert "CLAUDE_CODE_EFFORT_LEVEL=xhigh" in list(_created(calls)[0])
 
 
+def test_window_new_explicit_effort_beats_the_pin(client, mocker, fresh_activity_db):
+    # The launcher's Effort picker: an explicit level wins for this launch,
+    # and an explicit "default" is the per-launch opt-out (omitting the param
+    # is what means "use the pin").
+    calls: list[tuple] = []
+    _patch_account_path(mocker, calls)
+    mocker.patch("periscope.store.get_settings", return_value={"spawn_effort": "xhigh"})
+
+    r = client.post("/api/window/new?session=/repo&mode=claude&effort=low")
+    assert r.status_code == 200, r.text
+    assert r.json()["effort"] == "low"
+    assert "CLAUDE_CODE_EFFORT_LEVEL=low" in list(_created(calls)[0])
+
+    r = client.post("/api/window/new?session=/repo&mode=claude&effort=default")
+    assert r.status_code == 200, r.text
+    assert r.json()["effort"] == "default"
+    assert "-e" not in list(_created(calls)[1])
+
+
 def test_window_new_codex_gets_no_effort(client, mocker, fresh_activity_db):
     # Codex isn't Claude: CLAUDE_CODE_EFFORT_LEVEL would be meaningless there.
     calls: list[tuple] = []
