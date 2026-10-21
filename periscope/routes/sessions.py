@@ -308,7 +308,7 @@ def _window_new_plain(
     config_dir = store.account_config_dir(account)
     profile_env = config.profile_env(profile)
     model_env = config.model_env(model)
-    effort_env = config.effort_env(effort)
+    effort_level = config.effort_level(effort)
 
     branch = (branch or "").strip()
     if branch and repo:
@@ -336,7 +336,7 @@ def _window_new_plain(
     if code != 0:
         ok, msg = _tmux_mutate(
             "new-session", "-d", "-s", MANAGED_SESSION, "-c", cwd,
-            *tmux_mod.env_args(config_dir, profile_env, model_env, effort_env),
+            *tmux_mod.env_args(config_dir, profile_env, model_env),
             "-P", "-F", "#{window_id}",
         )
         if not ok:
@@ -345,12 +345,12 @@ def _window_new_plain(
         # window in the one shared session inherits this account — silently
         # billing account-A panes to account B — and this profile. This window
         # already forked with the values; `new-window -e` has no such spillover.
-        if config_dir or profile_env or model_env or effort_env:
+        if config_dir or profile_env or model_env:
             tmux_mod.scrub_session_env(MANAGED_SESSION)
     else:
         ok, msg = _tmux_mutate(
             "new-window", "-t", f"={MANAGED_SESSION}:", "-c", cwd,
-            *tmux_mod.env_args(config_dir, profile_env, model_env, effort_env),
+            *tmux_mod.env_args(config_dir, profile_env, model_env),
             "-P", "-F", "#{window_id}",
         )
         if not ok:
@@ -374,12 +374,12 @@ def _window_new_plain(
     target = f"{MANAGED_SESSION}:{index}"
     cmd = exec_cmd.strip()
     if mode in {"claude", "codex", "agent"}:
-        cmd = shlex.join(config.build_agent_command(agent, cwd=cwd))
+        cmd = shlex.join(config.build_agent_command(agent, cwd=cwd, effort=effort_level))
     _send_and_stamp(target, cmd)
     return {"ok": True, "session": MANAGED_SESSION, "index": index,
             "target": target, "mode": mode, "agent": agent, "exec": cmd,
             "cwd": cwd, "profile": profile_env or "default",
-            "model": model_env or "default", "effort": effort_env or "default"}
+            "model": model_env or "default", "effort": effort_level if agent == "claude" and effort_level else "default"}
 
 
 def _codex_binding(session_id: str):

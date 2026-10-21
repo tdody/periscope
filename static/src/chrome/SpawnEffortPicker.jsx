@@ -1,11 +1,11 @@
 // Header segmented control pinning the reasoning effort new Claude panes
-// launch at — the third spawn pin, under account and model. "default" sets
-// nothing: Claude picks per model and settings.json, and /effort keeps working
-// in the pane. A level is set as CLAUDE_CODE_EFFORT_LEVEL on every unnamed
-// spawn (launcher New Tab, unified open, MCP spawn_claude) through
-// usage.choose_launch — and while that var is set Claude refuses /effort for
-// the pane's whole session, so the hover says so instead of letting it
-// surprise.
+// launch at — the third spawn pin, under account and model. "default" adds
+// nothing: Claude picks per model and settings.json. A level becomes
+// `--effort <level>` on every unnamed spawn (launcher New Tab, unified open,
+// MCP spawn_claude) through usage.choose_launch. A flag, not the
+// CLAUDE_CODE_EFFORT_LEVEL env var, because the var makes Claude refuse
+// /effort for the session — so a pinned pane can still be changed later, from
+// the pane header's own effort control.
 //
 // A server setting (settings.spawn_effort), not a client pref, for the account
 // pin's reason: MCP spawns never see client prefs. Rides /api/state as
@@ -36,8 +36,8 @@ export function SpawnEffortPicker() {
       class="spawn-acct spawn-effort"
       title={
         "reasoning effort new Claude panes launch at\n" +
-        "default — Claude's own choice for the model; /effort works in the pane\n" +
-        "low … max — pin every spawn (New Tab, + new, spawned workers); those panes ignore /effort for their whole session"
+        "default — Claude's own choice for the model\n" +
+        "low … max — every new pane starts there (New Tab, + new, spawned workers); change a running pane from its own header"
       }
     >
       <span class="spawn-acct-label">effort</span>

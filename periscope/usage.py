@@ -692,4 +692,4 @@ def choose_launch(
     # No meter depends on effort, so the policy never sees it; the pin rides on
     # the answer so every spawn path gets it from the same call as the model.
     pick = effort if effort is not None else settings.get("spawn_effort")
-    return replace(launch, effort=config.effort_env(pick) or None)
+    return replace(launch, effort=config.effort_level(pick) or None)

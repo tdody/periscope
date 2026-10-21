@@ -113,7 +113,7 @@ def settings_patch(body: SettingsPatch):
         v = body.spawn_effort
         # "default" is stored literally, like spawn_model's: it is the pin's
         # explicit "leave effort to Claude", which keeps /effort usable.
-        if v is None or v == "default" or config.effort_env(v):
+        if v is None or v == "default" or config.effort_level(v):
             patch["spawn_effort"] = v
         else:
             raise HTTPException(400, f"spawn_effort {v!r} is not an effort level")

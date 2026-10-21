@@ -222,38 +222,26 @@ def test_model_prefix_orders_after_account_and_profile():
     )
 
 
-# --- effort prefix (CLAUDE_CODE_EFFORT_LEVEL) ---------------------------------
-# Unlike the model, effort cannot drift in-session: while the var is set,
-# Claude refuses /effort ("Not applied: CLAUDE_CODE_EFFORT_LEVEL=… overrides
-# effort this session"). So the var WAS the pane's effort for its whole life,
-# and both restore paths re-emit it — dropping it on --resume would silently
-# move a resumed pane to the account's default effort.
+# --- effort flag (--effort) ----------------------------------------------------
+# Launch effort is a flag on the captured argv. It is kept on the session-lost
+# path (the original command is restored as-is) and dropped on --resume, like
+# the model: /effort can change a running session, and re-emitting the launch
+# level after a reboot would undo it.
 
-def test_effort_prefix_emitted_without_session():
-    line = _pane_line("s", "1", "1", "claude")
-    out, changed = resurrect._rewrite_line(
-        line, {"s:1.1": "%56"}, {}, {}, {}, {}, {"%56": "high"})
+def test_effort_flag_kept_without_session():
+    line = _pane_line("s", "1", "1", "claude --effort high")
+    out, changed = resurrect._rewrite_line(line, {"s:1.1": "%56"}, {}, {"%56": ALT})
     assert changed
-    assert out.split("\t")[10] == ":CLAUDE_CODE_EFFORT_LEVEL=high claude"
+    assert out.split("\t")[10] == f":CLAUDE_CONFIG_DIR={ALT} claude --effort high"
 
 
-def test_effort_prefix_emitted_with_resume():
+def test_effort_flag_dropped_on_resume():
     pane_map, sess_map = _maps()
-    line = _pane_line("s", "1", "1", "claude")
-    out, changed = resurrect._rewrite_line(
-        line, pane_map, sess_map, {"%56": ALT}, {}, {"%56": "opus"}, {"%56": "max"})
+    line = _pane_line("s", "1", "1", _both_channels() + " --effort max")
+    out, changed = resurrect._rewrite_line(line, pane_map, sess_map)
     assert changed
-    # Model still dropped on resume; effort kept, after the account.
-    assert out.split("\t")[10] == (
-        f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_CODE_EFFORT_LEVEL=max claude --resume {SID}"
-    )
-
-
-def test_effort_prefix_orders_after_model():
-    line = _pane_line("s", "1", "1", "claude")
-    out, _ = resurrect._rewrite_line(
-        line, {"s:1.1": "%56"}, {}, {}, {}, {"%56": "opus"}, {"%56": "low"})
-    assert out.split("\t")[10] == ":ANTHROPIC_MODEL=opus CLAUDE_CODE_EFFORT_LEVEL=low claude"
+    assert "--effort" not in out
+    assert out.split("\t")[10].startswith(f":claude --resume {SID}")
 
 
 def test_profile_prefix_not_doubled():

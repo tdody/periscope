@@ -67,27 +67,36 @@ differ from the profile:
   spawn-time choice. With no session to resume, the spawn-time choice is all
   that is left of the intent, so it is kept there.
 
-**Effort override (`CLAUDE_CODE_EFFORT_LEVEL`) is the fourth binding.** The
-header's **spawn-effort pin** (`settings.spawn_effort`; rides `/api/state` as
-`spawn_effort`) is `"default"` (unset: no var, Claude picks per model and
+**Effort is the one launch choice carried as a flag, not env.** The header's
+**spawn-effort pin** (`settings.spawn_effort`; rides `/api/state` as
+`spawn_effort`) is `"default"` (unset: no flag, Claude picks per model and
 settings.json) or one of `config.EFFORT_LEVELS` (low, medium, high, xhigh,
-max). `usage.choose_launch` copies it onto `Launch.effort`, so the same three
-spawn paths honour it. Like the model, only the agent window carries it, it
-is scrubbed off the session by `scrub_session_env`, and dashboard resume
-doesn't apply it. The launcher's Effort picker is the per-launch override,
-shaped like its Model picker (seeds from `launch_default.effort`, always
-sends a value — `default` is the opt-out — and is not remembered). There is
-no rail chip. One
-difference shapes everything downstream: **while the var is set, Claude
-refuses `/effort` for the whole session** ("Not applied:
-CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this session"). So:
+max). `usage.choose_launch` copies it onto `Launch.effort`, and the three
+spawn paths put it on the agent's own command line through
+`config.build_agent_command(..., effort=)` as `--effort <level>`. The
+launcher's Effort picker is the per-launch override, shaped like its Model
+picker (seeds from `launch_default.effort`, always sends a value, `default`
+is the opt-out, not remembered). Dashboard resume doesn't apply it.
 
-- **Pinning a level locks `/effort` in the panes it spawns.** The picker's
-  hover says so. `default` is how you keep `/effort` usable.
-- **Resurrect re-emits it on BOTH paths**, unlike the model. It can't drift
-  in-session, so the var was the pane's effort for its whole life. Dropping
-  it on `--resume` would quietly restore the pane at the default effort.
-  `session_status.pane_efforts` reads it back for resurrect.
-- **`config.effort_env` validates against the closed list**, not a character
-  set. The levels don't move the way model aliases do, and an unknown value
-  (a stale pin) fails open to the default.
+Why a flag, against this page's env-only rule: Claude's env var
+`CLAUDE_CODE_EFFORT_LEVEL` makes it **refuse `/effort` for the whole
+session** ("CLAUDE_CODE_EFFORT_LEVEL=… overrides this session — clear it and …
+takes over"). The pin shipped on that var first, and it left every
+periscope-launched pane unable to change effort, including through the
+per-pane control. `--effort` only seeds the session's starting level (it
+lands in Claude's initial app state, not in env), so `/effort` keeps working.
+What the flag costs, and how each is handled:
+
+- **Attribution reads argv, not env.** `session_status.pane_efforts` parses
+  `--effort` off the live claude's command line. It's the LAUNCH level, like
+  `pane_models`; `/effort` leaves argv alone.
+- **Resurrect treats it like the model.** On the session-lost path the
+  captured command is restored whole, flag included. On `--resume` the
+  command is rebuilt from scratch and the flag is dropped, because
+  re-emitting the launch level after a reboot would undo a later `/effort`.
+- **Only the agent window carries it.** It's on the agent's command line, so
+  the sibling shell of the two-window layout never sees it. Codex ignores it.
+- **`config.effort_level` validates against the closed list**, not a
+  character set. The levels don't move the way model aliases do. An unknown
+  value (a stale pin) fails open to the default, and the closed list is what
+  makes it safe to splice unquoted into `spawn_claude`'s command line.

@@ -466,7 +466,8 @@ def test_window_new_honours_the_effort_pin(client, mocker, fresh_activity_db):
 
     assert r.status_code == 200, r.text
     assert r.json()["effort"] == "xhigh"
-    assert "CLAUDE_CODE_EFFORT_LEVEL=xhigh" in list(_created(calls)[0])
+    assert r.json()["exec"].endswith("--effort xhigh")
+    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for a in _created(calls)[0])
 
 
 def test_window_new_explicit_effort_beats_the_pin(client, mocker, fresh_activity_db):
@@ -480,11 +481,12 @@ def test_window_new_explicit_effort_beats_the_pin(client, mocker, fresh_activity
     r = client.post("/api/window/new?session=/repo&mode=claude&effort=low")
     assert r.status_code == 200, r.text
     assert r.json()["effort"] == "low"
-    assert "CLAUDE_CODE_EFFORT_LEVEL=low" in list(_created(calls)[0])
+    assert r.json()["exec"].endswith("--effort low")
 
     r = client.post("/api/window/new?session=/repo&mode=claude&effort=default")
     assert r.status_code == 200, r.text
     assert r.json()["effort"] == "default"
+    assert "--effort" not in r.json()["exec"]
     assert "-e" not in list(_created(calls)[1])
 
 
@@ -498,7 +500,7 @@ def test_window_new_codex_gets_no_effort(client, mocker, fresh_activity_db):
 
     assert r.status_code == 200, r.text
     assert r.json()["effort"] == "default"
-    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for a in _created(calls)[0])
+    assert "--effort" not in r.json()["exec"]
 
 
 def test_window_new_rejects_unsafe_model_string_to_default(client, mocker, fresh_activity_db):

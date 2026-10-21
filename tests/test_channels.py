@@ -1595,7 +1595,9 @@ def test_spawn_claude_honours_the_effort_pin(mocker):
 
     asyncio.run(channels._do_spawn_claude_tool("%1", {"prompt": "go"}))
 
-    assert "CLAUDE_CODE_EFFORT_LEVEL=high" in [str(a) for a in _created_call(cap)]
+    sent = [c.args for c in channels.tmux.call_args_list if c.args[:1] == ("send-keys",)]
+    assert any(str(a).endswith("--effort high") for args in sent for a in args), sent
+    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for a in _created_call(cap))
 
 
 def test_spawn_claude_explicit_model_overrides_the_pin(mocker):

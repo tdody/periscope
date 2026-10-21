@@ -59,7 +59,7 @@ _pane_pids_cache: tuple[float, dict[str, int]] | None = None
 _CONFIG_DIR_RE = re.compile(r"\bCLAUDE_CONFIG_DIR=(\S+)")
 _PROFILE_RE = re.compile(rf"\b{config.PROFILE_ENV_VAR}=(\S+)")
 _MODEL_RE = re.compile(rf"\b{config.MODEL_ENV_VAR}=(\S+)")
-_EFFORT_RE = re.compile(rf"\b{config.EFFORT_ENV_VAR}=(\S+)")
+_EFFORT_ARG_RE = re.compile(r"(?:^|\s)--effort[= ](\S+)")
 # Config dirs are read from process env, which is immutable for a process's
 # lifetime — a short TTL would re-fork `ps eww` for an answer that cannot
 # change. 15s matches the cadence window_view already used.
@@ -428,14 +428,17 @@ def pane_models() -> dict[str, str]:
 
 
 def pane_efforts() -> dict[str, str]:
-    """tmux pane id -> the CLAUDE_CODE_EFFORT_LEVEL its live Claude runs at.
-    Panes without an override have no entry. Unlike pane_models this IS the
-    effort running now — Claude refuses /effort while the var is set. Consumed
-    by resurrect only.
+    """tmux pane id -> the `--effort` its live Claude was launched with. Panes
+    launched without one have no entry.
+
+    The LAUNCH level, like pane_models: /effort changes the running session and
+    leaves argv alone. window_view uses it as the per-pane effort control's
+    starting value until periscope sets one.
     """
+    _, cmds = proc_table()
     out = {}
-    for pane_id, tail in _pane_claude_envs().items():
-        m = _EFFORT_RE.search(tail)
+    for pane_id, pid in pane_claude_pids().items():
+        m = _EFFORT_ARG_RE.search(cmds.get(pid, ""))
         if m:
             out[pane_id] = m.group(1)
     return out
