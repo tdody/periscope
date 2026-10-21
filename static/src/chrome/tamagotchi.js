@@ -95,6 +95,12 @@ export function occasionAt(date) {
   return found || null;
 }
 
+// On the first day of a season the occasion drops out entirely (label, props,
+// headline), as in the bot's getTheme.
+export function occasionShown(date) {
+  return isFirstDayOfSeason(date) ? null : occasionAt(date);
+}
+
 // The hover line's extra: a season's first-day headline outranks an occasion,
 // as it does in the bot.
 export function headlineAt(date) {

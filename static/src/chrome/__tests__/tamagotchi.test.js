@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activityAt, activityLabel, BODY, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,
-  msUntilNextChange, occasionAt, SCHEDULE, seasonAt, seasonStart,
+  msUntilNextChange, occasionAt, occasionShown, SCHEDULE, seasonAt, seasonStart,
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0);
@@ -105,6 +105,9 @@ describe("headlines and labels", () => {
     const local = new Date(solstice.getFullYear(), solstice.getMonth(), solstice.getDate(), 12);
     expect(occasionAt(local)?.id).toBe("yearend");
     expect(headlineAt(local)).toMatch(/winter solstice/);
+    // The props go too (no Santa hat under a solstice headline), not just the line.
+    expect(occasionShown(local)).toBe(null);
+    expect(occasionShown(new Date(local.getTime() + 86400000))?.id).toBe("yearend");
   });
   it("turns a Halloween-week run into trick-or-treating", () => {
     const run = SCHEDULE.find((s) => s.id === "run");

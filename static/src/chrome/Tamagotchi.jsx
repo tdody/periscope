@@ -12,7 +12,7 @@
 import { useEffect, useState } from "preact/hooks";
 import {
   activityAt, activityLabel, BODY, EYES, gridCells, headlineAt, hourLabel, LEGS, msUntilNextChange,
-  occasionAt, seasonAt,
+  occasionShown, seasonAt,
 } from "./tamagotchi.js";
 
 const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
@@ -24,12 +24,15 @@ const EYE = "#2b1d16";
 // tuck its legs out of sight.
 const POSES = { code: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8, sitting: false };
+const BODY_CELLS = gridCells(BODY);
+const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
+const LEGS_Y0 = Y0 + 2 * BODY.length;
 
-function Cells({ rows, cls, x0 }) {
+function Cells({ cells, cls, x0, y0 = Y0 }) {
   return (
     <g class={cls}>
-      {gridCells(rows).map(({ x, y }) => (
-        <rect key={`${x},${y}`} x={x0 + x} y={Y0 + 2 * y} width="1.02" height="2.02" fill={SKIN} />
+      {cells.map(({ x, y }) => (
+        <rect key={`${x},${y}`} x={x0 + x} y={y0 + 2 * y} width="1.02" height="2.02" fill={SKIN} />
       ))}
     </g>
   );
@@ -215,8 +218,6 @@ function PartyHat({ x0 }) {
   );
 }
 
-// Clawd under a sheet: rounded top, a scalloped hem above the running legs,
-// eye holes; its arm stubs poke out to hold the candy pail.
 function GhostSheet({ x0 }) {
   const L = x0 + 2.2;
   const R = x0 + 15.8;
@@ -300,7 +301,6 @@ function Behind({ activity, season, occasion, ghost }) {
         </g>
       );
     case "code":
-      // Office chair under the mascot, a desk with a monitor in front of it.
       return (
         <g>
           <g class="tama-chair" fill="#4c525c">
@@ -324,7 +324,6 @@ function Behind({ activity, season, occasion, ghost }) {
         </g>
       );
     case "read":
-      // Armchair on the left, a fireplace on the right throwing a warm glow.
       return (
         <g>
           <ellipse class="tama-glow" cx="28" cy="19" rx="9" ry="2.4" fill="#f0a24a" opacity="0.18" />
@@ -384,7 +383,6 @@ function Behind({ activity, season, occasion, ghost }) {
 
 function InFront({ activity }) {
   if (activity !== "read") return null;
-  // The armchair's arm, then the open book held up toward the fire.
   return (
     <g>
       <rect class="tama-chair" x="17.4" y="13.6" width="3.6" height="4.7" rx="0.8" fill="#7a3030" />
@@ -407,7 +405,6 @@ function InFront({ activity }) {
 
 export function TamaScene({ activity, season = "summer", occasion = null, petted = false, petKey = 0 }) {
   const { x0, sitting } = POSES[activity] || STANDING;
-  const legRows = (frame) => [...BODY.map(() => ""), frame];
   const ghost = occasion === "halloween" && activity === "run";
   const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
   return (
@@ -416,12 +413,12 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {occasion === "newyear" && <Fireworks />}
       <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} />
-      {occasion === "halloween" && !ghost && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
+      {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
-        <Cells rows={BODY} cls="tama-body" x0={x0} />
+        <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
         {ghost ? <GhostSheet x0={x0} /> : <Eyes closed={activity === "sleep"} x0={x0} />}
-        {!sitting && <Cells rows={legRows(LEGS[0])} cls="tama-legs-a" x0={x0} />}
-        {activity === "run" && <Cells rows={legRows(LEGS[1])} cls="tama-legs-b" x0={x0} />}
+        {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
+        {activity === "run" && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && <Pail x0={x0} />}
         {activity === "run" && season === "winter" && !hat && !ghost && (
           <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
@@ -443,19 +440,30 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
   );
 }
 
+// Everything the scene and its hover line are drawn from.
+const sceneKey = (d) =>
+  `${activityAt(d).id}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
+
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
   const [pets, setPets] = useState(0);
   const [petted, setPetted] = useState(false);
 
-  // Wake when the current window ends, plus a minute tick as a backstop for a
-  // laptop that slept through the boundary.
+  // Wake when the current window ends.
   useEffect(() => {
-    const tick = () => setNow(new Date());
-    const t = setTimeout(tick, msUntilNextChange(now) + 50);
-    const i = setInterval(tick, 60_000);
-    return () => { clearTimeout(t); clearInterval(i); };
+    const t = setTimeout(() => setNow(new Date()), msUntilNextChange(now) + 50);
+    return () => clearTimeout(t);
   }, [now]);
+  // Minute backstop for a laptop that slept through the boundary. Keeps the
+  // old date while nothing drawn would change, so the ~250-node SVG isn't
+  // rebuilt every minute for the nine changes a day.
+  useEffect(() => {
+    const i = setInterval(() => {
+      const d = new Date();
+      setNow((prev) => (sceneKey(d) === sceneKey(prev) ? prev : d));
+    }, 60_000);
+    return () => clearInterval(i);
+  }, []);
 
   useEffect(() => {
     if (!petted) return;
@@ -464,7 +472,7 @@ export function Tamagotchi() {
   }, [petted, pets]);
 
   const a = activityAt(now);
-  const occasion = occasionAt(now);
+  const occasion = occasionShown(now);
   const headline = headlineAt(now);
   const label = `Claude is ${activityLabel(a, occasion)} (${hourLabel(a.from)}–${hourLabel(a.to)})${headline ? ` · ${headline}` : ""}`;
   return (
