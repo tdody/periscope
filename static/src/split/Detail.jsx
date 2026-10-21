@@ -49,13 +49,28 @@ function tabLabel(path) {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+// Which way the pane tab shows a Claude pane. It lives at the tab strip's
+// right end, beside the tab it switches, rather than at the end of the pane
+// header: that corner is where the header's Clawd hangs down (styles.css,
+// `.tama`).
+function ModeToggle({ mode, onMode }) {
+  return (
+    <span class="detail-mode-toggle">
+      <button class={mode === "transcript" ? "is-active" : ""}
+              onClick={() => onMode("transcript")}>Transcript</button>
+      <button class={mode === "terminal" ? "is-active" : ""}
+              onClick={() => onMode("terminal")}>Terminal</button>
+    </span>
+  );
+}
+
 // Browser-style tab strip at the top of an open pane. The first tab is
-// the pane itself (terminal or transcript, per the header toggle); each
-// subsequent tab is an open file preview. Clicking a tab switches the
-// body content; the × on a file tab closes it (falls back to the pane
-// tab if that tab was active). State is per-pid signal, so tabs persist
-// across rail-selection changes and only evaporate on reload.
-function TabStrip({ pid, paneLabel }) {
+// the pane itself (terminal or transcript, per the toggle at the strip's
+// right end); each subsequent tab is an open file preview. Clicking a tab
+// switches the body content; the × on a file tab closes it (falls back to
+// the pane tab if that tab was active). State is per-pid signal, so tabs
+// persist across rail-selection changes and only evaporate on reload.
+export function TabStrip({ pid, paneLabel, agent, mode, onMode }) {
   const tabs = paneTabs.value[pid] || [];
   const active = paneActiveTab.value[pid] || "pane";
   return (
@@ -105,6 +120,7 @@ function TabStrip({ pid, paneLabel }) {
           </button>
         );
       })}
+      {agent === "claude" && <ModeToggle mode={mode} onMode={onMode} />}
     </div>
   );
 }
@@ -158,7 +174,7 @@ async function handleDetailPaste(e) {
 // API error · ✨ auto-rename. PR/Linear anchors are real links; they sit
 // inside a non-clickable header so no stopPropagation is needed here (unlike
 // the rail rows).
-export function PaneHeader({ w, mode, onMode }) {
+export function PaneHeader({ w }) {
   const [renaming, setRenaming] = useState(false);
   // Delegation lineage — which pane spawned this one. Lives here (its own
   // line above the status summary), not on the rail card: it's orientation
@@ -288,14 +304,9 @@ export function PaneHeader({ w, mode, onMode }) {
     parts.push(<><span class="hsep">·</span><span class="header-api-error" title="last tool result was an API error">⚠ API error</span></>);
   }
   if (w.agent === "claude") {
-    parts.push(
-      <span class="detail-mode-toggle">
-        <button class={mode === "transcript" ? "is-active" : ""}
-                onClick={() => onMode("transcript")}>Transcript</button>
-        <button class={mode === "terminal" ? "is-active" : ""}
-                onClick={() => onMode("terminal")}>Terminal</button>
-      </span>
-    );
+    // Where the Transcript/Terminal toggle was (now in the tab strip): keeps
+    // its line exactly as tall, so moving it shifted nothing below.
+    parts.push(<span class="header-mode-slot" aria-hidden="true" />);
   }
   return (
     <header id="detail-pane-header" class="detail-pane-header">
@@ -462,8 +473,9 @@ function PaneDetail({ w }) {
 
   return (
     <div id="detail-pane" class="detail-pane">
-      <PaneHeader w={w} mode={mode} onMode={(next) => { track("view.switch", { view: next }); setDetailMode(w.pid, next); }} />
-      <TabStrip pid={w.pid} paneLabel={label} />
+      <PaneHeader w={w} />
+      <TabStrip pid={w.pid} paneLabel={label} agent={w.agent} mode={mode}
+                onMode={(next) => { track("view.switch", { view: next }); setDetailMode(w.pid, next); }} />
       <div class="detail-pane-body">
         <div class="detail-term-host" style={paneTabActive && mode === "terminal" ? "display:contents" : "display:none"}>
           <Terminal

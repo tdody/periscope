@@ -2433,6 +2433,10 @@ body.col-resizing iframe { pointer-events: none; }
 /* Narrator status in the detail header — untruncated, own wrapped line
    (flex-basis 100% forces the wrap in the flex-wrap header). */
 .detail-pane-header .header-status { flex-basis: 100%; color: var(--fg-3); }
+/* The toggle's height (11px × 1.6 line, 1px padding and 1px border a side) at
+   zero width; the negative margin cancels the flex gap, so it never wraps a
+   line the toggle-less items fit. */
+.detail-pane-header .header-mode-slot { width: 0; height: calc(11px * 1.6 + 4px); margin-left: -8px; align-self: center; }
 
 /* Auto-rename button inline at the left of the detail-pane-header, before
    the session name. Mirrors the modal-title-rename behavior (POST
@@ -2945,9 +2949,12 @@ body.col-resizing iframe { pointer-events: none; }
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
 }
 
-/* Transcript / Terminal toggle in the pane header */
+/* Transcript / Terminal toggle, at the tab strip's right end. Sticky so a row
+   of file tabs scrolling under it can't push it out of reach. */
 .detail-mode-toggle {
   margin-left: auto;
+  flex: none; position: sticky; right: 0;
+  background: var(--bg-1);
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
