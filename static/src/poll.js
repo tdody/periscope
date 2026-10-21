@@ -38,9 +38,6 @@ let consecutivePollFails = 0;
 function bannerEl() {
   return document.getElementById("connection-banner");
 }
-function lastUpdateEl() {
-  return document.getElementById("last-update");
-}
 
 function applyState(data) {
   // Alerts commit ahead of the rename/drag guard below: they share none of
@@ -75,8 +72,6 @@ function markOk() {
     if (b) b.hidden = true;
     document.body.classList.remove("disconnected");
   }
-  const lu = lastUpdateEl();
-  if (lu) lu.textContent = `updated ${new Date().toLocaleTimeString()}`;
 }
 
 function markFail(msg) {
@@ -86,8 +81,9 @@ function markFail(msg) {
     if (b) b.hidden = false;
     document.body.classList.add("disconnected");
   }
-  const lu = lastUpdateEl();
-  if (lu && msg) lu.textContent = msg;
+  // The top bar no longer carries a status line; the banner above covers a
+  // lost connection, and the detail stays reachable in the console.
+  if (msg) console.warn("[periscope]", msg);
 }
 
 // One-shot REST refresh. Kept for the forced-refresh path and used as the
