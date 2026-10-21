@@ -12,6 +12,5 @@ export const railHidden = computed(() => getPanelHidden("rail"));
 export const sideHidden = computed(() => getPanelHidden("side"));
 
 export function togglePanel(which) {
-  const hidden = which === "rail" ? railHidden.value : sideHidden.value;
-  return setPanelHidden(which, !hidden);
+  return setPanelHidden(which, !getPanelHidden(which));
 }
