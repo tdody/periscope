@@ -2415,8 +2415,9 @@ body.col-resizing iframe { pointer-events: none; }
 @keyframes rail-pulse-done { 50% { box-shadow: 0 0 0 4px var(--s-done-bg); } }
 
 .detail-pane-header, .detail-review-header {
+  --hdr-gap: 8px;
   padding: 5px 14px; border-bottom: 1px solid var(--line);
-  display: flex; gap: 8px; align-items: baseline; font-size: 12px;
+  display: flex; gap: var(--hdr-gap); align-items: baseline; font-size: 12px;
   flex-wrap: wrap;
 }
 .detail-pane-header .hsep, .detail-review-header .hsep { opacity: .5; }
@@ -2447,10 +2448,13 @@ body.col-resizing iframe { pointer-events: none; }
 /* Narrator status in the detail header — untruncated, own wrapped line
    (flex-basis 100% forces the wrap in the flex-wrap header). */
 .detail-pane-header .header-status { flex-basis: 100%; color: var(--fg-3); }
-/* The toggle's height (11px × 1.6 line, 1px padding and 1px border a side) at
-   zero width; the negative margin cancels the flex gap, so it never wraps a
-   line the toggle-less items fit. */
-.detail-pane-header .header-mode-slot { width: 0; height: calc(11px * 1.6 + 4px); margin-left: -8px; align-self: center; }
+/* A hidden copy of the toggle at zero width holds its line's height; the
+   negative margin cancels the flex gap, so it never wraps a line the
+   toggle-less items fit. */
+.detail-pane-header .header-mode-slot {
+  display: flex; width: 0; overflow: hidden; visibility: hidden;
+  margin-left: calc(-1 * var(--hdr-gap)); align-self: center;
+}
 
 /* Auto-rename button inline at the left of the detail-pane-header, before
    the session name. Mirrors the modal-title-rename behavior (POST
@@ -2963,18 +2967,19 @@ body.col-resizing iframe { pointer-events: none; }
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
 }
 
-/* Transcript / Terminal toggle, at the tab strip's right end. Sticky so a row
-   of file tabs scrolling under it can't push it out of reach. */
+/* Transcript / Terminal toggle, at the tab bar's right end. Outside the
+   scrolling tab list, so overflowing file tabs can't push it out of reach;
+   the top margin matches the list's padding so it centres on the tabs. */
 .detail-mode-toggle {
   margin-left: auto;
-  flex: none; position: sticky; right: 0;
-  background: var(--bg-1);
+  flex: none;
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   overflow: hidden;
   align-self: center;
 }
+.detail-tab-bar > .detail-mode-toggle { margin-top: 4px; }
 .detail-mode-toggle button {
   font-family: var(--sans); font-size: 11px; line-height: 1.6;
   padding: 1px 9px; cursor: pointer;
@@ -3510,13 +3515,21 @@ body.col-resizing iframe { pointer-events: none; }
 /* Browser-style tab strip above the pane meta-header. The first tab is
    the pane (terminal/transcript); each Cmd+click on a file path adds a
    tab. State persists per-pid across rail selection changes. */
+/* The tab bar: the pane's tabs, scrolling when they overflow, and the
+   Transcript/Terminal toggle beside them at the right end. */
+.detail-tab-bar {
+  display: flex;
+  align-items: stretch;
+  padding-right: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-1);
+}
 .detail-tab-strip {
   display: flex;
   align-items: stretch;
   gap: 2px;
   padding: 4px 6px 0 6px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--bg-1);
+  flex: 1; min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }

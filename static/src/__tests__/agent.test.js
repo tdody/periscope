@@ -3,7 +3,7 @@ import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { passesFilter } from "../filter.js";
 import { Inspector } from "../inspector/Inspector.jsx";
-import { computeMode, PaneHeader, TabStrip } from "../split/Detail.jsx";
+import { computeMode, ModeToggle, PaneHeader, TabStrip } from "../split/Detail.jsx";
 import { AGENT_META, paneLabel } from "../util.js";
 
 describe("agent presentation", () => {
@@ -37,16 +37,20 @@ describe("agent presentation", () => {
     const html = render(h(PaneHeader, { w }));
     expect(html).not.toContain("header-rename");
     expect(html).not.toContain("header-mem");
-    const strip = render(h(TabStrip, { pid: w.pid, paneLabel: "dev", agent: w.agent, mode: "terminal", onMode: () => {} }));
-    expect(strip).not.toContain("Transcript");
+    expect(html).not.toContain("header-mode-slot");
   });
 
-  it("puts a Claude pane's Transcript/Terminal toggle in the tab strip, not the header", () => {
+  it("keeps the tab list to tabs, the toggle beside it, and only a hidden placeholder in the header", () => {
     const w = { agent: "claude", pid: "claude-1", target: "dev:2", state: "idle" };
-    expect(render(h(PaneHeader, { w }))).not.toContain("detail-mode-toggle");
-    const strip = render(h(TabStrip, { pid: w.pid, paneLabel: "dev", agent: w.agent, mode: "terminal", onMode: () => {} }));
-    expect(strip).toContain("detail-mode-toggle");
-    expect(strip).toMatch(/class="is-active"[^>]*>Terminal</);
+    const strip = render(h(TabStrip, { pid: w.pid, paneLabel: "dev" }));
+    expect(strip).toContain('role="tablist"');
+    expect(strip).not.toContain("Transcript");
+    const toggle = render(h(ModeToggle, { mode: "terminal", onMode: () => {} }));
+    expect(toggle).toMatch(/class="is-active"[^>]*>Terminal</);
+    // The header keeps a zero-width, aria-hidden copy for its line height, unclickable.
+    const header = render(h(PaneHeader, { w }));
+    expect(header).toMatch(/class="header-mode-slot" aria-hidden="true"/);
+    expect(header).not.toContain("is-active");
   });
 
   it("does not show Claude channel-link prompts for Codex", () => {

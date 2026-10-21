@@ -49,11 +49,10 @@ function tabLabel(path) {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-// Which way the pane tab shows a Claude pane. It lives at the tab strip's
-// right end, beside the tab it switches, rather than at the end of the pane
-// header: that corner is where the header's Clawd hangs down (styles.css,
-// `.tama`).
-function ModeToggle({ mode, onMode }) {
+// Which way the pane tab shows a Claude pane. It lives at the tab bar's right
+// end, beside the tab list, rather than at the end of the pane header: that
+// corner is where the header's Clawd hangs down (styles.css, `.tama`).
+export function ModeToggle({ mode, onMode }) {
   return (
     <span class="detail-mode-toggle">
       <button class={mode === "transcript" ? "is-active" : ""}
@@ -65,12 +64,13 @@ function ModeToggle({ mode, onMode }) {
 }
 
 // Browser-style tab strip at the top of an open pane. The first tab is
-// the pane itself (terminal or transcript, per the toggle at the strip's
-// right end); each subsequent tab is an open file preview. Clicking a tab
-// switches the body content; the × on a file tab closes it (falls back to
-// the pane tab if that tab was active). State is per-pid signal, so tabs
-// persist across rail-selection changes and only evaporate on reload.
-export function TabStrip({ pid, paneLabel, agent, mode, onMode }) {
+// the pane itself (terminal or transcript, per the toggle beside the strip);
+// each subsequent tab is an open file preview. Clicking a tab switches the
+// body content; the × on a file tab closes it (falls back to the pane tab if
+// that tab was active). State is per-pid signal, so tabs persist across
+// rail-selection changes and only evaporate on reload. Tabs only: the
+// tablist role owns nothing else, so the toggle sits next to it in the bar.
+export function TabStrip({ pid, paneLabel }) {
   const tabs = paneTabs.value[pid] || [];
   const active = paneActiveTab.value[pid] || "pane";
   return (
@@ -120,7 +120,6 @@ export function TabStrip({ pid, paneLabel, agent, mode, onMode }) {
           </button>
         );
       })}
-      {agent === "claude" && <ModeToggle mode={mode} onMode={onMode} />}
     </div>
   );
 }
@@ -132,7 +131,7 @@ function lookupWindow(pid) {
 export function computeMode(w) {
   if (w?.agent !== "claude") return "terminal";
   // Default to terminal; per-pid explicit choice (the Transcript/Terminal toggle
-  // in the header) is persisted in UI prefs (detail_mode_by_pid) so it survives
+  // in the tab bar) is persisted in UI prefs (detail_mode_by_pid) so it survives
   // reloads. We deliberately do NOT auto-flip to transcript once data is seen —
   // that surprises users who were happily watching the terminal.
   return getDetailMode(w.pid) || "terminal";
@@ -304,9 +303,14 @@ export function PaneHeader({ w }) {
     parts.push(<><span class="hsep">·</span><span class="header-api-error" title="last tool result was an API error">⚠ API error</span></>);
   }
   if (w.agent === "claude") {
-    // Where the Transcript/Terminal toggle was (now in the tab strip): keeps
-    // its line exactly as tall, so moving it shifted nothing below.
-    parts.push(<span class="header-mode-slot" aria-hidden="true" />);
+    // Where the Transcript/Terminal toggle was (now in the tab bar): a hidden,
+    // zero-width copy of it keeps its line exactly as tall, so moving it
+    // shifted nothing below, and follows the toggle's styles if they change.
+    parts.push(
+      <span class="header-mode-slot" aria-hidden="true">
+        <span class="detail-mode-toggle"><button tabIndex={-1}>Transcript</button><button tabIndex={-1}>Terminal</button></span>
+      </span>
+    );
   }
   return (
     <header id="detail-pane-header" class="detail-pane-header">
@@ -412,18 +416,22 @@ function PaneDetail({ w }) {
     return () => setTerminalFileCallback(null);
   }, [w.target]);
 
-  // Publish the pane header's height as --detail-header-h so the (absolutely
-  // positioned, kept-mounted) transcript host can sit exactly below it. The
-  // header flex-wraps (PR/branch/model chips), so its height is dynamic — a
+  // Publish the pane header's and tab bar's height as --detail-header-h so the
+  // (absolutely positioned, kept-mounted) transcript host can sit exactly below
+  // both: the tab bar carries the Transcript/Terminal toggle, so covering it in
+  // transcript mode would leave no way back to the terminal. The header
+  // flex-wraps (PR/branch/model chips), so its height is dynamic — a
   // ResizeObserver keeps the offset correct instead of a magic constant.
   useEffect(() => {
     const el = document.getElementById("detail-pane-header");
+    const bar = document.getElementById("detail-tab-bar");
     const detail = document.getElementById("detail");
     if (!el || !detail) return;
-    const apply = () => detail.style.setProperty("--detail-header-h", `${el.offsetHeight}px`);
+    const apply = () => detail.style.setProperty("--detail-header-h", `${el.offsetHeight + (bar?.offsetHeight || 0)}px`);
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
+    if (bar) ro.observe(bar);
     return () => ro.disconnect();
   }, [w.target]);
 
@@ -474,8 +482,12 @@ function PaneDetail({ w }) {
   return (
     <div id="detail-pane" class="detail-pane">
       <PaneHeader w={w} />
-      <TabStrip pid={w.pid} paneLabel={label} agent={w.agent} mode={mode}
-                onMode={(next) => { track("view.switch", { view: next }); setDetailMode(w.pid, next); }} />
+      <div id="detail-tab-bar" class="detail-tab-bar">
+        <TabStrip pid={w.pid} paneLabel={label} />
+        {w.agent === "claude" && (
+          <ModeToggle mode={mode} onMode={(next) => { track("view.switch", { view: next }); setDetailMode(w.pid, next); }} />
+        )}
+      </div>
       <div class="detail-pane-body">
         <div class="detail-term-host" style={paneTabActive && mode === "terminal" ? "display:contents" : "display:none"}>
           <Terminal
