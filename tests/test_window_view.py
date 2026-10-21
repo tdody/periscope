@@ -690,3 +690,35 @@ def test_view_spawned_by_is_none_for_a_hand_created_pane(mocker, clean_state):
 
     view, _ = build_window_view(_window(pid=pid), now_ts=1000)
     assert "spawned_by" in view and view["spawned_by"] is None
+
+
+def test_view_reports_the_launch_effort_from_argv(mocker, clean_state, monkeypatch):
+    from periscope import session_status, window_view
+
+    _stub_subsystems(mocker)
+    monkeypatch.setattr(session_status, "pane_efforts", lambda: {"%5": "high"})
+    view, _ = window_view.build_window_view(_window(), now_ts=1000)
+    assert view["launch_effort"] == "high"
+    assert view["session_effort"] is None
+
+
+def test_view_shows_a_set_effort_only_while_the_same_claude_runs(
+    mocker, clean_state, monkeypatch,
+):
+    # The per-pane control's value is remembered because Claude never reports
+    # effort back. A new claude in the same pane starts fresh, so the label
+    # must not follow it.
+    from periscope import session_status, window_view
+    from periscope.store import set_window_fields
+
+    _stub_subsystems(mocker)
+    set_window_fields("abc12345",
+                      session_effort={"value": "low", "claude_pid": 4242},
+                      session_model={"value": "sonnet", "claude_pid": 4242})
+    monkeypatch.setattr(session_status, "pane_claude_pids", lambda: {"%5": 4242})
+    view, _ = window_view.build_window_view(_window(), now_ts=1000)
+    assert (view["session_effort"], view["session_model"]) == ("low", "sonnet")
+
+    monkeypatch.setattr(session_status, "pane_claude_pids", lambda: {"%5": 9999})
+    view, _ = window_view.build_window_view(_window(), now_ts=1000)
+    assert (view["session_effort"], view["session_model"]) == (None, None)

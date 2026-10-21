@@ -219,6 +219,7 @@ def _patch_live_pane(mocker, *, parsed=None, sess_state="idle"):
     mocker.patch.object(pane_route, "session_id_for_pane", return_value="sid-1")
     mocker.patch.object(pane_route, "session_state_for",
                         return_value={"state": sess_state} if sess_state else None)
+    mocker.patch.object(pane_route, "pane_claude_pids", return_value={"%7": 4242})
     return mocker.patch.object(pane_route, "_send_to_target",
                                return_value={"target": "periscope:4", "ok": True})
 
@@ -230,8 +231,10 @@ def test_session_setting_types_the_slash_command_into_an_idle_pane(client, mocke
     assert r.status_code == 200, r.text
     assert r.json()["sent"] == "/effort high"
     send.assert_called_once_with("periscope:4", "/effort high", ["Enter"])
-    # Remembered, because Claude reports effort nowhere periscope can read.
-    assert get_window("abc123")["session_effort"] == "high"
+    # Remembered, because Claude reports effort nowhere periscope can read —
+    # tied to the claude process it was typed into, so a fresh session in the
+    # same pane doesn't inherit the label.
+    assert get_window("abc123")["session_effort"] == {"value": "high", "claude_pid": 4242}
 
 
 def test_session_setting_sets_the_model(client, mocker, clean_state):
@@ -240,7 +243,7 @@ def test_session_setting_sets_the_model(client, mocker, clean_state):
     r = client.post("/api/pane/session-setting?pid=abc123&setting=model&value=opus%5B1m%5D")
     assert r.status_code == 200, r.text
     send.assert_called_once_with("periscope:4", "/model opus[1m]", ["Enter"])
-    assert get_window("abc123")["session_model"] == "opus[1m]"
+    assert get_window("abc123")["session_model"] == {"value": "opus[1m]", "claude_pid": 4242}
 
 
 def test_session_setting_maps_default_effort_to_auto(client, mocker, clean_state):

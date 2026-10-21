@@ -12,8 +12,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from periscope.activity import cached_pane_activity, stamp_pane_rename
 from periscope import config
+from periscope.activity import cached_pane_activity, stamp_pane_rename
 from periscope.channels import _resolve_window_by_pid, channel_state_for
 from periscope.git_pr import cached_git_state, cached_pr_state
 from periscope.lgtm import cached_lgtm_state
@@ -26,7 +26,7 @@ from periscope.panes import (
 )
 from periscope.pids import _attach_git_then_resolve_pids
 from periscope.routes.send import _send_to_target
-from periscope.session_status import session_state_for
+from periscope.session_status import pane_claude_pids, session_state_for
 from periscope.store import get_window, set_window_fields
 from periscope.tabs import activate_tab, close_tab, open_tab
 from periscope.tmux import capture, pane_meta, tmux, window_identity
@@ -263,5 +263,8 @@ def pane_session_setting(pid: str, setting: Literal["model", "effort"], value: s
         raise HTTPException(409, "the pane has unsent text in its input box")
     command = f"/{setting} {arg}"
     _send_to_target(target, command, ["Enter"])
-    set_window_fields(rpid or pid, **{f"session_{setting}": value.strip()})
+    # Tied to the claude process it was typed into: a fresh claude in the same
+    # pane starts at its own launch values, and window_view drops the label.
+    set_window_fields(rpid or pid, **{f"session_{setting}": {
+        "value": value.strip(), "claude_pid": pane_claude_pids().get(pane_id)}})
     return {"ok": True, "pid": rpid or pid, "sent": command}
