@@ -169,6 +169,10 @@ export function hourLabel(h) {
 // twice as tall as it is wide, so the scene draws each cell 1×2. The eyes
 // (the two quadrants ▛ and ▜ leave out of row 1) are drawn separately so they
 // can blink and close.
+export const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
+export const SKIN = "#d97757";
+export const EYE = "#2b1d16";
+
 export const BODY = [
   "...############..",
   "...############..",
