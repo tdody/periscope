@@ -142,9 +142,7 @@ export function Header() {
         <UpdatePill />
         <div class="meta">
           <Counts />
-          <span id="last-update"></span>
         </div>
-        <Tamagotchi />
       </div>
       <nav class="filters" id="filters">
         <a
@@ -200,6 +198,9 @@ export function Header() {
         <span class="filters-spacer"></span>
         <PanelToggles />
       </nav>
+      {/* Spans both header rows in the top-right corner (styles.css), so the
+          4x scene adds no height to either. */}
+      <Tamagotchi />
     </header>
   );
 }

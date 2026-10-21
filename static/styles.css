@@ -93,7 +93,14 @@ html, body {
   background: var(--bg-0);
   border-bottom: 1px solid var(--line-soft);
   backdrop-filter: blur(8px);
+  /* Two rows (top bar, filters) on the left; the tamagotchi takes a column on
+     the right spanning both. Explicit columns, or the filters row would
+     auto-place beside the top bar. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
+.periscope-header > .topbar,
+.periscope-header > .filters { grid-column: 1; }
 
 .topbar {
   display: flex;
@@ -338,20 +345,18 @@ html, body {
 }
 .meta b { color: var(--fg-1); font-weight: 500; }
 
-/* Claude tamagotchi (chrome/Tamagotchi.jsx): the easter egg in the top-right
-   corner. A 34×24 pixel scene at 2× — small enough to sit beside the counts
-   without growing the top bar. CSS transforms on SVG groups move in scene
-   units, hence the sub-pixel distances. */
-/* content-box so the border sits outside the 68×48 scene: inside a border-box
-   it left 66×46, a 1.92× scale that snapped the crisp pixel edges unevenly.
-   The negative block margins keep the widget from setting the top bar's
-   height: its layout box is 32px, below the shortest the bar gets (one
-   subscription hides the account pin row), and the rest overhangs into the
-   bar's 12px / 10px padding. */
+/* Claude tamagotchi (chrome/Tamagotchi.jsx): the easter egg in the header's
+   top-right corner, a 34×24 pixel scene at 4×. CSS transforms on SVG groups
+   move in scene units, hence the sub-pixel distances. */
+/* content-box so the border sits outside the scene, at an exact 4x (136×96):
+   inside a border-box the border eats the scale and the crisp pixel edges
+   snap unevenly. It spans the header's two rows in its own right-hand column
+   (.periscope-header), so it stays clear of both rows' content and is about
+   as tall as the two of them together. */
 .tama {
-  box-sizing: content-box; flex: 0 0 auto; width: 68px; height: 48px; padding: 0;
-  margin-block: -9px; align-self: center;
-  border: 1px solid var(--line); border-radius: 10px;
+  box-sizing: content-box; width: 136px; height: 96px; padding: 0;
+  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px 20px 4px 0;
+  border: 1px solid var(--line); border-radius: 16px;
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }
 .tama:hover { border-color: var(--fg-3); }
