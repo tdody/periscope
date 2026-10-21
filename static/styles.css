@@ -450,8 +450,8 @@ html, body {
 .tama .tama-clack rect + rect { animation-delay: -0.12s; }
 .tama [data-mood="furious"] .tama-clack rect { animation-duration: 0.12s; }
 @keyframes tama-clack { 50% { opacity: 0; } }
-.tama .tama-flush { animation: tama-glow 0.9s ease-in-out infinite alternate; }
-@keyframes tama-glow { from { opacity: 0.35; } to { opacity: 0.6; } }
+.tama .tama-flush { animation: tama-flush 0.9s ease-in-out infinite alternate; }
+@keyframes tama-flush { from { opacity: 0.35; } to { opacity: 0.6; } }
 .tama .tama-errors { animation: tama-errors 0.5s steps(2) infinite; }
 @keyframes tama-errors { 50% { opacity: 0.55; } }
 .tama .tama-flying-key { transform-origin: center; animation: tama-fly-l 0.8s ease-out infinite; }

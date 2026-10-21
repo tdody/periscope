@@ -1,6 +1,7 @@
 // Render-path tests for the tamagotchi scene: the decisions the drawing
 // encodes (which pose shows what), not the inventory of props.
 
+import { readFileSync } from "node:fs";
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { SCHEDULE } from "../tamagotchi.js";
@@ -128,5 +129,15 @@ describe("coding moods", () => {
       expect(html, id).not.toContain("data-mood");
       expect(html, id).not.toContain("tama-brows");
     }
+  });
+});
+
+// @keyframes are global: a second definition silently restyles every user of
+// the first (the moods' flush once took over the fireplace's glow).
+describe("styles.css", () => {
+  it("defines each keyframes name once", () => {
+    const css = readFileSync(new URL("../../../styles.css", import.meta.url), "utf8");
+    const names = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
+    expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
   });
 });
