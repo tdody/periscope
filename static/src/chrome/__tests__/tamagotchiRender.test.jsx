@@ -5,9 +5,9 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accounts, usage } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { SCHEDULE } from "../tamagotchi.js";
+import { MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
-const ids = [...new Set(SCHEDULE.map((s) => s.id))];
+const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
 describe("<TamaScene>", () => {
   it.each(ids)("draws the mascot for %s", (id) => {

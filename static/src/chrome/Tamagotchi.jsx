@@ -649,10 +649,14 @@ export function TamaScene({
 }
 
 // Everything the scene and its hover line are drawn from.
-// Keyed on the window start, not the activity id: two adjacent windows can share
-// an id and differ in a prop (9–10am codes with the coffee mug).
-const sceneKey = (d) =>
-  `${activityAt(d).from}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
+// Keyed on the window start as well as the activity: two adjacent windows can
+// share an id and differ in a prop (9–10am codes with the coffee mug), and a
+// laptop asleep from one lunch to the next wakes on the same window with
+// another dish.
+const sceneKey = (d) => {
+  const a = activityAt(d);
+  return `${a.from}|${a.id}|${a.dish || ""}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
+};
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());

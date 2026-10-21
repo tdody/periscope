@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityAt, activityLabel, BODY, codingMood, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,moodReason, 
-  msUntilNextChange, occasionAt, occasionShown, SCHEDULE, seasonAt, seasonStart,
+  activityAt, activityLabel, BODY, codingMood, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS, MEALS,
+  moodReason, msUntilNextChange, occasionAt, occasionShown, PASTIMES, SCHEDULE, seasonAt, seasonStart,
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0);
@@ -14,12 +14,12 @@ describe("activityAt", () => {
       [9, 0, "code"], [9, 59, "code"], [10, 0, "code"], [11, 59, "code"],
       [12, 0, "eat"], [12, 59, "eat"],
       [13, 0, "code"], [16, 59, "code"],
-      [17, 0, "run"], [17, 59, "run"],
       [18, 0, "eat"], [18, 59, "eat"],
       [19, 0, "read"], [20, 59, "read"],
       [21, 0, "sleep"], [23, 59, "sleep"],
     ];
     for (const [h, m, id] of cases) expect(activityAt(at(h, m)).id, `${h}:${m}`).toBe(id);
+    for (const m of [0, 29, 30, 59]) expect(PASTIMES.map((p) => p.id), `17:${m}`).toContain(activityAt(at(17, m)).id);
   });
 
   it("covers all 24 hours with no gap or overlap", () => {
@@ -45,7 +45,12 @@ describe("the first coding hour", () => {
 describe("msUntilNextChange", () => {
   it("counts down to the end of the current window", () => {
     expect(msUntilNextChange(at(8, 30))).toBe(30 * 60 * 1000);
-    expect(msUntilNextChange(at(17, 0))).toBe(60 * 60 * 1000);
+    expect(msUntilNextChange(at(13, 0))).toBe(4 * 60 * 60 * 1000);
+  });
+  it("changes the evening pastime on the half hour", () => {
+    expect(msUntilNextChange(at(17, 0))).toBe(30 * 60 * 1000);
+    expect(msUntilNextChange(at(17, 10))).toBe(20 * 60 * 1000);
+    expect(msUntilNextChange(at(17, 40))).toBe(20 * 60 * 1000);
   });
   it("rolls past midnight for the late sleep window", () => {
     expect(msUntilNextChange(at(23, 0))).toBe(60 * 60 * 1000);
@@ -55,6 +60,56 @@ describe("msUntilNextChange", () => {
 describe("hourLabel", () => {
   it("reads like a clock", () => {
     expect([0, 7, 12, 13, 21, 24].map(hourLabel)).toEqual(["midnight", "7am", "noon", "1pm", "9pm", "midnight"]);
+  });
+  it("reads a half hour too", () => {
+    expect([0.5, 12.5, 17.5].map(hourLabel)).toEqual(["12:30am", "12:30pm", "5:30pm"]);
+  });
+});
+
+// Sixty days from a fixed start: enough for every pick to come up, and fixed
+// so a failure reproduces.
+const days = (h, m) => Array.from({ length: 60 }, (_, n) => new Date(2026, 0, 1 + n, h, m));
+
+describe("the evening pastime", () => {
+  it("holds one pastime through each half hour, and changes at the half", () => {
+    const first = activityAt(at(17, 0));
+    expect(activityAt(at(17, 29))).toEqual(first);
+    expect([first.from, first.to]).toEqual([17, 17.5]);
+    const second = activityAt(at(17, 30));
+    expect(activityAt(at(17, 59))).toEqual(second);
+    expect([second.from, second.to]).toEqual([17.5, 18]);
+    expect(first.label).toBe(PASTIMES.find((p) => p.id === first.id).label);
+  });
+
+  it("never does the same thing twice in one evening, and gives every pastime a turn", () => {
+    const seen = new Set();
+    days(17, 0).forEach((d, n) => {
+      const [a, b] = [activityAt(d).id, activityAt(new Date(d.getTime() + 30 * 60_000)).id];
+      expect(a, `day ${n}`).not.toBe(b);
+      seen.add(a).add(b);
+    });
+    expect([...seen].sort()).toEqual(PASTIMES.map((p) => p.id).sort());
+  });
+});
+
+describe("meals", () => {
+  it("serves one dish for the whole meal, and names it", () => {
+    const lunch = activityAt(at(12, 0));
+    expect(activityAt(at(12, 59))).toEqual(lunch);
+    expect([lunch.id, lunch.from, lunch.to]).toEqual(["eat", 12, 13]);
+    expect(lunch.label).toBe(`having ${MEALS.find((m) => m.id === lunch.dish).label} for lunch`);
+    expect(activityAt(at(18, 30)).label).toMatch(/^having .+ for dinner$/);
+  });
+
+  it("never serves dinner what was for lunch, and puts every dish on the menu", () => {
+    const seen = new Set();
+    days(12, 0).forEach((d, n) => {
+      const lunch = activityAt(d).dish;
+      const dinner = activityAt(new Date(d.getTime() + 6 * 3600_000)).dish;
+      expect(lunch, `day ${n}`).not.toBe(dinner);
+      seen.add(lunch).add(dinner);
+    });
+    expect([...seen].sort()).toEqual(MEALS.map((m) => m.id).sort());
   });
 });
 
@@ -123,7 +178,7 @@ describe("headlines and labels", () => {
     expect(occasionShown(new Date(local.getTime() + 86400000))?.id).toBe("yearend");
   });
   it("turns a Halloween-week run into trick-or-treating", () => {
-    const run = SCHEDULE.find((s) => s.id === "run");
+    const run = PASTIMES.find((p) => p.id === "run");
     expect(activityLabel(run, { id: "halloween" })).toBe("trick-or-treating");
     expect(activityLabel(run, null)).toBe(run.label);
   });
@@ -186,7 +241,7 @@ describe("codingMood", () => {
 describe("mood labels", () => {
   const code = SCHEDULE.find((s) => s.id === "code" && !s.coffee);
   const coffee = SCHEDULE.find((s) => s.coffee);
-  const run = SCHEDULE.find((s) => s.id === "run");
+  const run = PASTIMES.find((p) => p.id === "run");
 
   it("says how Claude is coding", () => {
     expect(activityLabel(code, null, "furious")).toBe("coding furiously");

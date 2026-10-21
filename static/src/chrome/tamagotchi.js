@@ -4,31 +4,89 @@
 import { isStale, meterLabel, projectsPastLimit } from "./usageRules.js";
 
 // What Claude is up to, by local hour. Each window runs [from, to); every
-// boundary is on the hour, so the hour alone decides. `coffee` keeps the
-// morning's mug on the desk through the first coding hour.
+// boundary is on the hour, so the hour alone finds the window. `coffee` keeps
+// the morning's mug on the desk through the first coding hour. A `meal` window
+// serves one of MEALS; the `pastime` window splits into half hours, each one
+// of PASTIMES (activityAt resolves both).
 export const SCHEDULE = [
   { from: 0, to: 7, id: "sleep", label: "sleeping" },
   { from: 7, to: 9, id: "coffee", label: "having coffee" },
   { from: 9, to: 10, id: "code", label: "coding with a coffee", coffee: true },
   { from: 10, to: 12, id: "code", label: "coding" },
-  { from: 12, to: 13, id: "eat", label: "having lunch" },
+  { from: 12, to: 13, id: "eat", meal: "lunch" },
   { from: 13, to: 17, id: "code", label: "coding" },
-  { from: 17, to: 18, id: "run", label: "out for a run" },
-  { from: 18, to: 19, id: "eat", label: "having dinner" },
+  { from: 17, to: 18, pastime: true },
+  { from: 18, to: 19, id: "eat", meal: "dinner" },
   { from: 19, to: 21, id: "read", label: "reading" },
   { from: 21, to: 24, id: "sleep", label: "sleeping" },
 ];
 
+// The evening's free hour, one per half hour. `run` keeps its id so the
+// Halloween trick-or-treat round (activityLabel) still finds it.
+export const PASTIMES = [
+  { id: "run", label: "out for a run" },
+  { id: "cycle", label: "out cycling" },
+  { id: "music", label: "practicing music" },
+  { id: "beer", label: "having a beer with friends" },
+  { id: "kids", label: "spending time with the kids" },
+];
+
+// Labels read "having <label> for lunch".
+export const MEALS = [
+  { id: "ramen", label: "ramen" },
+  { id: "pizza", label: "pizza" },
+  { id: "burger", label: "a burger" },
+  { id: "sushi", label: "sushi" },
+  { id: "tacos", label: "tacos" },
+  { id: "pasta", label: "pasta" },
+  { id: "salad", label: "a salad" },
+];
+const MEAL_WINDOWS = SCHEDULE.filter((s) => s.meal);
+const HALF = 0.5;
+
+// The day's dice: the same date and salt always roll the same, so a reload, a
+// second tab, the hover and the minute backstop all agree on what Clawd is up
+// to. FNV-1a, then murmur3's finaliser so the low bits are worth a modulo.
+function roll(date, salt) {
+  let h = 2166136261;
+  for (const c of `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}|${salt}`) {
+    h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  }
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+// The day's i-th pick from `list`, never the same as the pick before it: two
+// runs in one evening, or ramen twice in a day, would read as the same scene stuck.
+function pickAt(list, date, salt, i) {
+  let idx = roll(date, `${salt}0`) % list.length;
+  for (let k = 1; k <= i; k++) idx = (idx + 1 + (roll(date, `${salt}${k}`) % (list.length - 1))) % list.length;
+  return list[idx];
+}
+
 export function activityAt(date) {
   const h = date.getHours();
-  return SCHEDULE.find((s) => h >= s.from && h < s.to);
+  const slot = SCHEDULE.find((s) => h >= s.from && h < s.to);
+  if (slot.meal) {
+    const dish = pickAt(MEALS, date, "meal", MEAL_WINDOWS.indexOf(slot));
+    return { ...slot, label: `having ${dish.label} for ${slot.meal}`, dish: dish.id };
+  }
+  if (slot.pastime) {
+    const i = Math.floor((h + date.getMinutes() / 60 - slot.from) / HALF);
+    const from = slot.from + i * HALF;
+    return { ...slot, ...pickAt(PASTIMES, date, "pastime", i), from, to: from + HALF };
+  }
+  return slot;
 }
 
 // Milliseconds until the current window ends, so the sprite changes on the
-// hour rather than up to a minute late. setHours(24) rolls to next midnight.
+// hour (or the pastime's half hour) rather than up to a minute late.
+// setHours(24) rolls to next midnight.
 export function msUntilNextChange(date) {
+  const { to } = activityAt(date);
   const end = new Date(date);
-  end.setHours(activityAt(date).to, 0, 0, 0);
+  end.setHours(Math.floor(to), (to % 1) * 60, 0, 0);
   return end - date;
 }
 
@@ -158,10 +216,12 @@ export function moodReason({ mood, meter, atLimit }, accountName) {
   return `${meterLabel(meter)} usage${on} ${why}`;
 }
 
+// A window edge, in hours: 17 → "5pm", 17.5 → "5:30pm".
 export function hourLabel(h) {
   if (h === 0 || h === 24) return "midnight";
   if (h === 12) return "noon";
-  return `${h % 12}${h < 12 ? "am" : "pm"}`;
+  const m = Math.round((h % 1) * 60);
+  return `${Math.floor(h) % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
 }
 
 // Clawd, the Claude Code banner mascot, transcribed from its quadrant-block
