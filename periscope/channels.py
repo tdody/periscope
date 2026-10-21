@@ -149,8 +149,7 @@ def _unknown_account_error(arguments: dict) -> list | None:
     ids = [a["id"] for a in store.get_accounts() if a.get("id")]
     if account is None or account in ids:
         return None
-    return _tool_result({"ok": False,
-                         "error": f"unknown account {account!r}; registered: {', '.join(ids)}"})
+    return _tool_result({"ok": False, "error": f"unknown account {account!r}; registered: {', '.join(ids)}"})
 
 
 def _channel_gc(known_pane_ids: set[str]) -> None:
@@ -162,8 +161,7 @@ def _channel_gc(known_pane_ids: set[str]) -> None:
                 d.pop(stale, None)
 
 
-def _record_alert(pane: str, message: str, kind: str = "info",
-                  severity: str = "info") -> dict:
+def _record_alert(pane: str, message: str, kind: str = "info", severity: str = "info") -> dict:
     """Append an alert to `pane`'s feed: write-through cache, durable mirror,
     and a hub kick so it lands on the dashboard now. Returns the entry.
 
@@ -187,8 +185,8 @@ def _record_alert(pane: str, message: str, kind: str = "info",
     # (done/need_human/info) rides in `detail`.
     try:
         from periscope import activity
-        activity.record("pane", pane, "alert", message,
-                        detail=kind, at=entry["ts"])
+
+        activity.record("pane", pane, "alert", message, detail=kind, at=entry["ts"])
     except Exception:
         log.warning("activity.record failed for notify()", exc_info=True)
 
@@ -196,6 +194,7 @@ def _record_alert(pane: str, message: str, kind: str = "info",
     # the dashboard (and fires its native notification) now rather than on the
     # next steady tick. That immediacy is the whole point of an alert.
     from periscope import state_hub
+
     state_hub.kick()
     return entry
 
@@ -218,6 +217,7 @@ def rehydrate_alerts_from_events(max_age_s: int = 86400) -> int:
     aren't persisted — id is regenerated, severity defaults to info; the feed
     and the need_human badge only key on message/kind/ts. Returns the count."""
     from periscope import activity
+
     try:
         rows = activity.alert_events_since(int(time.time()) - max_age_s)
     except Exception:
@@ -232,10 +232,15 @@ def rehydrate_alerts_from_events(max_age_s: int = 86400) -> int:
         for pane_id, at, message, kind in rows:
             if pane_id in preexisting:
                 continue
-            _CHANNEL_ALERTS.setdefault(pane_id, []).append({
-                "id": uuid.uuid4().hex, "message": message,
-                "kind": kind, "severity": "info", "ts": at,
-            })
+            _CHANNEL_ALERTS.setdefault(pane_id, []).append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "message": message,
+                    "kind": kind,
+                    "severity": "info",
+                    "ts": at,
+                }
+            )
             _CHANNEL_UNREAD[pane_id] = _CHANNEL_UNREAD.get(pane_id, 0) + 1
             n += 1
     return n
@@ -398,6 +403,7 @@ def _do_set_name_tool(pane: str, arguments: dict):
     # needed. Stamp the narrator's own memory too: without it the next tick
     # reads the new name as an EXTERNAL rename and burns a cooldown branch.
     from periscope import activity
+
     tmux("rename-window", "-t", pane, name)
     set_window_fields(pid, name_pinned=True)
     activity.stamp_pane_rename(pane, name=name, at=int(time.time()))
@@ -426,9 +432,7 @@ def _do_open_document_tool(pane: str, arguments: dict):
             return _tool_result(body)
 
     if not os.path.isabs(path):
-        cwd = tmux(
-            "display-message", "-t", pane, "-p", "#{pane_current_path}"
-        ).strip()
+        cwd = tmux("display-message", "-t", pane, "-p", "#{pane_current_path}").strip()
         path = os.path.join(cwd or os.path.expanduser("~"), path)
     path = os.path.normpath(path)
 
@@ -548,7 +552,11 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         caller_session, caller_cwd = "", ""
     else:
         info = tmux(
-            "display-message", "-t", pane, "-p", "#{session_name}|#{pane_current_path}",
+            "display-message",
+            "-t",
+            pane,
+            "-p",
+            "#{session_name}|#{pane_current_path}",
         ).strip()
         caller_session, _, caller_cwd = info.partition("|")
 
@@ -567,6 +575,7 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         if not repo:
             return _tool_result({"ok": False, "error": "branch requires repo (the repo to branch from)"})
         from periscope import worktree_spawn
+
         try:
             wt = worktree_spawn.spawn_worktree(repo, branch)
         except Exception as e:
@@ -584,6 +593,7 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     # foreign-name clash, and returns None when cwd isn't in a git repo (no
     # worktree to anchor → fall back to the caller's session).
     from periscope import activity, open_ops
+
     workspace = str(arguments.get("workspace") or "same").strip().lower()
     if commander_caller:
         # The commander is ALWAYS cwd-anchored: it has no pane (cmdr:<id> is not
@@ -592,9 +602,10 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         # (nonexistent) caller session.
         anchored = open_ops.resolve_worktree_session(cwd)
         if anchored is None:
-            body = {"ok": False,
-                    "error": "cwd is not in a git repo — the commander's spawns "
-                             "must target a repo/worktree dir"}
+            body = {
+                "ok": False,
+                "error": "cwd is not in a git repo — the commander's spawns must target a repo/worktree dir",
+            }
             return _tool_result(body)
         session, project = anchored
     else:
@@ -619,9 +630,16 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     code, _ = _run(["tmux", "has-session", "-t", session])
     if code != 0:
         ok, msg = _tmux_mutate(
-            "new-session", "-d", "-s", session, "-c", cwd,
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            cwd,
             *tmux_mod.env_args(config_dir, None, model_env),
-            "-P", "-F", "#{window_index}",
+            "-P",
+            "-F",
+            "#{window_index}",
             *(["-n", name] if name else []),
         )
         # `new-session -e` sets the SESSION env, so without this every later
@@ -632,9 +650,15 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
             tmux_mod.scrub_session_env(session)
     else:
         ok, msg = _tmux_mutate(
-            "new-window", "-t", f"{session}:", "-c", cwd,
+            "new-window",
+            "-t",
+            f"{session}:",
+            "-c",
+            cwd,
             *tmux_mod.env_args(config_dir, None, model_env),
-            "-P", "-F", "#{window_index}",
+            "-P",
+            "-F",
+            "#{window_index}",
             *(["-n", name] if name else []),
         )
     if not ok:
@@ -732,8 +756,7 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     # records the ordering — same server-side placement the unified-open
     # route does. pid_raw is the just-stamped @periscope_id.
     if anchored:
-        pane_pids = [w["pid_raw"] for w in list_windows()
-                     if w["session"] == session and w.get("pid_raw")]
+        pane_pids = [w["pid_raw"] for w in list_windows() if w["session"] == session and w.get("pid_raw")]
         open_ops.place_in_rail(session, project, pane_pids or [pid])
 
     # Tag the spawned pane into a track (the grouping authority). Precedence:
@@ -759,10 +782,10 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         # (repo-default, or LOOSE for a non-git cwd), logged so a mis-bucketed
         # spawn is diagnosable.
         if not parent_pid:
-            log.info("spawn tag: caller pid unresolved (pane %s, cwd %s), "
-                     "%s falls to cwd default", pane, caller_cwd, pid)
-        tracks.move_pane(pid, tracks.resolve_track_for_window(
-            {"pid": parent_pid, "cwd": caller_cwd}))
+            log.info(
+                "spawn tag: caller pid unresolved (pane %s, cwd %s), %s falls to cwd default", pane, caller_cwd, pid
+            )
+        tracks.move_pane(pid, tracks.resolve_track_for_window({"pid": parent_pid, "cwd": caller_cwd}))
 
     # The FINAL track the spawn landed in, after the precedence above played
     # out — resolved (tagged pid short-circuits; untagged falls to the spawn
@@ -777,8 +800,7 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         "pid": pid,
         "pane_id": pane_id,
         "workspace_id": tagged_workspace,
-        "track": {"id": final_tid, "label": tracks.track_label(final_tid),
-                  "kind": tracks.track_kind(final_tid)},
+        "track": {"id": final_tid, "label": tracks.track_label(final_tid), "kind": tracks.track_kind(final_tid)},
     }
     return _tool_result(body)
 
@@ -790,7 +812,7 @@ def _do_create_workspace_tool(pane: str, arguments: dict):
     name = str(arguments.get("name", "")).strip()
     if not name:
         return _tool_result({"ok": False, "error": "name is required"})
-    base_repo = (arguments.get("base_repo") or None)
+    base_repo = arguments.get("base_repo") or None
     tk = tracks.create_track(name=name, repo=base_repo)
     return _tool_result({"ok": True, "workspace_id": tk["id"], "name": tk["name"]})
 
@@ -799,6 +821,7 @@ def _open_descriptor(arguments: dict):
     """dict -> open_ops.Descriptor. Mirrors routes/open.py:_to_descriptor but
     over a tool-args dict and raising ValueError (the tool maps it to an error)."""
     from periscope import open_ops
+
     path = arguments.get("path")
     repo = arguments.get("repo")
     branch = arguments.get("branch")
@@ -815,6 +838,7 @@ def _open_descriptor(arguments: dict):
 def _do_open_tool(pane: str, arguments: dict):
     """Open a path / branch / PR into the rail (creates a worktree for repo+branch)."""
     from periscope import open_ops
+
     # Broad except on purpose: _open_descriptor raises ValueError for bad args,
     # but open_target's branch/PR paths (spawn_worktree / fetch_pr_into_worktree)
     # raise arbitrary git/subprocess errors — all become a clean tool error frame.
@@ -823,14 +847,20 @@ def _do_open_tool(pane: str, arguments: dict):
         result = open_ops.open_target(descriptor)
     except Exception as e:
         return _tool_result({"ok": False, "error": str(e)})
-    return _tool_result({"ok": True, "tmux_session": result.tmux_session,
-                         "repo": result.repo, "pane_id":
-                         getattr(result, "agent_pane_id", result.claude_pane_id)})
+    return _tool_result(
+        {
+            "ok": True,
+            "tmux_session": result.tmux_session,
+            "repo": result.repo,
+            "pane_id": getattr(result, "agent_pane_id", result.claude_pane_id),
+        }
+    )
 
 
 def _do_catalog_tool(pane: str, arguments: dict):
     """List discoverable repos + their worktrees (dormant + live)."""
     from periscope import open_ops
+
     return _tool_result({"ok": True, **open_ops.build_catalog()})
 
 
@@ -846,23 +876,27 @@ def _do_search_history_tool(pane: str, arguments: dict):
     # Lazy import, same as routes/history.py — keeps channel startup
     # independent of the history package's sqlite deps.
     import history
+
     rows = history.search(
         query,
         project=arguments.get("project") or None,
         since=arguments.get("since"),
         limit=int(arguments.get("limit", 10)),
     )
-    results = [{
-        "session_id": r["session_id"],
-        "project_path": r["project_path"],
-        "branch": r["branch"],
-        "started_at": r["started_at"],
-        "duration_s": r["duration_s"],
-        "summary": r["summary"],
-        "tags": r["tags"],
-        "files_touched": r["files_touched"][:10],
-        "first_user_msg": r["first_user_msg"],
-    } for r in rows]
+    results = [
+        {
+            "session_id": r["session_id"],
+            "project_path": r["project_path"],
+            "branch": r["branch"],
+            "started_at": r["started_at"],
+            "duration_s": r["duration_s"],
+            "summary": r["summary"],
+            "tags": r["tags"],
+            "files_touched": r["files_touched"][:10],
+            "first_user_msg": r["first_user_msg"],
+        }
+        for r in rows
+    ]
     return _tool_result({"ok": True, "results": results})
 
 
@@ -877,6 +911,7 @@ def _do_get_history_session_tool(pane: str, arguments: dict):
         return _tool_result({"ok": False, "error": "session_id is required"})
 
     from history.search import compact_messages, get_session
+
     data = get_session(session_id)
     if data is None:
         return _tool_result({"ok": False, "error": "unknown session_id"})
@@ -886,20 +921,18 @@ def _do_get_history_session_tool(pane: str, arguments: dict):
     offset = int(arguments.get("offset", -30))
     limit = max(1, int(arguments.get("limit", 30)))
     start = offset if offset >= 0 else max(0, total + offset)
-    meta = {k: v for k, v in data.items()
-            if k not in ("messages", "jsonl_path")}
+    meta = {k: v for k, v in data.items() if k not in ("messages", "jsonl_path")}
     # notable_cmds entries are full multi-line scripts — live testing showed
     # them dominating the payload (~25 scripts dwarfed the 30-message slice).
     meta["notable_cmds"] = [
-        c if len(c) <= 150 else c[:150] + "…[truncated]"
-        for c in (meta.get("notable_cmds") or [])[:10]
+        c if len(c) <= 150 else c[:150] + "…[truncated]" for c in (meta.get("notable_cmds") or [])[:10]
     ]
     body = {
         "ok": True,
         **meta,
         "total_messages": total,
         "offset": start,
-        "messages": msgs[start:start + limit],
+        "messages": msgs[start : start + limit],
     }
     return _tool_result(body)
 
@@ -924,10 +957,13 @@ def _do_resume_session_tool(pane: str, arguments: dict):
 
     from periscope.config import CLAUDE_EXEC
     from periscope.routes.sessions import _window_new_resume
+
     try:
         result = _window_new_resume(
-            tmux_session, f"{CLAUDE_EXEC} --resume {session_id}",
-            session_id, "resume",
+            tmux_session,
+            f"{CLAUDE_EXEC} --resume {session_id}",
+            session_id,
+            "resume",
             # Account only, never a model: --resume restores the session's own
             # model unless ANTHROPIC_MODEL is set at launch.
             account=usage.choose_launch(arguments.get("account")).account,
@@ -946,6 +982,7 @@ def _do_resume_session_tool(pane: str, arguments: dict):
     # @periscope_id.
     if ws_id:
         from periscope import activity
+
         row = activity.get_track(ws_id)
         if row and not row.get("archived_at"):
             tracks.move_pane(new_pid, ws_id)
@@ -954,9 +991,11 @@ def _do_resume_session_tool(pane: str, arguments: dict):
     # authority, the repo-default/loose fallback covers the untagged path, and
     # resolving keeps the result honest if the tag ever races an archive.
     tid = tracks.resolve_track_for_window({"pid": new_pid, "cwd": result.get("cwd")})
-    result = {**result, "pid": new_pid,
-              "track": {"id": tid, "label": tracks.track_label(tid),
-                        "kind": tracks.track_kind(tid)}}
+    result = {
+        **result,
+        "pid": new_pid,
+        "track": {"id": tid, "label": tracks.track_label(tid), "kind": tracks.track_kind(tid)},
+    }
     return _tool_result(result)
 
 
@@ -990,6 +1029,7 @@ async def emit_channel_event(pane: str, content: str, meta: dict | None = None) 
     kind = (meta or {}).get("kind") or "message"
     try:
         from periscope import activity
+
         activity.record("pane", pane, "channel", content, detail=kind)
     except Exception:
         log.warning("activity.record failed for channel push", exc_info=True)
@@ -1002,9 +1042,7 @@ async def _mcp_listener() -> None:
     with contextlib.suppress(FileNotFoundError):
         os.unlink(MCP_SOCKET_PATH)
 
-    server = await asyncio.start_unix_server(
-        _handle_mcp_connection, path=MCP_SOCKET_PATH
-    )
+    server = await asyncio.start_unix_server(_handle_mcp_connection, path=MCP_SOCKET_PATH)
     os.chmod(MCP_SOCKET_PATH, 0o600)
     log.info("MCP listener bound to %s", MCP_SOCKET_PATH)
     try:
@@ -1023,9 +1061,7 @@ async def _mcp_listener() -> None:
             await asyncio.wait_for(server.wait_closed(), timeout=1.0)
 
 
-async def _handle_mcp_connection(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-) -> None:
+async def _handle_mcp_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     """Per-connection MCP handler: read hello frame, dispatch to
     _run_mcp_for_pane, clean up session registry on close."""
     pane = ""
@@ -1089,6 +1125,7 @@ def pane_channel_ready(pane_id: str) -> bool | None:
     if is_commander(pane_id):
         return None
     from periscope import config, session_status
+
     pid = session_status.pane_claude_pids().get(pane_id)
     if pid is None:
         return None
@@ -1113,12 +1150,15 @@ async def _deliver(pane_id: str, message: str, caller_pane: str) -> dict:
     # this runs on the event loop — a blocking call here stalls every pane
     # mirror and MCP connection for the duration.
     if await asyncio.to_thread(pane_channel_ready, pane_id) is False:
-        return {"ok": False, "error": (
-            "target Claude was started without periscope's channel flag, so it "
-            "cannot receive messages — it must be restarted in a FRESH shell "
-            "(its current shell holds a stale `claude` wrapper). Reach it by "
-            "another route, or ask the user to restart that pane."
-        )}
+        return {
+            "ok": False,
+            "error": (
+                "target Claude was started without periscope's channel flag, so it "
+                "cannot receive messages — it must be restarted in a FRESH shell "
+                "(its current shell holds a stale `claude` wrapper). Reach it by "
+                "another route, or ask the user to restart that pane."
+            ),
+        }
     sent = await emit_channel_event(pane_id, message)
     if not sent:
         return {"ok": False, "error": "target not attached to periscope channel"}
@@ -1144,13 +1184,17 @@ async def _do_send_to_tool(pane: str, arguments: dict):
         # old bare ok:true was read as delivered-and-read, and when the target
         # didn't react the sender re-sent the same directive four times.
         body = {
-            "ok": True, "handle": handle, "pane_id": pane_id,
+            "ok": True,
+            "handle": handle,
+            "pane_id": pane_id,
             "delivery": "queued",
-            "verify": ("peek(handle) — your message appears as a turn with "
-                       "role 'channel' once the target actually processes it. "
-                       "That block is written by the recipient's own Claude, "
-                       "so it is proof of receipt. Give a busy pane time "
-                       "before concluding anything."),
+            "verify": (
+                "peek(handle) — your message appears as a turn with "
+                "role 'channel' once the target actually processes it. "
+                "That block is written by the recipient's own Claude, "
+                "so it is proof of receipt. Give a busy pane time "
+                "before concluding anything."
+            ),
         }
     return _tool_result(body)
 
@@ -1182,12 +1226,18 @@ async def _do_report_tool(pane: str, arguments: dict):
     # back to hand-writing a file or messaging a pane it guessed at. Surface it
     # to the user instead, so a report always lands somewhere.
     _record_alert(pane, message, kind="done")
-    return _tool_result({
-        "ok": True, "delivered_to": "user", "reason": reason,
-        "note": ("Could not reach a spawner, so your report was surfaced to the "
-                 "user as an alert on this pane instead. It was NOT lost, and "
-                 "no further action is needed."),
-    })
+    return _tool_result(
+        {
+            "ok": True,
+            "delivered_to": "user",
+            "reason": reason,
+            "note": (
+                "Could not reach a spawner, so your report was surfaced to the "
+                "user as an alert on this pane instead. It was NOT lost, and "
+                "no further action is needed."
+            ),
+        }
+    )
 
 
 def _mark_shared_trees(rows: list[dict], trees: list[str]) -> list[dict]:
@@ -1235,12 +1285,11 @@ async def _do_list_claudes_tool(pane: str, arguments: dict):
         # (verified: track_label/track_kind both special-case LOOSE_KEY), so
         # same-track comparisons never need a null-guard.
         tid = tracks.resolve_track_for_window(w)
-        return {"id": tid, "label": tracks.track_label(tid),
-                "kind": tracks.track_kind(tid)}
+        return {"id": tid, "label": tracks.track_label(tid), "kind": tracks.track_kind(tid)}
 
     def _collect():
         out = []
-        trees: list[str] = []   # parallel to `out`: each row's working tree
+        trees: list[str] = []  # parallel to `out`: each row's working tree
         for w in windows:
             target = f"{w['session']}:{w['index']}"
             try:
@@ -1253,41 +1302,42 @@ async def _do_list_claudes_tool(pane: str, arguments: dict):
             status = statuses.get(pane_id)
             pid = w.get("pid") or ""
             signal = cached_git_signal(w.get("cwd") or "") or {}
-            out.append({
-                "handle": pid,
-                "name": w.get("name"),
-                "session": w.get("session"),
-                "cwd": w.get("cwd"),
-                # Progress signal, absent for a non-git cwd. `dirty` separates
-                # reading/stuck (0) from actively writing (n>0);
-                # head_committed_at is epoch seconds so staleness is judged
-                # against the wall clock rather than a caller's poll count.
-                "head": signal.get("head"),
-                "head_subject": signal.get("head_subject"),
-                "head_committed_at": signal.get("head_committed_at"),
-                "dirty": signal.get("dirty"),
-                # Named `_inferred` because it is a Haiku paraphrase of recent
-                # activity, NOT the pane's own report of what it is doing. Read
-                # as first-person intent it has caused a supervising Claude to
-                # interrupt and nearly terminate a worker that was working
-                # correctly — the summary named a test the worker had never
-                # touched. The suffix is the whole fix: it travels with the
-                # value into any context that reads this tool's output.
-                "status_line_inferred": status[0] if status else None,
-                "attached": channel_state_for(pane_id)["attached"],
-                # `attached` (a shim is connected) and `channel_ready` (that
-                # Claude registered for inbound pushes) are DIFFERENT states,
-                # and a pane can be attached-but-deaf. False here means send_to
-                # and report will refuse — pick another route rather than
-                # delegating into a hole.
-                "channel_ready": pane_channel_ready(pane_id),
-                "spawned_by": get_window(pid).get("spawned_by"),
-                "track": _track_info(w),
-            })
+            out.append(
+                {
+                    "handle": pid,
+                    "name": w.get("name"),
+                    "session": w.get("session"),
+                    "cwd": w.get("cwd"),
+                    # Progress signal, absent for a non-git cwd. `dirty` separates
+                    # reading/stuck (0) from actively writing (n>0);
+                    # head_committed_at is epoch seconds so staleness is judged
+                    # against the wall clock rather than a caller's poll count.
+                    "head": signal.get("head"),
+                    "head_subject": signal.get("head_subject"),
+                    "head_committed_at": signal.get("head_committed_at"),
+                    "dirty": signal.get("dirty"),
+                    # Named `_inferred` because it is a Haiku paraphrase of recent
+                    # activity, NOT the pane's own report of what it is doing. Read
+                    # as first-person intent it has caused a supervising Claude to
+                    # interrupt and nearly terminate a worker that was working
+                    # correctly — the summary named a test the worker had never
+                    # touched. The suffix is the whole fix: it travels with the
+                    # value into any context that reads this tool's output.
+                    "status_line_inferred": status[0] if status else None,
+                    "attached": channel_state_for(pane_id)["attached"],
+                    # `attached` (a shim is connected) and `channel_ready` (that
+                    # Claude registered for inbound pushes) are DIFFERENT states,
+                    # and a pane can be attached-but-deaf. False here means send_to
+                    # and report will refuse — pick another route rather than
+                    # delegating into a hole.
+                    "channel_ready": pane_channel_ready(pane_id),
+                    "spawned_by": get_window(pid).get("spawned_by"),
+                    "track": _track_info(w),
+                }
+            )
             # Worktree root when the cwd is in a repo, else the resolved cwd —
             # so two panes in different subdirs of one tree still group.
-            trees.append(signal.get("toplevel")
-                         or os.path.realpath(w.get("cwd") or "") or "")
+            trees.append(signal.get("toplevel") or os.path.realpath(w.get("cwd") or "") or "")
         # Self-identification: which of these windows is the CALLER. Resolved
         # here (in the thread) rather than after the await — a track resolve
         # can miss the git-state cache and shell out, which is exactly what
@@ -1307,9 +1357,13 @@ async def _do_list_claudes_tool(pane: str, arguments: dict):
         if you is None:
             # Only the active pane per window is visible to list_windows — a
             # background split pane can't resolve itself. Refuse loudly.
-            return _tool_result({"ok": False, "error":
-                "cannot resolve your own pane to a track (background split "
-                "pane?) — call without the track filter"})
+            return _tool_result(
+                {
+                    "ok": False,
+                    "error": "cannot resolve your own pane to a track (background split "
+                    "pane?) — call without the track filter",
+                }
+            )
         want = you["track"]["id"]
     if want:
         claudes = [c for c in claudes if c.get("track", {}).get("id") == want]
@@ -1326,8 +1380,7 @@ def _do_list_workspaces_tool(pane: str, arguments: dict):
 
     # pane_tracks keys on @periscope_id — liveness intersects the stamped ids
     # of live windows, not %N pane ids.
-    live_pids = {p for w in list_windows()
-                 if (p := (w.get("pid_raw") or "").strip())}
+    live_pids = {p for w in list_windows() if (p := (w.get("pid_raw") or "").strip())}
     counts: dict[str, int] = {}
     for pid, tid in pane_track_map().items():
         if pid in live_pids:
@@ -1337,7 +1390,7 @@ def _do_list_workspaces_tool(pane: str, arguments: dict):
         {
             "id": tk["id"],
             "name": tk.get("name"),
-            "base_repo": tk.get("repo"),   # tracks have no base_worktree
+            "base_repo": tk.get("repo"),  # tracks have no base_worktree
             "tagged_tabs": counts.get(tk["id"], 0),
         }
         for tk in all_tracks()
@@ -1411,14 +1464,18 @@ def _do_peek_tool(pane: str, arguments: dict):
     inbound = channel_messages_from_jsonl(str(jsonl))
     if inbound:
         messages = sorted([*messages, *inbound], key=lambda m: m.get("ts_ms") or 0)
-    return _tool_result({
-        "ok": True, "handle": handle, "detail": detail,
-        "session_id": sid,
-        # The receipt: a channel block exists only because the recipient's own
-        # Claude processed the notification. Absent = not delivered (yet).
-        "channel_messages_seen": len(inbound),
-        "turns": messages[-limit:],
-    })
+    return _tool_result(
+        {
+            "ok": True,
+            "handle": handle,
+            "detail": detail,
+            "session_id": sid,
+            # The receipt: a channel block exists only because the recipient's own
+            # Claude processed the notification. Absent = not delivered (yet).
+            "channel_messages_seen": len(inbound),
+            "turns": messages[-limit:],
+        }
+    )
 
 
 def _do_terminate_tool(pane: str, arguments: dict):
@@ -1457,12 +1514,12 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "name": "notify",
         "description": (
             "Surface a message on this pane's periscope card. "
-            "kind=\"done\": a substantial task the user asked for is finished; "
+            'kind="done": a substantial task the user asked for is finished; '
             "one-sentence summary so the user sees what happened without "
-            "opening the pane. kind=\"need_human\": blocked and waiting on "
+            'opening the pane. kind="need_human": blocked and waiting on '
             "input; pulses the card red so it stands out on a busy dashboard. "
-            "kind=\"info\": a status worth a glance but not blocking (\"tests "
-            "pass, about to commit\"); lowest signal, use sparingly."
+            'kind="info": a status worth a glance but not blocking ("tests '
+            'pass, about to commit"); lowest signal, use sparingly.'
         ),
         "inputSchema": {
             "type": "object",
@@ -1561,8 +1618,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                 "name": {
                     "type": "string",
                     "description": (
-                        "The rail label. 1-3 lowercase dash-words matches the "
-                        "rail's style (e.g. 'pit-orchestrator')."
+                        "The rail label. 1-3 lowercase dash-words matches the rail's style (e.g. 'pit-orchestrator')."
                     ),
                 },
             },
@@ -1612,9 +1668,9 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
             "sub-tasks that benefit from focused, isolated "
             "contexts running concurrently. Set `workspace` to "
             "control where the spawn lands on the dashboard: "
-            "\"same\" (default) for fan-out / sub-work that's part "
+            '"same" (default) for fan-out / sub-work that\'s part '
             "of YOUR current task — it nests under your card, even "
-            "in a different worktree; \"new\" when the spawn is "
+            'in a different worktree; "new" when the spawn is '
             "DISTINCT work the user would track separately — it "
             "becomes its own top-level item anchored to its "
             "worktree. Pass `workspace_id` to tag the spawned tab "
@@ -1626,9 +1682,9 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
             "does NOT need your handle, so don't spend prompt "
             "budget telling it how to find you. Say what to report "
             "and when; `report` handles the addressing. "
-            "workspace=\"same\" (default) also tags the spawn into "
+            'workspace="same" (default) also tags the spawn into '
             "YOUR track, so your spawns are your roster in "
-            "list_claudes(track=\"mine\")."
+            'list_claudes(track="mine").'
         ),
         "inputSchema": {
             "type": "object",
@@ -1641,15 +1697,15 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                     "type": "string",
                     "enum": ["same", "new"],
                     "description": (
-                        "Where the spawn lands on the dashboard. \"same\" "
+                        'Where the spawn lands on the dashboard. "same" '
                         "(default): a window in YOUR session — fan-out / "
                         "related sub-work nests under your card (even if "
-                        "`cwd` is a different worktree). \"new\": its own "
+                        '`cwd` is a different worktree). "new": its own '
                         "top-level dashboard item, a session anchored to "
                         "`cwd`'s worktree (new tab if that worktree already "
                         "has one) — for DISTINCT work tracked separately. "
-                        "\"new\" requires `cwd` to be inside a git repo; "
-                        "otherwise it behaves like \"same\"."
+                        '"new" requires `cwd` to be inside a git repo; '
+                        'otherwise it behaves like "same".'
                     ),
                 },
                 "session": {
@@ -1658,7 +1714,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Working directory for the spawned window. Defaults to the caller's pane cwd. With workspace=\"new\", its worktree anchors the new dashboard item.",
+                    "description": 'Working directory for the spawned window. Defaults to the caller\'s pane cwd. With workspace="new", its worktree anchors the new dashboard item.',
                 },
                 "repo": {
                     "type": "string",
@@ -1669,7 +1725,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                     "description": (
                         "Create a fresh worktree on this branch (off `repo`) and "
                         "spawn the worker INTO it — one call makes the worktree and "
-                        "places the worker. Forces workspace=\"new\". Use this to put "
+                        'places the worker. Forces workspace="new". Use this to put '
                         "a worker in a new worktree (vs. delegating worktree creation)."
                     ),
                 },
@@ -1715,7 +1771,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                 "workspace_id": {
                     "type": "string",
                     "description": (
-                        "Optional periscope workspace id (e.g. \"ws_auth-refactor\") "
+                        'Optional periscope workspace id (e.g. "ws_auth-refactor") '
                         "to tag the spawned tab into — it then renders under that "
                         "goal-scoped rail group. Use to fan out several tabs toward "
                         "one goal. Distinct from `workspace` (which controls tmux "
@@ -1749,10 +1805,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                 },
                 "project": {
                     "type": "string",
-                    "description": (
-                        "Absolute project path to filter to. Omit for "
-                        "cross-project search."
-                    ),
+                    "description": ("Absolute project path to filter to. Omit for cross-project search."),
                 },
                 "since": {
                     "type": "integer",
@@ -1858,12 +1911,15 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "handle": {"type": "string", "description": (
-                    "Target pid (from spawn_claude/list_claudes) — the durable "
-                    "handle; it survives restarts and account swaps. A tmux "
-                    "pane id (%N) also works as a fallback, but %N rotates "
-                    "on every restart — do not store it."
-                )},
+                "handle": {
+                    "type": "string",
+                    "description": (
+                        "Target pid (from spawn_claude/list_claudes) — the durable "
+                        "handle; it survives restarts and account swaps. A tmux "
+                        "pane id (%N) also works as a fallback, but %N rotates "
+                        "on every restart — do not store it."
+                    ),
+                },
                 "message": {"type": "string", "description": "Message to deliver."},
             },
             "required": ["handle", "message"],
@@ -1879,7 +1935,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
             "pane has no recorded spawner, or the spawner has exited or cannot "
             "receive messages, the report is surfaced to the USER as an alert "
             "on this pane instead. The result field `delivered_to` says which "
-            "happened — a spawner handle, or \"user\"."
+            'happened — a spawner handle, or "user".'
         ),
         "inputSchema": {
             "type": "object",
@@ -1919,7 +1975,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
             "Each row carries `track` ({id,label,kind} — the rail group the "
             "pane belongs to). The response carries `you` (your own handle "
             "and track; null when your pane can't be resolved — e.g. a "
-            "background split pane). Pass `track: \"mine\"` to list only "
+            'background split pane). Pass `track: "mine"` to list only '
             "your own track's panes — your program's roster — or an explicit "
             "track id."
         ),
@@ -1929,8 +1985,7 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
                 "track": {
                     "type": "string",
                     "description": (
-                        "Filter to one track: \"mine\" for the caller's own, "
-                        "or a track id from a previous call."
+                        'Filter to one track: "mine" for the caller\'s own, or a track id from a previous call.'
                     ),
                 },
             },
@@ -1971,17 +2026,19 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "handle": {"type": "string", "description": (
-                    "Target pid (from spawn_claude/list_claudes) — the durable "
-                    "handle; it survives restarts and account swaps. A tmux "
-                    "pane id (%N) also works as a fallback, but %N rotates "
-                    "on every restart — do not store it."
-                )},
+                "handle": {
+                    "type": "string",
+                    "description": (
+                        "Target pid (from spawn_claude/list_claudes) — the durable "
+                        "handle; it survives restarts and account swaps. A tmux "
+                        "pane id (%N) also works as a fallback, but %N rotates "
+                        "on every restart — do not store it."
+                    ),
+                },
                 "limit": {
                     "type": "integer",
                     "description": (
-                        f"How many recent turns to return (default "
-                        f"{_PEEK_DEFAULT_LIMIT}, max {_PEEK_MAX_LIMIT})."
+                        f"How many recent turns to return (default {_PEEK_DEFAULT_LIMIT}, max {_PEEK_MAX_LIMIT})."
                     ),
                 },
                 "detail": {
@@ -2009,12 +2066,15 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "handle": {"type": "string", "description": (
-                    "Target pid (from spawn_claude/list_claudes) — the durable "
-                    "handle; it survives restarts and account swaps. A tmux "
-                    "pane id (%N) also works as a fallback, but %N rotates "
-                    "on every restart — do not store it."
-                )},
+                "handle": {
+                    "type": "string",
+                    "description": (
+                        "Target pid (from spawn_claude/list_claudes) — the durable "
+                        "handle; it survives restarts and account swaps. A tmux "
+                        "pane id (%N) also works as a fallback, but %N rotates "
+                        "on every restart — do not store it."
+                    ),
+                },
             },
             "required": ["handle"],
         },
@@ -2022,32 +2082,47 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
     },
     {
         "name": "create_workspace",
-        "description": ("Create a periscope workspace — a goal-scoped rail group "
-                        "that spawned tabs can be tagged into (pass the returned "
-                        "workspace_id to spawn_claude). Args: name, optional base_repo."),
-        "inputSchema": {"type": "object", "properties": {
-            "name": {"type": "string"},
-            "base_repo": {"type": "string", "description": "absolute repo path (optional)"},
-        }, "required": ["name"]},
+        "description": (
+            "Create a periscope workspace — a goal-scoped rail group "
+            "that spawned tabs can be tagged into (pass the returned "
+            "workspace_id to spawn_claude). Args: name, optional base_repo."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "base_repo": {"type": "string", "description": "absolute repo path (optional)"},
+            },
+            "required": ["name"],
+        },
         "handler": _do_create_workspace_tool,
     },
     {
         "name": "open",
-        "description": ("Materialize a session into the rail. Exactly one of: "
-                        "{path} to open a directory; {repo, branch} to open (and "
-                        "create if absent) a worktree; {repo, pr} to fetch a PR "
-                        "into a worktree. 'create a worktree for X' = open(repo, branch=X)."),
-        "inputSchema": {"type": "object", "properties": {
-            "path": {"type": "string"}, "repo": {"type": "string"},
-            "branch": {"type": "string"}, "pr": {"type": "integer"},
-        }},
+        "description": (
+            "Materialize a session into the rail. Exactly one of: "
+            "{path} to open a directory; {repo, branch} to open (and "
+            "create if absent) a worktree; {repo, pr} to fetch a PR "
+            "into a worktree. 'create a worktree for X' = open(repo, branch=X)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "repo": {"type": "string"},
+                "branch": {"type": "string"},
+                "pr": {"type": "integer"},
+            },
+        },
         "handler": _do_open_tool,
     },
     {
         "name": "catalog",
-        "description": ("List discoverable repos and their worktrees (dormant + "
-                        "live) to ground placement decisions. Git-subprocess-heavy "
-                        "— call once per command and reuse; do not poll."),
+        "description": (
+            "List discoverable repos and their worktrees (dormant + "
+            "live) to ground placement decisions. Git-subprocess-heavy "
+            "— call once per command and reuse; do not poll."
+        ),
         "inputSchema": {"type": "object", "properties": {}},
         "handler": _do_catalog_tool,
     },
@@ -2129,9 +2204,7 @@ async def _run_mcp_for_pane(
         try:
             async with write_recv:
                 async for sm in write_recv:
-                    data = sm.message.model_dump_json(
-                        by_alias=True, exclude_none=True
-                    ) + "\n"
+                    data = sm.message.model_dump_json(by_alias=True, exclude_none=True) + "\n"
                     writer.write(data.encode())
                     await writer.drain()
         except (ConnectionResetError, BrokenPipeError):

@@ -32,6 +32,7 @@ from periscope.tmux_mirror import (
 
 # --- ControlParser ---
 
+
 def test_output_event_payload_split():
     p = ControlParser()
     ev = p.feed_line(rb"%output %26 hello \033[31m world")
@@ -58,7 +59,7 @@ def test_end_requires_matching_begin_tokens():
     # <time> <number> tokens terminates the block.
     p = ControlParser()
     p.feed_line(b"%begin 111 22 1")
-    assert p.feed_line(b"%end 999 88 1") is None     # body line, wrong tokens
+    assert p.feed_line(b"%end 999 88 1") is None  # body line, wrong tokens
     ev = p.feed_line(b"%end 111 22 1")
     assert ev == Reply(body=(b"%end 999 88 1",))
 
@@ -75,11 +76,12 @@ def test_notifications_between_blocks():
     p = ControlParser()
     assert p.feed_line(b"%layout-change @5 b25d,80x24,0,0,0 ...") == LayoutChange(window_id="@5")
     assert isinstance(p.feed_line(b"%exit"), Exit)
-    assert p.feed_line(b"%session-changed $344 foo") is None   # unknown → ignored
+    assert p.feed_line(b"%session-changed $344 foo") is None  # unknown → ignored
     assert p.feed_line(b"%unknown-future-notification x") is None
 
 
 # --- decode_octal ---
+
 
 def test_decode_octal_escapes():
     assert decode_octal(rb"\033[31mRED\033[0m") == b"\x1b[31mRED\x1b[0m"
@@ -110,9 +112,16 @@ def test_decode_split_multibyte_concatenates():
 
 # --- frame builder ---
 
+
 def _snap(**kw):
-    base = {"rows": (b"row1", b"row2"), "height": 2, "cursor_x": 3, "cursor_y": 1,
-                "alt_on": False, "cursor_visible": True}
+    base = {
+        "rows": (b"row1", b"row2"),
+        "height": 2,
+        "cursor_x": 3,
+        "cursor_y": 1,
+        "alt_on": False,
+        "cursor_visible": True,
+    }
     base.update(kw)
     return GridSnapshot(**base)
 
@@ -120,10 +129,10 @@ def _snap(**kw):
 def test_frame_normal_screen_exact_bytes():
     frame = build_reconcile_frame(_snap())
     assert frame == (
-        b"\x1b[?1049l"                      # heal stuck-in-alt; no-op if normal
+        b"\x1b[?1049l"  # heal stuck-in-alt; no-op if normal
         b"\x1b[1;1Hrow1\x1b[0m\x1b[K"
         b"\x1b[2;1Hrow2\x1b[0m\x1b[K"
-        b"\x1b[2;4H"                        # cursor 0-indexed (3,1) → 1-indexed (4,2)
+        b"\x1b[2;4H"  # cursor 0-indexed (3,1) → 1-indexed (4,2)
         b"\x1b[?25h"
     )
 
@@ -156,7 +165,7 @@ def test_frame_cursor_hidden():
 
 def test_snapshot_from_replies():
     cap = Reply(body=(b"r1", b"r2"))
-    disp = Reply(body=(b"2|3|1|0|1",))     # height|cx|cy|alt|cursor_flag
+    disp = Reply(body=(b"2|3|1|0|1",))  # height|cx|cy|alt|cursor_flag
     snap = snapshot_from_replies(cap, disp)
     assert snap.rows == (b"r1", b"r2")
     assert snap.height == 2
@@ -168,6 +177,7 @@ def test_snapshot_from_replies():
 # --- ReconcileTimer ---
 # The deadline math is the unit under test; _arm is patched to record the
 # computed delay so no event loop is needed.
+
 
 def _timer_with_recorder(t0=0.0):
     clock = [t0]
@@ -187,9 +197,9 @@ def test_quiesce_rearms_on_each_output():
 
 def test_max_interval_caps_sustained_streaming():
     timer, clock, delays = _timer_with_recorder()
-    timer.note_output()                  # streaming_since = 0.0
+    timer.note_output()  # streaming_since = 0.0
     clock[0] = 0.95
-    timer.note_output()                  # quiesce→1.10 capped to max→1.0
+    timer.note_output()  # quiesce→1.10 capped to max→1.0
     assert delays[-1] == pytest.approx(0.05)
 
 
@@ -197,8 +207,8 @@ def test_reconcile_resets_streaming_window():
     timer, clock, delays = _timer_with_recorder()
     timer.note_output()
     clock[0] = 0.95
-    timer.note_reconciled()              # window resets
-    timer.note_output()                  # streaming_since = 0.95 → plain quiesce
+    timer.note_reconciled()  # window resets
+    timer.note_output()  # streaming_since = 0.95 → plain quiesce
     assert delays[-1] == pytest.approx(QUIESCE_S)
 
 
@@ -210,6 +220,7 @@ def test_request_fires_immediately():
 
 # --- _SessionMirror dispatch (no subprocess: feed events into _dispatch) ---
 
+
 def test_dispatch_output_routes_decoded_bytes_to_subscribers():
     async def drive():
         m = _SessionMirror("sess")
@@ -218,6 +229,7 @@ def test_dispatch_output_routes_decoded_bytes_to_subscribers():
         m._dispatch(Output(pane_id="%99", raw=b"other-pane"))  # cheap skip
         assert sub._q.get_nowait() == b"hi\x1b[m"
         assert sub._q.empty()
+
     asyncio.run(drive())
 
 
@@ -225,7 +237,8 @@ def test_dispatch_reply_with_empty_callback_queue_is_dropped():
     # The attach handshake emits an unsolicited %begin/%end block.
     async def drive():
         m = _SessionMirror("sess")
-        m._dispatch(Reply(body=()))        # must not raise
+        m._dispatch(Reply(body=()))  # must not raise
+
     asyncio.run(drive())
 
 
@@ -234,16 +247,17 @@ def test_reconcile_frame_enqueued_synchronously_on_second_reply():
     # already in the queue — no task switch in between.
     async def drive():
         m = _SessionMirror("sess")
-        m._proc = object()   # _fire_reconcile guards on a live client
+        m._proc = object()  # _fire_reconcile guards on a live client
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
         sub = m.subscribe("%7")
         m._fire_reconcile("%7")
-        m._dispatch(Reply(body=(b"1|0|0|0|1",)))          # display reply
-        m._dispatch(Reply(body=(b"row",)))                # capture reply
+        m._dispatch(Reply(body=(b"1|0|0|0|1",)))  # display reply
+        m._dispatch(Reply(body=(b"row",)))  # capture reply
         frame = sub._q.get_nowait()
         assert frame.startswith(b"\x1b[?1049l")
         assert b"row" in frame
+
     asyncio.run(drive())
 
 
@@ -259,22 +273,23 @@ def test_cursor_is_sampled_before_the_body():
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
         m.subscribe("%7")
         m._fire_reconcile("%7")
-        assert sent[0].startswith("display-message -p -t %7"), \
-            "cursor must be sampled BEFORE the body, never after"
+        assert sent[0].startswith("display-message -p -t %7"), "cursor must be sampled BEFORE the body, never after"
         assert sent[1].startswith("capture-pane -p -e -N -t %7")
+
     asyncio.run(drive())
 
 
 def test_reply_error_ends_pane_subscriptions():
     async def drive():
         m = _SessionMirror("sess")
-        m._proc = object()   # _fire_reconcile guards on a live client
+        m._proc = object()  # _fire_reconcile guards on a live client
         m._send_command = lambda cmd, cb: m._reply_callbacks.append(cb)
         sub = m.subscribe("%7")
         m._fire_reconcile("%7")
         m._dispatch(ReplyError(body=(b"can't find pane",)))
         m._dispatch(ReplyError(body=(b"can't find pane",)))
-        assert sub._q.get_nowait() is None                # EOF sentinel
+        assert sub._q.get_nowait() is None  # EOF sentinel
+
     asyncio.run(drive())
 
 
@@ -286,6 +301,7 @@ def test_layout_change_requests_reconcile_for_subscribed_panes():
         m._timers["%7"].request = lambda: fired.append(True)
         m._dispatch(LayoutChange(window_id="@1"))
         assert fired == [True]
+
     asyncio.run(drive())
 
 
@@ -297,9 +313,12 @@ def test_read_loop_drops_attach_handshake_before_queued_replies():
     async def drive():
         m = _SessionMirror("sess")
         lines = [
-            b"%begin 1 0 0\n", b"%end 1 0 0\n",          # attach handshake
-            b"%begin 2 1 1\n", b"real\n", b"%end 2 1 1\n",
-            b"",                                          # EOF
+            b"%begin 1 0 0\n",
+            b"%end 1 0 0\n",  # attach handshake
+            b"%begin 2 1 1\n",
+            b"real\n",
+            b"%end 2 1 1\n",
+            b"",  # EOF
         ]
 
         class FakeStdout:
@@ -316,18 +335,20 @@ def test_read_loop_drops_attach_handshake_before_queued_replies():
         m._reply_callbacks.append(got.append)
         await m._read_loop()
         assert got == [Reply(body=(b"real",))]
+
     asyncio.run(drive())
 
 
 def test_unsubscribe_last_viewer_arms_linger():
     async def drive():
         m = _SessionMirror("sess")
-        m._proc = object()   # pretend a client is running (linger guard)
+        m._proc = object()  # pretend a client is running (linger guard)
         sub = m.subscribe("%7")
         async with sub:
             pass
         assert m._linger is not None
         m._linger.cancel()
+
     asyncio.run(drive())
 
 
@@ -347,7 +368,9 @@ def _t(*args):
     # real session layout (claude processes included) onto the test server.
     return subprocess.run(
         ["tmux", "-L", TEST_SOCKET, "-f", "/dev/null", *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout
 
 
@@ -362,6 +385,7 @@ def _mk_session():
 
 def _feed_pyte(screen, chunks):
     import pyte
+
     stream = pyte.ByteStream(screen)
     for c in chunks:
         stream.feed(c)
@@ -393,18 +417,17 @@ async def _drain(sub, seconds):
 def test_oracle_mirror_matches_tmux_grid(monkeypatch):
     monkeypatch.setattr(tmux_mirror, "_TMUX", ("tmux", "-L", TEST_SOCKET))
     import pyte
+
     name, pane_id = _mk_session()
 
     async def drive():
         sub = await tmux_mirror.subscribe(name, pane_id)
         async with sub:
-            _t("send-keys", "-t", pane_id,
-               "printf '\\033[31mRED\\033[0m line\\n'; seq 1 30", "Enter")
-            chunks = await _drain(sub, 2.0)   # includes ≥1 reconcile frame
+            _t("send-keys", "-t", pane_id, "printf '\\033[31mRED\\033[0m line\\n'; seq 1 30", "Enter")
+            chunks = await _drain(sub, 2.0)  # includes ≥1 reconcile frame
             screen = pyte.Screen(80, 24)
             _feed_pyte(screen, chunks)
-            assert _grids_equal(screen, pane_id), (
-                f"pyte:\n{chr(10).join(screen.display)}")
+            assert _grids_equal(screen, pane_id), f"pyte:\n{chr(10).join(screen.display)}"
         await tmux_mirror.shutdown()
 
     try:
@@ -420,6 +443,7 @@ def test_thesis_byte_drops_converge_after_reconcile(monkeypatch):
     blindly idempotent."""
     monkeypatch.setattr(tmux_mirror, "_TMUX", ("tmux", "-L", TEST_SOCKET))
     import pyte
+
     name, pane_id = _mk_session()
 
     async def drive():
@@ -463,7 +487,7 @@ def test_two_subscribers_multiplex(monkeypatch):
     async def drive():
         a = await tmux_mirror.subscribe(name, pane_id)
         b = await tmux_mirror.subscribe(name, pane_id)
-        assert len(tmux_mirror._MIRRORS) == 1     # one client, two subs
+        assert len(tmux_mirror._MIRRORS) == 1  # one client, two subs
         _t("send-keys", "-t", pane_id, "echo multiplexed", "Enter")
         ca = b"".join(await _drain(a, 1.0))
         cb = b"".join(await _drain(b, 1.0))
@@ -487,6 +511,7 @@ def test_capture_preserves_trailing_spaces():
     usage: every space typed between words, and every idle prompt (PS1 ends
     "$ "). Reported as "the cursor is one ahead of where typing lands".
     """
+
     async def drive():
         m = _SessionMirror("sess")
         m._proc = object()
@@ -496,4 +521,5 @@ def test_capture_preserves_trailing_spaces():
         m._fire_reconcile("%7")
         capture = next(c for c in sent if c.startswith("capture-pane"))
         assert " -N " in f" {capture} ", f"capture-pane missing -N: {capture!r}"
+
     asyncio.run(drive())

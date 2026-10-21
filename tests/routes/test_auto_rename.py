@@ -27,7 +27,9 @@ def test_auto_rename_session_applies_new_names(client, mocker):
     _patch(mocker, "server", "cached_pr_state", return_value={"pr": None})
     _patch(mocker, "server", "build_rename_prompt", return_value="prompt")
     _patch(
-        mocker, "server", "claude_complete",
+        mocker,
+        "server",
+        "claude_complete",
         return_value=json.dumps({"0": "fresh0", "1": "fresh1"}),
     )
     tmux_mock = _patch(mocker, "server", "tmux", return_value="")
@@ -76,10 +78,16 @@ def test_auto_rename_window_applies(client, mocker):
 
 def test_auto_rename_session_stamps_cooldown_per_pane(client, mocker):
     fake_windows = [
-        {"session": "main", "index": 0, "name": "old0", "active": True,
-         "cwd": "/tmp", "pid_raw": "", "pane_id": "%10"},
-        {"session": "main", "index": 1, "name": "old1", "active": False,
-         "cwd": "/tmp", "pid_raw": "", "pane_id": "%11"},
+        {"session": "main", "index": 0, "name": "old0", "active": True, "cwd": "/tmp", "pid_raw": "", "pane_id": "%10"},
+        {
+            "session": "main",
+            "index": 1,
+            "name": "old1",
+            "active": False,
+            "cwd": "/tmp",
+            "pid_raw": "",
+            "pane_id": "%11",
+        },
     ]
     _patch(mocker, "server", "list_windows", return_value=fake_windows)
     _patch(mocker, "server", "_attach_git_then_resolve_pids")
@@ -88,8 +96,7 @@ def test_auto_rename_session_stamps_cooldown_per_pane(client, mocker):
     _patch(mocker, "server", "cached_git_state", return_value={"branch": "main"})
     _patch(mocker, "server", "cached_pr_state", return_value={"pr": None})
     _patch(mocker, "server", "build_rename_prompt", return_value="prompt")
-    _patch(mocker, "server", "claude_complete",
-           return_value=json.dumps({"0": "fresh0", "1": "fresh1"}))
+    _patch(mocker, "server", "claude_complete", return_value=json.dumps({"0": "fresh0", "1": "fresh1"}))
     _patch(mocker, "server", "tmux", return_value="")
     stamp = _patch(mocker, "server", "stamp_pane_rename")
 
@@ -109,6 +116,7 @@ def test_auto_rename_window_stamps_cooldown(client, mocker):
         if args[0] == "display-message" and "#{pane_id}" in args:
             return "%9\n"
         return ""
+
     _patch(mocker, "server", "tmux", side_effect=fake_tmux)
     _patch(mocker, "server", "_attach_git_then_resolve_pids")
     _patch(mocker, "server", "capture", return_value="some output")

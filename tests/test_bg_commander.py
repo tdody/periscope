@@ -6,11 +6,13 @@ from periscope import bg_commander as bgc
 
 
 def test_parse_agents_json_keeps_only_background_sessions():
-    raw = json.dumps([
-        {"kind": "background", "sessionId": "a", "state": "done"},
-        {"kind": "background", "sessionId": "b", "state": "blocked"},
-        {"kind": "interactive", "sessionId": "c", "status": "idle"},
-    ])
+    raw = json.dumps(
+        [
+            {"kind": "background", "sessionId": "a", "state": "done"},
+            {"kind": "background", "sessionId": "b", "state": "blocked"},
+            {"kind": "interactive", "sessionId": "c", "status": "idle"},
+        ]
+    )
     assert bgc.parse_agents_json(raw) == {"a": "done", "b": "blocked"}
 
 
@@ -37,10 +39,10 @@ def test_map_state_absent_old_is_done():
 def test_dispatch_argv_pins_the_security_flags(monkeypatch):
     monkeypatch.setenv("PERISCOPE_CLAUDE_BIN", "/usr/bin/claude")
     argv = bgc._dispatch_argv()
-    assert argv[0] == "/usr/bin/claude"        # the BARE binary, never the multi-word claude_exec() string
+    assert argv[0] == "/usr/bin/claude"  # the BARE binary, never the multi-word claude_exec() string
     assert "--bg" in argv
-    assert "-p" in argv                         # REQUIRED — without it --bg never submits the prompt
-    assert "--session-id" not in argv          # --bg ignores it; we capture the id it mints instead
+    assert "-p" in argv  # REQUIRED — without it --bg never submits the prompt
+    assert "--session-id" not in argv  # --bg ignores it; we capture the id it mints instead
     assert "--strict-mcp-config" in argv
     # --allowedTools is the LAST token: it's variadic, so a trailing prompt
     # positional would be swallowed → the prompt goes via stdin instead.
@@ -78,19 +80,22 @@ def test_insert_then_list_and_get():
     bgc.insert_job(id="j1", text="hello", cwd="/tmp", at=100)
     bgc.insert_job(id="j2", text="world", cwd="/tmp", at=200)
     jobs = bgc.list_jobs()
-    assert [j.id for j in jobs] == ["j2", "j1"]          # newest-first
+    assert [j.id for j in jobs] == ["j2", "j1"]  # newest-first
     assert bgc.get_job("j1") == bgc.Job(id="j1", text="hello", cwd="/tmp", status="running", started_at=100)
     assert bgc.get_job("nope") is None
 
 
 def test_dispatch_captures_claude_id_and_records_job(monkeypatch):
     spawned = {}
+
     class FakeProc:
         stdout = "backgrounded · 9ab3cd12\n  claude agents   list sessions"
         stderr = ""
+
     def fake_run(argv, **kw):
         spawned["argv"], spawned["kw"] = argv, kw
         return FakeProc()
+
     monkeypatch.setattr(bgc.subprocess, "run", fake_run)
     jid = bgc.dispatch("do it", cwd="/tmp")
     # the job id is claude's minted id, parsed from stdout (NOT a pre-mint)
@@ -98,17 +103,18 @@ def test_dispatch_captures_claude_id_and_records_job(monkeypatch):
     job = bgc.get_job(jid)
     assert job is not None and job.status == "running" and job.text == "do it"
     assert spawned["kw"]["cwd"] == "/tmp"
-    assert spawned["kw"]["input"] == "do it"     # prompt goes via stdin, not argv
+    assert spawned["kw"]["input"] == "do it"  # prompt goes via stdin, not argv
     # the cmdr handle is a fresh token, distinct from claude's session id
     handle = spawned["kw"]["env"]["PERISCOPE_CALLER_ID"]
     assert handle.startswith("cmdr:") and handle != f"cmdr:{jid}"
-    assert "do it" not in spawned["argv"]        # prompt is via stdin, not a positional
+    assert "do it" not in spawned["argv"]  # prompt is via stdin, not a positional
 
 
 def test_dispatch_raises_when_no_session_id(monkeypatch):
     class FakeProc:
         stdout = "something went wrong"
         stderr = "error"
+
     monkeypatch.setattr(bgc.subprocess, "run", lambda *a, **k: FakeProc())
     with pytest.raises(RuntimeError):
         bgc.dispatch("do it", cwd="/tmp")
@@ -116,21 +122,23 @@ def test_dispatch_raises_when_no_session_id(monkeypatch):
 
 def test_sync_jobs_marks_done_and_stops_present(monkeypatch):
     bgc.insert_job(id="busy", text="x", cwd="/tmp", at=1000)
-    bgc.insert_job(id="fin",  text="y", cwd="/tmp", at=1000)
-    raw = json.dumps([
-        {"kind": "background", "sessionId": "busy", "state": "blocked"},
-        {"kind": "background", "sessionId": "fin",  "state": "done"},
-    ])
+    bgc.insert_job(id="fin", text="y", cwd="/tmp", at=1000)
+    raw = json.dumps(
+        [
+            {"kind": "background", "sessionId": "busy", "state": "blocked"},
+            {"kind": "background", "sessionId": "fin", "state": "done"},
+        ]
+    )
     stopped = []
     bgc.sync_jobs(now=1001, agents_raw=raw, stop_fn=stopped.append)
     assert bgc.get_job("busy").status == "running"
     assert bgc.get_job("fin").status == "done"
-    assert stopped == ["fin"]                      # proactive claude stop on a still-listed done session
+    assert stopped == ["fin"]  # proactive claude stop on a still-listed done session
 
 
 def test_sync_jobs_absent_young_stays_running_old_reaped(monkeypatch):
     bgc.insert_job(id="young", text="x", cwd="/tmp", at=1000)
-    bgc.insert_job(id="old",   text="y", cwd="/tmp", at=1000)
+    bgc.insert_job(id="old", text="y", cwd="/tmp", at=1000)
     stopped = []
     # young: now-started_at < 60 ; old: >= 60 ; neither present in the (empty) list
     bgc.sync_jobs(now=1030, agents_raw="[]", stop_fn=stopped.append)  # young still within grace
@@ -138,10 +146,11 @@ def test_sync_jobs_absent_young_stays_running_old_reaped(monkeypatch):
     bgc.sync_jobs(now=1100, agents_raw="[]", stop_fn=stopped.append)  # both now old
     assert bgc.get_job("young").status == "done"
     assert bgc.get_job("old").status == "done"
-    assert stopped == []                           # absent/reaped => no stop call (already gone)
+    assert stopped == []  # absent/reaped => no stop call (already gone)
 
 
 # --- dispatch env ---
+
 
 def test_dispatch_env_sets_account_config_dir(monkeypatch):
     monkeypatch.setattr("periscope.store.get_settings", lambda: {"bg_account": "b"})
@@ -162,6 +171,7 @@ def test_dispatch_env_default_account_unset(monkeypatch):
 # sync_jobs sees it absent past the grace window, marks it `done` while it is
 # still running, and never calls stop() — an unkillable job reported as
 # finished. Every claude subprocess in the module must agree on the account.
+
 
 def _capture_run(monkeypatch, stdout=""):
     seen: dict = {}

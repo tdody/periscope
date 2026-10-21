@@ -30,7 +30,9 @@ def _git_short_sha() -> str:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=Path(__file__).resolve().parent.parent.parent,
-            capture_output=True, text=True, timeout=2.0,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
         )
         if out.returncode == 0:
             return out.stdout.strip()
@@ -49,9 +51,7 @@ def _codex_hook_health() -> dict:
     home = codex_home()
     hook_file = home / "hooks.json"
     expected = command_for(Path(__file__).resolve().parent.parent.parent)
-    definitions = {
-        event: {"present": False, "target_exists": False} for event in EVENTS
-    }
+    definitions = {event: {"present": False, "target_exists": False} for event in EVENTS}
     try:
         with hook_file.open() as stream:
             document = json.load(stream)
@@ -60,14 +60,12 @@ def _codex_hook_health() -> dict:
             groups = hooks.get(event, []) if isinstance(hooks, dict) else []
             entries = [
                 entry
-                for group in groups if isinstance(group, dict)
-                for entry in group.get("hooks", []) if isinstance(entry, dict)
+                for group in groups
+                if isinstance(group, dict)
+                for entry in group.get("hooks", [])
+                if isinstance(entry, dict)
             ]
-            commands = [
-                entry.get("command")
-                for entry in entries
-                if entry.get("type") == "command"
-            ]
+            commands = [entry.get("command") for entry in entries if entry.get("type") == "command"]
             present = expected in commands
             target_exists = False
             if present:
@@ -85,9 +83,7 @@ def _codex_hook_health() -> dict:
 
     observed: dict[str, dict] = {}
     try:
-        with sqlite3.connect(
-            f"file:{config.ACTIVITY_DB}?mode=ro", uri=True, timeout=0.25
-        ) as conn:
+        with sqlite3.connect(f"file:{config.ACTIVITY_DB}?mode=ro", uri=True, timeout=0.25) as conn:
             rows = conn.execute(
                 "SELECT event, MAX(observed_at), "
                 "(SELECT cli_version FROM agent_session_events latest "

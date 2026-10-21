@@ -47,11 +47,16 @@ def test_parse_plan_usage_includes_scoped_model_meter_when_active():
     surfaces as week_<slug>; scope.model.display_name names it."""
     sample = {
         "five_hour": {"utilization": 6.0, "resets_at": "2026-07-01T17:10:00+00:00"},
-        "limits": [{
-            "kind": "weekly_scoped", "group": "weekly", "percent": 31, "is_active": True,
-            "resets_at": "2026-07-05T14:00:00+00:00",
-            "scope": {"model": {"id": "fable-5", "display_name": "Fable"}},
-        }],
+        "limits": [
+            {
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": 31,
+                "is_active": True,
+                "resets_at": "2026-07-05T14:00:00+00:00",
+                "scope": {"model": {"id": "fable-5", "display_name": "Fable"}},
+            }
+        ],
     }
     out = parse_plan_usage(sample)
     assert out["meters"]["week_fable"]["percent"] == 31
@@ -63,11 +68,16 @@ def test_parse_plan_usage_surfaces_scoped_meter_with_usage_but_not_active():
     False while Fable accumulates below its cap. Any percent > 0 surfaces it."""
     sample = {
         "five_hour": {"utilization": 6.0, "resets_at": "2026-07-01T17:10:00+00:00"},
-        "limits": [{
-            "kind": "weekly_scoped", "group": "weekly", "percent": 1, "is_active": False,
-            "resets_at": "2026-07-05T14:00:00+00:00",
-            "scope": {"model": {"id": None, "display_name": "Fable"}},
-        }],
+        "limits": [
+            {
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": 1,
+                "is_active": False,
+                "resets_at": "2026-07-05T14:00:00+00:00",
+                "scope": {"model": {"id": None, "display_name": "Fable"}},
+            }
+        ],
     }
     out = parse_plan_usage(sample)
     assert out["meters"]["week_fable"]["percent"] == 1
@@ -78,11 +88,16 @@ def test_parse_plan_usage_skips_dormant_scoped_model_meter():
     dormant state) is NOT surfaced — matches null seven_day_opus/sonnet."""
     sample = {
         "five_hour": {"utilization": 6.0, "resets_at": "2026-07-01T17:10:00+00:00"},
-        "limits": [{
-            "kind": "weekly_scoped", "group": "weekly", "percent": 0, "is_active": False,
-            "resets_at": None,
-            "scope": {"model": {"id": None, "display_name": "Fable"}},
-        }],
+        "limits": [
+            {
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": 0,
+                "is_active": False,
+                "resets_at": None,
+                "scope": {"model": {"id": None, "display_name": "Fable"}},
+            }
+        ],
     }
     out = parse_plan_usage(sample)
     assert "week_fable" not in out["meters"]
@@ -123,8 +138,9 @@ NOW = 1_800_000_000
 
 
 def _meter(utilization, resets_at, key="session"):
-    return {key: {"label": "x", "percent": round(utilization),
-                  "utilization": float(utilization), "resets_at": resets_at}}
+    return {
+        key: {"label": "x", "percent": round(utilization), "utilization": float(utilization), "resets_at": resets_at}
+    }
 
 
 def _no_samples(_meter_key, _since):
@@ -193,8 +209,7 @@ def test_limit_at_clamped_to_now_when_already_at_100():
 
 def test_weekly_meter_uses_seven_day_window():
     """3.5 days into the week at 80% -> on pace for 160%."""
-    meters = {"week_all": {"label": "x", "percent": 80, "utilization": 80.0,
-                           "resets_at": NOW + int(3.5 * 86400)}}
+    meters = {"week_all": {"label": "x", "percent": 80, "utilization": 80.0, "resets_at": NOW + int(3.5 * 86400)}}
     attach_projections(meters, NOW, samples_for=_no_samples)
     assert meters["week_all"]["projected_percent"] == 160
 
@@ -230,17 +245,25 @@ def test_projected_recent_and_hot_default_none_false():
 
 # --- weekly meters: duty-cycle-adjusted recent burn (24h slope) -----------
 
+
 def _week(utilization, resets_at):
-    return {"week_all": {"label": "x", "percent": round(utilization),
-                         "utilization": float(utilization),
-                         "resets_at": resets_at}}
+    return {
+        "week_all": {
+            "label": "x",
+            "percent": round(utilization),
+            "utilization": float(utilization),
+            "resets_at": resets_at,
+        }
+    }
 
 
 def test_weekly_recent_burn_uses_24h_slope_window():
     seen = []
+
     def samples(k, since):
         seen.append(since)
         return []
+
     meters = _week(50.0, NOW + 3 * 86400)
     attach_projections(meters, NOW, samples_for=samples)
     assert seen == [NOW - 86400]
@@ -279,6 +302,7 @@ def test_parse_plan_usage_warns_once_on_live_unknown_meter(caplog):
     import logging
 
     import periscope.usage as usage
+
     usage._warned_unknown_fields.clear()
     sample = {
         "five_hour": {"utilization": 10.0, "resets_at": "2026-06-11T18:00:00+00:00"},
@@ -302,6 +326,7 @@ def test_fetch_plan_usage_warns_when_token_missing(caplog, monkeypatch):
     import logging
 
     import periscope.usage as usage
+
     monkeypatch.setattr(usage, "_read_oauth_token", lambda cfg: None)
     # The warning dedupes per keychain item across the process, so an earlier
     # test that hit the same item would otherwise silence this one.
@@ -334,8 +359,8 @@ def test_refresh_success_stamps_fetched_at_and_full_backoff(monkeypatch):
     import time
 
     import periscope.usage as usage
-    monkeypatch.setattr(usage, "fetch_plan_usage",
-                        lambda cfg: {"available": True, "meters": {}})
+
+    monkeypatch.setattr(usage, "fetch_plan_usage", lambda cfg: {"available": True, "meters": {}})
     monkeypatch.setattr(usage.activity, "record_usage_samples", lambda rows: None)
     monkeypatch.setattr(usage, "attach_projections", lambda *a, **kw: None)
     monkeypatch.setattr(usage, "_plan_cache", {})
@@ -355,6 +380,7 @@ def test_refresh_failure_keeps_data_and_retries_sooner(monkeypatch):
     import time
 
     import periscope.usage as usage
+
     old = {"available": True, "meters": {}, "fetched_at": 123}
     monkeypatch.setattr(usage, "fetch_plan_usage", lambda cfg: None)
     monkeypatch.setattr(usage, "_plan_cache", {"default": (0.0, old)})
@@ -369,15 +395,15 @@ def test_refresh_failure_keeps_data_and_retries_sooner(monkeypatch):
 
 def test_refresh_plan_usage_now_bypasses_the_ttl_and_returns_the_fresh_payload(monkeypatch):
     import periscope.usage as usage
+
     # `utilization` is required: _refresh_plan_usage_into_cache reads m["utilization"]
     # for the sample row, and a KeyError there is swallowed into "keep the stale entry".
-    fresh = {"available": True,
-             "meters": {"session": {"percent": 1, "utilization": 0.01, "resets_at": 99}}}
+    fresh = {"available": True, "meters": {"session": {"percent": 1, "utilization": 0.01, "resets_at": 99}}}
     monkeypatch.setattr(usage, "fetch_plan_usage", lambda cfg: dict(fresh))
     monkeypatch.setattr(usage.activity, "record_usage_samples", lambda rows: None)
     monkeypatch.setattr(usage, "attach_projections", lambda *a, **kw: None)
     stale = {"available": True, "meters": {}, "fetched_at": 1}
-    monkeypatch.setattr(usage, "_plan_cache", {"b": (9e12, stale)})   # TTL far in the future
+    monkeypatch.setattr(usage, "_plan_cache", {"b": (9e12, stale)})  # TTL far in the future
     monkeypatch.setattr(usage, "_plan_in_flight", set())
     out = usage.refresh_plan_usage_now("b", "/cfg")
     assert out["meters"]["session"]["resets_at"] == 99
@@ -390,9 +416,9 @@ def test_refresh_plan_usage_now_yields_to_a_refresh_already_in_flight(monkeypatc
     # unconditionally; a second caller must not drop the first's marker and
     # let cached_plan_usage fire a duplicate into an endpoint that 429s readily.
     import periscope.usage as usage
+
     calls = []
-    monkeypatch.setattr(usage, "_refresh_plan_usage_into_cache",
-                        lambda a, c: calls.append(a))
+    monkeypatch.setattr(usage, "_refresh_plan_usage_into_cache", lambda a, c: calls.append(a))
     stale = {"available": True, "meters": {}, "fetched_at": 1}
     monkeypatch.setattr(usage, "_plan_cache", {"b": (0.0, stale)})
     monkeypatch.setattr(usage, "_plan_in_flight", {"b"})
@@ -403,10 +429,15 @@ def test_refresh_plan_usage_now_yields_to_a_refresh_already_in_flight(monkeypatc
 
 def _two_accounts(monkeypatch):
     import periscope.usage as usage
-    monkeypatch.setattr(usage.store, "get_accounts", lambda: [
-        {"id": "default", "label": "A", "config_dir": ""},
-        {"id": "b", "label": "B", "config_dir": "/Users/tom/.claude-b"},
-    ])
+
+    monkeypatch.setattr(
+        usage.store,
+        "get_accounts",
+        lambda: [
+            {"id": "default", "label": "A", "config_dir": ""},
+            {"id": "b", "label": "B", "config_dir": "/Users/tom/.claude-b"},
+        ],
+    )
     return usage
 
 
@@ -416,10 +447,10 @@ def test_cached_plan_usage_no_spawn_before_next_attempt(monkeypatch):
     usage = _two_accounts(monkeypatch)
     a = {"available": True, "meters": {}, "fetched_at": 1}
     b = {"available": True, "meters": {}, "fetched_at": 2}
-    monkeypatch.setattr(usage, "_plan_cache",
-                        {"default": (float("inf"), a), "b": (float("inf"), b)})
-    monkeypatch.setattr(usage, "_bg", lambda *a: (_ for _ in ()).throw(
-        AssertionError("refresh spawned inside backoff window")))
+    monkeypatch.setattr(usage, "_plan_cache", {"default": (float("inf"), a), "b": (float("inf"), b)})
+    monkeypatch.setattr(
+        usage, "_bg", lambda *a: (_ for _ in ()).throw(AssertionError("refresh spawned inside backoff window"))
+    )
     assert usage.cached_plan_usage() == {"default": a, "b": b}
 
 
@@ -430,8 +461,9 @@ def test_cached_plan_usage_unfetched_account_reports_unavailable(monkeypatch):
     a = {"available": True, "meters": {}, "fetched_at": 1}
     monkeypatch.setattr(usage, "_plan_cache", {"default": (float("inf"), a)})
     monkeypatch.setattr(usage, "_plan_in_flight", {"b"})
-    monkeypatch.setattr(usage, "_bg", lambda *a: (_ for _ in ()).throw(
-        AssertionError("refresh spawned while in flight")))
+    monkeypatch.setattr(
+        usage, "_bg", lambda *a: (_ for _ in ()).throw(AssertionError("refresh spawned while in flight"))
+    )
     assert usage.cached_plan_usage() == {"default": a, "b": {"available": False}}
 
 
@@ -442,22 +474,25 @@ def test_cached_plan_usage_spawns_one_refresh_per_due_account(monkeypatch):
     spawned = []
     monkeypatch.setattr(usage, "_plan_cache", {})
     monkeypatch.setattr(usage, "_plan_in_flight", set())
-    monkeypatch.setattr(usage, "_bg",
-                        lambda name, fn, *args: spawned.append((name, args)))
+    monkeypatch.setattr(usage, "_bg", lambda name, fn, *args: spawned.append((name, args)))
     usage.cached_plan_usage()
     usage.cached_plan_usage()
-    assert spawned == [("plan-usage:default", ("default", "")),
-                       ("plan-usage:b", ("b", "/Users/tom/.claude-b"))]
+    assert spawned == [("plan-usage:default", ("default", "")), ("plan-usage:b", ("b", "/Users/tom/.claude-b"))]
 
 
 def test_refresh_records_samples_under_its_own_account(monkeypatch):
     """Samples land tagged with the account that produced them."""
     import periscope.usage as usage
+
     rows = []
-    monkeypatch.setattr(usage, "fetch_plan_usage", lambda cfg: {
-        "available": True,
-        "meters": {"session": {"utilization": 12.0, "resets_at": 999}},
-    })
+    monkeypatch.setattr(
+        usage,
+        "fetch_plan_usage",
+        lambda cfg: {
+            "available": True,
+            "meters": {"session": {"utilization": 12.0, "resets_at": 999}},
+        },
+    )
     monkeypatch.setattr(usage.activity, "record_usage_samples", rows.extend)
     monkeypatch.setattr(usage, "attach_projections", lambda *a, **kw: None)
     monkeypatch.setattr(usage, "_plan_cache", {})
@@ -481,9 +516,11 @@ def test_missing_token_degrades_only_that_account(monkeypatch):
 
 # --- per-account credentials ---------------------------------------------
 
+
 def test_keychain_item_default_account_is_bare_name():
     """The default config dir ("") uses the unsuffixed item name."""
     from periscope.usage import _keychain_item
+
     assert _keychain_item("") == "Claude Code-credentials"
 
 
@@ -491,8 +528,8 @@ def test_keychain_item_named_config_dir_uses_sha256_prefix():
     """Verified live against the real keychain: ~/.claude-b's credential is
     stored under the sha256[:8] of the config dir path."""
     from periscope.usage import _keychain_item
-    assert (_keychain_item("/Users/tom/.claude-b")
-            == "Claude Code-credentials-f79ff3dd")
+
+    assert _keychain_item("/Users/tom/.claude-b") == "Claude Code-credentials-f79ff3dd"
 
 
 def test_missing_token_warns_once_per_account(caplog, monkeypatch):
@@ -502,6 +539,7 @@ def test_missing_token_warns_once_per_account(caplog, monkeypatch):
     import logging
 
     import periscope.usage as usage
+
     monkeypatch.setattr(usage, "_read_oauth_token", lambda cfg: None)
     monkeypatch.setattr(usage, "_warned_missing_token", set())
     with caplog.at_level(logging.WARNING):
@@ -522,8 +560,11 @@ def _plan(**pcts):
     """account id -> plan payload; None means 'no usable data'. Session-only
     meters: enough for the shell tests, which check plumbing, not policy."""
     return {
-        aid: ({"available": False} if p is None else
-              {"available": True, "meters": {"session": {"percent": p}}, "fetched_at": 1})
+        aid: (
+            {"available": False}
+            if p is None
+            else {"available": True, "meters": {"session": {"percent": p}}, "fetched_at": 1}
+        )
         for aid, p in pcts.items()
     }
 
@@ -532,7 +573,7 @@ def test_choose_launch_feeds_the_registry_and_cache_to_the_policy(monkeypatch, c
     monkeypatch.setattr(usage, "cached_plan_usage", lambda: _plan(default=100, b=8))
     launch = usage.choose_launch()
     assert isinstance(launch, Launch)
-    assert launch.account == "b"          # default is session-walled
+    assert launch.account == "b"  # default is session-walled
 
 
 def test_choose_launch_honors_the_account_pin(monkeypatch, clean_state):
@@ -603,6 +644,7 @@ import time
 
 def _iso(epoch):
     from datetime import UTC, datetime
+
     return datetime.fromtimestamp(epoch, UTC).isoformat().replace("+00:00", "Z")
 
 
@@ -611,22 +653,32 @@ def _assistant_line(ts_iso, usage, model="claude-opus-5"):
 
     NOTE: this file imports `json as _json`, not `json`.
     """
-    return _json.dumps({
-        "type": "assistant",
-        "timestamp": ts_iso,
-        "message": {"model": model, "usage": usage},
-    })
+    return _json.dumps(
+        {
+            "type": "assistant",
+            "timestamp": ts_iso,
+            "message": {"model": model, "usage": usage},
+        }
+    )
 
 
 def _synthetic_line(ts_iso):
     """Claude Code's interrupt/error/limit placeholder: all-zero usage."""
-    return _json.dumps({
-        "type": "assistant",
-        "timestamp": ts_iso,
-        "message": {"model": "<synthetic>", "usage": {
-            "input_tokens": 0, "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0, "output_tokens": 0}},
-    })
+    return _json.dumps(
+        {
+            "type": "assistant",
+            "timestamp": ts_iso,
+            "message": {
+                "model": "<synthetic>",
+                "usage": {
+                    "input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "output_tokens": 0,
+                },
+            },
+        }
+    )
 
 
 def test_tail_summary_ignores_a_synthetic_final_record(tmp_path):
@@ -634,11 +686,15 @@ def test_tail_summary_ignores_a_synthetic_final_record(tmp_path):
     context, not zero."""
     path = tmp_path / "s.jsonl"
     now = time.time()
-    path.write_text("\n".join([
-        _assistant_line(_iso(now - 60), {"input_tokens": 5,
-                                         "cache_read_input_tokens": 503_608}),
-        _synthetic_line(_iso(now - 30)),
-    ]) + "\n")
+    path.write_text(
+        "\n".join(
+            [
+                _assistant_line(_iso(now - 60), {"input_tokens": 5, "cache_read_input_tokens": 503_608}),
+                _synthetic_line(_iso(now - 30)),
+            ]
+        )
+        + "\n"
+    )
     got = usage._tail_summary_from_jsonl(path, cutoff=now - 1800)
     assert got.cur_ctx == 503_613
     assert got.calls == 1
@@ -647,8 +703,7 @@ def test_tail_summary_ignores_a_synthetic_final_record(tmp_path):
 def test_tail_summary_reports_cur_ctx_for_a_fully_parked_transcript(tmp_path):
     path = tmp_path / "s.jsonl"
     now = time.time()
-    path.write_text(_assistant_line(_iso(now - 7200),
-                                    {"cache_read_input_tokens": 600_000}) + "\n")
+    path.write_text(_assistant_line(_iso(now - 7200), {"cache_read_input_tokens": 600_000}) + "\n")
     got = usage._tail_summary_from_jsonl(path, cutoff=now - 1800)
     assert got.cur_ctx == 600_000
     assert got.calls == 0
@@ -658,12 +713,16 @@ def test_tail_summary_reports_cur_ctx_for_a_fully_parked_transcript(tmp_path):
 def test_base_ctx_skips_a_synthetic_first_record(tmp_path):
     path = tmp_path / "s.jsonl"
     now = time.time()
-    path.write_text("\n".join([
-        _synthetic_line(_iso(now - 300)),
-        _assistant_line(_iso(now - 200), {"input_tokens": 1,
-                                          "cache_creation_input_tokens": 49_999}),
-        _assistant_line(_iso(now - 100), {"cache_read_input_tokens": 400_000}),
-    ]) + "\n")
+    path.write_text(
+        "\n".join(
+            [
+                _synthetic_line(_iso(now - 300)),
+                _assistant_line(_iso(now - 200), {"input_tokens": 1, "cache_creation_input_tokens": 49_999}),
+                _assistant_line(_iso(now - 100), {"cache_read_input_tokens": 400_000}),
+            ]
+        )
+        + "\n"
+    )
     assert usage._base_ctx_from_jsonl(path) == 50_000
 
 
@@ -675,20 +734,26 @@ def test_pane_cost_pressure_serves_cache_and_schedules_refresh(monkeypatch):
 
     got = usage.pane_cost_pressure(["%1"])
 
-    assert got == {"%1": "sample"}          # stale value served immediately
-    assert scheduled == ["pane-cost"]        # refresh scheduled, not awaited
+    assert got == {"%1": "sample"}  # stale value served immediately
+    assert scheduled == ["pane-cost"]  # refresh scheduled, not awaited
 
 
 def test_refresh_cost_into_cache_builds_a_sample(tmp_path, monkeypatch):
     """The background path never runs under pytest — conftest neuters usage._bg —
     so it is called directly here or it ships untested."""
     from periscope import turns
+
     now = time.time()
     jsonl = tmp_path / "sess.jsonl"
-    jsonl.write_text("\n".join([
-        _assistant_line(_iso(now - 600), {"cache_creation_input_tokens": 50_000}),
-        _assistant_line(_iso(now - 60), {"cache_read_input_tokens": 600_000}),
-    ]) + "\n")
+    jsonl.write_text(
+        "\n".join(
+            [
+                _assistant_line(_iso(now - 600), {"cache_creation_input_tokens": 50_000}),
+                _assistant_line(_iso(now - 60), {"cache_read_input_tokens": 600_000}),
+            ]
+        )
+        + "\n"
+    )
     monkeypatch.setattr(turns, "session_id_for_pane", lambda pid: "sess")
     monkeypatch.setattr(turns, "jsonl_for_session", lambda sid: jsonl)
     monkeypatch.setattr(usage, "_base_ctx_cache", {})
@@ -699,18 +764,18 @@ def test_refresh_cost_into_cache_builds_a_sample(tmp_path, monkeypatch):
     sample = usage._cost_cache[1]["%1"]
     assert sample.cur_ctx == 600_000
     assert sample.base_ctx == 50_000
-    assert sample.pace == 2 / 30.0          # 2 calls over the 30-minute window
-    assert usage._cost_in_flight is False    # the finally block released it
+    assert sample.pace == 2 / 30.0  # 2 calls over the 30-minute window
+    assert usage._cost_in_flight is False  # the finally block released it
 
 
 def test_refresh_cost_into_cache_does_not_memoize_a_zero_base(tmp_path, monkeypatch):
     """Spec Data flow item 2: only a successful non-zero read is cached, so a
     brand-new session is retried rather than frozen for its lifetime."""
     from periscope import turns
+
     now = time.time()
     jsonl = tmp_path / "sess.jsonl"
-    jsonl.write_text(_assistant_line(_iso(now - 60),
-                                     {"output_tokens": 5}) + "\n")
+    jsonl.write_text(_assistant_line(_iso(now - 60), {"output_tokens": 5}) + "\n")
     monkeypatch.setattr(turns, "session_id_for_pane", lambda pid: "sess")
     monkeypatch.setattr(turns, "jsonl_for_session", lambda sid: jsonl)
     monkeypatch.setattr(usage, "_base_ctx_cache", {})
@@ -754,10 +819,13 @@ from periscope import cost_pressure
 
 def test_annotate_stamps_three_keys_on_a_pressured_pane(monkeypatch):
     now = time.time()
-    monkeypatch.setattr(usage, "pane_cost_pressure", lambda ids: {
-        "%1": cost_pressure.CostSample(cur_ctx=600_000, base_ctx=50_000,
-                                       pace=8.0, last_ts=now),
-    })
+    monkeypatch.setattr(
+        usage,
+        "pane_cost_pressure",
+        lambda ids: {
+            "%1": cost_pressure.CostSample(cur_ctx=600_000, base_ctx=50_000, pace=8.0, last_ts=now),
+        },
+    )
     views = [{"pane_id": "%1", "agent": "claude"}]
     usage.annotate_cost_pressure(views)
     assert views[0]["ctx_class"] == "hot"
@@ -779,18 +847,20 @@ def test_annotate_stamps_the_none_sentinel_when_payback_is_too_slow_to_flag(monk
     This pane has real debt (100k - 50k) — it's plain because payback is 20
     calls, above _PAYBACK_CALLS_WARN, not because debt is zero."""
     now = time.time()
-    monkeypatch.setattr(usage, "pane_cost_pressure", lambda ids: {
-        "%1": cost_pressure.CostSample(cur_ctx=100_000, base_ctx=50_000,
-                                       pace=1.0, last_ts=now),
-    })
+    monkeypatch.setattr(
+        usage,
+        "pane_cost_pressure",
+        lambda ids: {
+            "%1": cost_pressure.CostSample(cur_ctx=100_000, base_ctx=50_000, pace=1.0, last_ts=now),
+        },
+    )
     views = [{"pane_id": "%1", "agent": "claude"}]
     usage.annotate_cost_pressure(views)
     assert views[0]["ctx_class"] == "none"
 
 
 def test_annotate_ignores_shell_panes(monkeypatch):
-    monkeypatch.setattr(usage, "pane_cost_pressure",
-                        lambda ids: pytest.fail("should not be asked"))
+    monkeypatch.setattr(usage, "pane_cost_pressure", lambda ids: pytest.fail("should not be asked"))
     views = [{"pane_id": "%1", "agent": None}]
     usage.annotate_cost_pressure(views)
     assert "ctx_class" not in views[0]

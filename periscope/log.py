@@ -28,9 +28,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=[
-        logging.handlers.RotatingFileHandler(
-            _LOG_PATH, maxBytes=2_000_000, backupCount=3
-        ),
+        logging.handlers.RotatingFileHandler(_LOG_PATH, maxBytes=2_000_000, backupCount=3),
         logging.StreamHandler(sys.stderr),
     ],
 )
@@ -39,11 +37,13 @@ log = logging.getLogger("periscope")
 
 def _bg(name: str, fn, *args, **kwargs) -> threading.Thread:
     """Start a daemon thread that logs any uncaught exception."""
+
     def wrapped():
         try:
             fn(*args, **kwargs)
         except Exception:
             log.exception("background thread %s crashed", name)
+
     t = threading.Thread(target=wrapped, daemon=True, name=name)
     t.start()
     return t

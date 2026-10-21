@@ -25,6 +25,7 @@ def test_PORT_defaults_to_PROD_PORT(monkeypatch):
     import importlib
 
     import periscope.config
+
     importlib.reload(periscope.config)
     assert periscope.config.PORT == periscope.config.PROD_PORT
 
@@ -35,10 +36,14 @@ def test_port_literals_outside_python_agree_with_config():
     PROD_PORT alone would pass every other test while the .app silently
     loaded a dead port."""
     import periscope.config as cfg
+
     root = Path(__file__).resolve().parents[1]
     prod = [
-        "src-tauri/tauri.conf.json", "src-tauri/capabilities/default.json",
-        "src-tauri/dist/index.html", "src-tauri/src/recycle.rs", "bin/periscope",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/capabilities/default.json",
+        "src-tauri/dist/index.html",
+        "src-tauri/src/recycle.rs",
+        "bin/periscope",
     ]
     dev = ["dev.sh", "vite.config.js"]
     for rel, port in [(f, cfg.PROD_PORT) for f in prod] + [(f, cfg.DEV_PORT) for f in dev]:
@@ -52,6 +57,7 @@ def test_PORT_reads_PERISCOPE_PORT_env(monkeypatch):
     import importlib
 
     import periscope.config
+
     importlib.reload(periscope.config)
     assert periscope.config.PORT == 9999
 
@@ -63,16 +69,19 @@ def test_is_prod_only_true_on_prod_port_and_not_dev(monkeypatch):
     the prod port; that case must read False so a developer's instance never
     spends Haiku."""
     import periscope.config as cfg
+
     cases = {
-        (cfg.PROD_PORT, False): True,   # prod
-        (cfg.PROD_PORT, True): False,   # dev that landed on the prod port — the bug
-        (cfg.DEV_PORT, False): False,   # stray non-dev on a dev port
-        (cfg.DEV_PORT, True): False,    # normal dev worktree / dev.sh
+        (cfg.PROD_PORT, False): True,  # prod
+        (cfg.PROD_PORT, True): False,  # dev that landed on the prod port — the bug
+        (cfg.DEV_PORT, False): False,  # stray non-dev on a dev port
+        (cfg.DEV_PORT, True): False,  # normal dev worktree / dev.sh
     }
     for (port, dev), expected in cases.items():
         monkeypatch.setattr(cfg, "PORT", port)
         monkeypatch.setattr(cfg, "DEV", dev)
         assert cfg.is_prod() is expected, f"PORT={port} DEV={dev}"
+
+
 import os
 import re
 import shlex
@@ -95,7 +104,11 @@ def test_build_codex_resume_command(monkeypatch):
     monkeypatch.setenv("PERISCOPE_CODEX_EXEC", "codex")
     sid = "019fb027-5e13-74c3-9ed9-0c69e1914367"
     assert config.build_agent_command("codex", cwd="/repo", resume_id=sid) == [
-        "codex", "resume", sid, "-C", "/repo",
+        "codex",
+        "resume",
+        sid,
+        "-C",
+        "/repo",
     ]
 
 
@@ -139,7 +152,7 @@ def test_claude_subprocess_env_strips_api_credit_auth_and_binds_the_account(monk
     assert "CLAUDE_CONFIG_DIR" not in env
     env = config.claude_subprocess_env(config_dir="/Users/x/.claude-b")
     assert env["CLAUDE_CONFIG_DIR"] == "/Users/x/.claude-b"
-    assert env["PATH"] == os.environ["PATH"]   # the rest of the environment is inherited
+    assert env["PATH"] == os.environ["PATH"]  # the rest of the environment is inherited
 
 
 def test_effort_level_passes_the_levels_claude_accepts():

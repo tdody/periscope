@@ -29,6 +29,7 @@ class LgtmStartBody(BaseModel):
 @router.post("/api/lgtm/start")
 async def lgtm_start(body: LgtmStartBody):
     import httpx
+
     cwd = os.path.expanduser((body.cwd or "").strip())
     if not cwd or not Path(cwd).is_dir():
         raise HTTPException(400, "cwd must be an existing directory")
@@ -130,6 +131,7 @@ async def lgtm_remove_item(
     poll the caller might already have in flight.
     """
     import httpx
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.delete(f"{LGTM_BASE_URL}/project/{slug}/items/{item}")

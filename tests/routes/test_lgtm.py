@@ -3,8 +3,10 @@
 
 def _patch_lgtm_refresh(mocker):
     """_lgtm_refresh_all is async; patch to a no-op coroutine factory."""
+
     async def _noop():
         return None
+
     for path in ("periscope.routes.lgtm._lgtm_refresh_all", "server._lgtm_refresh_all"):
         try:
             mocker.patch(path, side_effect=_noop)

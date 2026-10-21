@@ -19,18 +19,21 @@ from periscope.pidfile import (
 
 def test_pidfile_path_under_xdg(tmp_xdg_home: Path, monkeypatch):
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.PROD_PORT)
     assert _pidfile_path() == tmp_xdg_home / "periscope" / f"periscope-{periscope.config.PROD_PORT}.pid"
 
 
 def test_pidfile_path_uses_dev_port(tmp_xdg_home: Path, monkeypatch):
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.DEV_PORT)
     assert _pidfile_path() == tmp_xdg_home / "periscope" / f"periscope-{periscope.config.DEV_PORT}.pid"
 
 
 def test_write_then_remove_pidfile(tmp_xdg_home: Path, monkeypatch):
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.PROD_PORT)
     _write_pidfile()
     path = _pidfile_path()
@@ -44,6 +47,7 @@ def test_write_then_remove_pidfile(tmp_xdg_home: Path, monkeypatch):
 
 def test_pidfile_stores_pid_and_port(tmp_xdg_home: Path, monkeypatch):
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.PROD_PORT)
     _write_pidfile()
     contents = _pidfile_path().read_text()
@@ -53,6 +57,7 @@ def test_pidfile_stores_pid_and_port(tmp_xdg_home: Path, monkeypatch):
 def test_remove_pidfile_ignores_other_owners(tmp_xdg_home: Path, monkeypatch):
     """If the file holds someone else's pid, don't delete it."""
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.PROD_PORT)
     path = _pidfile_path()
     path.parent.mkdir(parents=True)
@@ -66,8 +71,10 @@ def test_pid_is_periscope_true_when_command_matches(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="uv run server.py\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="uv run server.py\n",
+            stderr="",
         ),
     )
     assert _pid_is_periscope(1234) is True
@@ -77,8 +84,10 @@ def test_pid_is_periscope_false_when_command_unrelated(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="/usr/bin/zsh\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="/usr/bin/zsh\n",
+            stderr="",
         ),
     )
     assert _pid_is_periscope(1234) is False
@@ -88,7 +97,10 @@ def test_pid_is_periscope_false_on_ps_failure(mocker):
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="",
         ),
     )
     assert _pid_is_periscope(1234) is False
@@ -113,11 +125,9 @@ def test_reclaim_signals_live_periscope(tmp_xdg_home: Path, mocker):
     killed = mocker.patch("os.kill")
     _reclaim_existing_instance()
     import signal as _signal
+
     killed.assert_any_call(99999, _signal.SIGTERM)
-    assert not any(
-        call.args == (99999, _signal.SIGKILL)
-        for call in killed.call_args_list
-    )
+    assert not any(call.args == (99999, _signal.SIGKILL) for call in killed.call_args_list)
 
 
 def test_reclaim_escalates_to_sigkill_after_3s(tmp_xdg_home: Path, mocker):
@@ -136,16 +146,16 @@ def test_reclaim_escalates_to_sigkill_after_3s(tmp_xdg_home: Path, mocker):
     killed = mocker.patch("os.kill")
     _reclaim_existing_instance()
     import signal as _signal
+
     killed.assert_any_call(99999, _signal.SIGTERM)
     killed.assert_any_call(99999, _signal.SIGKILL)
 
 
-def test_reclaim_refuses_when_recorded_port_mismatches(
-    tmp_xdg_home: Path, monkeypatch, mocker, caplog
-):
+def test_reclaim_refuses_when_recorded_port_mismatches(tmp_xdg_home: Path, monkeypatch, mocker, caplog):
     """A pidfile that records a port different from current PORT must not
     trigger SIGTERM — the recorded pid belongs to a different periscope."""
     import periscope.config
+
     monkeypatch.setattr(periscope.config, "PORT", periscope.config.DEV_PORT)
     path = _pidfile_path()
     path.parent.mkdir(parents=True)

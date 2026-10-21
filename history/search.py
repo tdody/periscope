@@ -1,4 +1,5 @@
 """FTS5 search over the indexed history."""
+
 from __future__ import annotations
 
 import json
@@ -42,15 +43,18 @@ def _build_fts_query(query: str) -> str:
     return " AND ".join(terms) if terms else ""
 
 
-def search(query: str, *,
-           db_path: Path | str | None = None,
-           project: str | None = None,
-           branch: str | None = None,
-           since: int | None = None,
-           until: int | None = None,
-           include_trivial: bool = False,
-           rerank: bool = False,
-           limit: int = 50) -> list[dict]:
+def search(
+    query: str,
+    *,
+    db_path: Path | str | None = None,
+    project: str | None = None,
+    branch: str | None = None,
+    since: int | None = None,
+    until: int | None = None,
+    include_trivial: bool = False,
+    rerank: bool = False,
+    limit: int = 50,
+) -> list[dict]:
     """FTS5-ranked search across indexed sessions.
 
     Returns a list of result dicts ordered by relevance, optionally re-ranked
@@ -112,33 +116,35 @@ def _normalize_rows(rows: list[dict]) -> list[dict]:
                 is_live = (now - os.path.getmtime(jsonl_path)) < LIVE_MTIME_S
             except OSError:
                 is_live = False
-        out.append({
-            "session_id": r["session_id"],
-            "jsonl_path": jsonl_path,
-            "project_path": r["project_path"],
-            "branch": r["branch"],
-            "started_at": r["started_at"],
-            "ended_at": r["ended_at"],
-            "duration_s": r["duration_s"],
-            "user_msg_count": r["user_msg_count"],
-            "asst_msg_count": r["asst_msg_count"],
-            "tool_use_count": r["tool_use_count"],
-            "was_interrupted": bool(r["was_interrupted"]),
-            "ended_cleanly": bool(r["ended_cleanly"]),
-            "summary": r["summary"],
-            "summary_model": r["summary_model"],
-            "tags": (r["tags"] or "").split(",") if r["tags"] else [],
-            "first_user_msg": r["first_user_msg"],
-            "last_user_msg": r["last_user_msg"],
-            "files_touched": json.loads(r["files_touched"]) if r["files_touched"] else [],
-            "notable_cmds": json.loads(r["notable_cmds"]) if r["notable_cmds"] else [],
-            "tool_use_counts": json.loads(r["tool_use_counts"]) if r["tool_use_counts"] else {},
-            "trivial": r["summary_model"] is None,
-            "is_live": is_live,
-            "rank": i + 1,
-            "rerank_reason": r.get("rerank_reason"),
-            "rerank_score": r.get("rerank_score"),
-        })
+        out.append(
+            {
+                "session_id": r["session_id"],
+                "jsonl_path": jsonl_path,
+                "project_path": r["project_path"],
+                "branch": r["branch"],
+                "started_at": r["started_at"],
+                "ended_at": r["ended_at"],
+                "duration_s": r["duration_s"],
+                "user_msg_count": r["user_msg_count"],
+                "asst_msg_count": r["asst_msg_count"],
+                "tool_use_count": r["tool_use_count"],
+                "was_interrupted": bool(r["was_interrupted"]),
+                "ended_cleanly": bool(r["ended_cleanly"]),
+                "summary": r["summary"],
+                "summary_model": r["summary_model"],
+                "tags": (r["tags"] or "").split(",") if r["tags"] else [],
+                "first_user_msg": r["first_user_msg"],
+                "last_user_msg": r["last_user_msg"],
+                "files_touched": json.loads(r["files_touched"]) if r["files_touched"] else [],
+                "notable_cmds": json.loads(r["notable_cmds"]) if r["notable_cmds"] else [],
+                "tool_use_counts": json.loads(r["tool_use_counts"]) if r["tool_use_counts"] else {},
+                "trivial": r["summary_model"] is None,
+                "is_live": is_live,
+                "rank": i + 1,
+                "rerank_reason": r.get("rerank_reason"),
+                "rerank_score": r.get("rerank_score"),
+            }
+        )
     return out
 
 
@@ -147,17 +153,14 @@ def stats(*, db_path: Path | str | None = None) -> dict:
     heuristic counts, distinct projects, last full scan, DB file size.
     Single round trip; not cached (each call ~1-3ms on a populated index)."""
     from .db import DEFAULT_DB_PATH, get_meta
+
     path = Path(db_path) if db_path else DEFAULT_DB_PATH
     conn = connect(db_path)
     try:
         total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        summarized = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE summary_model IS NOT NULL"
-        ).fetchone()[0]
+        summarized = conn.execute("SELECT COUNT(*) FROM sessions WHERE summary_model IS NOT NULL").fetchone()[0]
         heuristic = total - summarized
-        projects = conn.execute(
-            "SELECT COUNT(DISTINCT project_path) FROM sessions"
-        ).fetchone()[0]
+        projects = conn.execute("SELECT COUNT(DISTINCT project_path) FROM sessions").fetchone()[0]
         last_scan = get_meta(conn, "last_full_scan_at")
         haiku_model = get_meta(conn, "haiku_model")
     finally:
@@ -177,12 +180,14 @@ def stats(*, db_path: Path | str | None = None) -> dict:
     }
 
 
-def recent(*,
-           db_path: Path | str | None = None,
-           project: str | None = None,
-           since: int | None = None,
-           include_trivial: bool = False,
-           limit: int = 50) -> list[dict]:
+def recent(
+    *,
+    db_path: Path | str | None = None,
+    project: str | None = None,
+    since: int | None = None,
+    include_trivial: bool = False,
+    limit: int = 50,
+) -> list[dict]:
     """List recent sessions by `started_at desc` — what the UI shows on an
     empty query. Same filters as `search()`, no FTS rank."""
     conn = connect(db_path)
@@ -243,44 +248,60 @@ def messages_from_jsonl(jsonl_path: str) -> list[dict]:
             continue
         if ev.type == "system":
             if raw.get("subtype") == "compact_boundary":
-                messages.append({
-                    "role": "system",
-                    "kind": "compact",
-                    "uuid": ev.uuid,
-                    "ts_ms": ev.ts_ms,
-                })
+                messages.append(
+                    {
+                        "role": "system",
+                        "kind": "compact",
+                        "uuid": ev.uuid,
+                        "ts_ms": ev.ts_ms,
+                    }
+                )
             continue
         if not (ev.user_text or ev.assistant_text or ev.tool_uses or ev.tool_results):
             continue
         if ev.type == "user" and ev.user_text:
-            messages.append({
-                "role": "user",
-                "uuid": ev.uuid,
-                "ts_ms": ev.ts_ms,
-                "text": ev.user_text,
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "uuid": ev.uuid,
+                    "ts_ms": ev.ts_ms,
+                    "text": ev.user_text,
+                }
+            )
         elif ev.type == "assistant":
-            tool_uses = [{
-                "id": tu.get("id"),
-                "name": tu.get("name"),
-                "input": tu.get("input") or {},
-                "result": results.get(tu.get("id")),
-            } for tu in ev.tool_uses]
-            messages.append({
-                "role": "assistant",
-                "uuid": ev.uuid,
-                "ts_ms": ev.ts_ms,
-                "text": ev.assistant_text or "",
-                "tool_uses": tool_uses,
-            })
+            tool_uses = [
+                {
+                    "id": tu.get("id"),
+                    "name": tu.get("name"),
+                    "input": tu.get("input") or {},
+                    "result": results.get(tu.get("id")),
+                }
+                for tu in ev.tool_uses
+            ]
+            messages.append(
+                {
+                    "role": "assistant",
+                    "uuid": ev.uuid,
+                    "ts_ms": ev.ts_ms,
+                    "text": ev.assistant_text or "",
+                    "tool_uses": tool_uses,
+                }
+            )
     return messages
 
 
 # Housekeeping tools with zero retrieval value in a past-session transcript.
-_COMPACT_SKIP_TOOLS = frozenset({
-    "Skill", "ToolSearch", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
-    "TodoWrite",
-})
+_COMPACT_SKIP_TOOLS = frozenset(
+    {
+        "Skill",
+        "ToolSearch",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskGet",
+        "TaskList",
+        "TodoWrite",
+    }
+)
 
 # The one input key that summarizes a call for known tools; unknown tools
 # fall back to their first string input value.
@@ -317,12 +338,10 @@ def compact_messages(messages: list[dict]) -> list[dict]:
     for m in messages:
         role = m.get("role")
         if role == "system":
-            out.append({"role": "system", "kind": m.get("kind"),
-                        "ts_ms": m.get("ts_ms")})
+            out.append({"role": "system", "kind": m.get("kind"), "ts_ms": m.get("ts_ms")})
             continue
         if role == "user":
-            out.append({"role": "user", "ts_ms": m.get("ts_ms"),
-                        "text": _cap(m.get("text") or "", _COMPACT_TEXT_CAP)})
+            out.append({"role": "user", "ts_ms": m.get("ts_ms"), "text": _cap(m.get("text") or "", _COMPACT_TEXT_CAP)})
             continue
         tools: list[dict] = []
         for tu in m.get("tool_uses") or []:
@@ -332,8 +351,7 @@ def compact_messages(messages: list[dict]) -> list[dict]:
             inp = tu.get("input") or {}
             summary = inp.get(_COMPACT_SUMMARY_KEYS.get(name, ""))
             if not isinstance(summary, str):
-                summary = next(
-                    (v for v in inp.values() if isinstance(v, str)), "")
+                summary = next((v for v in inp.values() if isinstance(v, str)), "")
             entry = {"name": name, "summary": _cap(summary, _COMPACT_TOOL_CAP)}
             if name == "Bash" and isinstance(tu.get("result"), str):
                 entry["result"] = _cap(tu["result"], _COMPACT_TOOL_CAP)
@@ -341,16 +359,14 @@ def compact_messages(messages: list[dict]) -> list[dict]:
         text = m.get("text") or ""
         if not text and not tools:
             continue
-        msg: dict = {"role": "assistant", "ts_ms": m.get("ts_ms"),
-                     "text": _cap(text, _COMPACT_TEXT_CAP)}
+        msg: dict = {"role": "assistant", "ts_ms": m.get("ts_ms"), "text": _cap(text, _COMPACT_TEXT_CAP)}
         if tools:
             msg["tools"] = tools
         out.append(msg)
     return out
 
 
-def get_session(session_id: str, *,
-                db_path: Path | str | None = None) -> dict | None:
+def get_session(session_id: str, *, db_path: Path | str | None = None) -> dict | None:
     """Return the full session row + parsed conversation messages.
 
     Reads the JSONL on demand and shapes it for a UI detail view. Returns
@@ -360,8 +376,7 @@ def get_session(session_id: str, *,
 
     conn = connect(db_path)
     try:
-        row = conn.execute("SELECT * FROM sessions WHERE session_id = ?",
-                           (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
         if row is None:
             return None
         record = dict(row)
@@ -406,40 +421,48 @@ def _rerank(rows: list[dict], query: str) -> list[dict]:
     (and a one-line log warning is emitted)."""
     try:
         from .indexer import get_anthropic_client
+
         client = get_anthropic_client()
     except Exception as e:
         log.warning("rerank: skipping (no client): %s", e)
         return rows
-    candidates = [{
-        "session_id": r["session_id"],
-        "summary": r.get("summary") or r.get("first_user_msg") or "",
-        "tags": r.get("tags") or "",
-        "project": r.get("project_path") or "",
-        "first_user_msg": r.get("first_user_msg") or "",
-    } for r in rows]
+    candidates = [
+        {
+            "session_id": r["session_id"],
+            "summary": r.get("summary") or r.get("first_user_msg") or "",
+            "tags": r.get("tags") or "",
+            "project": r.get("project_path") or "",
+            "first_user_msg": r.get("first_user_msg") or "",
+        }
+        for r in rows
+    ]
     try:
         msg = client.messages.create(
             model="claude-haiku-5-5",
             max_tokens=1024,
-            system=[{
-                "type": "text",
-                "text": (
-                    "You re-rank candidate Claude Code session summaries by their relevance "
-                    "to the user's query. For each candidate, assign a score from 0.0 "
-                    "(irrelevant) to 1.0 (perfect match). Always call rank_search_results."
-                ),
-                "cache_control": {"type": "ephemeral"},
-            }],
+            system=[
+                {
+                    "type": "text",
+                    "text": (
+                        "You re-rank candidate Claude Code session summaries by their relevance "
+                        "to the user's query. For each candidate, assign a score from 0.0 "
+                        "(irrelevant) to 1.0 (perfect match). Always call rank_search_results."
+                    ),
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             tools=[RERANK_TOOL],
             tool_choice={"type": "tool", "name": RERANK_TOOL["name"]},
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"QUERY: {query}\n\n"
-                    f"CANDIDATES:\n{json.dumps(candidates, indent=2)}\n\n"
-                    "Call rank_search_results."
-                ),
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"QUERY: {query}\n\n"
+                        f"CANDIDATES:\n{json.dumps(candidates, indent=2)}\n\n"
+                        "Call rank_search_results."
+                    ),
+                }
+            ],
         )
         for block in getattr(msg, "content", []):
             if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == RERANK_TOOL["name"]:
@@ -479,10 +502,8 @@ RERANK_TOOL = {
                     "type": "object",
                     "properties": {
                         "session_id": {"type": "string"},
-                        "reason": {"type": "string",
-                                    "description": "One sentence explaining the match."},
-                        "score": {"type": "number",
-                                   "description": "0.0 (irrelevant) to 1.0 (perfect match)."},
+                        "reason": {"type": "string", "description": "One sentence explaining the match."},
+                        "score": {"type": "number", "description": "0.0 (irrelevant) to 1.0 (perfect match)."},
                     },
                     "required": ["session_id", "reason", "score"],
                 },

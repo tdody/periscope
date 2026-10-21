@@ -53,6 +53,7 @@ def _no_plan_usage_refresh(monkeypatch):
     # write through usage.refresh_plan_usage_now — the same leaked-thread class.
     # It imports _bg into its own namespace, so neuter it by that name too.
     from periscope import poke
+
     monkeypatch.setattr(poke, "_bg", lambda *a, **kw: None, raising=False)
     monkeypatch.setattr(poke, "_in_flight", set(), raising=False)
 
@@ -95,6 +96,7 @@ def _session_activity_db_guard(tmp_path_factory):
     redirects (below / fresh_activity_db) layer per-test isolation on top; their
     revert target is this session DB, never the user's real file."""
     from periscope import config
+
     mp = pytest.MonkeyPatch()
     db = tmp_path_factory.mktemp("activity-session") / "session.db"
     mp.setattr(config, "ACTIVITY_DB", db)
@@ -118,6 +120,7 @@ def _isolate_activity_db(tmp_path, monkeypatch):
     the cached connection unconditionally. `fresh_activity_db` still layers its
     own redirect on top for tests that want the module handle."""
     from periscope import activity, config
+
     monkeypatch.setattr(config, "ACTIVITY_DB", tmp_path / "autouse-activity.db")
     activity._CONN = None
     activity._git_cache.clear()
@@ -143,6 +146,7 @@ def _no_track_maintenance(monkeypatch):
     unless a test opts in by setting it False itself; monkeypatch restores the
     import-time default afterward."""
     from periscope import pids
+
     monkeypatch.setattr(pids, "_TRACKS_MAINTAINED", True, raising=False)
 
 
@@ -178,6 +182,7 @@ def fresh_activity_db(tmp_path, monkeypatch):
     user's real ~/.config/periscope/periscope.db. Yields the activity
     module for convenience."""
     from periscope import activity, config
+
     monkeypatch.setattr(config, "ACTIVITY_DB", tmp_path / "periscope.db")
     activity._CONN = None
     activity._git_cache.clear()
@@ -213,6 +218,7 @@ def clean_state(tmp_xdg_home, monkeypatch):
     across consumer modules needed.
     """
     import periscope.store as store
+
     fresh = {
         "version": 2,
         "ui": {},
@@ -239,7 +245,7 @@ def tmux_test_server(monkeypatch):
     don't touch the default server or launch real Claude."""
     sock = f"periscope-open-test-{uuid.uuid4().hex[:8]}"
     monkeypatch.setenv("PERISCOPE_TMUX_SOCKET", sock)
-    monkeypatch.setenv("PERISCOPE_CLAUDE_EXEC", "cat")   # sits on stdin; window stays alive
+    monkeypatch.setenv("PERISCOPE_CLAUDE_EXEC", "cat")  # sits on stdin; window stays alive
     yield sock
     subprocess.run(["tmux", "-L", sock, "kill-server"], capture_output=True)
 
@@ -250,9 +256,13 @@ def tmp_git_repo(tmp_path):
     /var -> /private/var, so callers compare against realpath)."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "--allow-empty", "-qm", "init"],
-                   cwd=repo, env=env, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "init"], cwd=repo, env=env, check=True)
     return Path(os.path.realpath(repo))

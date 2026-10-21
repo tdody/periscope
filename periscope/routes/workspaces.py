@@ -4,6 +4,7 @@ Create (with optional initial pane tags = "promote"), patch, archive, tag,
 untag, and spawn-into-workspace. The entity lives in periscope.workspaces;
 the per-tab tag map lives in periscope.activity (pane_workspaces table).
 """
+
 import subprocess
 from typing import Literal
 
@@ -32,7 +33,9 @@ class CreateBody(BaseModel):
 @router.post("/api/workspaces")
 def workspaces_create(body: CreateBody):
     ws = create_workspace(
-        name=body.name, base_repo=body.base_repo, base_worktree=body.base_worktree,
+        name=body.name,
+        base_repo=body.base_repo,
+        base_worktree=body.base_worktree,
     )
     for pane_id in body.tag_panes or []:
         activity.set_pane_workspace(pane_id, ws["id"])
@@ -48,8 +51,7 @@ class PatchBody(BaseModel):
 
 @router.post("/api/workspaces/patch")
 def workspaces_patch(body: PatchBody):
-    fields = {k: v for k, v in body.model_dump(exclude={"workspace_id"}).items()
-              if k in body.model_fields_set}
+    fields = {k: v for k, v in body.model_dump(exclude={"workspace_id"}).items() if k in body.model_fields_set}
     if not update_workspace(body.workspace_id, **fields):
         raise HTTPException(404, f"no workspace {body.workspace_id!r}")
     return {"ok": True, **get_workspace(body.workspace_id)}
@@ -109,16 +111,23 @@ def workspaces_spawn(body: SpawnBody):
         # base_worktree is a PATH; spawn_worktree wants a branch NAME.
         out = subprocess.run(
             ["git", "-C", base_wt, "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         base_branch = out.stdout.strip() or None
     spawn = worktree_spawn.spawn_worktree(
-        base_repo, body.branch, base_branch=base_branch, fetch=False,
+        base_repo,
+        body.branch,
+        base_branch=base_branch,
+        fetch=False,
     )
-    result = open_ops.open_target(
-        open_ops.PathTarget(path=spawn["path"]), agent=body.agent
-    )
+    result = open_ops.open_target(open_ops.PathTarget(path=spawn["path"]), agent=body.agent)
     activity.set_pane_workspace(result.agent_pane_id, body.workspace_id)
-    return {"ok": True, "workspace_id": body.workspace_id,
-            "pane_id": result.agent_pane_id, "agent": result.agent,
-            "path": spawn["path"], "ui": result.ui}
+    return {
+        "ok": True,
+        "workspace_id": body.workspace_id,
+        "pane_id": result.agent_pane_id,
+        "agent": result.agent,
+        "path": spawn["path"],
+        "ui": result.ui,
+    }

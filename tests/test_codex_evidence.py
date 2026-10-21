@@ -3,9 +3,7 @@ import re
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures" / "codex" / "0.146.0"
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 
 def _json(name: str) -> dict:
@@ -13,10 +11,7 @@ def _json(name: str) -> dict:
 
 
 def test_normal_rollout_has_matching_session_and_turn_relationships():
-    records = [
-        json.loads(line)
-        for line in (FIXTURES / "normal.jsonl").read_text().splitlines()
-    ]
+    records = [json.loads(line) for line in (FIXTURES / "normal.jsonl").read_text().splitlines()]
     meta, started, complete = records
 
     assert meta["type"] == "session_meta"

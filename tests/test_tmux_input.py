@@ -55,7 +55,9 @@ def _t(*args):
     # restore-on-start would resurrect the user's real sessions onto it).
     return subprocess.run(
         ["tmux", "-L", TEST_SOCKET, "-f", "/dev/null", *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout
 
 
@@ -67,6 +69,7 @@ def test_roundtrip_into_real_pane(monkeypatch):
     # server — fail loudly instead of silently escaping the test sandbox.
     async def no_fork(target, text):
         pytest.fail("control-mode path failed; fork fallback would hit the default server")
+
     monkeypatch.setattr(tmux_input, "_fork_fallback", no_fork)
 
     target_session = f"pstest-{uuid.uuid4().hex[:8]}"

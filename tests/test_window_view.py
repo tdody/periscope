@@ -6,7 +6,6 @@ function mutates panes._completed_at and _prev_state as a side effect;
 tests assert against those mutations directly when relevant.
 """
 
-
 import pytest
 
 
@@ -20,6 +19,7 @@ def reset_panes_and_channels(monkeypatch):
     care re-patch it with their own map.
     """
     from periscope import panes, session_status, window_view
+
     monkeypatch.setattr(session_status, "pane_config_dirs", dict)
     window_view._pane_accounts_cache = None
     from periscope.channels import (
@@ -28,6 +28,7 @@ def reset_panes_and_channels(monkeypatch):
         _CHANNELS_LOCK,
         _MCP_SESSIONS,
     )
+
     panes._focused_at.clear()
     panes._acted_at.clear()
     panes._completed_at.clear()
@@ -36,6 +37,7 @@ def reset_panes_and_channels(monkeypatch):
     panes._spinner_last_seen.clear()
     panes._agent_last_seen.clear()
     from periscope import window_view
+
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
@@ -53,6 +55,7 @@ def reset_panes_and_channels(monkeypatch):
     panes._spinner_last_seen.clear()
     panes._agent_last_seen.clear()
     from periscope import window_view
+
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
@@ -65,16 +68,19 @@ def reset_panes_and_channels(monkeypatch):
 def _window(**overrides) -> dict:
     """Minimal tmux-window dict for tests."""
     base = {
-        "session": "main", "index": 0, "name": "claude",
-        "active": True, "cwd": "/tmp/nowhere",
-        "pid": "abc12345", "pane_id": "%5",
+        "session": "main",
+        "index": 0,
+        "name": "claude",
+        "active": True,
+        "cwd": "/tmp/nowhere",
+        "pid": "abc12345",
+        "pane_id": "%5",
     }
     base.update(overrides)
     return base
 
 
-def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, lgtm=None,
-                     linked_pr=None):
+def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, lgtm=None, linked_pr=None):
     """Mock the read-only caches the view consumes. `linked_pr` defaults to None
     (a cold SWR miss) — patched unconditionally so no real `gh pr view` thread
     ever fires from a test (leaked-thread + live-network hazard)."""
@@ -82,12 +88,12 @@ def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, lgtm=None,
     mocker.patch("periscope.window_view.cached_git_state", return_value=git or {})
     mocker.patch("periscope.window_view.cached_pr_state", return_value=pr or {})
     mocker.patch("periscope.window_view.cached_lgtm_state", return_value=lgtm)
-    mocker.patch("periscope.window_view.cached_linked_pr_state",
-                 return_value=linked_pr)
+    mocker.patch("periscope.window_view.cached_linked_pr_state", return_value=linked_pr)
 
 
 def test_view_returns_target_and_focused_at(mocker, clean_state):
     from periscope.window_view import build_window_view
+
     _stub_subsystems(mocker)
     w = _window()
     view, _ = build_window_view(w, now_ts=1000)
@@ -97,6 +103,7 @@ def test_view_returns_target_and_focused_at(mocker, clean_state):
 
 def test_view_classifies_non_claude_as_shell(mocker, clean_state):
     from periscope.window_view import build_window_view
+
     _stub_subsystems(mocker, pane_content="$ ls\nREADME.md\n$")
     view, _ = build_window_view(_window(), now_ts=1000)
     assert view["agent"] is None
@@ -113,7 +120,8 @@ def test_view_promotes_blank_state_to_working_when_spinner_present(mocker, clean
     mocker.patch(
         "periscope.window_view.parse_pane",
         return_value={
-            "agent": "claude", "state": "idle",
+            "agent": "claude",
+            "state": "idle",
             "spinner": "Envisioning",
         },
     )
@@ -155,13 +163,17 @@ _ACCOUNT_B_DIR = "/Users/x/.claude-b"  # conftest clean_state registry
 
 
 def test_view_reports_account_for_second_subscription_pane(
-    mocker, clean_state, monkeypatch,
+    mocker,
+    clean_state,
+    monkeypatch,
 ):
     from periscope import session_status, window_view
 
     _stub_subsystems(mocker)
     monkeypatch.setattr(
-        session_status, "pane_config_dirs", lambda: {"%5": _ACCOUNT_B_DIR},
+        session_status,
+        "pane_config_dirs",
+        lambda: {"%5": _ACCOUNT_B_DIR},
     )
     view, _ = window_view.build_window_view(_window(), now_ts=1000)
     assert view["account"] == "b"
@@ -177,7 +189,9 @@ def test_view_default_account_pane_reports_default(mocker, clean_state):
 
 
 def test_view_unregistered_config_dir_is_unknown_not_default(
-    mocker, clean_state, monkeypatch,
+    mocker,
+    clean_state,
+    monkeypatch,
 ):
     """A config dir no account claims must NOT read as the default account:
     the pane demonstrably isn't on it (default's config_dir is ""), and a
@@ -186,14 +200,18 @@ def test_view_unregistered_config_dir_is_unknown_not_default(
 
     _stub_subsystems(mocker)
     monkeypatch.setattr(
-        session_status, "pane_config_dirs", lambda: {"%5": "/Users/tom/.claude-zzz"},
+        session_status,
+        "pane_config_dirs",
+        lambda: {"%5": "/Users/tom/.claude-zzz"},
     )
     view, _ = window_view.build_window_view(_window(), now_ts=1000)
     assert view["account"] == "unknown"
 
 
 def test_account_scan_runs_once_per_poll_not_once_per_window(
-    mocker, clean_state, monkeypatch,
+    mocker,
+    clean_state,
+    monkeypatch,
 ):
     """`pane_config_dirs` forks ps once for the table plus once per candidate
     claude; ~20 windows a poll would be hundreds of forks every 3s."""
@@ -209,7 +227,8 @@ def test_account_scan_runs_once_per_poll_not_once_per_window(
     monkeypatch.setattr(session_status, "pane_config_dirs", _scan)
     for i in range(5):
         view, _ = window_view.build_window_view(
-            _window(index=i, pid=f"pid{i}"), now_ts=1000,
+            _window(index=i, pid=f"pid{i}"),
+            now_ts=1000,
         )
         assert view["account"] == "b"
     assert len(calls) == 1
@@ -229,9 +248,7 @@ def test_codex_first_idle_is_baseline_not_done(mocker, clean_state):
         return_value=window_view._CodexObservation("idle", "session-a", "turn-a"),
     )
 
-    view, stamp = window_view.build_window_view(
-        _window(pane_pid="42"), now_ts=1000
-    )
+    view, stamp = window_view.build_window_view(_window(pane_pid="42"), now_ts=1000)
 
     assert view["agent"] == "codex"
     assert view["state"] == "idle"
@@ -264,9 +281,7 @@ def test_codex_same_turn_working_to_idle_completes_once(mocker, clean_state):
     assert stamp == ("abc12345", 1001, 0)
 
 
-def test_codex_unknown_is_no_opinion_then_same_turn_idle_completes(
-    mocker, clean_state
-):
+def test_codex_unknown_is_no_opinion_then_same_turn_idle_completes(mocker, clean_state):
     from periscope import window_view
 
     _codex_view_stubs(mocker)
@@ -429,6 +444,7 @@ def test_view_linked_pr_merged_carries_state(mocker, clean_state):
 
 def test_view_surfaces_linked_linear(mocker, clean_state):
     from periscope.window_view import build_window_view
+
     pid = "abc12345"
     clean_state["windows"][pid] = {
         "linked_linear": "FAR-456",
@@ -488,8 +504,7 @@ def test_view_includes_track_id(mocker, clean_state, fresh_activity_db):
     from periscope import activity
     from periscope.window_view import build_window_view
 
-    activity.insert_track({"id": "tk_x", "name": "X", "repo": None,
-                           "created_at": 1, "archived_at": None})
+    activity.insert_track({"id": "tk_x", "name": "X", "repo": None, "created_at": 1, "archived_at": None})
     # pane_tracks keys on the @periscope_id (the window's `pid`), not %N.
     activity.set_pane_track("abc12345", "tk_x")
     _stub_subsystems(mocker)
@@ -530,6 +545,7 @@ def test_view_persisted_acked_at_suppresses_done_state(mocker, clean_state):
 
 def test_idle_pane_skips_recapture_when_activity_unchanged(mocker, clean_state):
     from periscope import window_view
+
     cap = mocker.patch("periscope.window_view.capture", return_value="")  # parses to shell/idle
     w = _window()
     w["activity"] = 500
@@ -542,6 +558,7 @@ def test_idle_pane_skips_recapture_when_activity_unchanged(mocker, clean_state):
 
 def test_pane_recaptures_when_activity_advances(mocker, clean_state):
     from periscope import window_view
+
     cap = mocker.patch("periscope.window_view.capture", return_value="")
     w = _window()
     w["activity"] = 500
@@ -556,15 +573,14 @@ def test_working_pane_always_recaptures_even_if_activity_unchanged(mocker, clean
     """Spinner grace + done-edge are non-idempotent, so a working pane is never
     skipped even when activity is stale."""
     from periscope import window_view
+
     cap = mocker.patch(
         "periscope.window_view.capture",
         # Real Claude status block (status line present) so parse_pane returns
         # agent + spinner → working. A bare "⠋ thinking…" line has no status
         # line and parses to shell, which would never exercise the working path.
         return_value=(
-            "some output\n⠋ Thinking…\n"
-            "  fdy | master | clean\n"
-            "  24% | ↑235k ↓479 | $17.04 | Opus 4.7 (1M context)"
+            "some output\n⠋ Thinking…\n  fdy | master | clean\n  24% | ↑235k ↓479 | $17.04 | Opus 4.7 (1M context)"
         ),  # parses agent + spinner → working
     )
     w = _window()
@@ -579,6 +595,7 @@ def test_skipped_pane_still_reflects_fresh_focus(mocker, clean_state):
     """A skipped (quiet) pane still gets fresh focused_at — only capture+parse
     is skipped, not the recency assembly."""
     from periscope import panes, window_view
+
     mocker.patch("periscope.window_view.capture", return_value="")
     w = _window()
     w["activity"] = 500
@@ -594,6 +611,7 @@ def test_window_view_drops_dead_project_workspace_fields(mocker, clean_state, fr
     project_name/project_archived fields the frontend never read off windows)
     — the view no longer ships any of them."""
     from periscope.window_view import build_window_view
+
     _stub_subsystems(mocker)
     view, _ = build_window_view(_window(pane_id="%9"), now_ts=1000)
     assert "project_pinned_dir" not in view
@@ -605,20 +623,24 @@ def test_window_view_drops_dead_project_workspace_fields(mocker, clean_state, fr
 
 # ── mem_signal: cycle-hint tiers from claude process stats ───────────────
 
+
 def test_mem_signal_none_when_healthy():
     from periscope.window_view import mem_signal
+
     assert mem_signal(None) is None
     assert mem_signal({"pid": 1, "rss_kb": 600_000, "age_s": 3600}) is None
 
 
 def test_mem_signal_warn_on_rss():
     from periscope.window_view import mem_signal
+
     out = mem_signal({"pid": 1, "rss_kb": 2 * 1024 * 1024, "age_s": 60})
     assert out == {"tier": "warn", "rss_gb": 2.0, "age_s": 60}
 
 
 def test_mem_signal_warn_on_age_alone():
     from periscope.window_view import mem_signal
+
     out = mem_signal({"pid": 1, "rss_kb": 500_000, "age_s": 3 * 86400})
     assert out["tier"] == "warn"
     assert out["rss_gb"] == 0.5
@@ -626,6 +648,7 @@ def test_mem_signal_warn_on_age_alone():
 
 def test_mem_signal_bad_overrides_warn():
     from periscope.window_view import mem_signal
+
     out = mem_signal({"pid": 1, "rss_kb": 4_400_000, "age_s": 60})
     assert out["tier"] == "bad"
     assert out["rss_gb"] == 4.2
@@ -636,6 +659,7 @@ def test_view_surfaces_spawned_by_lineage(mocker, clean_state):
     payload never carried it — so a chain of delegated sessions rendered as
     unrelated tabs and the dashboard could not show A's work continuing in B."""
     from periscope.window_view import build_window_view
+
     pid = "d188cde1"
     clean_state["windows"][pid] = {"spawned_by": "2c453c8c"}
 
@@ -656,6 +680,7 @@ def test_view_names_a_spawner_that_has_already_exited(mocker, clean_state):
     whose middle pane was already dead. A live-only join renders nothing for
     exactly the long-chain case lineage exists to make legible."""
     from periscope.window_view import build_window_view
+
     pid = "b6bde664"
     clean_state["windows"][pid] = {"spawned_by": "d188cde1"}
     # The lead is gone from tmux, but its last_seen name survives (GC'd at 30d).
@@ -678,6 +703,7 @@ def test_view_names_a_spawner_that_has_already_exited(mocker, clean_state):
 def test_view_spawned_by_is_none_for_a_hand_created_pane(mocker, clean_state):
     """The key must always be present so the client can join on it uniformly."""
     from periscope.window_view import build_window_view
+
     pid = "solo0001"
     clean_state["windows"][pid] = {}
 
@@ -703,7 +729,9 @@ def test_view_reports_the_launch_effort_from_argv(mocker, clean_state, monkeypat
 
 
 def test_view_shows_a_set_effort_only_while_the_same_claude_runs(
-    mocker, clean_state, monkeypatch,
+    mocker,
+    clean_state,
+    monkeypatch,
 ):
     # The per-pane control's value is remembered because Claude never reports
     # effort back. A new claude in the same pane starts fresh, so the label
@@ -712,9 +740,11 @@ def test_view_shows_a_set_effort_only_while_the_same_claude_runs(
     from periscope.store import set_window_fields
 
     _stub_subsystems(mocker)
-    set_window_fields("abc12345",
-                      session_effort={"value": "low", "claude_pid": 4242},
-                      session_model={"value": "sonnet", "claude_pid": 4242})
+    set_window_fields(
+        "abc12345",
+        session_effort={"value": "low", "claude_pid": 4242},
+        session_model={"value": "sonnet", "claude_pid": 4242},
+    )
     monkeypatch.setattr(session_status, "pane_claude_pids", lambda: {"%5": 4242})
     view, _ = window_view.build_window_view(_window(), now_ts=1000)
     assert (view["session_effort"], view["session_model"]) == ("low", "sonnet")

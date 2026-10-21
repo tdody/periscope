@@ -60,10 +60,7 @@ def _root_rollout(path_text: str, session_id: str) -> bool:
                     continue
                 meta = record.get("payload") or {}
                 meta_id = meta.get("session_id") or meta.get("id")
-                return (
-                    meta_id == session_id
-                    and meta.get("originator") == "codex-tui"
-                )
+                return meta_id == session_id and meta.get("originator") == "codex-tui"
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         pass
     return False
@@ -95,9 +92,7 @@ def parse_payload(stdin: TextIO) -> HookEvent | None:
         session_path=session_path,
         event=event,
         turn_id=turn_id if isinstance(turn_id, str) and turn_id else None,
-        cli_version=(
-            cli_version if isinstance(cli_version, str) and cli_version else None
-        ),
+        cli_version=(cli_version if isinstance(cli_version, str) and cli_version else None),
     )
 
 
@@ -110,9 +105,7 @@ def record(event: HookEvent, *, pane_id: str, db_path: Path) -> None:
         # Until root/subagent attribution is proven, a later hook session must
         # not replace an existing pane binding. This intentionally means
         # resume/clear repair is disabled during the evidence-gate period.
-        if current is None or (
-            current.provider == "codex" and current.session_id == event.session_id
-        ):
+        if current is None or (current.provider == "codex" and current.session_id == event.session_id):
             session_binding_db.upsert_binding(
                 conn,
                 session_binding_db.AgentSessionBinding(

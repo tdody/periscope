@@ -53,14 +53,17 @@ from periscope.usage import cached_plan_usage
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from periscope import config
+
     log.info("periscope starting (pid=%d, port=%d)", os.getpid(), config.PORT)
     from periscope import store
+
     store.seed_accounts_if_missing()
     # Bound periscope.db growth — drop events older than 30 days, import the
     # legacy pane_sessions/ directory if present, then drop pane_sessions rows
     # whose tmux pane is gone.
     from periscope import activity
     from periscope.panes import list_windows
+
     _bg("activity-prune", activity.prune)
     _bg("ui-events-prune", activity.prune_ui_events)
     _bg("usage-samples-prune", activity.prune_usage_samples)
@@ -68,8 +71,7 @@ async def lifespan(_app: FastAPI):
     def _pane_sessions_housekeeping() -> None:
         imported = activity.migrate_legacy_pane_sessions()
         if imported:
-            log.info("migrated %d legacy pane_sessions row(s) into periscope.db",
-                     imported)
+            log.info("migrated %d legacy pane_sessions row(s) into periscope.db", imported)
         alive = {w["pane_id"] for w in list_windows() if w.get("pane_id")}
         dropped = activity.prune_pane_sessions(alive)
         if dropped:
@@ -90,6 +92,7 @@ async def lifespan(_app: FastAPI):
     # the in-memory cache but tmux pane ids (and the events table) survive.
     def _rehydrate_alerts() -> None:
         from periscope import channels
+
         n = channels.rehydrate_alerts_from_events()
         if n:
             log.info("rehydrated %d channel alert(s) from events log", n)
@@ -107,13 +110,13 @@ async def lifespan(_app: FastAPI):
         mcp_task = _task("mcp-listener", _mcp_listener())
     else:
         mcp_task = None
-        log.info("non-prod (port %d, dev=%s): skipping MCP listener",
-                 config.PORT, config.DEV)
+        log.info("non-prod (port %d, dev=%s): skipping MCP listener", config.PORT, config.DEV)
     # State hub: one central compute loop that pushes /api/state over /ws/state
     # to all subscribers. Demand-gated (idle until a client connects), so it's
     # safe to run in dev too — no Claude spend, just the same tmux/git fan-out
     # the REST endpoint already does.
     from periscope import state_hub
+
     state_task = _task("state-hub", state_hub.run())
     # LGTM mirror: polls localhost:9900 + subscribes per-session SSE.
     # No-op while LGTM isn't running; surfaces on the dashboard the
@@ -127,10 +130,12 @@ async def lifespan(_app: FastAPI):
     # NB: _task's signature is _task(name, coro).
     if config.is_prod():
         from periscope import activity
+
         activity_task = _task("activity-worker", activity.run_worker())
         # Generate the static bg-commander MCP config + orchestrator prompt once
         # at boot (prod-only — dispatch needs the MCP socket + subscription auth).
         from periscope import bg_commander
+
         try:
             bg_commander.write_mcp_config()
         except Exception:
@@ -140,6 +145,7 @@ async def lifespan(_app: FastAPI):
         # inside the coroutine: a gate inside would still leave a live task
         # behind on every dev --reload.
         from periscope import poke
+
         poke_task = _task("poke", poke.run())
     else:
         activity_task = None
@@ -151,16 +157,17 @@ async def lifespan(_app: FastAPI):
     # must never crash boot — degraded just means windows stay where they are,
     # and the bridge is pane_id-keyed so terminals keep working.
     from periscope import migrate_single_session
+
     try:
         migrate_single_session.run_if_needed()
     except Exception:
-        log.warning("single-session migration failed; windows left in place",
-                    exc_info=True)
+        log.warning("single-session migration failed; windows left in place", exc_info=True)
     # Synchronous (pre-serve) seed: tag every managed pane with its resolved
     # track so the rail groups by track_id from the first poll. Idempotent —
     # skips already-tagged panes. NOT _bg: grouping is now track-only (no
     # session-match fallback), so this must complete before serving.
     from periscope import tracks
+
     try:
         folded = tracks.migrate_workspaces_to_tracks()
         if folded:
@@ -169,16 +176,16 @@ async def lifespan(_app: FastAPI):
         if seeded:
             log.info("seeded %d pane_tracks row(s)", seeded)
     except Exception:
-        log.warning("track seed failed; panes resolve to repo-default lazily",
-                    exc_info=True)
+        log.warning("track seed failed; panes resolve to repo-default lazily", exc_info=True)
     try:
         yield
     finally:
         log.info("periscope shutting down (pid=%d)", os.getpid())
         from periscope import tmux_input, tmux_mirror
+
         await tmux_input.shutdown()
-        await tmux_mirror.shutdown()   # control clients must not leak
-                                       # across dev reloads
+        await tmux_mirror.shutdown()  # control clients must not leak
+        # across dev reloads
         if mcp_task is not None:
             mcp_task.cancel()
         state_task.cancel()
@@ -204,11 +211,34 @@ app = FastAPI(lifespan=lifespan)
 # by path — but we mount them before the static catch-all below so
 # `/api/*` and `/ws/*` paths take precedence over `StaticFiles`.
 for r in (
-    alerts, auto_rename, channel, command, diff, editor, events, cleanup_routes, fs, healthz, history, lgtm_route,
-    open_route, pane, paste_image, prefs, projects_routes, workspaces_routes, send, sessions,
-    settings_routes, state, tracks, update, ws,
+    alerts,
+    auto_rename,
+    channel,
+    command,
+    diff,
+    editor,
+    events,
+    cleanup_routes,
+    fs,
+    healthz,
+    history,
+    lgtm_route,
+    open_route,
+    pane,
+    paste_image,
+    prefs,
+    projects_routes,
+    workspaces_routes,
+    send,
+    sessions,
+    settings_routes,
+    state,
+    tracks,
+    update,
+    ws,
 ):
     app.include_router(r.router)
+
 
 # Serve static with `Cache-Control: no-cache` so the browser always
 # revalidates against the ETag StaticFiles already sends — a cheap 304 when

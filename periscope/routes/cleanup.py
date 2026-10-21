@@ -74,8 +74,7 @@ def cleanup_archive(body: ArchiveBody):
             # pane_id, not session:index — `renumber-windows on` shifts indices
             # mid-loop.
             target_dir = os.path.realpath(pinned_dir)
-            windows = [w for w in list_windows()
-                       if os.path.realpath(w.get("cwd") or "") == target_dir]
+            windows = [w for w in list_windows() if os.path.realpath(w.get("cwd") or "") == target_dir]
             for w in windows:
                 pid = w.get("pane_id")
                 if pid:
@@ -91,10 +90,7 @@ def cleanup_archive(body: ArchiveBody):
                     timeout=3.0,
                 )
                 if code == 0 and common:
-                    common_abs = (
-                        common if os.path.isabs(common)
-                        else os.path.join(pinned_dir, common)
-                    )
+                    common_abs = common if os.path.isabs(common) else os.path.join(pinned_dir, common)
                     repo = os.path.realpath(os.path.dirname(common_abs))
                 else:
                     repo = pinned_dir  # fallback; git will likely error
@@ -129,15 +125,15 @@ def cleanup_archive(body: ArchiveBody):
             # 5. Optional branch delete. -D is force-delete; the user
             # opted in by checking the box, so don't be defensive.
             if item.delete_branch and branch:
-                code, out = _run(
-                    ["git", "-C", repo, "branch", "-D", branch], timeout=3.0
-                )
+                code, out = _run(["git", "-C", repo, "branch", "-D", branch], timeout=3.0)
                 if code != 0:
                     # Non-fatal — surface the warning but the worktree
                     # is already gone.
                     log.warning(
                         "cleanup: branch -D %s on %s failed: %s",
-                        branch, repo, out,
+                        branch,
+                        repo,
+                        out,
                     )
 
             archived.append(pinned_dir)

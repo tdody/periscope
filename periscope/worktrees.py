@@ -33,9 +33,7 @@ def _list_worktrees(repo: str) -> list[tuple[str, str | None]]:
     `repo` may be a worktree path; git resolves to the main checkout
     internally. We pass `-C repo` so this works either way.
     """
-    code, out = _run(
-        ["git", "-C", repo, "worktree", "list", "--porcelain"], timeout=3.0
-    )
+    code, out = _run(["git", "-C", repo, "worktree", "list", "--porcelain"], timeout=3.0)
     if code != 0 or not out:
         return []
     rows: list[tuple[str, str | None]] = []
@@ -45,11 +43,11 @@ def _list_worktrees(repo: str) -> list[tuple[str, str | None]]:
         if line.startswith("worktree "):
             if current_path is not None:
                 rows.append((current_path, current_branch))
-            current_path = line[len("worktree "):]
+            current_path = line[len("worktree ") :]
             current_branch = None
         elif line.startswith("branch "):
-            ref = line[len("branch "):]
-            current_branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+            ref = line[len("branch ") :]
+            current_branch = ref[len("refs/heads/") :] if ref.startswith("refs/heads/") else ref
         elif line == "detached":
             current_branch = None
     if current_path is not None:
@@ -95,7 +93,7 @@ def for_branch(repo: str, branch: str) -> str | None:
         _cache[os.path.realpath(repo)] = (time.time(), fresh)
     for path, wt_branch in fresh:
         if wt_branch == branch:
-            return path                   # already realpath'd by _list_worktrees
+            return path  # already realpath'd by _list_worktrees
     return None
 
 

@@ -9,6 +9,7 @@ Tmux-resolving variants (`_for_pane`) are thin wrappers below — kept
 separate so unit tests of the pure resolution logic don't have to mock
 tmux subprocess calls.
 """
+
 import os
 import subprocess
 from pathlib import Path
@@ -126,8 +127,7 @@ def safe_resolve(cwd: str, raw_path: str) -> Path:
     return resolved
 
 
-def safe_read(cwd: str, raw_path: str,
-              max_bytes: int = _MAX_BYTES_DEFAULT) -> tuple[str, str]:
+def safe_read(cwd: str, raw_path: str, max_bytes: int = _MAX_BYTES_DEFAULT) -> tuple[str, str]:
     """Resolve `raw_path` against `cwd`, enforce safe roots, read as UTF-8.
 
     Returns (resolved_abs_path, contents).
@@ -165,9 +165,9 @@ def read_text(resolved: Path, max_bytes: int = _MAX_BYTES_DEFAULT) -> str:
         raise HTTPException(status_code=415, detail="binary file") from None
 
 
-def safe_write(cwd: str, raw_path: str, content: str,
-               base_mtime: float | None,
-               max_bytes: int = _MAX_BYTES_DEFAULT) -> tuple[str, float]:
+def safe_write(
+    cwd: str, raw_path: str, content: str, base_mtime: float | None, max_bytes: int = _MAX_BYTES_DEFAULT
+) -> tuple[str, float]:
     """Overwrite an existing file with `content`. Returns (path, new mtime).
 
     `base_mtime` is the st_mtime the editor loaded. A file that moved since
@@ -195,8 +195,7 @@ def safe_write(cwd: str, raw_path: str, content: str,
 
     st = resolved.stat()
     if base_mtime is not None and st.st_mtime != base_mtime:
-        raise HTTPException(
-            status_code=409, detail="file changed on disk since it was loaded")
+        raise HTTPException(status_code=409, detail="file changed on disk since it was loaded")
 
     # Write a sibling temp and rename over the target: a crash or a full
     # disk leaves the original intact instead of truncated, and no reader
@@ -231,9 +230,7 @@ def _cwd_for_target(target: str) -> str:
     """Resolve the pane's cwd via `tmux display-message`. Same one-shot
     pattern as periscope/turns.py:get_turns_for_pane."""
     try:
-        out = tmux(
-            "display-message", "-t", target, "-p", "#{pane_current_path}"
-        ).strip()
+        out = tmux("display-message", "-t", target, "-p", "#{pane_current_path}").strip()
     except Exception:
         raise HTTPException(status_code=404, detail=f"unknown pane: {target}") from None
     if not out:
@@ -241,14 +238,12 @@ def _cwd_for_target(target: str) -> str:
     return out
 
 
-def safe_read_for_pane(target: str, raw_path: str,
-                       max_bytes: int = _MAX_BYTES_DEFAULT) -> tuple[str, str]:
+def safe_read_for_pane(target: str, raw_path: str, max_bytes: int = _MAX_BYTES_DEFAULT) -> tuple[str, str]:
     """tmux-resolves cwd from `target`, then calls safe_read."""
     return safe_read(_cwd_for_target(target), raw_path, max_bytes)
 
 
-def safe_write_for_pane(target: str, raw_path: str, content: str,
-                        base_mtime: float | None) -> tuple[str, float]:
+def safe_write_for_pane(target: str, raw_path: str, content: str, base_mtime: float | None) -> tuple[str, float]:
     """tmux-resolves cwd from `target`, then calls safe_write."""
     return safe_write(_cwd_for_target(target), raw_path, content, base_mtime)
 

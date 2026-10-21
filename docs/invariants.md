@@ -36,6 +36,14 @@ These are the non-obvious behaviors worth preserving:
    `_send_command` registers one callback per write, so a combined line
    desyncs the whole reply-callback queue.
 
+   **The mirror's control client attaches `-f ignore-size`, never
+   `read-only`.** tmux 3.8 sends a `read-only` control client no `%output`
+   at all — command replies still arrive, so the connect-time reconcile
+   frame paints and then the terminal silently freezes. 3.6a and earlier
+   delivered output either way. Caught by CI (Homebrew's tmux 3.8) via
+   `test_two_subscribers_multiplex`, the only mirror test that asserts on
+   live `%output` rather than on reconcile frames.
+
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
    previous line's length.

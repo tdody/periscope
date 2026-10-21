@@ -25,6 +25,7 @@ internals (version-tagged), so every read degrades to None on a shape change.
 
 Imports only stdlib — no periscope.* — so it stays a leaf the resolver layer
 (turns.py / window_view.py) can depend on freely."""
+
 import contextlib
 import json
 import re
@@ -98,7 +99,7 @@ def _build_index() -> tuple[dict, dict[int, list[dict]]]:
                 mtime = f.stat().st_mtime
             except (OSError, ValueError):
                 continue
-            data["_dir"] = str(d.parent)   # config dir, for the per-pane tiebreak
+            data["_dir"] = str(d.parent)  # config dir, for the per-pane tiebreak
             data["_mtime"] = mtime
             sid = data.get("sessionId")
             if sid:
@@ -162,7 +163,9 @@ def _claude_procs() -> dict[int, tuple[int, int]]:
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,rss=,etime=,comm="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout
         for line in out.splitlines():
             parts = line.split(None, 3)
@@ -195,10 +198,12 @@ def proc_table() -> tuple[dict[int, list[int]], dict[int, str]]:
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,ppid=,command="],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return kids, cmds   # not cached: a transient ps failure shouldn't stick
+        return kids, cmds  # not cached: a transient ps failure shouldn't stick
     for line in out.splitlines():
         bits = line.split(maxsplit=2)
         if len(bits) < 3:
@@ -219,7 +224,9 @@ def _tmux_pane_pids() -> dict[str, int]:
     try:
         out = subprocess.run(
             ["tmux", "list-panes", "-a", "-F", "#{pane_id}\t#{pane_pid}"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return {}
@@ -255,7 +262,7 @@ def pane_claude_pids() -> dict[str, int]:
         return _pane_pids_cache[1]
     panes = _tmux_pane_pids()
     if not panes:
-        return {}   # no tmux — don't fork ps, and don't cache the empty answer
+        return {}  # no tmux — don't fork ps, and don't cache the empty answer
     kids, cmds = proc_table()
     found: dict[str, int] = {}
     for pane_id, root in panes.items():
@@ -285,7 +292,7 @@ def pane_resume_ids() -> dict[str, str]:
     from when the live sid no longer matches any recorded entry."""
     pane_pids = pane_claude_pids()
     if not pane_pids:
-        return {}   # no tmux/claudes — don't fork ps for nothing
+        return {}  # no tmux/claudes — don't fork ps for nothing
     out: dict[str, str] = {}
     _, cmds = proc_table()
     for pane_id, pid in pane_pids.items():
@@ -308,7 +315,9 @@ def _env_by_pid(pids: list[int]) -> dict[int, str]:
     try:
         out = subprocess.run(
             ["ps", "eww", "-o", "pid=,command=", "-p", ",".join(str(p) for p in pids)],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout
     except OSError:
         return {}
@@ -337,7 +346,7 @@ def _env_tail(cmd_only: str, with_env: str) -> str | None:
     cmd_only, with_env = cmd_only.strip(), with_env.strip()
     if not with_env.startswith(cmd_only):
         return None
-    return with_env[len(cmd_only):]
+    return with_env[len(cmd_only) :]
 
 
 def _pane_claude_envs() -> dict[str, str]:
@@ -355,7 +364,7 @@ def _pane_claude_envs() -> dict[str, str]:
         return _config_dirs_cache[1]
     pane_pids = pane_claude_pids()
     if not pane_pids:
-        return {}   # no tmux/claudes — don't cache the empty answer
+        return {}  # no tmux/claudes — don't cache the empty answer
     _, cmds = proc_table()
     envs = _env_by_pid(list(pane_pids.values()))
     tails: dict[str, str] = {}
@@ -472,7 +481,7 @@ def live_session_id_for_pane(pane_id: str) -> str | None:
     for c in cands:
         if c["_dir"] == want:
             return c.get("sessionId")
-    return cands[0].get("sessionId")   # pane's dir had no file — newest wins
+    return cands[0].get("sessionId")  # pane's dir had no file — newest wins
 
 
 def claude_proc_for(sid: str | None) -> dict | None:
@@ -517,5 +526,4 @@ def session_state_for(sid: str | None) -> dict | None:
     state = _STATE_MAP.get(d.get("status"))
     if state is None:
         return None
-    return {"state": state, "status": d.get("status"),
-            "waiting_for": d.get("waitingFor")}
+    return {"state": state, "status": d.get("status"), "waiting_for": d.get("waitingFor")}

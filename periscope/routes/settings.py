@@ -63,7 +63,8 @@ def settings_patch(body: SettingsPatch):
             for repo, layout in overrides.items():
                 if layout not in _VALID_LAYOUTS:
                     raise HTTPException(
-                        400, f"worktree_layout_overrides[{repo!r}] must be one of {_VALID_LAYOUTS}",
+                        400,
+                        f"worktree_layout_overrides[{repo!r}] must be one of {_VALID_LAYOUTS}",
                     )
                 normalized[os.path.realpath(repo)] = layout
             patch["worktree_layout_overrides"] = normalized

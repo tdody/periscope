@@ -25,7 +25,7 @@ class SendBody(BaseModel):
 
 
 class SendBulkBody(BaseModel):
-    targets: list[str]            # ["session:index", ...]
+    targets: list[str]  # ["session:index", ...]
     keys: list[str] = []
     paste: str | None = None
 

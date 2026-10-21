@@ -1,4 +1,5 @@
 """Aggregate parsed JSONL events into a SessionRecord ready for DB upsert."""
+
 from __future__ import annotations
 
 import hashlib
@@ -50,6 +51,7 @@ def _is_harness_msg(text: str) -> bool:
 @dataclass
 class SessionRecord:
     """One row's worth of mechanical fields. Haiku fields filled later."""
+
     session_id: str
     jsonl_path: str
     project_path: str
@@ -66,11 +68,11 @@ class SessionRecord:
     first_user_msg: str | None
     last_user_msg: str | None
     final_assistant_msg: str | None
-    files_touched: str           # JSON array string
-    notable_cmds: str            # JSON array string
-    tool_use_counts: str         # JSON dict string
-    user_messages_blob: str = ""     # joined for FTS + summary input
-    assistant_text_blob: str = ""    # joined for FTS
+    files_touched: str  # JSON array string
+    notable_cmds: str  # JSON array string
+    tool_use_counts: str  # JSON dict string
+    user_messages_blob: str = ""  # joined for FTS + summary input
+    assistant_text_blob: str = ""  # joined for FTS
 
     source_mtime: int = 0
     source_size: int = 0
@@ -105,8 +107,7 @@ def _is_notable_cmd(cmd: str) -> bool:
     return any(c in stripped for c in _NON_TRIVIAL_CHARS)
 
 
-def extract_record(jsonl_path: str, events: list[Event], *,
-                   source_mtime: int, source_size: int) -> SessionRecord:
+def extract_record(jsonl_path: str, events: list[Event], *, source_mtime: int, source_size: int) -> SessionRecord:
     """Walk events once; emit a SessionRecord."""
     session_id: str | None = None
     branch: str | None = None
@@ -227,14 +228,17 @@ def compute_summary_input_hash(rec: SessionRecord) -> str:
     (whitespace, key order) that could shift in a future refactor."""
     files_list = json.loads(rec.files_touched)
     notable_cmds_first_20 = json.loads(rec.notable_cmds)[:20]
-    canonical = json.dumps([
-        rec.first_user_msg or "",
-        rec.user_messages_blob,
-        rec.final_assistant_msg or "",
-        files_list,
-        rec.branch or "",
-        notable_cmds_first_20,
-    ], ensure_ascii=False)
+    canonical = json.dumps(
+        [
+            rec.first_user_msg or "",
+            rec.user_messages_blob,
+            rec.final_assistant_msg or "",
+            files_list,
+            rec.branch or "",
+            notable_cmds_first_20,
+        ],
+        ensure_ascii=False,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -248,8 +252,7 @@ def is_trivial(rec: SessionRecord) -> bool:
     """
     if rec.duration_s < TRIVIAL_DURATION_S:
         return True
-    return (rec.user_msg_count < TRIVIAL_USER_MSG_THRESHOLD and
-            rec.tool_use_count < TRIVIAL_TOOL_USE_THRESHOLD)
+    return rec.user_msg_count < TRIVIAL_USER_MSG_THRESHOLD and rec.tool_use_count < TRIVIAL_TOOL_USE_THRESHOLD
 
 
 def heuristic_summary(rec: SessionRecord) -> str:
@@ -257,5 +260,4 @@ def heuristic_summary(rec: SessionRecord) -> str:
     head = (rec.first_user_msg or "(no user message)")[:120]
     n = rec.user_msg_count
     msg_word = "message" if n == 1 else "messages"
-    return (f"Short session ({n} {msg_word}, "
-            f"{rec.duration_s}s) — first user message: {head}")
+    return f"Short session ({n} {msg_word}, {rec.duration_s}s) — first user message: {head}"

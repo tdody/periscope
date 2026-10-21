@@ -16,6 +16,7 @@ Line matching is git's job — unified-diff output IS the matched result, so the
 is no LCS/Myers implementation here. This module shells out, parses hunks, and
 returns a structure the client renders directly.
 """
+
 import hashlib
 import os
 import re
@@ -98,8 +99,12 @@ def parse_unified(text: str) -> list[dict]:
         if raw.startswith("diff --git "):
             # "diff --git a/x b/x" — take the b-side, which is correct for
             # renames and is the path the user is looking at now.
-            cur = {"path": raw.split(" b/", 1)[-1] if " b/" in raw else "",
-                   "status": "modified", "hunks": [], "truncated": False}
+            cur = {
+                "path": raw.split(" b/", 1)[-1] if " b/" in raw else "",
+                "status": "modified",
+                "hunks": [],
+                "truncated": False,
+            }
             files.append(cur)
             hunk = None
         elif cur is None:
@@ -117,7 +122,7 @@ def parse_unified(text: str) -> list[dict]:
             if not m:
                 continue
             hunk = {
-                "header": (m.group(5) or "").strip(),   # enclosing symbol, if git found one
+                "header": (m.group(5) or "").strip(),  # enclosing symbol, if git found one
                 "old_start": int(m.group(1)),
                 "new_start": int(m.group(3)),
                 "lines": [],

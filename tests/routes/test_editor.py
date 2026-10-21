@@ -42,7 +42,8 @@ def test_open_launches_the_worktree_root_not_the_cwd(client, clean_state, mocker
 
     mocker.patch("periscope.routes.editor.get_settings", return_value={"editor": "Cursor"})
     mocker.patch(
-        "periscope.routes.editor.list_windows", return_value=[_window(cwd=str(deep))],
+        "periscope.routes.editor.list_windows",
+        return_value=[_window(cwd=str(deep))],
     )
     launch = mocker.patch("periscope.routes.editor.open_in_editor")
 
@@ -59,7 +60,8 @@ def test_open_500_surfaces_a_launch_failure(client, clean_state, mocker, tmp_pat
     (root / ".git").mkdir(parents=True)
     mocker.patch("periscope.routes.editor.get_settings", return_value={"editor": "Cursor"})
     mocker.patch(
-        "periscope.routes.editor.list_windows", return_value=[_window(cwd=str(root))],
+        "periscope.routes.editor.list_windows",
+        return_value=[_window(cwd=str(root))],
     )
     mocker.patch(
         "periscope.routes.editor.open_in_editor",

@@ -1,5 +1,6 @@
 """Tests for periscope.turns (pane -> session -> transcript) and the
 pane_session_hook producer that records the pane -> session mapping."""
+
 import json
 
 import periscope.activity as activity
@@ -9,12 +10,21 @@ from periscope.session_binding_db import AgentSessionBinding, upsert_binding
 
 
 def _write_jsonl(path, cwd, text="hello transcript"):
-    path.write_text(json.dumps({
-        "type": "user", "sessionId": path.stem, "cwd": cwd,
-        "gitBranch": "main", "timestamp": "2026-06-01T10:00:00.000Z",
-        "uuid": "u1", "parentUuid": None,
-        "message": {"role": "user", "content": text},
-    }) + "\n")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": path.stem,
+                "cwd": cwd,
+                "gitBranch": "main",
+                "timestamp": "2026-06-01T10:00:00.000Z",
+                "uuid": "u1",
+                "parentUuid": None,
+                "message": {"role": "user", "content": text},
+            }
+        )
+        + "\n"
+    )
 
 
 def _seed_projects(tmp_path, monkeypatch, cwd):
@@ -26,9 +36,9 @@ def _seed_projects(tmp_path, monkeypatch, cwd):
 
 # ── session_id_for_pane: live session file beats the recorded row ────────
 
+
 def _live(monkeypatch, mapping):
-    monkeypatch.setattr(session_status, "live_session_id_for_pane",
-                        lambda pane_id: mapping.get(pane_id))
+    monkeypatch.setattr(session_status, "live_session_id_for_pane", lambda pane_id: mapping.get(pane_id))
 
 
 def _record(pane_id, sid):
@@ -62,6 +72,7 @@ def test_none_when_neither_source_knows(fresh_activity_db, monkeypatch):
 
 # ── session_id_for_pane reads pane_sessions ──────────────────────────────
 
+
 def test_session_id_for_pane_reads_db(fresh_activity_db):
     sid = "c0f5cc37-c50d-47e3-9b10-60bb363e4d10"
     activity._conn().execute(
@@ -70,7 +81,7 @@ def test_session_id_for_pane_reads_db(fresh_activity_db):
     )
     activity._conn().commit()
     assert turns.session_id_for_pane("%56") == sid
-    assert turns.session_id_for_pane("%999") is None   # no row for that pane
+    assert turns.session_id_for_pane("%999") is None  # no row for that pane
     assert turns.session_id_for_pane("") is None
 
 
@@ -95,6 +106,7 @@ def test_provider_binding_does_not_leak_into_legacy_claude_lookup(
 
 
 # ── get_turns_for_pane ───────────────────────────────────────────────────
+
 
 def test_picks_pane_specific_session_when_cwd_shared(tmp_path, monkeypatch):
     """Two panes, one cwd, two sessions — the recorded session id disambiguates."""
@@ -162,11 +174,14 @@ def test_none_when_no_transcript(tmp_path, monkeypatch):
 
 # ── pane_session_hook producer (SessionStart / UserPromptSubmit) ─────────
 
+
 def _hook_row(db_path, pane_id):
     import sqlite3
+
     with sqlite3.connect(db_path) as c:
         row = c.execute(
-            "SELECT session_id FROM pane_sessions WHERE pane_id=?", (pane_id,),
+            "SELECT session_id FROM pane_sessions WHERE pane_id=?",
+            (pane_id,),
         ).fetchone()
     return row[0] if row else None
 
@@ -175,6 +190,7 @@ def test_hook_records_pane_session(tmp_path, monkeypatch):
     import io
 
     import pane_session_hook as hook
+
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv("TMUX_PANE", "%56")
     # session id comes from the hook payload (authoritative/current), not env.
@@ -190,6 +206,7 @@ def test_hook_upserts_on_repeat(tmp_path, monkeypatch):
     import io
 
     import pane_session_hook as hook
+
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv("TMUX_PANE", "%56")
     monkeypatch.setattr("sys.stdin", io.StringIO('{"session_id":"old"}'))
@@ -204,6 +221,7 @@ def test_hook_noop_without_tmux_pane(tmp_path, monkeypatch):
     import io
 
     import pane_session_hook as hook
+
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("TMUX_PANE", raising=False)
     monkeypatch.setattr("sys.stdin", io.StringIO('{"session_id":"x"}'))
@@ -213,6 +231,7 @@ def test_hook_noop_without_tmux_pane(tmp_path, monkeypatch):
 
 
 # ── pane_sessions helpers in activity.py ─────────────────────────────────
+
 
 def test_prune_pane_sessions_drops_dead(fresh_activity_db):
     c = activity._conn()
@@ -237,9 +256,7 @@ def test_migrate_legacy_pane_sessions(fresh_activity_db, tmp_path, monkeypatch):
     imported = activity.migrate_legacy_pane_sessions()
     assert imported == 2
     assert not legacy.exists()  # directory wiped on success
-    rows = dict(activity._conn().execute(
-        "SELECT pane_id, session_id FROM pane_sessions"
-    ).fetchall())
+    rows = dict(activity._conn().execute("SELECT pane_id, session_id FROM pane_sessions").fetchall())
     assert rows == {"%10": "sid-10", "%11": "sid-11"}
     # Idempotent: second call sees no legacy dir, does nothing.
     assert activity.migrate_legacy_pane_sessions() == 0

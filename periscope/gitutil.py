@@ -25,9 +25,7 @@ def resolve_repo(pinned_dir: str) -> str:
     """
     code, common = _run(["git", "-C", pinned_dir, "rev-parse", "--git-common-dir"])
     if code == 0 and common:
-        common_abs = (
-            common if os.path.isabs(common) else os.path.join(pinned_dir, common)
-        )
+        common_abs = common if os.path.isabs(common) else os.path.join(pinned_dir, common)
         return os.path.realpath(os.path.dirname(common_abs))
     return pinned_dir
 

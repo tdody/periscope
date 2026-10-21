@@ -31,6 +31,7 @@ non-stdlib deps, which would break the plain-`python3` hook invocation.
 This module opens its own read connection to the session DB, the same
 out-of-process pattern `pane_session_hook.py` uses as the writer.
 """
+
 import re
 import sqlite3
 import subprocess
@@ -48,9 +49,7 @@ _PANE_FIELDS = 11
 
 _CHANNEL_RE = re.compile(r"--dangerously-load-development-channels (\S+)")
 
-_CONTINUUM_SAVE_SH = (
-    Path.home() / ".tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
-)
+_CONTINUUM_SAVE_SH = Path.home() / ".tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
 
 
 def save_now() -> None:
@@ -83,7 +82,9 @@ def _live_pane_map() -> dict[str, str]:
     try:
         out = subprocess.run(
             ["tmux", "list-panes", "-a", "-F", fmt],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError):
         return {}
@@ -192,15 +193,12 @@ def rewrite_save_file(save_path: Path) -> int:
     with save_path.open() as f:
         for raw in f:
             stripped = raw.rstrip("\n")
-            new, changed = _rewrite_line(
-                stripped, pane_map, session_map, config_dirs, profiles, models)
+            new, changed = _rewrite_line(stripped, pane_map, session_map, config_dirs, profiles, models)
             rewritten += changed
             out_lines.append(new)
 
     if rewritten:
-        with tempfile.NamedTemporaryFile(
-            "w", dir=save_path.parent, delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile("w", dir=save_path.parent, delete=False) as tmp:
             tmp.write("\n".join(out_lines) + "\n")
             tmp_path = Path(tmp.name)
         tmp_path.replace(save_path)

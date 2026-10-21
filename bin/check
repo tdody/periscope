@@ -1,11 +1,12 @@
 #!/bin/sh
-# Lint + type-check gate for periscope: ruff + ty (Python) and Biome (UI).
+# Lint + format + type-check gate for periscope: ruff + ruff format + ty
+# (Python) and Biome (UI).
 # This is the single entrypoint; .pre-commit-config.yaml runs the same checks.
 # See the "Linting & type-checking" section in CLAUDE.md for the rule choices
 # and their rationale.
 #
 #   bin/check         report-only; non-zero exit if anything fails
-#   bin/check --fix   apply safe autofixes (ruff --fix, biome --write), then check
+#   bin/check --fix   apply safe autofixes (ruff --fix, ruff format, biome --write), then check
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 2
 
@@ -18,9 +19,11 @@ run() {  # run <label> <cmd...>
 
 if [ "$1" = "--fix" ]; then
   run "ruff --fix" uv run ruff check . --fix
+  run "ruff format" uv run ruff format .
   run "biome --write" npx --no-install biome check --write static/src
 else
   run "ruff" uv run ruff check .
+  run "ruff format --check" uv run ruff format --check .
   run "biome" npx --no-install biome lint static/src
 fi
 # ty has no autofix; always check-only.

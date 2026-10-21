@@ -6,9 +6,7 @@ from history.db import MECHANICAL_VERSION, SCHEMA_VERSION, apply_schema
 def test_apply_schema_creates_expected_tables():
     conn = sqlite3.connect(":memory:")
     apply_schema(conn)
-    tables = {row[0] for row in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type IN ('table','virtual','view')"
-    )}
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','virtual','view')")}
     assert "sessions" in tables
     assert "sessions_fts" in tables
     assert "meta" in tables
@@ -48,6 +46,7 @@ def test_fts_delete_trigger_fires():
 def test_migration_adds_facet_columns_to_v1_db(tmp_path):
     """A pre-facets `sessions` table gains the four columns on connect()."""
     from history import db
+
     p = tmp_path / "old.db"
     # Build the real schema, then drop the four facet columns to simulate a
     # pre-v2 DB — a genuine v1 sessions table has every other column.
@@ -67,6 +66,7 @@ def test_migration_adds_facet_columns_to_v1_db(tmp_path):
 
 def test_fresh_db_has_facet_columns(tmp_path):
     from history import db
+
     conn = db.connect(tmp_path / "fresh.db")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
     assert {"outcome", "category", "notable", "topics"} <= cols

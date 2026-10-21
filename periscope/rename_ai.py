@@ -84,8 +84,7 @@ def claude_complete(prompt: str, model: str = "claude-haiku-5-5") -> str:
     return "".join(b.text for b in msg.content if b.type == "text")
 
 
-def transcript_summary(session: str, index: int, *,
-                       n_user: int = 3, n_tools: int = 8) -> dict:
+def transcript_summary(session: str, index: int, *, n_user: int = 3, n_tools: int = 8) -> dict:
     """Pull rename-relevant signals from the pane's Claude JSONL.
 
     Returns a dict that callers fold into the per-window context:
@@ -153,8 +152,7 @@ def _collect_signals(messages: list[dict], *, n_user: int, n_tools: int) -> dict
     }
 
 
-def transcript_summary_from_path(jsonl_path: Path, *, n_user: int = 3,
-                                 n_tools: int = 8, tail_lines: int = 500) -> dict:
+def transcript_summary_from_path(jsonl_path: Path, *, n_user: int = 3, n_tools: int = 8, tail_lines: int = 500) -> dict:
     """Same return shape as transcript_summary, but from an already-resolved
     JSONL path with a bounded tail read — transcripts run tens of MB and the
     narrator calls this per regenerating pane per worker tick. Does NOT use
@@ -182,9 +180,11 @@ def transcript_summary_from_path(jsonl_path: Path, *, n_user: int = 3,
             if isinstance(content, str) and content.strip():
                 messages.append({"role": "user", "text": content})
         elif d.get("type") == "assistant":
-            tool_uses = ([b for b in content
-                          if isinstance(b, dict) and b.get("type") == "tool_use"]
-                         if isinstance(content, list) else [])
+            tool_uses = (
+                [b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"]
+                if isinstance(content, list)
+                else []
+            )
             messages.append({"role": "assistant", "tool_uses": tool_uses})
     return _collect_signals(messages, n_user=n_user, n_tools=n_tools)
 
@@ -259,7 +259,7 @@ def build_rename_prompt(windows: list[dict]) -> str:
             lines.append(f"  recent terminal excerpt:\n    {snippet}")
     lines.append("")
     lines.append(
-        'Return ONLY a JSON object mapping window index (as a string) to the new name. '
+        "Return ONLY a JSON object mapping window index (as a string) to the new name. "
         'Example: {"1": "fs-build", "2": "cohort-inv"}. '
         "No markdown fences, no commentary, just the JSON object."
     )

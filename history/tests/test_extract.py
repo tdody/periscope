@@ -20,7 +20,7 @@ def test_counts_and_timestamps(fixture_dir):
     assert rec.session_id == "normal-001"
     assert rec.project_path == "/Users/tom/dev/foo"
     assert rec.branch == "feat/bar"
-    assert rec.user_msg_count == 3   # excludes tool_result wrappers
+    assert rec.user_msg_count == 3  # excludes tool_result wrappers
     assert rec.asst_msg_count == 4
     assert rec.tool_use_count == 3
     assert rec.duration_s == 3 * 60 + 30  # 10:00:00 → 10:03:30
@@ -56,7 +56,7 @@ def test_glob_grep_paths_excluded_from_files_touched(tmp_path):
         '{"type":"tool_use","id":"t1","name":"Glob","input":{"pattern":"*.py","path":"/Users/tom/dev/foo/src"}},'
         '{"type":"tool_use","id":"t2","name":"Grep","input":{"pattern":"needle","path":"/Users/tom/dev/foo"}},'
         '{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"/Users/tom/dev/foo/real_file.py"}}'
-        ']}}\n'
+        "]}}\n"
     )
     events = list(parse_jsonl(str(p)))
     rec = extract_record(str(p), events, source_mtime=0, source_size=p.stat().st_size)
@@ -74,7 +74,7 @@ def test_notable_cmds_filters_trivial(tmp_path):
         '{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"pwd"}},'
         '{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"pytest tests/foo_test.py -k slow"}},'
         '{"type":"tool_use","id":"t4","name":"Bash","input":{"command":"grep -r needle ./src"}}'
-        ']}}\n'
+        "]}}\n"
     )
     events = list(parse_jsonl(str(p)))
     rec = extract_record(str(p), events, source_mtime=0, source_size=p.stat().st_size)
@@ -99,7 +99,7 @@ def test_interrupted_detection(fixture_dir):
 
 def test_short_session(fixture_dir):
     rec = _extract_fixture(fixture_dir, "short_session.jsonl")
-    assert rec.user_msg_count == 1   # only one real user message; the tool_result is excluded
+    assert rec.user_msg_count == 1  # only one real user message; the tool_result is excluded
     assert rec.asst_msg_count == 2
     assert rec.tool_use_count == 1
 
@@ -153,6 +153,7 @@ def test_single_prompt_agentic_session_is_not_trivial(fixture_dir):
     """One user message + substantial tool use = a real working session
     (single-prompt agentic), not a false-start."""
     from dataclasses import replace
+
     rec = _extract_fixture(fixture_dir, "short_session.jsonl")
     agentic = replace(rec, duration_s=7042, user_msg_count=1, tool_use_count=80)
     assert is_trivial(agentic) is False
@@ -160,6 +161,7 @@ def test_single_prompt_agentic_session_is_not_trivial(fixture_dir):
 
 def test_single_prompt_without_tool_work_stays_trivial(fixture_dir):
     from dataclasses import replace
+
     rec = _extract_fixture(fixture_dir, "short_session.jsonl")
     walked_away = replace(rec, duration_s=600, user_msg_count=1, tool_use_count=0)
     assert is_trivial(walked_away) is True
@@ -167,17 +169,27 @@ def test_single_prompt_without_tool_work_stays_trivial(fixture_dir):
 
 def test_quick_abort_is_trivial_regardless_of_tool_use(fixture_dir):
     from dataclasses import replace
+
     rec = _extract_fixture(fixture_dir, "short_session.jsonl")
     abort = replace(rec, duration_s=30, user_msg_count=1, tool_use_count=20)
     assert is_trivial(abort) is True
 
 
 def _user_line(uuid, text, ts="2026-01-01T00:00:00Z"):
-    return json.dumps({
-        "type": "user", "sessionId": "s", "cwd": "/p", "timestamp": ts,
-        "uuid": uuid, "parentUuid": None,
-        "message": {"role": "user", "content": text},
-    }) + "\n"
+    return (
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": "s",
+                "cwd": "/p",
+                "timestamp": ts,
+                "uuid": uuid,
+                "parentUuid": None,
+                "message": {"role": "user", "content": text},
+            }
+        )
+        + "\n"
+    )
 
 
 def test_harness_boilerplate_excluded_from_user_fields(tmp_path):
@@ -186,7 +198,9 @@ def test_harness_boilerplate_excluded_from_user_fields(tmp_path):
     sessions' first_user_msg was a <local-command-caveat> block."""
     p = tmp_path / "boiler.jsonl"
     p.write_text(
-        _user_line("u1", "<local-command-caveat>Caveat: blah</local-command-caveat>\n<command-name>/clear</command-name>")
+        _user_line(
+            "u1", "<local-command-caveat>Caveat: blah</local-command-caveat>\n<command-name>/clear</command-name>"
+        )
         + _user_line("u2", "  <task-notification>\n<task-id>x</task-id>\n</task-notification>")
         + _user_line("u3", "fix the actual bug", ts="2026-01-01T00:01:00Z")
         + _user_line("u4", "<system-reminder>hook output</system-reminder>", ts="2026-01-01T00:02:00Z")
@@ -206,8 +220,7 @@ def test_harness_boilerplate_excluded_from_user_fields(tmp_path):
 def test_interrupt_detection_survives_boilerplate_filter(tmp_path):
     p = tmp_path / "interrupt.jsonl"
     p.write_text(
-        _user_line("u1", "do the thing")
-        + _user_line("u2", "[Request interrupted by user]", ts="2026-01-01T00:01:00Z")
+        _user_line("u1", "do the thing") + _user_line("u2", "[Request interrupted by user]", ts="2026-01-01T00:01:00Z")
     )
     events = list(parse_jsonl(str(p)))
     rec = extract_record(str(p), events, source_mtime=1, source_size=1)

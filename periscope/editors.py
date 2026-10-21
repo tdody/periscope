@@ -48,11 +48,12 @@ def open_in_editor(app: str, path: str) -> None:
     if app not in detect_editors():
         raise ValueError(f"not an available editor: {app}")
     proc = subprocess.run(
-        ["open", "-a", app, path], capture_output=True, text=True, check=False,
+        ["open", "-a", app, path],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if proc.returncode != 0:
         # Unlike fs.safe_reveal's best-effort Finder reveal, surface this: the
         # user clicked expecting a window, so silence would read as a no-op.
-        raise ValueError(
-            (proc.stderr or "").strip() or f"could not open {app} (exit {proc.returncode})"
-        )
+        raise ValueError((proc.stderr or "").strip() or f"could not open {app} (exit {proc.returncode})")

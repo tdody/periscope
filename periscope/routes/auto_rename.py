@@ -93,8 +93,7 @@ def auto_rename_session(session: str):
         tmux("rename-window", "-t", target, new_name)
         # AI renames start the narrator cooldown too — same contract as a
         # manual rename. pane_id comes from the list_windows dicts.
-        pane_id = next((x.get("pane_id") for x in target_windows
-                        if x["index"] == index), None)
+        pane_id = next((x.get("pane_id") for x in target_windows if x["index"] == index), None)
         if pane_id:
             stamp_pane_rename(pane_id, name=new_name, at=int(time.time()))
         applied.append({"index": index, "old": old, "new": new_name})
@@ -116,8 +115,18 @@ def auto_rename_window(session: str, index: int):
     # Single-window pid resolution: build a one-element list and reuse the
     # batch helper so `last_seen` stays current for this window too.
     pid_raw, pane_id, window_id = window_identity(target)
-    one = [{"session": session, "index": index, "name": current_name, "active": False,
-            "cwd": cwd, "pid_raw": pid_raw, "pane_id": pane_id, "window_id": window_id}]
+    one = [
+        {
+            "session": session,
+            "index": index,
+            "name": current_name,
+            "active": False,
+            "cwd": cwd,
+            "pid_raw": pid_raw,
+            "pane_id": pane_id,
+            "window_id": window_id,
+        }
+    ]
     _attach_git_then_resolve_pids(one)
     pid = one[0].get("pid")
     if not current_name:

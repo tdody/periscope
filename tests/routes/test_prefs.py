@@ -99,9 +99,12 @@ def test_put_window_annotation(client, clean_state):
 
 def test_put_window_annotation_pinned_files(client, clean_state):
     # Dedupe + preserve insertion order; trim blanks.
-    r = client.put("/api/prefs/windows/abc123", json={
-        "pinned_files": ["/a/b.md", "  ", "/a/b.md", "/c/d.html"],
-    })
+    r = client.put(
+        "/api/prefs/windows/abc123",
+        json={
+            "pinned_files": ["/a/b.md", "  ", "/a/b.md", "/c/d.html"],
+        },
+    )
     assert r.status_code == 200
     assert r.json()["annotation"]["pinned_files"] == ["/a/b.md", "/c/d.html"]
     # Empty list clears the field.
@@ -146,11 +149,13 @@ def test_update_command(client, clean_state):
 
 
 def test_reorder_commands(client, clean_state):
-    clean_state["commands"].extend([
-        {"label": "a", "exec": ""},
-        {"label": "b", "exec": ""},
-        {"label": "c", "exec": ""},
-    ])
+    clean_state["commands"].extend(
+        [
+            {"label": "a", "exec": ""},
+            {"label": "b", "exec": ""},
+            {"label": "c", "exec": ""},
+        ]
+    )
     r = client.put("/api/prefs/commands", json={"labels": ["c", "a", "b"]})
     body = r.json()
     assert body["ok"] is True

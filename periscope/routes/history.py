@@ -30,6 +30,7 @@ def history_search(
     """FTS5-ranked search across the history index. Empty q falls back to
     `recent()` (newest-first) so the UI can populate before the user types."""
     import history
+
     started = time.time()
     if q and q.strip():
         results = history.search(
@@ -71,6 +72,7 @@ def history_session(session_id: str):
     field is true if the row exists but the underlying JSONL has been
     deleted (search will hide it until `history clean` removes the row)."""
     from history.search import get_session
+
     data = get_session(session_id)
     if data is None:
         raise HTTPException(404, "unknown session_id")
@@ -82,6 +84,7 @@ def history_session(session_id: str):
 def history_stats():
     """Index summary for the /history route header + footer."""
     import history
+
     return history.stats()
 
 

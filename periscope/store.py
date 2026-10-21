@@ -68,12 +68,14 @@ class SessionSetting(TypedDict):
     (POST /api/pane/session-setting). `claude_pid` is the process it applies
     to: a fresh claude in the same pane starts over, so window_view stops
     showing the value once the pid differs."""
+
     value: str
     claude_pid: int | None
 
 
 class WindowAnnotation(TypedDict, total=False):
     """Per-pid annotations persisted in state.json under windows[pid]."""
+
     linked_pr: int
     linked_linear: str
     linked_linear_title: str
@@ -94,6 +96,7 @@ class WindowAnnotation(TypedDict, total=False):
 
 class Settings(TypedDict, total=False):
     """Per-host preferences. Persisted under state['settings']."""
+
     worktree_layout_default: str  # "sibling" | "inline"
     worktree_layout_overrides: dict[str, str]  # realpath -> "sibling" | "inline"
     cleanup_idle_days: int
@@ -102,20 +105,24 @@ class Settings(TypedDict, total=False):
     spawn_model: str  # "auto" | "default" | ANTHROPIC_MODEL value; unset => "auto" (launch_policy decides)
     spawn_effort: str  # "default" | config.EFFORT_LEVELS value; unset => "default" (no override)
     editor: str  # display name of a KNOWN_EDITORS entry; unset => no open-in-editor action
-    poke_at: str  # local HH:MM the session poke fires; unset => "08:00", "" => disabled (validated by PATCH /api/settings)
+    poke_at: (
+        str  # local HH:MM the session poke fires; unset => "08:00", "" => disabled (validated by PATCH /api/settings)
+    )
     poke_grace_min: int  # minutes past poke_at a missed poke may still fire; unset => 90
 
 
 class PokeEntry(TypedDict):
     """One account's most recent session poke (periscope.poke)."""
-    date: str          # local YYYY-MM-DD — what "already poked today" reads
-    at: int            # epoch of the poke
-    resets_at: int | None   # the 5h session reset observed right after
-    verified: bool     # resets_at landed within tolerance of at + 5h
+
+    date: str  # local YYYY-MM-DD — what "already poked today" reads
+    at: int  # epoch of the poke
+    resets_at: int | None  # the 5h session reset observed right after
+    verified: bool  # resets_at landed within tolerance of at + 5h
 
 
 class Command(TypedDict):
     """A command-palette entry."""
+
     label: str
     exec: str
 
@@ -242,15 +249,18 @@ def _migrate_v1_to_v2(data: dict) -> tuple[dict, bool]:
 
     # Always ensure the main sentinel exists, even if no live `main`/`general`
     # session is currently running.
-    projects.setdefault(MAIN_KEY_LITERAL, {
-        "name": "main",
-        "tmux_session": "main",
-        "repo": None,
-        "pinned_repo": None,
-        "created_at": 0,
-        "archived_at": None,
-        "base_branch": None,
-    })
+    projects.setdefault(
+        MAIN_KEY_LITERAL,
+        {
+            "name": "main",
+            "tmux_session": "main",
+            "repo": None,
+            "pinned_repo": None,
+            "created_at": 0,
+            "archived_at": None,
+            "base_branch": None,
+        },
+    )
 
     try:
         windows = list_windows()
@@ -291,7 +301,10 @@ def _migrate_v1_to_v2(data: dict) -> tuple[dict, bool]:
             existing_row = projects[pinned_dir]
             log.warning(
                 "v2 migration: %r and %r both resolve to %r; keeping existing project %r",
-                existing_row.get("tmux_session"), session_name, pinned_dir, existing_row.get("name"),
+                existing_row.get("tmux_session"),
+                session_name,
+                pinned_dir,
+                existing_row.get("name"),
             )
             continue
 
@@ -337,9 +350,10 @@ if _MIGRATION_RAN_THIS_LOAD:
     with _STATE_LOCK:
         _write_state(_STATE)
 
+
 class Account(TypedDict, total=False):
-    id: str          # stable key; "default" is the machine's ~/.claude login
-    label: str       # shown in the launcher
+    id: str  # stable key; "default" is the machine's ~/.claude login
+    label: str  # shown in the launcher
     config_dir: str  # "" for the default account, else an absolute path
 
 
@@ -535,8 +549,7 @@ def update_ui(patch: dict, writer: str = "") -> None:
         # Diagnostic: tracks jump to the bottom of the rail with no user action,
         # and no reading of the writers explains it — catch the write in the act.
         if "track_order" in patch and patch["track_order"] != ui.get("track_order"):
-            log.info("track_order change by %s: %s -> %s",
-                     writer or "?", ui.get("track_order"), patch["track_order"])
+            log.info("track_order change by %s: %s -> %s", writer or "?", ui.get("track_order"), patch["track_order"])
         for k, v in patch.items():
             if v is None:
                 ui.pop(k, None)
@@ -554,9 +567,7 @@ def get_settings() -> Settings:
         raw = _STATE.get("settings", {})
         return {
             **raw,
-            "worktree_layout_overrides": dict(
-                raw.get("worktree_layout_overrides", {}) or {}
-            ),
+            "worktree_layout_overrides": dict(raw.get("worktree_layout_overrides", {}) or {}),
         }  # type: ignore[return-value]
 
 

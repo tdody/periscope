@@ -56,10 +56,12 @@ def test_pane_id_survives_move(tmux_test_server):
     # capture-pane by stable pane_id still succeeds.
     import os
     import subprocess
+
     sock = os.environ["PERISCOPE_TMUX_SOCKET"]
     r = subprocess.run(
         ["tmux", "-L", sock, "capture-pane", "-t", pane_id, "-p"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert r.returncode == 0, r.stderr
     session = tmux("display-message", "-t", pane_id, "-p", "#{session_name}").strip()

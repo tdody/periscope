@@ -156,9 +156,9 @@ def claude_subprocess_env(*, config_dir: str) -> dict[str, str]:
 # crosses BAD, amber at WARN rss or WARN age. Healthy claudes idle around
 # 0.3–0.6GB; the leak class that motivated this shows up as multi-GB RSS on
 # multi-day processes.
-MEM_BAD_RSS_KB = 4 * 1024 * 1024   # 4GB
+MEM_BAD_RSS_KB = 4 * 1024 * 1024  # 4GB
 MEM_WARN_RSS_KB = 2 * 1024 * 1024  # 2GB
-MEM_WARN_AGE_S = 3 * 86400         # 3 days
+MEM_WARN_AGE_S = 3 * 86400  # 3 days
 
 
 def claude_exec() -> str:
@@ -194,6 +194,7 @@ def build_agent_command(
         return argv
     raise ValueError(f"unsupported agent: {agent}")
 
+
 # The prod port. 17374 is "PERI" on a phone keypad with a leading 1 to keep
 # it out of the 4-digit range where every ad-hoc dev server lands — 8765 was
 # grabbed by other tools often enough that periscope moved. Dev runs on the
@@ -214,6 +215,7 @@ PORT = int(os.environ.get("PERISCOPE_PORT", str(PROD_PORT)))
 # "is this a developer's instance" signal — more reliable than PORT, which
 # dev.sh historically left at the prod default and thus spent Haiku.
 DEV = bool(os.environ.get("PERISCOPE_DEV"))
+
 
 def is_prod() -> bool:
     """True only for the real prod instance: on the prod port AND not a dev
@@ -264,6 +266,7 @@ def instance_file(name: str) -> Path:
 # generic name avoids a future rename. Path mirrors store.py:_state_path.
 ACTIVITY_DB = instance_file("periscope.db")
 
+
 # --- bg commander (per-command `claude --bg` dispatch) ---
 def claude_bin() -> str:
     """The BARE `claude` executable for argv[0]. NOT claude_exec() — that returns
@@ -274,7 +277,7 @@ def claude_bin() -> str:
     return os.environ.get("PERISCOPE_CLAUDE_BIN") or shutil.which("claude") or "claude"
 
 
-PERISCOPE_MCP_CONFIG = config_dir() / "bg-mcp-config.json"        # generated at boot
+PERISCOPE_MCP_CONFIG = config_dir() / "bg-mcp-config.json"  # generated at boot
 ORCHESTRATOR_PROMPT_FILE = config_dir() / "orchestrator-prompt.txt"  # written from bg_commander.ROLE_PROMPT
 CHANNEL_SHIM_PATH = Path(__file__).resolve().parent.parent / "channel_shim.py"
 BG_COMMANDER_MODEL = "sonnet"
