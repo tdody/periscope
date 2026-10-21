@@ -342,8 +342,15 @@ html, body {
    corner. A 34×24 pixel scene at 2× — small enough to sit beside the counts
    without growing the top bar. CSS transforms on SVG groups move in scene
    units, hence the sub-pixel distances. */
+/* content-box so the border sits outside the 68×48 scene: inside a border-box
+   it left 66×46, a 1.92× scale that snapped the crisp pixel edges unevenly.
+   The negative block margins keep the widget from setting the top bar's
+   height: its layout box is 32px, below the shortest the bar gets (one
+   subscription hides the account pin row), and the rest overhangs into the
+   bar's 12px / 10px padding. */
 .tama {
-  flex: 0 0 auto; width: 68px; height: 48px; padding: 0;
+  box-sizing: content-box; flex: 0 0 auto; width: 68px; height: 48px; padding: 0;
+  margin-block: -9px; align-self: center;
   border: 1px solid var(--line); border-radius: 10px;
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }

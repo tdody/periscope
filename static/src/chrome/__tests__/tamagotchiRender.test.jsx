@@ -125,3 +125,22 @@ describe("occasions", () => {
     }
   });
 });
+
+describe("things that follow Clawd", () => {
+  it("offsets the pet heart with a wrapper, not on the animated path", () => {
+    // The heart's float animation sets `transform` in CSS, which overrides a
+    // transform *attribute* on the same element: the seated-pose offset has
+    // to live on a parent, or the heart lands beside Clawd's head.
+    const html = render(<TamaScene activity="code" petted />);
+    expect(html).toMatch(/<g transform="translate\(-5 0\)"><path[^>]*class="tama-heart"/);
+    expect(html).not.toMatch(/<path[^>]*transform=[^>]*class="tama-heart"/);
+  });
+
+  it("draws the winter snow cap inside Clawd's group, so it bobs with it", () => {
+    const html = render(<TamaScene activity="run" season="winter" />);
+    const creature = html.indexOf("tama-creature");
+    expect(creature).toBeGreaterThan(-1);
+    expect(html.indexOf("tama-snowcap")).toBeGreaterThan(creature);
+    expect(html.indexOf("tama-snowcap")).toBeGreaterThan(html.indexOf("tama-body"));
+  });
+});

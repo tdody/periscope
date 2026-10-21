@@ -276,7 +276,7 @@ function Confetti() {
 }
 
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity, season, occasion, hat, ghost }) {
+function Behind({ activity, season, occasion, ghost }) {
   switch (activity) {
     case "sleep":
       return (
@@ -374,7 +374,6 @@ function Behind({ activity, season, occasion, hat, ghost }) {
             <rect x="2.4" y="13.6" width="3.6" height="0.5" />
             <rect x="0.6" y="16.6" width="4.6" height="0.5" />
           </g>
-          {season === "winter" && !hat && !ghost && <rect x="11" y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />}
           {season !== "winter" && !ghost && <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
         </g>
       );
@@ -416,7 +415,7 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
          data-activity={activity} data-occasion={occasion || undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {occasion === "newyear" && <Fireworks />}
-      <Behind activity={activity} season={season} occasion={occasion} hat={hat} ghost={ghost} />
+      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} />
       {occasion === "halloween" && !ghost && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells rows={BODY} cls="tama-body" x0={x0} />
@@ -424,15 +423,21 @@ export function TamaScene({ activity, season = "summer", occasion = null, petted
         {!sitting && <Cells rows={legRows(LEGS[0])} cls="tama-legs-a" x0={x0} />}
         {activity === "run" && <Cells rows={legRows(LEGS[1])} cls="tama-legs-b" x0={x0} />}
         {ghost && <Pail x0={x0} />}
+        {activity === "run" && season === "winter" && !hat && !ghost && (
+          <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
+        )}
         {hat === "santa" && <SantaHat x0={x0} />}
         {hat === "party" && <PartyHat x0={x0} />}
       </g>
       <InFront activity={activity} />
       {occasion === "newyear" && <Confetti />}
       {petted && (
-        <path key={`heart-${petKey}`} class="tama-heart" fill="#e8657a" shape-rendering="geometricPrecision"
-              transform={`translate(${x0 - 8} 0)`}
-              d="M17 7.2 l-2.3 -2.3 a1.25 1.25 0 0 1 2.3 -1.7 a1.25 1.25 0 0 1 2.3 1.7z" />
+        // The pose offset sits on a wrapper: the heart's CSS float animation
+        // sets `transform`, which would override a transform attribute here.
+        <g key={`heart-${petKey}`} transform={`translate(${x0 - 8} 0)`}>
+          <path class="tama-heart" fill="#e8657a" shape-rendering="geometricPrecision"
+                d="M17 7.2 l-2.3 -2.3 a1.25 1.25 0 0 1 2.3 -1.7 a1.25 1.25 0 0 1 2.3 1.7z" />
+        </g>
       )}
     </svg>
   );
