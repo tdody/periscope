@@ -33,6 +33,7 @@ import { isTerminalAtBottom, scrollTerminalToBottom, setTerminalFileCallback, wr
 import { track } from "../track.js";
 import { apiCall, memHint, paneLabel, prStateMeta, prUrl, relTime, rewriteLgtmHost, targetQuery } from "../util.js";
 import { ResizeHandle } from "./ResizeHandle.jsx";
+import { SessionPickers } from "./SessionPickers.jsx";
 import { TranscriptView } from "./Transcript.jsx";
 
 // Match the modal's /api/pane cadence so the two views feel identical.
@@ -268,7 +269,11 @@ export function PaneHeader({ w, mode, onMode }) {
   if (w.git && w.git !== "clean") {
     parts.push(<><span class="hsep">·</span><span class="header-git">{w.git}</span></>);
   }
-  if (w.agent && w.model) {
+  if (w.agent === "claude") {
+    // Claude panes get pickers that change the running session; they show the
+    // status line's model when it parses (sessionPickers.modelShown).
+    parts.push(<><span class="hsep">·</span><SessionPickers w={w} /></>);
+  } else if (w.agent && w.model) {
     parts.push(<><span class="hsep">·</span><span>{w.model.replace(/\s*\(.*\)/, "")}</span></>);
   }
   if (w.agent && w.context_pct != null) {

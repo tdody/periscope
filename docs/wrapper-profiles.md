@@ -100,3 +100,32 @@ What the flag costs, and how each is handled:
   character set. The levels don't move the way model aliases do. An unknown
   value (a stale pin) fails open to the default, and the closed list is what
   makes it safe to splice unquoted into `spawn_claude`'s command line.
+
+**Per-pane model/effort (the pane header's pickers).** The header pins and
+the launcher only shape NEW panes. A running session is changed from its own
+header: `SessionPickers.jsx` → `POST /api/pane/session-setting?pid&setting=
+model|effort&value`, which types `/model <x>` or `/effort <x>` into the pane
+through `/api/send`'s paste-then-Enter path (`_send_to_target`). Rules:
+
+- **It refuses (409) unless the pane is a Claude that is idle with an empty
+  input box**, read from a fresh capture, not the poll. Keystrokes into a
+  busy pane land mid-turn, and into a half-typed message they are appended
+  to the draft and submitted with it. The session status file decides
+  idle-ness when the pane maps to a live session; the scrape decides
+  otherwise. The client disables the pickers on the same conditions from
+  the poll (`sessionPickers.sessionBlocker`) so they read honestly.
+- **Values.** Effort's `default` is typed as `/effort auto` (the model's own
+  level). The model takes any alias Claude does, `default` included,
+  checked by `config.model_env`'s character set like the pin. `auto` is the
+  pin's chooser value and is rejected here.
+- **The value is remembered** (`windows[pid].session_model` /
+  `session_effort` = `{value, claude_pid}`), because Claude reports effort
+  nowhere periscope can read. `window_view` shows it only while that claude
+  pid is still the pane's claude, so a fresh session in the same pane falls
+  back to its launch values (`launch_effort`, read off argv). The model
+  picker prefers the status line's model whenever it parses.
+- **Side effect worth knowing:** Claude's `/effort <level>` also saves the
+  level as the account's default for new sessions. Panes launched with an
+  explicit `--effort` aren't affected, but with the pin on `default`, the
+  last per-pane change becomes what new panes start at. `/model` is
+  session-scoped.

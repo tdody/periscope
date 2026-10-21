@@ -2305,6 +2305,16 @@ body.col-resizing iframe { pointer-events: none; }
 .detail-pane-header .header-ci.ci-running { color: var(--s-working); }
 .detail-pane-header .header-git { color: var(--s-needs); font-family: var(--mono); }
 .detail-pane-header .header-api-error { color: var(--s-danger); }
+/* Per-pane model/effort pickers (SessionPickers.jsx): sized to sit in the
+   header's text line rather than read as form fields. */
+.detail-pane-header .header-session-picks { display: inline-flex; gap: 4px; align-self: center; }
+.header-session-pick {
+  font: inherit; font-size: 11px; color: var(--fg-1);
+  background: transparent; border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 0 4px; height: 20px; cursor: pointer;
+}
+.header-session-pick:hover:not(:disabled) { border-color: var(--fg-3); }
+.header-session-pick:disabled { opacity: .55; cursor: default; }
 
 /* Narrator status in the detail header — untruncated, own wrapped line
    (flex-basis 100% forces the wrap in the flex-wrap header). */
