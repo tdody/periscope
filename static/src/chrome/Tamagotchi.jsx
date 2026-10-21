@@ -1,6 +1,11 @@
 // Easter egg in the header's top-right corner: Clawd, the Claude Code banner
 // mascot, living its day on the local clock: asleep, coffee, coding, lunch,
-// a run, dinner, a book (tamagotchi.js has the schedule). Click it to pet it.
+// a run, dinner, a book (tamagotchi.js has the schedule). Double-click to pet it.
+//
+// It's also on duty (clawdDuty.js decides what, TamaDuty.jsx draws it): one
+// thing at a time, highest priority first, with a bubble counting what's
+// waiting — and a click goes straight to it. Petting stays a single click
+// when nothing is pending.
 //
 // Coding happens at a desk, reading in an armchair by the fireplace, and the
 // run outdoors in the current season; the rest are standing poses with a prop.
@@ -10,22 +15,32 @@
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
 import { useComputed, useSignal } from "@preact/signals";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
-import { usage } from "../store.js";
+import { selectedPid } from "../keys.js";
+import { buildRunning } from "../split/attention.js";
 import {
-  activityAt, activityLabel, BODY, codingMood, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
-  msUntilNextChange, occasionShown, seasonAt,
+  alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, walls, windows,
+} from "../store.js";
+import { plural } from "../util.js";
+import { clickHandlers } from "./clawdClick.js";
+import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
+import { mergeParties, startClawdWatch } from "./clawdWatch.js";
+import {
+  AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
+  LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
+  WallScreen, Worried, XEyes,
+} from "./TamaDuty.jsx";
+import {
+  activityAt, activityLabel, BODY, codingMood, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
+  msUntilNextChange, occasionShown, SKIN, seasonAt, Y0,
 } from "./tamagotchi.js";
 
-const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
-const SKIN = "#d97757";
-const EYE = "#2b1d16";
 
 // Where the mascot stands per activity: centred on its feet by default; the
 // two sitting scenes shift it left to make room for the desk / fireplace, and
 // tuck its legs out of sight.
-const POSES = { code: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
+const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8, sitting: false };
 const BODY_CELLS = gridCells(BODY);
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
@@ -248,9 +263,13 @@ function Pail({ x0 }) {
   );
 }
 
-function Fireworks() {
+// With a bubble in the top-left corner, three bursts over the desk instead.
+const BURSTS = [[5, 4, "#ffd166", 0], [22, 2.6, "#f28ab2", -0.9]];
+const BURSTS_CLEAR = [[17.4, 2.8, "#ffd166", 0], [24.6, 2.1, "#f28ab2", -0.6], [31.2, 3, "#7fb6e6", -1.2]];
+
+function Fireworks({ clear }) {
   const burst = (cx, cy, color, delay) => (
-    <g class="tama-firework" style={{ animationDelay: `${delay}s` }} fill={color}>
+    <g key={cx} class="tama-firework" style={{ animationDelay: `${delay}s` }} fill={color}>
       {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
         const a = (deg * Math.PI) / 180;
         return <rect key={deg} x={cx + Math.cos(a) * 1.8 - 0.25} y={cy + Math.sin(a) * 1.8 - 0.25} width="0.5" height="0.5" />;
@@ -258,12 +277,7 @@ function Fireworks() {
       <rect x={cx - 0.25} y={cy - 0.25} width="0.5" height="0.5" />
     </g>
   );
-  return (
-    <g>
-      {burst(5, 4, "#ffd166", 0)}
-      {burst(22, 2.6, "#f28ab2", -0.9)}
-    </g>
-  );
+  return <g>{(clear ? BURSTS_CLEAR : BURSTS).map(([cx, cy, color, delay]) => burst(cx, cy, color, delay))}</g>;
 }
 
 const CONFETTI = ["#ffd166", "#f28ab2", "#7fb6e6", "#9be38f", "#c792ea"];
@@ -306,9 +320,10 @@ function CodeScreen({ mood }) {
   );
 }
 
-function Behind({ activity, season, occasion, ghost, coffee, mood = "calm" }) {
+function Behind({ activity, season, occasion, ghost, coffee, ringing, keyboard = true, mood = "calm", screen = null }) {
   switch (activity) {
     case "sleep":
+      if (ringing) return null;
       return (
         <g fill="var(--fg-2)" font-family="var(--mono)" font-weight="700">
           <text class="tama-z" x="26" y="10" font-size="4">z</text>
@@ -345,8 +360,8 @@ function Behind({ activity, season, occasion, ghost, coffee, mood = "calm" }) {
             <rect x="26.9" y="12" width="1.2" height="1.2" fill="var(--fg-3)" />
             <rect x="23" y="5.6" width="9" height="6.4" rx="0.4" fill={mood === "furious" ? "#2a1416" : "#1d2026"}
                   stroke="var(--fg-3)" stroke-width="0.3" />
-            <CodeScreen mood={mood} />
-            <rect x="20.4" y="12.6" width="4.2" height="0.6" rx="0.2" fill="#c9ced6" />
+            {screen || <CodeScreen mood={mood} />}
+            {keyboard && <rect x="20.4" y="12.6" width="4.2" height="0.6" rx="0.2" fill="#c9ced6" />}
           </g>
           {coffee && (
             // The morning's mug, between the keyboard and the monitor stand.
@@ -519,27 +534,91 @@ function MoodDesk({ mood, x0, coffee, hat }) {
   );
 }
 
+// Where each duty kind shows (clawdDuty.js picks the kind). At the desk Clawd
+// acts it out; awake anywhere else only the face kinds change Clawd (and a "!"
+// for the bell); asleep, only the bell wakes it. The bubble carries every kind
+// in every scene.
+const FACE_KINDS = new Set(["bell", "done", "merged", "api", "ctx"]);
+
+// The monitor's screen at the desk (clawdDuty.deskView decides which):
+// drawn inside Behind's desk, under the morning mug, so it rattles with the
+// monitor and never covers the mug. null keeps CodeScreen (the mood's lines).
+function deskScreen({ view, kind, duty, working, walled, mirroring }) {
+  if (view.scene === "nap") return <WallScreen {...walled} />;
+  if (!view.atDesk) return null;
+  if (kind === "done") return <DoneScreen />;
+  if (kind === "merged") return <MergeScreen />;
+  if (kind === "ci") return <CiScreen />;
+  if (kind === "api") return <ApiScreen />;
+  if (kind === "ctx") return <CtxScreen pct={duty?.pct} cost={duty?.cost} />;
+  return mirroring ? <PanesScreen n={working} /> : null;
+}
+
+function DeskProps({ kind }) {
+  return (
+    <g>
+      {kind === "bell" && <ServiceBell />}
+      {kind === "ctx" && <PaperStack />}
+      {kind === "update" && <Parcel />}
+    </g>
+  );
+}
+
 export function TamaScene({
   activity, season = "summer", occasion = null, coffee = false, mood = "calm", petted = false, petKey = 0,
+  duty = null, working, walled = null, party = false,
 }) {
-  const { x0, sitting } = POSES[activity] || STANDING;
+  const kind = duty?.kind || null;
+  const view = deskView(activity, kind, !!walled);
+  const { scene, atDesk } = view;
+  const { x0, sitting } = POSES[scene] || STANDING;
   const ghost = occasion === "halloween" && activity === "run";
-  const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
-  // Only the coding scene has moods.
-  const moody = activity === "code" && MOODS[mood]?.rank > 0;
+  // Asleep — the night's sleep or the walled nap at the desk — only the bell
+  // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
+  // nap.
+  const sleeping = activity === "sleep" || scene === "nap";
+  const ringing = kind === "bell" && sleeping;
+  const asleep = sleeping && !ringing;
+  const deskBell = kind === "bell" && (atDesk || scene === "nap");
+  const pose = ghost || asleep ? null : atDesk || FACE_KINDS.has(kind) ? kind : null;
+  const celebrating = !ghost && !asleep && (pose === "done" || pose === "merged");
+  const fullParty = pose === "merged";
+  const hat = party && !ghost && !asleep ? "party"
+    : occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
+  // Only the coding scene has moods, and anything on duty outranks them.
+  const moody = view.moodShown && MOODS[mood]?.rank > 0;
+  // The monitor mirrors the working agents unless the top kind needs it or a
+  // mood (only ever shown with nothing on duty) has it; before the first
+  // /api/state the pane count is unknown, so the code stays.
+  const mirroring = view.showsPanes && working != null && !moody;
+  const screen = deskScreen({ view, kind, duty, working, walled, mirroring });
+  const face = ghost ? <GhostSheet x0={x0} />
+    : moody ? <MoodFace x0={x0} mood={mood} />
+    : asleep ? <Eyes closed x0={x0} />
+    : celebrating ? <HappyEyes x0={x0} />
+    : pose === "api" ? <XEyes x0={x0} />
+    : pose === "update" ? <LookDown x0={x0} />
+    : <Eyes x0={x0} />;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
-         data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}>
+         data-activity={scene} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
+         data-duty={kind || undefined} data-pose={pose || undefined} data-urgent={duty?.urgent ? "" : undefined}
+         data-working={mirroring ? Math.min(working, 4) : undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
-      {occasion === "newyear" && <Fireworks />}
-      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
-              mood={moody ? mood : "calm"} />
+      {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
+      <Behind activity={scene === "nap" ? "code" : scene} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
+              ringing={ringing} keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"}
+              screen={screen} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
-        {ghost ? <GhostSheet x0={x0} />
-          : moody ? <MoodFace x0={x0} mood={mood} />
-          : <Eyes closed={activity === "sleep"} x0={x0} />}
+        {face}
+        {pose === "api" && <Stars x0={x0} />}
+        {pose === "ctx" && <Worried x0={x0} />}
+        {atDesk && celebrating && <ArmsUp x0={x0} />}
+        {atDesk && pose === "ci" && <Extinguisher />}
+        {deskBell && <SlapHand />}
+        {pose === "bell" && !deskBell && <Startle x0={x0} />}
         {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {activity === "run" && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && <Pail x0={x0} />}
@@ -550,8 +629,13 @@ export function TamaScene({
         {hat === "party" && <PartyHat x0={x0} />}
       </g>
       <InFront activity={activity} />
+      {(atDesk || deskBell) && <DeskProps kind={kind} />}
+      {scene === "nap" && !ringing && <DeskZs />}
+      {ringing && activity === "sleep" && <AlarmClock />}
+      {celebrating && <Sparkles />}
       {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} />}
-      {occasion === "newyear" && <Confetti />}
+      {(occasion === "newyear" || fullParty) && <Confetti />}
+      {duty && <Bubble kind={kind} label={duty.label} urgent={duty.urgent} more={duty.more} x0={x0} />}
       {petted && (
         // The pose offset sits on a wrapper: the heart's CSS float animation
         // sets `transform`, which would override a transform attribute here.
@@ -606,6 +690,8 @@ export function Tamagotchi() {
     return () => clearInterval(i);
   }, []);
 
+  useEffect(() => { startClawdWatch(); }, []);
+
   // The coding mood, as a string key: /api/state replaces `usage` every poll,
   // and a poll that leaves the mood unchanged mustn't rebuild the scene.
   const moodKey = useComputed(() => {
@@ -617,22 +703,66 @@ export function Tamagotchi() {
   });
   const [mood, reason] = JSON.parse(moodKey.value);
 
+  // What Clawd is on duty for, also as a string key: every poll replaces
+  // `windows`, and one that changes nothing on duty mustn't rebuild the scene.
+  // The hover's wait times tick by the minute, so a long wait re-renders once
+  // a minute, not once a poll.
+  const dutyKey = useComputed(() => {
+    minute.value; // wait times and the party's ten minutes move on without a poll
+    const nowSec = Date.now() / 1000;
+    const items = dutyItems({
+      windows: windows.value || [], alerts: alerts.value || [],
+      dismissedAlertIds: dismissedAlertIds.value, dismissedNeedsPids: dismissedNeedsPids.value,
+      dismissedReadyPids: dismissedReadyPids.value, selectedPid: selectedPid(railSelection.value),
+      parties: mergeParties.value, update: updateInfo.value, nowSec,
+    });
+    const w = walls.value;
+    return JSON.stringify({
+      items, more: moreCount(items), wall: w && wallLabel(w.until, nowSec),
+      // `alerts` stays null until the first /api/state: the pane count is unknown, not zero.
+      working: alerts.value === null ? null : buildRunning(windows.value).length,
+    });
+  });
+  const d = JSON.parse(dutyKey.value);
+  const top = d.items[0] || null;
+
   const a = activityAt(now);
   const occasion = occasionShown(now);
   const headline = headlineAt(now);
-  const coding = a.id === "code";
-  const why = coding && reason ? ` · ${reason}` : "";
-  const label = `Claude is ${activityLabel(a, occasion, mood)} (${hourLabel(a.from)}–${hourLabel(a.to)})${why}${headline ? ` · ${headline}` : ""}`;
+  // The same view TamaScene draws from, so the hover can't describe another scene.
+  const view = deskView(a.id, top?.kind, !!d.wall);
+  const doing = view.scene === "nap" ? "napping at the desk" : activityLabel(a, occasion, view.moodShown ? mood : "calm");
+  const parts = [
+    ...(d.wall ? [wallPhrase(d.wall)] : []),
+    ...d.items.map((i) => i.phrase),
+    ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
+    ...(view.moodShown && reason ? [reason] : []),
+    ...(headline ? [headline] : []),
+  ];
+  const label = `Claude is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
+    + (top?.target ? ` · click to ${top.target.says}` : "");
+
+  function pet() { setPets((n) => n + 1); setPetted(true); }
+  // Clicks (clawdClick.js) read the bubble's current item through a ref, so
+  // the handlers — and their pending double-click timer — live for the widget.
+  const topRef = useRef(top);
+  topRef.current = top;
+  const [click] = useState(() => clickHandlers({ target: () => topRef.current?.target, pet }));
+  useEffect(() => () => click.dispose(), []);
   return (
     <button
       type="button"
       class="tama"
       title={label}
       aria-label={label}
-      onClick={() => { setPets((n) => n + 1); setPetted(true); }}
+      // The second click of a double-click is the pet, not a second action.
+      onClick={click.onClick}
+      onDblClick={click.onDblClick}
     >
       <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
-                 mood={mood} petted={petted} petKey={pets} />
+                 mood={mood} petted={petted} petKey={pets}
+                 duty={top && { kind: top.kind, label: top.label, urgent: !!top.urgent, more: d.more, pct: top.pct, cost: top.cost }}
+                 working={d.working} walled={d.wall} party={d.items.some((i) => i.kind === "merged")} />
     </button>
   );
 }

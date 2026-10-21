@@ -7,8 +7,9 @@
 // fires regardless of what's rendered. Started once from Split.jsx.
 import { effect } from "@preact/signals";
 import * as prefs from "../prefs.js";
-import { alerts, railSelection, windows } from "../store.js";
+import { alerts, dismissedNeedsPids, dismissedReadyPids, railSelection, windows } from "../store.js";
 import { inTauri, notify, onNotificationClick, setBadgeCount } from "../tauri.js";
+import { isSoftQuestion } from "./attention.js";
 
 // The pushed feed IS the read model — re-exported so consumers keep importing
 // alerts from the module that owns their semantics.
@@ -22,10 +23,29 @@ let started = false;
 // since the alert fired).
 export function revealPane(target) {
   if (!target) return;
-  const w = (windows.value || []).find((x) => x.target === target);
+  selectPane((windows.value || []).find((x) => x.target === target));
+}
+
+// Select a live window inline in the rail, as clicking its row does.
+export function selectPane(w) {
   if (!w?.pid) return;
   railSelection.value = `pane:${w.pid}`;
   prefs.setLastSelected({ kind: "pane", pid: w.pid });
+}
+
+// What clicking a live NEEDS YOU / READY row does, shared by the rail
+// (AttentionSections) and the header's Clawd so the two can't drift. A soft
+// question (no real dialog) is dismissed for this episode; a real dialog stays
+// sticky. A done row is always dismissed: selecting normally acks it through
+// the terminal's WS connect, but an already-selected pane won't reconnect.
+export function openNeedsPane(w) {
+  if (isSoftQuestion(w)) dismissedNeedsPids.value = new Set([...dismissedNeedsPids.value, w.pid]);
+  selectPane(w);
+}
+
+export function openReadyPane(w) {
+  if (w?.pid) dismissedReadyPids.value = new Set([...dismissedReadyPids.value, w.pid]);
+  selectPane(w);
 }
 
 function maybeNativeNotify(list) {

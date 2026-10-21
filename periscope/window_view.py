@@ -33,6 +33,7 @@ from periscope.lgtm import cached_lgtm_state
 from periscope.panes import (
     clear_agent_state_transition,
     forget_agent,
+    needs_since_for,
     parse_pane,
     recency_stamps_for,
     record_agent_state_transition,
@@ -422,6 +423,7 @@ def build_window_view(
         "focused_at": stamps["focused_at"],
         "acted_at": acked,
         "completed_at": completed,
+        "needs_since": needs_since_for(pid),
         "mem": mem_signal(claude_proc_for(sid)),
         "channel_attached": channel["attached"],
         "channel_unread": channel["unread"],

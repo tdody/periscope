@@ -28,6 +28,7 @@ export const moveTargets = signal({});        // /api/state move_targets: curren
 export const spawnAccount = signal(null);     // pinned spawn account id, null = auto (launch_policy)
 export const spawnModel = signal(null);       // pinned spawn model (ANTHROPIC_MODEL): "auto" (launch_policy) is stored as a literal string, distinct from "default" (no override); null only means unset (reads as auto)
 export const spawnEffort = signal(null);      // pinned spawn effort (`--effort` on new panes): "default" or a level; null = unset (reads as default)
+export const walls = signal(null);            // /api/state walls: { until } while no account can take an unnamed launch (launch_policy.walls), else null
 export const launchDefault = signal(null);    // /api/state launch_default: { account, model, reason } — what an unnamed spawn gets right now
 export const editor = signal("");              // /api/state preferred editor display name; "" => action hidden
 

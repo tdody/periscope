@@ -13,6 +13,11 @@ export const AGENT_META = {
   codex: { label: "Codex", glyph: "⬡", className: "icon-codex" },
 };
 
+// "1 commit", "3 commits".
+export function plural(n, one, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 export function paneLabel(w) {
   return w?.name || w?.agent || "shell";
 }
