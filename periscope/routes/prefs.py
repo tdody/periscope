@@ -5,6 +5,8 @@ goes through `set_window_fields` / `update_ui` / `add_command` / etc.,
 which hold `_STATE_LOCK` internally and persist to state.json.
 """
 
+import re
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -69,6 +71,10 @@ class UIPatch(BaseModel):
     # Navigator / context-column visibility (the filter bar's panel toggles).
     rail_hidden: bool | None = None
     side_hidden: bool | None = None
+    # Clawd's day log ({"merged" | "furious": "YYYY-MM-DD"}): the header
+    # tamagotchi's evening follows what happened today, and /api/state can't
+    # say when a PR merged, only that it has.
+    clawd_day: dict[str, str] | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
@@ -86,6 +92,9 @@ def patch_prefs_ui(body: UIPatch):
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):
                 raise HTTPException(400, f"invalid detail_mode for {pid!r}: {mode!r}")
+    for kind, day in (patch.get("clawd_day") or {}).items():
+        if kind not in ("merged", "furious") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise HTTPException(400, f"invalid clawd_day entry: {kind!r}: {day!r}")
     # The client clamps to the window; this only keeps junk out of the file.
     for key in ("rail_width", "side_width"):
         if key in patch and not 100 <= patch[key] <= 4000:
