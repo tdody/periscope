@@ -7,27 +7,9 @@
 // full ordered set for the expanded view.
 import { accountLabel } from "../accounts.js";
 import { accounts } from "../store.js";
-
-// Stale once the fetch is two refresh intervals old (server refreshes every
-// 5 min on success) — beyond that the server is failing to fetch, not just
-// between refreshes, and the percentages describe the past. Per ACCOUNT: one
-// dead credential must not grey out the other subscription's live numbers.
-export const STALE_AFTER_S = 600;
+import { isStale, meterLabel, projectsPastLimit } from "./usageRules.js";
 
 const KNOWN_METERS = ["session", "week_all", "week_opus", "week_sonnet"];
-const METER_LABELS = {
-  session: "session",
-  week_all: "week",
-  week_opus: "opus",
-  week_sonnet: "sonnet",
-};
-
-// Scoped per-model meters (week_fable, ...) are keyed dynamically by the
-// server and differ between accounts — an account can be missing a meter the
-// other one has. Never assume a fixed key set.
-function meterLabel(k) {
-  return METER_LABELS[k] || k.replace(/^week_/, "");
-}
 
 function orderMeters(meters) {
   const extra = Object.keys(meters).filter((k) => !KNOWN_METERS.includes(k)).sort();
@@ -63,12 +45,24 @@ export function summarizeAccounts(plan, nowSec) {
       id,
       label: accountLabel(id),
       available,
-      stale: available && !!entry.fetched_at && nowSec - entry.fetched_at > STALE_AFTER_S,
+      stale: available && isStale(entry, nowSec),
       fetchedAt: entry.fetched_at || null,
       meters,
       headline,
     };
   });
+}
+
+// What the collapsed row hides: the account's other meters that are burning
+// (🔥) or on track to hit their limit (red →). Clawd's mood reads every meter,
+// so the collapsed pill marks these too rather than leave Clawd furious next
+// to a pill with no 🔥 on it.
+export function hiddenAlerts(a) {
+  const others = (a.meters || []).filter((x) => x !== a.headline);
+  return {
+    hot: others.filter((x) => x.m.hot),
+    blow: others.filter((x) => !x.m.hot && projectsPastLimit(x.m)),
+  };
 }
 
 // Whether an account's Fable budget is on pace to go unused: its week_fable*

@@ -20,7 +20,8 @@ import { useState } from "preact/hooks";
 import { multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
 import { relTime } from "../util.js";
-import { isFableKey, summarizeAccounts, wasteMark } from "./usageSummary.js";
+import { projectsPastLimit } from "./usageRules.js";
+import { hiddenAlerts, isFableKey, summarizeAccounts, wasteMark } from "./usageSummary.js";
 
 function fmtTokens(n) {
   if (!n) return "0";
@@ -83,7 +84,19 @@ function projText(m) {
   const lo = Math.min(...cands);
   const hi = Math.max(...cands);
   if (hi <= m.percent) return null; // adds nothing over the current bar
-  return { text: hi - lo > 10 ? `→${lo}–${hi}%` : `→${hi}%`, blow: hi >= 100 };
+  return { text: hi - lo > 10 ? `→${lo}–${hi}%` : `→${hi}%`, blow: projectsPastLimit(m) };
+}
+
+// The collapsed row's marks for the meters it doesn't draw (hiddenAlerts).
+function HiddenAlerts({ a }) {
+  const { hot, blow } = hiddenAlerts(a);
+  if (!hot.length && !blow.length) return null;
+  const lines = [...hot.map((x) => `${x.label}: burning 🔥`), ...blow.map((x) => `${x.label}: on track to hit its limit`)];
+  return (
+    <span class={`usage-acct-more${hot.length ? "" : " blow"}`} title={[...lines, "(click to show every meter)"].join("\n")}>
+      {hot.length ? "🔥" : "→"}
+    </span>
+  );
 }
 
 function MeterBar({ label, m, resets, pace }) {
@@ -179,6 +192,7 @@ export function UsagePill() {
                 no data
               </span>
             )}
+            {!expanded && a.available && <HiddenAlerts a={a} />}
             {a.stale && <span class="usage-stale-mark">⚠</span>}
             {waste.has(a.id) && (
               <span class="usage-acct-waste" title="Fable budget on pace to go unused at reset">💤</span>

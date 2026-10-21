@@ -118,6 +118,35 @@ describe("<UsagePill>", () => {
     expect(render(<UsagePill />)).toContain("→ not anchored");
   });
 
+  it("marks a collapsed account 🔥 for a hot meter it doesn't draw, as Clawd sees it", () => {
+    usage.value = {
+      plan: {
+        default: {
+          available: true, fetched_at: NOW(),
+          meters: { session: { label: "session", percent: 35, hot: true }, week_all: { label: "week_all", percent: 81 } },
+        },
+      },
+      fallback: null,
+    };
+    const html = render(<UsagePill />);
+    expect(html).toContain("<b>81%</b>"); // the headline is week, not the burning session meter
+    expect(html).toMatch(/class="usage-acct-more"[^>]*>🔥</);
+    expect(html).toContain("session: burning 🔥");
+  });
+
+  it("marks a hidden meter that's on track to hit its limit with a red arrow", () => {
+    usage.value = {
+      plan: {
+        default: {
+          available: true, fetched_at: NOW(),
+          meters: { session: { label: "session", percent: 30, projected_recent: 130 }, week_all: { label: "week_all", percent: 81 } },
+        },
+      },
+      fallback: null,
+    };
+    expect(render(<UsagePill />)).toMatch(/class="usage-acct-more blow"[^>]*>→</);
+  });
+
   it("marks an account 💤 when its Fable budget is on pace to go unused", () => {
     const soon = NOW() + 30 * 3600;
     usage.value = {

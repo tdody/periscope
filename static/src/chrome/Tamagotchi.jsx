@@ -9,10 +9,13 @@
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
+import { useComputed, useSignal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
+import { accountLabel, multiAccount } from "../accounts.js";
+import { usage } from "../store.js";
 import {
-  activityAt, activityLabel, BODY, EYES, gridCells, headlineAt, hourLabel, LEGS, msUntilNextChange,
-  occasionShown, seasonAt,
+  activityAt, activityLabel, BODY, codingMood, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
+  msUntilNextChange, occasionShown, seasonAt,
 } from "./tamagotchi.js";
 
 const Y0 = 9; // the mascot's top row; each sprite row is 2 units tall
@@ -277,7 +280,33 @@ function Confetti() {
 }
 
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity, season, occasion, ghost, coffee }) {
+// The coding monitor's lines, by mood (tamagotchi.MOODS): grumpy turns one
+// line red; furious fills the screen with errors. Drawn inside the desk, under
+// the morning mug, so they rattle with the monitor and never cover the mug.
+function CodeScreen({ mood }) {
+  if (mood === "furious") {
+    return (
+      <g class="tama-errors" fill="#e05252">
+        <rect x="24" y="7" width="4.4" height="0.6" />
+        <rect x="24" y="8.4" width="6.2" height="0.6" />
+        <rect x="24.8" y="9.8" width="3.6" height="0.6" />
+        <rect x="29.4" y="9.8" width="0.6" height="0.6" fill="#ffd166" />
+      </g>
+    );
+  }
+  return (
+    <g>
+      <rect x="24" y="7" width="4.4" height="0.6" fill="var(--accent)" />
+      {mood === "grumpy"
+        ? <rect class="tama-red-line" x="24" y="8.4" width="3" height="0.6" fill="#e05252" />
+        : <rect x="24" y="8.4" width="3" height="0.6" fill="#7fbf7f" />}
+      <rect x="24.8" y="9.8" width="3.4" height="0.6" fill="#c792ea" />
+      <rect class="tama-cursor" x="28.6" y="9.8" width="0.6" height="0.6" fill="#e6e9ef" />
+    </g>
+  );
+}
+
+function Behind({ activity, season, occasion, ghost, coffee, mood = "calm" }) {
   switch (activity) {
     case "sleep":
       return (
@@ -314,11 +343,9 @@ function Behind({ activity, season, occasion, ghost, coffee }) {
             <rect x="21" y="14.1" width="0.9" height="4.9" fill="#6f533c" />
             <rect x="32.2" y="14.1" width="0.9" height="4.9" fill="#6f533c" />
             <rect x="26.9" y="12" width="1.2" height="1.2" fill="var(--fg-3)" />
-            <rect x="23" y="5.6" width="9" height="6.4" rx="0.4" fill="#1d2026" stroke="var(--fg-3)" stroke-width="0.3" />
-            <rect x="24" y="7" width="4.4" height="0.6" fill="var(--accent)" />
-            <rect x="24" y="8.4" width="3" height="0.6" fill="#7fbf7f" />
-            <rect x="24.8" y="9.8" width="3.4" height="0.6" fill="#c792ea" />
-            <rect class="tama-cursor" x="28.6" y="9.8" width="0.6" height="0.6" fill="#e6e9ef" />
+            <rect x="23" y="5.6" width="9" height="6.4" rx="0.4" fill={mood === "furious" ? "#2a1416" : "#1d2026"}
+                  stroke="var(--fg-3)" stroke-width="0.3" />
+            <CodeScreen mood={mood} />
             <rect x="20.4" y="12.6" width="4.2" height="0.6" rx="0.2" fill="#c9ced6" />
           </g>
           {coffee && (
@@ -417,20 +444,102 @@ function InFront({ activity }) {
   );
 }
 
-export function TamaScene({ activity, season = "summer", occasion = null, coffee = false, petted = false, petKey = 0 }) {
+// Clawd's coding moods, from the usage trend (tamagotchi.codingMood). Grumpy:
+// brows down, eyes narrowed, typing twice as fast, one red line on screen.
+// Furious, "red-hot": a deep pulsing flush and a scowl, hammering hands, keys
+// flying, the screen full of errors, smoke off the keyboard, heat shimmer,
+// the desk rattling. The face sits in Clawd's group so it bobs and shakes
+// with it; the hands and desk props use the coding pose's fixed desk; the
+// screens are CodeScreen's.
+function MoodFace({ x0, mood }) {
+  return (
+    <g class="tama-mood">
+      {mood === "furious" && (
+        <g class="tama-flush" fill="#ff3b2f" opacity="0.5">
+          <rect x={x0 + 3} y={Y0} width="12" height="4" />
+          <rect x={x0 + 1} y={Y0 + 4} width="16" height="2" />
+          <rect x={x0 + 3} y={Y0 + 6} width="12" height="2" />
+        </g>
+      )}
+      <g class="tama-brows" fill={EYE}>
+        <rect x={x0 + 5} y={Y0 + 2.9} width="1" height="1.1" />
+        <rect x={x0 + 12} y={Y0 + 2.9} width="1" height="1.1" />
+        <rect x={x0 + 3.9} y={Y0 + 1.5} width="1.3" height="0.55" />
+        <rect x={x0 + 5.1} y={Y0 + 2.05} width="1.3" height="0.55" />
+        <rect x={x0 + 11.6} y={Y0 + 2.05} width="1.3" height="0.55" />
+        <rect x={x0 + 12.8} y={Y0 + 1.5} width="1.3" height="0.55" />
+      </g>
+      {mood === "furious" && (
+        <path class="tama-scowl" fill="none" stroke={EYE} stroke-width="0.35" shape-rendering="geometricPrecision"
+              d={`M${x0 + 7.4} ${Y0 + 6} l0.8 -0.6 l0.8 0.6 l0.8 -0.6 l0.8 0.6`} />
+      )}
+      <g fill={SKIN}>
+        <rect class="tama-hand" x="20.7" y="11.9" width="1.1" height="0.8" />
+        <rect class="tama-hand tama-hand2" x="22.7" y="11.9" width="1.1" height="0.8" />
+      </g>
+      <g class="tama-clack" fill="#e6e9ef">
+        <rect x="21.1" y="10.9" width="0.25" height="0.55" />
+        <rect x="23.3" y="10.8" width="0.25" height="0.55" />
+      </g>
+    </g>
+  );
+}
+
+// Furious only, and only what has to draw over Clawd and the desk: flying
+// keys, smoke off the keyboard, heat shimmer, the spilling mug. (The screens
+// are CodeScreen's, inside the desk.)
+function MoodDesk({ mood, x0, coffee, hat }) {
+  if (mood !== "furious") return null;
+  return (
+    <g>
+      <g fill="#c9ced6">
+        <rect class="tama-flying-key" x="21.4" y="12" width="0.7" height="0.7" />
+        <rect class="tama-flying-key tama-flying-key2" x="23.1" y="12" width="0.7" height="0.7" />
+        <rect class="tama-flying-key tama-flying-key3" x="22.3" y="12" width="0.6" height="0.6" />
+      </g>
+      <g fill="#8b93a1" shape-rendering="geometricPrecision">
+        <circle class="tama-smoke" cx="21.6" cy="12.2" r="0.5" />
+        <circle class="tama-smoke tama-smoke2" cx="23.4" cy="12.2" r="0.45" />
+      </g>
+      {!hat && (
+        <g class="tama-shimmer" fill="none" stroke="#ff8a5c" stroke-width="0.3" opacity="0.8" shape-rendering="geometricPrecision">
+          {[6, 9, 12].map((dx, i) => (
+            <path key={dx} class={i === 1 ? "tama-shimmer2" : undefined}
+                  d={`M${x0 + dx} ${i === 1 ? 7.2 : 7.6} q0.5 -0.7 0 -1.4 q-0.5 -0.7 0 -1.4`} />
+          ))}
+        </g>
+      )}
+      {coffee && (
+        <g class="tama-spill" fill="#7a4e2d" shape-rendering="geometricPrecision">
+          <circle cx="25.4" cy="11.1" r="0.25" />
+          <circle class="tama-spill2" cx="26" cy="11" r="0.22" />
+        </g>
+      )}
+    </g>
+  );
+}
+
+export function TamaScene({
+  activity, season = "summer", occasion = null, coffee = false, mood = "calm", petted = false, petKey = 0,
+}) {
   const { x0, sitting } = POSES[activity] || STANDING;
   const ghost = occasion === "halloween" && activity === "run";
   const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
+  // Only the coding scene has moods.
+  const moody = activity === "code" && MOODS[mood]?.rank > 0;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
-         data-activity={activity} data-occasion={occasion || undefined}>
+         data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {occasion === "newyear" && <Fireworks />}
-      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee} />
+      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
+              mood={moody ? mood : "calm"} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
-        {ghost ? <GhostSheet x0={x0} /> : <Eyes closed={activity === "sleep"} x0={x0} />}
+        {ghost ? <GhostSheet x0={x0} />
+          : moody ? <MoodFace x0={x0} mood={mood} />
+          : <Eyes closed={activity === "sleep"} x0={x0} />}
         {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {activity === "run" && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && <Pail x0={x0} />}
@@ -441,6 +550,7 @@ export function TamaScene({ activity, season = "summer", occasion = null, coffee
         {hat === "party" && <PartyHat x0={x0} />}
       </g>
       <InFront activity={activity} />
+      {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} />}
       {occasion === "newyear" && <Confetti />}
       {petted && (
         // The pose offset sits on a wrapper: the heart's CSS float animation
@@ -487,10 +597,32 @@ export function Tamagotchi() {
     return () => clearTimeout(t);
   }, [petted, pets]);
 
+  // A minute tick for the stale check below: a failed poll leaves `usage`
+  // untouched, so without it a hot reading from a server that's gone away
+  // would keep Clawd furious forever rather than going stale and calm.
+  const minute = useSignal(0);
+  useEffect(() => {
+    const i = setInterval(() => { minute.value += 1; }, 60_000);
+    return () => clearInterval(i);
+  }, []);
+
+  // The coding mood, as a string key: /api/state replaces `usage` every poll,
+  // and a poll that leaves the mood unchanged mustn't rebuild the scene.
+  const moodKey = useComputed(() => {
+    minute.value;
+    const plan = usage.value?.plan;
+    const r = codingMood(plan, Date.now() / 1000);
+    const name = r.account && multiAccount() ? accountLabel(r.account) : null;
+    return JSON.stringify([r.mood, moodReason(r, name)]);
+  });
+  const [mood, reason] = JSON.parse(moodKey.value);
+
   const a = activityAt(now);
   const occasion = occasionShown(now);
   const headline = headlineAt(now);
-  const label = `Claude is ${activityLabel(a, occasion)} (${hourLabel(a.from)}–${hourLabel(a.to)})${headline ? ` · ${headline}` : ""}`;
+  const coding = a.id === "code";
+  const why = coding && reason ? ` · ${reason}` : "";
+  const label = `Claude is ${activityLabel(a, occasion, mood)} (${hourLabel(a.from)}–${hourLabel(a.to)})${why}${headline ? ` · ${headline}` : ""}`;
   return (
     <button
       type="button"
@@ -500,7 +632,7 @@ export function Tamagotchi() {
       onClick={() => { setPets((n) => n + 1); setPetted(true); }}
     >
       <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
-                 petted={petted} petKey={pets} />
+                 mood={mood} petted={petted} petKey={pets} />
     </button>
   );
 }
