@@ -76,20 +76,18 @@ function Counts() {
   // CSS colors them by status.
   return (
     <span id="counts">
-      <span class="count-row">
+      <span>
         <b>{total}</b> windows
-        {needsInput > 0 && (
-          <>
-            {" "}
-            <Sep /> <span class="count-needs">{needsInput} needs input</span>
-          </>
-        )}
       </span>
-      <span class="count-row">
-        <span class="count-working">{working} working</span> <Sep />{" "}
-        <span class="count-done">{done} done</span> <Sep />{" "}
-        <span class="count-idle">{idle} idle</span>
-      </span>
+      {needsInput > 0 && (
+        <>
+          {" "}
+          <Sep /> <span class="count-needs">{needsInput} needs input</span>
+        </>
+      )}{" "}
+      <Sep /> <span class="count-working">{working} working</span> <Sep />{" "}
+      <span class="count-done">{done} done</span> <Sep />{" "}
+      <span class="count-idle">{idle} idle</span>
     </span>
   );
 }
@@ -142,9 +140,6 @@ export function Header() {
           <SpawnEffortPicker />
         </div>
         <UpdatePill />
-        <div class="meta">
-          <Counts />
-        </div>
       </div>
       <nav class="filters" id="filters">
         <a
@@ -199,6 +194,12 @@ export function Header() {
 
         <span class="filters-sep"></span>
         <PanelToggles />
+
+        {/* Counts live at the row's far end (.meta is margin-left:auto): the
+            top bar's right side is the tamagotchi's, and this row has the room. */}
+        <div class="meta">
+          <Counts />
+        </div>
       </nav>
       {/* Spans both header rows in the top-right corner (styles.css), so the
           4x scene adds no height to either. */}
