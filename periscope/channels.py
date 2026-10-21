@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shlex
 import threading
 import time
 import uuid
@@ -615,7 +616,6 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     launch = usage.choose_launch(arguments.get("account"), arguments.get("model"))
     config_dir = store.account_config_dir(launch.account)
     model_env = config.model_env(launch.model)
-    effort_level = config.effort_level(launch.effort)
     code, _ = _run(["tmux", "has-session", "-t", session])
     if code != 0:
         ok, msg = _tmux_mutate(
@@ -651,10 +651,8 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     # it runs as a real prompt entry rather than mid-rc echoed text. The
     # dev-channels flag is what makes the spawned Claude connect back to
     # periscope's MCP socket.
-    from periscope.config import CLAUDE_EXEC
     await asyncio.sleep(0.1)
-    # effort_level is from a closed list, so it is safe unquoted here.
-    claude_cmd = f"{CLAUDE_EXEC} --effort {effort_level}" if effort_level else CLAUDE_EXEC
+    claude_cmd = shlex.join(config.build_agent_command("claude", cwd=cwd, effort=launch.effort))
     tmux("send-keys", "-t", target, claude_cmd, "Enter")
 
     # Dismiss the consent dialog (see _dev_channels_consent_*).
