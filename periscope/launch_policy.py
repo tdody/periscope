@@ -128,8 +128,11 @@ def walled(meters: Mapping[str, Meter], *, model: str | None = None) -> bool:
 def _back(meters: Mapping[str, Meter], model: str | None) -> int | None:
     """When a walled (account, model) pair can work again: once every meter
     walling it has reset. None when one of those meters reports no reset."""
-    walls_on = [m for m in (meters.get("session"), meters.get("week_all"),
-                            sublimit(meters, model) if model else None) if _pct(m) >= 100]
+    walls_on = [
+        m
+        for m in (meters.get("session"), meters.get("week_all"), sublimit(meters, model) if model else None)
+        if _pct(m) >= 100
+    ]
     resets = [(m or {}).get("resets_at") for m in walls_on]
     known = [r for r in resets if r is not None]
     return max(known) if known and len(known) == len(resets) else None
