@@ -69,17 +69,17 @@ def test_layout_two_window_passes_account_env(monkeypatch):
                    for a in flat), flat
 
 
-def test_layout_two_window_effort_rides_the_agent_window_only(monkeypatch):
-    # Same rule as the model: a hand-typed `claude` in the sibling shell would
-    # otherwise run at the pinned effort with nothing on its card saying so.
+def test_layout_two_window_effort_rides_the_agent_command(monkeypatch):
+    # A flag on the agent's own command line: the sibling shell inherits
+    # nothing, and the pane's /effort keeps working (the env var would lock it).
     from periscope.worktree_spawn import _layout_two_window
     calls = _patch_layout(monkeypatch)
 
     _layout_two_window("sess", "/tmp", effort="max")
 
-    agent_win, shell_win = _created(calls)
-    assert "CLAUDE_CODE_EFFORT_LEVEL=max" in list(agent_win)
-    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for a in shell_win)
+    sent = [c for c in calls if c and c[0] == "send-keys"]
+    assert [c for c in sent if any(str(a).endswith("--effort max") for a in c)], sent
+    assert not any("CLAUDE_CODE_EFFORT_LEVEL" in str(a) for c in _created(calls) for a in c)
 
 
 def test_layout_two_window_default_account_sends_no_env(monkeypatch):

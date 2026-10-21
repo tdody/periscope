@@ -344,9 +344,9 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
 # ── Ghost-text filter cases ─────────────────────────────────────────────
 # Each row: (tag, content_with_ansi, expected_pending_input).
 # These fixtures embed SGR escapes (`\x1b[38;5;Nm`) — what tmux capture-pane
-# -e emits. parse_pane keeps `pending_input` only when the prompt line shows
-# ≥2 distinct fg colors (prefix in one color, typed text in another). Ghost
-# text from Claude Code shares the prefix color and must be filtered out.
+# -e emits. parse_pane drops `pending_input` only when every glyph after the
+# prompt is drawn like Claude Code's ghost suggestion: dim, bright-black, or
+# dark grey (panes._input_is_ghost). Anything else counts as typed.
 
 GHOST_CASES: list[tuple[str, str, str | None]] = [
     # Ghost text only — single fg color across the prompt line. The
@@ -377,6 +377,41 @@ GHOST_CASES: list[tuple[str, str, str | None]] = [
     ("real-with-bg-color",
      f"\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231mreal user input\x1b[39m\n{STATUS_LINE}\n",
      "real user input"),
+
+    # Claude Code 2.1.280: a typed draft shares the prompt glyph's DEFAULT fg
+    # (39), with a no-break space after ❯. The old "≥2 fg colors" rule read
+    # this as ghost text, and the per-pane /effort picker pasted onto the
+    # draft and submitted it. Ghost text is the one that's dim or grey.
+    ("default-fg-draft",
+     f"\x1b[39m❯\xa0half a thought\n{STATUS_LINE}\n",
+     "half a thought"),
+
+    # Dim (SGR 2) suggestion after the prompt — ghost, not input.
+    ("dim-ghost",
+     f"\x1b[39m❯\xa0\x1b[2mtry the tests\x1b[22m\n{STATUS_LINE}\n",
+     None),
+
+    # Bright-black (90) suggestion — ghost too.
+    ("bright-black-ghost",
+     f"\x1b[90m❯ try the tests\x1b[39m\n{STATUS_LINE}\n",
+     None),
+
+    # A paste placeholder is drawn grey like a suggestion but IS the draft,
+    # whether the user typed on after it or not. Deciding from the first
+    # glyph alone would read either as ghost and let a slash command be
+    # appended to the paste and submitted.
+    ("paste-placeholder-then-typed",
+     f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m and fix it\n{STATUS_LINE}\n",
+     "[Pasted text #1 +40 lines] and fix it"),
+    ("paste-placeholder-alone",
+     f"\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m\n{STATUS_LINE}\n",
+     "[Pasted text #1 +40 lines]"),
+
+    # Grey prefix then default-fg text, with no placeholder: the ghost rule is
+    # all-or-nothing, so one typed glyph makes it a draft.
+    ("grey-then-default-fg",
+     f"\x1b[39m❯\xa0\x1b[38;5;240mdraft\x1b[39m continues\n{STATUS_LINE}\n",
+     "draft continues"),
 ]
 
 

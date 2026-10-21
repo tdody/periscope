@@ -456,7 +456,7 @@ export function LauncherModal() {
                 class={`launcher-branch${effort.value === id ? " is-active" : ""}`}
                 title={id === "default"
                   ? "no override — Claude's own choice for the model; /effort works in the pane (this launch only; the header pin is the standing default)"
-                  : `spawn this launch at ${id} (CLAUDE_CODE_EFFORT_LEVEL on the pane — it ignores /effort for its whole session)`}
+                  : `spawn this launch at ${id} (--effort on the pane's claude; /effort can still change it later)`}
                 onClick={() => { effort.value = id; }}
               >
                 {id}

@@ -9,7 +9,6 @@ import subprocess
 from periscope import config
 from periscope.tmux import (
     _ANSI_SGR_RE,
-    _FG_COLOR_RE,
     _run,
     _tmux_mutate,
     capture,
@@ -22,11 +21,6 @@ from periscope.tmux import (
 def test_ansi_sgr_re_strips_color_codes():
     s = "\x1b[31mred\x1b[0m plain"
     assert _ANSI_SGR_RE.sub("", s) == "red plain"
-
-
-def test_fg_color_re_matches_extended_palette():
-    s = "\x1b[38;5;196mbright red\x1b[0m"
-    assert _FG_COLOR_RE.search(s) is not None
 
 
 def test_tmux_invokes_subprocess_with_tmux_prefix(mocker):
@@ -162,14 +156,6 @@ def test_env_args_carries_the_model_override():
     assert env_args("/c", "lab", "opus") == [
         "-e", "CLAUDE_CONFIG_DIR=/c", "-e", "CLAUDE_WRAPPER_PROFILE=lab",
         "-e", "ANTHROPIC_MODEL=opus",
-    ]
-
-
-def test_env_args_carries_the_effort_level():
-    assert env_args("", None, None, "high") == ["-e", "CLAUDE_CODE_EFFORT_LEVEL=high"]
-    assert env_args("/c", None, "opus", "max") == [
-        "-e", "CLAUDE_CONFIG_DIR=/c", "-e", "ANTHROPIC_MODEL=opus",
-        "-e", "CLAUDE_CODE_EFFORT_LEVEL=max",
     ]
 
 

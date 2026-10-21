@@ -18,7 +18,6 @@ from periscope import config
 
 # Strip SGR escape sequences from captured pane text before parsing.
 _ANSI_SGR_RE = re.compile(r"\x1b\[[\d;]*m")
-_FG_COLOR_RE = re.compile(r"\x1b\[38(?:;\d+)+m")
 
 
 def _tmux_argv(*args: str) -> list[str]:
@@ -58,14 +57,13 @@ def _tmux_mutate(*args: str) -> tuple[bool, str]:
 
 def env_args(
     config_dir: str | None, profile: str | None = None, model: str | None = None,
-    effort: str | None = None,
 ) -> list[str]:
     """`-e VAR=...` args for new-window/new-session, or [].
 
-    Four bindings ride here: CLAUDE_CONFIG_DIR (which subscription the pane
-    bills), the wrapper profile (which plugin set it runs under), the model
-    override (ANTHROPIC_MODEL) and the effort override
-    (CLAUDE_CODE_EFFORT_LEVEL).
+    Three bindings ride here: CLAUDE_CONFIG_DIR (which subscription the pane
+    bills), the wrapper profile (which plugin set it runs under), and the
+    model override (ANTHROPIC_MODEL). Effort is deliberately NOT one of them —
+    see config.EFFORT_LEVELS.
 
     Set on the window rather than prefixed onto the command string so the
     binding lives in the pane's process environment: a user re-running
@@ -79,8 +77,6 @@ def env_args(
         args += ["-e", f"{config.PROFILE_ENV_VAR}={profile}"]
     if model:
         args += ["-e", f"{config.MODEL_ENV_VAR}={model}"]
-    if effort:
-        args += ["-e", f"{config.EFFORT_ENV_VAR}={effort}"]
     return args
 
 
@@ -100,8 +96,7 @@ def scrub_session_env(session: str) -> bool:
     silent. `_tmux_mutate` only returns stderr, it does not log, so log here.
     """
     ok = True
-    for var in ("CLAUDE_CONFIG_DIR", config.PROFILE_ENV_VAR, config.MODEL_ENV_VAR,
-                config.EFFORT_ENV_VAR):
+    for var in ("CLAUDE_CONFIG_DIR", config.PROFILE_ENV_VAR, config.MODEL_ENV_VAR):
         got, msg = _tmux_mutate("set-environment", "-t", f"={session}", "-u", var)
         if not got:
             ok = False

@@ -120,7 +120,6 @@ def _rewrite_line(
     config_dirs: dict[str, str] | None = None,
     profiles: dict[str, str] | None = None,
     models: dict[str, str] | None = None,
-    efforts: dict[str, str] | None = None,
 ) -> tuple[str, bool]:
     """Rewrite one save-file line. Returns (line, rewritten?). Non-claude lines,
     non-pane lines, and panes with neither a resolvable session nor a non-default
@@ -140,22 +139,17 @@ def _rewrite_line(
     cfg = (config_dirs or {}).get(pane_id) if pane_id else None
     prof = (profiles or {}).get(pane_id) if pane_id else None
     model = (models or {}).get(pane_id) if pane_id else None
-    effort = (efforts or {}).get(pane_id) if pane_id else None
     # The env prefixes must be emitted even when the session is unresolvable
     # (no pane_sessions row). Returning early there would restore a non-default
     # pane onto the DEFAULT account — burning the wrong subscription silently,
     # which is worse than losing --resume — or onto the default wrapper profile,
     # silently swapping the plugin set the pane was working under.
-    if not uuid and not cfg and not prof and not model and not effort:
+    if not uuid and not cfg and not prof and not model:
         return line, False
 
     prefix = f"CLAUDE_CONFIG_DIR={cfg} " if cfg else ""
     if prof:
         prefix += f"{config.PROFILE_ENV_VAR}={prof} "
-    # Effort, unlike the model, rides BOTH paths: Claude refuses /effort while
-    # the var is set, so it was this pane's effort for its whole life, and
-    # dropping it on --resume would quietly restore the pane at the default.
-    effort_prefix = f"{config.EFFORT_ENV_VAR}={effort} " if effort else ""
     if not uuid:
         # The model prefix is emitted ONLY here. A resumed session restores its
         # own model, and ANTHROPIC_MODEL at launch would override that — so on
@@ -164,7 +158,7 @@ def _rewrite_line(
         # choice is all that is left of the intent.
         if model:
             prefix += f"{config.MODEL_ENV_VAR}={model} "
-        parts[10] = ":" + prefix + effort_prefix + cmd
+        parts[10] = ":" + prefix + cmd
         return "\t".join(parts), True
 
     # Rebuild the command from scratch: `claude --resume <uuid>` followed by the
@@ -172,7 +166,11 @@ def _rewrite_line(
     # place) inherently drops the stale --system-prompt and any pre-existing
     # --resume without needing to match them explicitly.
     channels = _CHANNEL_RE.findall(cmd)
-    new_cmd = f"{prefix}{effort_prefix}claude --resume {uuid}"
+    # `--effort` (the launch level) is dropped here with every other non-channel
+    # flag, like the model prefix above: /effort can change a running session,
+    # and re-emitting the launch level after a reboot would undo that. On the
+    # no-session path the captured command is kept whole, flag included.
+    new_cmd = f"{prefix}claude --resume {uuid}"
     for ch in channels:
         new_cmd += f" --dangerously-load-development-channels {ch}"
     parts[10] = ":" + new_cmd
@@ -188,7 +186,6 @@ def rewrite_save_file(save_path: Path) -> int:
     config_dirs = session_status.pane_config_dirs()
     profiles = session_status.pane_profiles()
     models = session_status.pane_models()
-    efforts = session_status.pane_efforts()
 
     out_lines: list[str] = []
     rewritten = 0
@@ -196,7 +193,7 @@ def rewrite_save_file(save_path: Path) -> int:
         for raw in f:
             stripped = raw.rstrip("\n")
             new, changed = _rewrite_line(
-                stripped, pane_map, session_map, config_dirs, profiles, models, efforts)
+                stripped, pane_map, session_map, config_dirs, profiles, models)
             rewritten += changed
             out_lines.append(new)
 

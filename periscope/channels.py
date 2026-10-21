@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shlex
 import threading
 import time
 import uuid
@@ -615,12 +616,11 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     launch = usage.choose_launch(arguments.get("account"), arguments.get("model"))
     config_dir = store.account_config_dir(launch.account)
     model_env = config.model_env(launch.model)
-    effort_env = config.effort_env(launch.effort)
     code, _ = _run(["tmux", "has-session", "-t", session])
     if code != 0:
         ok, msg = _tmux_mutate(
             "new-session", "-d", "-s", session, "-c", cwd,
-            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
+            *tmux_mod.env_args(config_dir, None, model_env),
             "-P", "-F", "#{window_index}",
             *(["-n", name] if name else []),
         )
@@ -628,12 +628,12 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         # window spawned into this session inherits this account — silently
         # billing them to the wrong subscription. This window's shell already
         # forked with the value; `new-window -e` has no such spillover.
-        if ok and (config_dir or model_env or effort_env):
+        if ok and (config_dir or model_env):
             tmux_mod.scrub_session_env(session)
     else:
         ok, msg = _tmux_mutate(
             "new-window", "-t", f"{session}:", "-c", cwd,
-            *tmux_mod.env_args(config_dir, None, model_env, effort_env),
+            *tmux_mod.env_args(config_dir, None, model_env),
             "-P", "-F", "#{window_index}",
             *(["-n", name] if name else []),
         )
@@ -651,9 +651,9 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
     # it runs as a real prompt entry rather than mid-rc echoed text. The
     # dev-channels flag is what makes the spawned Claude connect back to
     # periscope's MCP socket.
-    from periscope.config import CLAUDE_EXEC
     await asyncio.sleep(0.1)
-    tmux("send-keys", "-t", target, CLAUDE_EXEC, "Enter")
+    claude_cmd = shlex.join(config.build_agent_command("claude", cwd=cwd, effort=launch.effort))
+    tmux("send-keys", "-t", target, claude_cmd, "Enter")
 
     # Dismiss the consent dialog (see _dev_channels_consent_*).
     for _ in range(50):  # up to 5s
