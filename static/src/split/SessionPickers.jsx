@@ -16,16 +16,26 @@ import { effortShown, modelShown, sessionBlocker } from "./sessionPickers.js";
 
 export function SessionPickers({ w }) {
   const [picked, setPicked] = useState({});
+  // The poll's idle state would re-enable the selects while a request is still
+  // reading the pane back (up to 3s), and a second pick would type into a pane
+  // mid-way through the first command.
+  const [inflight, setInflight] = useState(false);
   // A poll carrying the server's value, or a different pane, supersedes a local pick.
   useEffect(() => { setPicked({}); }, [w.pid, w.session_model, w.session_effort]);
-  const blocker = sessionBlocker(w);
+  const blocker = inflight ? "waiting for the pane to confirm the last change" : sessionBlocker(w);
 
   async function apply(setting, e) {
     const value = e.currentTarget.value;
     e.currentTarget.value = ""; // snap back even when the request fails
-    if (!value) return;
+    if (!value || inflight) return;
     const q = `pid=${encodeURIComponent(w.pid)}&setting=${setting}&value=${encodeURIComponent(value)}`;
-    const res = await apiCall(`set ${setting}`, `/api/pane/session-setting?${q}`, { method: "POST" });
+    setInflight(true);
+    let res;
+    try {
+      res = await apiCall(`set ${setting}`, `/api/pane/session-setting?${q}`, { method: "POST" });
+    } finally {
+      setInflight(false);
+    }
     if (!res) return; // busy pane, draft, or Claude refused: apiCall toasted the reason
     if (res.result === "applied") setPicked((p) => ({ ...p, [setting]: value }));
     else if (res.result === "confirm") {
