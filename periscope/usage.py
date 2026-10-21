@@ -666,6 +666,17 @@ def move_targets() -> dict[str, str]:
     return {aid: t for aid in ids if (t := launch_policy.choose_move(base, aid))}
 
 
+def walls() -> dict | None:
+    """Whether no account can take an unnamed launch right now, and until when
+    (`launch_policy.walls`). Published on /api/state for Clawd's nap, so the
+    header's two answers to "can anything launch?" come from one rule."""
+    return launch_policy.walls(launch_policy.LaunchInputs(
+        accounts=tuple(a["id"] for a in store.get_accounts() if a.get("id")),
+        usage=cached_plan_usage(), account_arg=None, model_arg=None,
+        account_pin=None, model_pin=store.get_settings().get("spawn_model"), now=time.time(),
+    ))
+
+
 def choose_launch(
     account: str | None = None, model: str | None = None, effort: str | None = None,
 ) -> Launch:
