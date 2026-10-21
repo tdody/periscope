@@ -12,9 +12,6 @@
 //    re-render never clobbers the user's in-flight keystrokes. The editor is
 //    keyed on `pid` at the call site so switching panes resets it.
 //  - The activity-stream scrollTop is restored across data-driven re-renders.
-//  - When data.channel_unread > 0 and we're rendering data.pane_id, fire a
-//    /api/channel/clear-unread POST (the badge clears as soon as the user
-//    looks at the pane in either modal or split-view).
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as prefs from "../prefs.js";
 import { fileFilterMatch, filesTouched, partitionFilesByPriority } from "../split/filesTouched.js";
@@ -458,13 +455,6 @@ export function Inspector({ data, onRefresh, containerId, containerClass, idPref
       streamRef.current.scrollTop = priorScroll.current;
     }
   });
-
-  // Clear unread when the sidebar shows replies (fire-and-forget).
-  useEffect(() => {
-    if (data?.pane_id && (data.channel_unread || 0) > 0) {
-      fetch(`/api/channel/clear-unread?pane_id=${encodeURIComponent(data.pane_id)}`, { method: "POST" });
-    }
-  }, [data?.pane_id, data?.channel_unread]);
 
   function onLinkAsk(kind) {
     const content = LINK_ASK_PROMPTS[kind];

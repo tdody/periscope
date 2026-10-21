@@ -373,6 +373,15 @@ function PaneDetail({ w }) {
     activeTarget.value = w.target;
   }, [w.target]);
 
+  // "You looked at this pane" clears its unread count. On selection, not in
+  // the Inspector: the context column unmounts while hidden (⌥⌘B), and the
+  // badge must still clear for a pane the user is plainly looking at.
+  useEffect(() => {
+    if (w.pane_id && (w.channel_unread || 0) > 0) {
+      fetch(`/api/channel/clear-unread?pane_id=${encodeURIComponent(w.pane_id)}`, { method: "POST" });
+    }
+  }, [w.pane_id, w.channel_unread]);
+
   // Wire the terminal's file-link callback. Cmd+click on a path → add
   // (or focus) a preview tab for the active pane.
   useEffect(() => {
