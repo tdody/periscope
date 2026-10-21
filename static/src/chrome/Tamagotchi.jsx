@@ -24,7 +24,7 @@ import {
   alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, windows,
 } from "../store.js";
 import { deskScene, dutyItems, moreCount, walledUntil, wallLabel, wallPhrase } from "./clawdDuty.js";
-import { cleanupCount, endParty, mergeParties, needsSince, startClawdWatch } from "./clawdWatch.js";
+import { endParty, mergeParties, needsSince, startClawdWatch } from "./clawdWatch.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Broom, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle, SweepHand,
@@ -701,8 +701,7 @@ export function Tamagotchi() {
       windows: windows.value || [], alerts: alerts.value || [],
       dismissedAlertIds: dismissedAlertIds.value, dismissedNeedsPids: dismissedNeedsPids.value,
       dismissedReadyPids: dismissedReadyPids.value, selectedPid: sel?.startsWith("pane:") ? sel.slice(5) : null,
-      needsSince: needsSince.value, parties: mergeParties.value, cleanupCount: cleanupCount.value,
-      update: updateInfo.value, nowSec,
+      needsSince: needsSince.value, parties: mergeParties.value, update: updateInfo.value, nowSec,
     });
     const wall = walledUntil(usage.value?.plan, nowSec);
     return JSON.stringify({

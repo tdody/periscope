@@ -21,9 +21,11 @@ describe("dutyItems", () => {
         pane("c", { ci: "✗", pr: 7, repo_slug: "o/r" }),
         pane("d", { state: "done" }),
         pane("e", { context_pct: 91 }),
+        pane("g", { pr: 4, pr_state: "merged", cwd: "/w/g" }),
+        pane("h", { pr: 5, pr_state: "closed", cwd: "/w/h" }),
       ],
       parties: [{ key: "f#9", pid: "f", target: "s:f", pr: 9, at: NOW - 5 }],
-      cleanupCount: 2, update: { behind: 3, running: false }, nowSec: NOW,
+      update: { behind: 3, running: false }, nowSec: NOW,
     });
     expect(kinds(items)).toEqual(DUTY_ORDER);
     expect(moreCount(items)).toBe(1 + 1 + 1 + 1 + 1 + 2 + 1);
@@ -67,7 +69,7 @@ describe("dutyItems", () => {
       pane("c", { ci: "✗", pr: 12, repo_slug: "o/r", pr_state: "merged" }), pane("d", { ci: "✓", pr: 13 })];
     const [ci] = dutyItems({ windows, nowSec: NOW });
     expect(ci).toMatchObject({ kind: "ci", count: 1, phrase: "PR #9000 is failing CI" });
-    expect(dutyItems({ windows, selectedPid: "b", nowSec: NOW })).toEqual([]);
+    expect(kinds(dutyItems({ windows, selectedPid: "b", nowSec: NOW }))).not.toContain("ci");
   });
 
   it("sweats over the panes the rail paints red, labelled with the fullest", () => {
@@ -80,6 +82,14 @@ describe("dutyItems", () => {
     const parties = [{ key: "a#9", pid: "a", target: "s:a", pr: 9, at: NOW - PARTY_S }];
     expect(dutyItems({ parties, nowSec: NOW })).toEqual([]);
     expect(dutyItems({ parties, nowSec: NOW - 1 })[0]).toMatchObject({ kind: "merged", phrase: "PR #9 merged 🎉" });
+  });
+
+  it("offers cleanup for each worktree whose linked PR is done, once", () => {
+    const windows = [pane("a", { pr: 4, pr_state: "merged", cwd: "/w/a" }), pane("b", { pr: 4, pr_state: "merged", cwd: "/w/a" }),
+      pane("c", { pr: 6, pr_state: "open", cwd: "/w/c" })];
+    const [clean] = dutyItems({ windows, nowSec: NOW });
+    expect(clean).toMatchObject({ kind: "clean", count: 1, phrase: "PR #4 is merged: pane-a's worktree can be cleaned up",
+      target: { action: "cleanup" } });
   });
 
   it("offers the update only when behind and not already running", () => {
