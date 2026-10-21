@@ -37,8 +37,7 @@ const paneTarget = (w, extra = {}) =>
 // asks nothing of you, and you're usually looking at the pane that merged.
 export function dutyItems({
   windows = [], alerts = [], dismissedAlertIds = new Set(), dismissedNeedsPids = new Set(),
-  dismissedReadyPids = new Set(), selectedPid = null, needsSince = {}, parties = [],
-  cleanupCount = 0, update = null, nowSec,
+  dismissedReadyPids = new Set(), selectedPid = null, needsSince = {}, parties = [], update = null, nowSec,
 }) {
   const items = [];
   const notSelected = (w) => !w || selectedPid == null || String(w.pid) !== String(selectedPid);
@@ -124,10 +123,22 @@ export function dutyItems({
     });
   }
 
-  if (cleanupCount > 0) {
+  // A pane whose linked PR has merged or closed: its worktree's work is done.
+  // Read off /api/state, not /api/cleanup/candidates — that walks every
+  // worktree's git state (two minutes on a checkout with a hundred of them)
+  // and lists long-idle worktrees no pane is using, a standing count that
+  // would keep Clawd sweeping forever.
+  const finished = new Map();
+  for (const w of live) {
+    const key = w.cwd || w.target;
+    if (w.pr && (w.pr_state === "merged" || w.pr_state === "closed") && !finished.has(key)) finished.set(key, w);
+  }
+  if (finished.size) {
+    const [w] = finished.values();
     items.push({
-      kind: "clean", count: cleanupCount, label: String(cleanupCount),
-      phrase: `${plural(cleanupCount, "worktree")} ready to clean up`,
+      kind: "clean", count: finished.size, label: String(finished.size),
+      phrase: finished.size === 1 ? `PR #${w.pr} is ${w.pr_state}: ${paneLabel(w)}'s worktree can be cleaned up`
+        : `${finished.size} worktrees ready to clean up`,
       target: { action: "cleanup", says: "review the cleanup" },
     });
   }
