@@ -477,6 +477,55 @@ html, body {
 .tama [data-mood="furious"] .tama-desk-mug { animation: tama-shake 0.14s steps(4) infinite; }
 .tama .tama-spill circle { animation: tama-fly-l 0.7s ease-out infinite; }
 .tama .tama-spill .tama-spill2 { animation-name: tama-fly-r; animation-delay: -0.35s; }
+/* Clawd on duty (clawdDuty.js decides, TamaDuty.jsx draws). Keyed on the
+   scene's data-pose / data-urgent / data-working / data-activity. Creature
+   rules sit at the activity rules' specificity and come later, so they win by
+   order (an urgent bell's doubled attribute outranks the rest); the doubled
+   hop class still outranks them all. */
+.tama .tama-bubble { transform-origin: 20% 100%; animation: tama-wobble 1.6s ease-in-out infinite; }
+.tama .tama-bubble-urgent { animation-duration: 0.5s; }
+@keyframes tama-wobble { 0%, 70%, 100% { transform: rotate(0deg); } 78% { transform: rotate(-4deg); } 86% { transform: rotate(4deg); } 94% { transform: rotate(-2deg); } }
+.tama .tama-slap { animation: tama-slap 0.8s steps(1) infinite; }
+.tama .tama-ding { animation: tama-ding 0.8s steps(1) infinite; }
+.tama [data-urgent] .tama-slap, .tama [data-urgent] .tama-ding { animation-duration: 0.36s; }
+@keyframes tama-slap { 50% { transform: translateY(0.9px); } }
+@keyframes tama-ding { 0% { opacity: 0; } 50% { opacity: 1; } }
+.tama .tama-alarm { animation: tama-shake 0.14s steps(4) infinite; }
+.tama [data-activity="sleep"] .tama-ding { animation-duration: 0.28s; }
+.tama .tama-startle { animation: tama-cursor 0.5s steps(1) infinite; }
+.tama .tama-cheer { animation: tama-cheer 0.5s steps(2) infinite; }
+.tama .tama-cheer2 { animation-delay: -0.25s; }
+@keyframes tama-cheer { 50% { transform: translateY(-0.6px); } }
+.tama .tama-sparkle { transform-origin: center; animation: tama-sparkle 1.5s ease-in-out infinite; }
+@keyframes tama-sparkle { 0%, 100% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1); opacity: 1; } }
+.tama .tama-spray { transform-origin: center; animation: tama-spray 0.9s ease-out infinite; }
+.tama .tama-spray2 { animation-delay: -0.3s; }
+.tama .tama-spray3 { animation-delay: -0.6s; }
+@keyframes tama-spray { 0% { transform: translate(0, 0) scale(0.5); opacity: 0.95; } 100% { transform: translate(3.4px, -2px) scale(1.7); opacity: 0; } }
+.tama .tama-orbit { animation: tama-orbit 1.8s linear infinite; }
+@keyframes tama-orbit { 25% { transform: translate(1.6px, -0.5px); } 50% { transform: translate(0, -0.9px); } 75% { transform: translate(-1.6px, -0.5px); } }
+.tama .tama-static { animation: tama-cursor 0.2s steps(1) infinite; }
+.tama .tama-static2 { animation-delay: -0.1s; }
+.tama .tama-stack { transform-origin: 50% 100%; animation: tama-teeter 1.6s ease-in-out infinite alternate; }
+@keyframes tama-teeter { from { transform: rotate(-2.5deg); } to { transform: rotate(2deg); } }
+.tama .tama-fill { animation: tama-errors 1.2s steps(2) infinite; }
+/* The monitor's tmux splits: each line types itself out; busier is faster. */
+.tama .tama-type { transform-origin: left center; animation: tama-type 2.6s steps(6) infinite; }
+.tama [data-working="3"] .tama-type, .tama [data-working="4"] .tama-type { animation-duration: 1.6s; }
+@keyframes tama-type { 0% { transform: scaleX(0); } 55%, 100% { transform: scaleX(1); } }
+.tama .tama-broom { transform-origin: 70% 0%; animation: tama-sweep 0.9s ease-in-out infinite alternate; }
+@keyframes tama-sweep { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+.tama .tama-note { animation: tama-float 2.4s linear infinite; }
+.tama .tama-parcel { animation: tama-bounce 1.6s steps(1) infinite; }
+@keyframes tama-bounce { 70% { transform: translateY(-0.7px); } 80% { transform: translateY(0); } 88% { transform: translateY(-0.35px); } 96% { transform: translateY(0); } }
+/* Nothing running: Clawd stops typing. */
+.tama [data-working="0"] .tama-creature { animation: none; }
+.tama [data-pose="done"] .tama-creature, .tama [data-pose="merged"] .tama-creature { animation: tama-bob 0.5s steps(2) infinite; }
+.tama [data-pose="api"] .tama-creature { animation: tama-woozy 1.4s ease-in-out infinite alternate; }
+@keyframes tama-woozy { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+.tama [data-pose="bell"][data-urgent] .tama-creature { animation: tama-bob 0.18s steps(2) infinite; }
+.tama [data-activity="nap"] .tama-creature { animation: tama-slump 3.2s ease-in-out infinite; }
+@keyframes tama-slump { 0%, 100% { transform: translate(0.6px, 0.9px) rotate(6deg); } 50% { transform: translate(0.6px, 1.1px) rotate(6deg) scaleY(0.95); } }
 .tama-heart { animation: tama-heart 0.9s ease-out forwards; }
 @keyframes tama-heart { 0% { transform: translateY(2px) scale(0.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-3px) scale(1); opacity: 0; } }
 .meta .count-needs   { color: var(--s-needs); }
