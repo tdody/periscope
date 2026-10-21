@@ -76,13 +76,15 @@ and the segfault it prevents: `docs/testing.md`.
 ## Linting & type-checking
 
 ```sh
-bin/check            # ruff + ty + biome, report-only — the gate is kept at ZERO violations
-bin/check --fix      # ruff --fix + biome --write, then check
+bin/check            # ruff check + ruff format --check + ty + biome, report-only — the gate is kept at ZERO violations
+bin/check --fix      # ruff --fix + ruff format + biome --write, then check
 ```
 
-`.pre-commit-config.yaml` runs the same (`uv tool run pre-commit install`).
-Biome is a linter only — the formatter is OFF, as are `E501`/`E701`/`E702`:
-the terse hand-written style is deliberate. Rule rationale: `docs/linting.md`.
+`.pre-commit-config.yaml` runs the same (`uv tool run pre-commit install`);
+`.github/workflows/ci.yml` runs it plus vitest, a `static/dist` freshness
+check, and pytest on every push/PR. Python is `ruff format`ted (line-length
+120); Biome is a linter only — its formatter is OFF, keeping the terse
+hand-written UI style. Rule rationale: `docs/linting.md`.
 
 ## Architecture
 

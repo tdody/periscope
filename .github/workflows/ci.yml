@@ -30,7 +30,7 @@ jobs:
           cache: npm
       - run: uv sync --locked
       - run: npm ci
-      - name: bin/check (ruff + ty + biome)
+      - name: bin/check (ruff check + ruff format --check + ty + biome)
         run: bin/check
       - name: vitest
         run: npm test
