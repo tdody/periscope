@@ -1,8 +1,9 @@
-// The evening pastimes and the meals (tamagotchi.PASTIMES / MEALS): the props
-// around Clawd for each, on the scene's 34×24 grid with the floor at y 19.
+// The pastimes (tamagotchi.PASTIMES): the props around Clawd for each, on the
+// scene's 34×24 grid with the floor at y 19. The dishes are TamaDishes.jsx's.
 // Behind-the-mascot pieces take fixed positions, set against the pose's x0 in
 // Tamagotchi.POSES; the pieces Clawd holds take x0 and sit inside its group,
 // so they bob with it. Motion is CSS (styles.css, `.tama`).
+import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
 const GEO = "geometricPrecision";
@@ -189,149 +190,285 @@ export function Friend() {
 }
 
 // ---- time with the kids: two half-size Clawds, hand in hand, hopping --------
-function Kid({ x, cls }) {
+// On a Halloween evening they trick-or-treat in little sheets, pails in hand.
+function KidSheet({ x }) {
+  const L = x + 1.1;
+  const R = x + 7.4;
+  const hem = `q-${(R - L) / 16} 0.55 -${(R - L) / 8} 0 `.repeat(8);
+  return (
+    <g class="tama-kid-sheet" shape-rendering={GEO}>
+      <path fill="#f5f5f7" d={`M${L} 18.8 V15.6 Q${L} 13.6 ${(L + R) / 2} 13.6 Q${R} 13.6 ${R} 15.6 V18.8 ${hem}Z`} />
+      <ellipse cx={x + 3.1} cy="15.6" rx="0.35" ry="0.5" fill={EYE} />
+      <ellipse cx={x + 5.4} cy="15.6" rx="0.35" ry="0.5" fill={EYE} />
+      <path d={`M${x + 6.5} 17.2 q0.8 -1.2 1.6 0`} fill="none" stroke="#3a2a1a" stroke-width="0.2" />
+      <rect x={x + 6.4} y="17" width="1.8" height="1.5" rx="0.5" fill="#ef8a2c" />
+    </g>
+  );
+}
+
+function Kid({ x, cls, costume }) {
   return (
     <g class={cls}>
       <Sprite rows={BODY} x0={x} y0={14} w={0.5} h={1} fill={SKIN} />
       <Sprite rows={[LEGS[0]]} x0={x} y0={18} w={0.5} h={1} fill={SKIN} />
-      <rect x={x + 2.5} y="15" width="0.5" height="1" fill={EYE} />
-      <rect x={x + 6} y="15" width="0.5" height="1" fill={EYE} />
+      {costume ? <KidSheet x={x} /> : (
+        <g fill={EYE}>
+          <rect x={x + 2.5} y="15" width="0.5" height="1" />
+          <rect x={x + 6} y="15" width="0.5" height="1" />
+        </g>
+      )}
     </g>
   );
 }
 
-export function Kids() {
+export function Kids({ costume = false }) {
   return (
     <g>
-      <Kid x={17.4} cls="tama-kid" />
-      <Kid x={25.4} cls="tama-kid tama-kid2" />
+      <Kid x={17.4} cls="tama-kid" costume={costume} />
+      <Kid x={25.4} cls="tama-kid tama-kid2" costume={costume} />
     </g>
   );
 }
 
-// ---- meals: one dish beside Clawd (standing at x0 8), on the floor ---------
-function Steam({ x, y }) {
+// ---- video games: on the couch (Clawd seated at x0 3), a platformer on TV ---
+export function Couch() {
   return (
-    <g fill="var(--fg-3)">
-      <rect class="tama-steam" x={x} y={y} width="0.5" height="1.6" />
-      <rect class="tama-steam tama-steam2" x={x + 1.2} y={y - 0.6} width="0.5" height="1.6" />
+    <g>
+      <g fill="#4d5f95">
+        <rect x="0.6" y="8.4" width="20.4" height="9" rx="1" />
+        <rect x="0.2" y="13.4" width="2.6" height="5" rx="0.8" />
+      </g>
+      <rect x="1" y="16.6" width="21" height="1.6" rx="0.6" fill="#5f75b0" />
+      <g fill="#3a2a1a">
+        <rect x="1.6" y="18.2" width="0.9" height="0.8" />
+        <rect x="20.2" y="18.2" width="0.9" height="0.8" />
+      </g>
+      <g class="tama-tv">
+        <rect x="22.4" y="15.6" width="11.2" height="3.4" fill="#6f533c" />
+        <rect x="22.4" y="17.1" width="11.2" height="0.3" fill="#5a4230" />
+        <rect x="27.4" y="14.6" width="1.6" height="1" fill="#1d1f24" />
+        <rect x="23" y="7.4" width="10.4" height="7.2" rx="0.4" fill="#1d1f24" />
+        <rect x="23.6" y="8" width="9.2" height="6" fill="#20304a" />
+        <rect x="23.6" y="13" width="9.2" height="1" fill="#4f9a46" />
+        <rect x="29.6" y="10.8" width="2.4" height="0.5" fill="#b5733a" />
+        <circle class="tama-twinkle" cx="30.8" cy="9.9" r="0.35" fill="#ffd166" />
+        <rect class="tama-hero" x="25.2" y="11.9" width="0.8" height="1.1" fill="#e05252" />
+      </g>
     </g>
   );
 }
 
-function Plate({ y = 18.2 }) {
-  return <rect x="25.8" y={y} width="7.6" height="0.8" rx="0.4" fill="#e8e2d4" />;
+export function Controller({ x0 }) {
+  return (
+    <g class="tama-controller" shape-rendering={GEO}>
+      <rect x={x0 + 6.6} y="14.2" width="4.8" height="1.4" rx="0.6" fill="#3b404a" />
+      <rect x={x0 + 6.4} y="14.6" width="1.4" height="1.6" rx="0.6" fill="#3b404a" />
+      <rect x={x0 + 10.2} y="14.6" width="1.4" height="1.6" rx="0.6" fill="#3b404a" />
+      <path d={`M${x0 + 7.4} 14.9 h0.9 M${x0 + 7.85} 14.45 v0.9`} stroke="#c9ced6" stroke-width="0.25" />
+      <circle cx={x0 + 10.2} cy="14.7" r="0.22" fill="#e05252" />
+      <circle cx={x0 + 10.7} cy="15.1" r="0.22" fill="#5aa9e6" />
+      <rect class="tama-thumb" x={x0 + 9.7} y="13.6" width="0.9" height="0.7" fill={SKIN} />
+    </g>
+  );
 }
 
-const DISHES = {
-  ramen: () => (
-    <g>
-      <line x1="29.2" y1="10.4" x2="28.1" y2="15.6" stroke="#b07a4f" stroke-width="0.45" />
-      <line x1="30.4" y1="10.7" x2="29" y2="15.6" stroke="#b07a4f" stroke-width="0.45" />
-      <rect x="26.8" y="15.3" width="4.9" height="1.5" rx="0.7" fill="#f8f4ea" />
-      <rect x="26" y="16.2" width="6.5" height="2.8" rx="1.2" fill="#e8e2d4" />
-      <rect class="tama-steam" x="31.6" y="12.2" width="0.5" height="1.6" fill="var(--fg-3)" />
-    </g>
-  ),
-  pizza: () => (
-    <g>
-      <rect x="26" y="12" width="7.4" height="5.4" fill="#d8b384" />
-      <rect x="26.5" y="12.5" width="6.4" height="4.4" fill="#c9a06b" />
-      <rect x="25.6" y="17.2" width="8.2" height="1.8" fill="#c49a6c" />
-      <ellipse cx="29.7" cy="17.3" rx="3.6" ry="1.1" fill="#e0a94a" />
-      <ellipse cx="29.7" cy="17.3" rx="3" ry="0.8" fill="#f2c94c" />
-      <path d="M29.7 17.3 L33.4 17.1 L32.6 18.2 Z" fill="#c49a6c" />
-      <g fill="#c0392b">
-        <circle cx="28" cy="17.2" r="0.35" />
-        <circle cx="29.6" cy="16.9" r="0.35" />
-        <circle cx="29.2" cy="17.7" r="0.35" />
-        <circle cx="31" cy="16.9" r="0.3" />
-      </g>
-      <Steam x={28.6} y={13.6} />
-    </g>
-  ),
-  burger: () => (
-    <g>
-      <Plate />
-      <rect x="27" y="17.2" width="5" height="1" rx="0.4" fill="#d9913f" />
-      <rect x="26.8" y="16.2" width="5.4" height="1.1" rx="0.5" fill="#6b3a22" />
-      <path d="M26.9 15.8 H32.1 V16.3 H29.2 L28.6 17 L28 16.3 H26.9 Z" fill="#f2c94c" />
-      <rect x="27.1" y="15.3" width="4.8" height="0.5" fill="#e05252" />
-      <rect x="26.7" y="14.9" width="5.6" height="0.5" rx="0.25" fill="#6fae5a" />
-      <path d="M26.9 15 Q26.9 12.4 29.5 12.4 Q32.1 12.4 32.1 15 Z" fill="#e0a04a" />
-      <g fill="#f8f0d8">
-        <rect x="28.2" y="13.4" width="0.4" height="0.25" />
-        <rect x="29.6" y="13" width="0.4" height="0.25" />
-        <rect x="30.8" y="13.6" width="0.4" height="0.25" />
-      </g>
-    </g>
-  ),
-  sushi: () => (
-    <g>
-      <rect x="25.4" y="17.4" width="8.4" height="0.9" fill="#c8955c" />
-      <g fill="#a5743f">
-        <rect x="26.2" y="18.3" width="0.8" height="0.7" />
-        <rect x="32.2" y="18.3" width="0.8" height="0.7" />
-      </g>
-      {[[26, "#f28c6b"], [28.7, "#d64550"]].map(([x, fish]) => (
-        <g key={x}>
-          <rect x={x} y="16.2" width="2.4" height="1.2" rx="0.5" fill="#f6f3ec" />
-          <rect x={x - 0.2} y="15.5" width="2.8" height="0.9" rx="0.45" fill={fish} />
-          <rect x={x + 0.7} y="15.6" width="0.15" height="0.7" fill="#fbd0c0" opacity="0.8" />
-          <rect x={x + 1.5} y="15.6" width="0.15" height="0.7" fill="#fbd0c0" opacity="0.8" />
+// ---- gardening: outdoors (spring and summer), a can over the flower bed ----
+export function GardenBed() {
+  return (
+    <g shape-rendering={GEO}>
+      <rect x="21.4" y="18.2" width="12.4" height="1" fill="#6b4a33" />
+      <g class="tama-flowers">
+        <g fill="#3f8238">
+          <rect x="23" y="13.4" width="0.4" height="4.8" />
+          <rect x="23.4" y="15.6" width="1" height="0.4" />
+          <rect x="26" y="15.2" width="0.4" height="3" />
+          <rect x="29" y="15.4" width="0.4" height="2.8" />
+          <rect x="31.6" y="17" width="0.4" height="1.2" />
+          <rect x="31.9" y="16.6" width="0.8" height="0.4" />
         </g>
-      ))}
-      <rect x="31.4" y="15.6" width="1.9" height="1.8" rx="0.3" fill="#1f2a1f" />
-      <rect x="31.7" y="15.9" width="1.3" height="1.2" fill="#f6f3ec" />
-      <rect x="32.1" y="16.25" width="0.5" height="0.5" fill="#f28c6b" />
-    </g>
-  ),
-  tacos: () => (
-    <g>
-      <Plate />
-      {[26, 29.8].map((x) => (
-        <g key={x}>
-          <rect x={x + 0.2} y="14.6" width="3.2" height="0.9" rx="0.4" fill="#6fae5a" />
-          <rect x={x + 0.3} y="15.2" width="3" height="0.5" fill="#8a4b2a" />
-          <rect x={x + 0.7} y="14.4" width="0.6" height="0.6" fill="#e05252" />
-          <rect x={x + 2.3} y="14.3" width="0.6" height="0.6" fill="#e05252" />
-          <path d={`M${x} 15.4 h3.6 a1.8 2.6 0 0 1 -3.6 0 z`} fill="#e8b84a" />
-        </g>
-      ))}
-    </g>
-  ),
-  pasta: () => (
-    <g>
-      <line x1="31.4" y1="15.6" x2="33" y2="11.8" stroke="#c9ced6" stroke-width="0.35" />
-      <rect x="25.8" y="17.6" width="7.6" height="1.2" rx="0.6" fill="#f8f4ea" />
-      <rect x="26.6" y="18.4" width="6" height="0.6" fill="#e8e2d4" />
-      <path d="M26.6 17.8 Q27 14.6 29.6 14.6 Q32.2 14.6 32.6 17.8 Z" fill="#f2d27a" />
-      <g fill="none" stroke="#d9b45a" stroke-width="0.25">
-        <path d="M27.4 17.1 q0.6 -0.7 1.2 0 t1.2 0 t1.2 0 t1.2 0" />
-        <path d="M27.9 16.2 q0.6 -0.7 1.2 0 t1.2 0 t1.2 0" />
+        <circle cx="23.2" cy="13" r="1.2" fill="#ffd166" />
+        <circle cx="23.2" cy="13" r="0.5" fill="#7a4e2d" />
+        <path d="M25.4 15.4 V14.2 L25.9 14.7 L26.2 14 L26.5 14.7 L27 14.2 V15.4 Z" fill="#e05252" />
+        <circle cx="29.2" cy="15" r="0.8" fill="#f28ab2" />
+        <circle cx="29.2" cy="15" r="0.3" fill="#ffd166" />
       </g>
-      <path d="M28 15.4 Q29.6 14 31.2 15.4 Q29.6 16.2 28 15.4 Z" fill="#c0392b" />
-      <circle cx="28.9" cy="15" r="0.55" fill="#6b3a22" />
-      <circle cx="30.3" cy="14.9" r="0.55" fill="#6b3a22" />
-      <Steam x={27.6} y={11.6} />
+      <g fill="#7fb6e6">
+        {[[23.4, 0], [23.9, -0.3], [24.4, -0.6]].map(([x, d]) => (
+          <rect key={x} class="tama-drop" x={x} y="12.2" width="0.3" height="0.5" style={{ animationDelay: `${d}s` }} />
+        ))}
+      </g>
     </g>
-  ),
-  salad: () => (
-    <g>
-      <line x1="31.8" y1="15.8" x2="33.2" y2="11.8" stroke="#c9ced6" stroke-width="0.35" />
-      <ellipse cx="27.8" cy="15.6" rx="1.4" ry="1" fill="#4f9a46" />
-      <ellipse cx="29.6" cy="15.1" rx="1.5" ry="1.1" fill="#6fae5a" />
-      <ellipse cx="31.4" cy="15.6" rx="1.3" ry="0.9" fill="#9be38f" />
-      <circle cx="28.6" cy="15.2" r="0.45" fill="#e05252" />
-      <circle cx="30.9" cy="15.4" r="0.45" fill="#e05252" />
-      <rect x="29.4" y="14.3" width="0.4" height="1.2" fill="#ef8a2c" />
-      <path d="M26 16 h7.2 q-0.4 3 -3.6 3 q-3.2 0 -3.6 -3 z" fill="#b07a4f" />
-      <rect x="25.8" y="15.8" width="7.6" height="0.5" rx="0.25" fill="#9a6a43" />
-    </g>
-  ),
-};
+  );
+}
 
-export function Dish({ dish }) {
-  const id = DISHES[dish] ? dish : "ramen";
-  return <g data-dish={id} shape-rendering={GEO}>{DISHES[id]()}</g>;
+export function WateringCan({ x0 }) {
+  return (
+    <g class="tama-can" shape-rendering={GEO}>
+      <path d={`M${x0 + 16.6} 12.6 Q${x0 + 17.8} 10.8 ${x0 + 19} 12.6`} fill="none" stroke="#3f7fb5" stroke-width="0.4" />
+      <line x1={x0 + 19.2} y1="13.6" x2={x0 + 21.3} y2="11.9" stroke="#5aa9e6" stroke-width="0.45" />
+      <rect x={x0 + 21.1} y="11.5" width="0.6" height="0.7" fill="#3f7fb5" />
+      <rect x={x0 + 16.2} y="12.6" width="3.2" height="2.4" rx="0.4" fill="#5aa9e6" />
+    </g>
+  );
+}
+
+// ---- cooking: a pot to stir and a pan sizzling, in a chef's hat ------------
+export function Stove() {
+  return (
+    <g class="tama-stove" shape-rendering={GEO}>
+      <rect x="21" y="12.8" width="12.8" height="6.2" fill="#d9dde3" />
+      <rect x="20.8" y="12.2" width="13.2" height="0.6" fill="#3b404a" />
+      <g fill="#3b404a">
+        {[23, 25, 29.8, 31.8].map((x) => <circle key={x} cx={x} cy="13.6" r="0.35" />)}
+      </g>
+      <rect x="22.4" y="14.8" width="10" height="2.8" rx="0.3" fill="#2b2f36" />
+      <rect class="tama-glow" x="23" y="15.4" width="8.8" height="1.6" fill="#ef8a2c" />
+      <rect x="21.6" y="9.4" width="4.8" height="2.8" rx="0.3" fill="#8a93a1" />
+      <rect x="21" y="9.8" width="0.6" height="0.4" fill="#5a6472" />
+      <rect x="26.4" y="9.8" width="0.6" height="0.4" fill="#5a6472" />
+      <rect x="21.6" y="9.4" width="4.8" height="0.5" fill="#6b7480" />
+      <Steam x={22.8} y={6.6} />
+      <rect x="27.6" y="11.6" width="4" height="0.6" rx="0.2" fill="#2b2f36" />
+      <line x1="31.6" y1="11.8" x2="33.8" y2="11.2" stroke="#2b2f36" stroke-width="0.4" />
+      <g fill="#e8a92e">
+        <rect class="tama-steam" x="28.4" y="10.8" width="0.5" height="0.5" />
+        <rect class="tama-steam tama-steam2" x="30.2" y="10.6" width="0.5" height="0.5" />
+      </g>
+    </g>
+  );
+}
+
+export function Spoon({ x0 }) {
+  return <line class="tama-spoon" x1={x0 + 16.8} y1="13.6" x2={x0 + 21.6} y2="9.6" stroke="#b07a4f" stroke-width="0.45" />;
+}
+
+// The pleated band sits on the head's top row; any hat takes its place.
+export function Toque({ x0 }) {
+  return (
+    <g class="tama-toque" shape-rendering={GEO}>
+      <g fill="#f4f4f6">
+        <circle cx={x0 + 6.4} cy={Y0 - 2.4} r="1.5" />
+        <circle cx={x0 + 9} cy={Y0 - 3} r="1.8" />
+        <circle cx={x0 + 11.6} cy={Y0 - 2.4} r="1.5" />
+        <rect x={x0 + 5} y={Y0 - 1.6} width="8" height="1.9" />
+      </g>
+      <g fill="#d8dce2">
+        <rect x={x0 + 7} y={Y0 - 1.4} width="0.25" height="1.6" />
+        <rect x={x0 + 9} y={Y0 - 1.4} width="0.25" height="1.6" />
+        <rect x={x0 + 11} y={Y0 - 1.4} width="0.25" height="1.6" />
+      </g>
+    </g>
+  );
+}
+
+// ---- walking the dog: outdoors, a leash from Clawd's arm (x0 1) -----------
+export function Dog() {
+  return (
+    <g shape-rendering={GEO}>
+      <path class="tama-leash" d="M18.2 14.2 Q23 12.4 28.1 15" fill="none" stroke="#e05252" stroke-width="0.25" />
+      <g class="tama-dog">
+        <path class="tama-tail" d="M23 15.4 L21.8 13.4" stroke="#b07a4f" stroke-width="0.55" stroke-linecap="round" />
+        <g fill="#b07a4f">
+          <rect class="tama-dog-a" x="23.4" y="16.6" width="0.6" height="2.4" />
+          <rect class="tama-dog-a" x="27.6" y="16.6" width="0.6" height="2.4" />
+          <rect class="tama-dog-b" x="24" y="16.6" width="0.6" height="2.4" />
+          <rect class="tama-dog-b" x="27" y="16.6" width="0.6" height="2.4" />
+          <rect x="22.8" y="14.8" width="5.8" height="2.2" rx="0.6" />
+          <rect x="27.8" y="13" width="2.8" height="2.8" rx="0.6" />
+        </g>
+        <rect x="30.2" y="14.4" width="1.4" height="1.2" rx="0.3" fill="#c8915e" />
+        <rect x="31.3" y="14.4" width="0.5" height="0.5" fill={EYE} />
+        <rect x="28.2" y="12.8" width="1" height="2.2" rx="0.3" fill="#7a4e2d" />
+        <rect x="29.6" y="13.8" width="0.45" height="0.5" fill={EYE} />
+        <rect x="27.8" y="14.6" width="0.6" height="1.2" fill="#e05252" />
+      </g>
+    </g>
+  );
+}
+
+// ---- swimming: summer only; sky and a beach ball behind, the water in front
+export function Pool() {
+  return (
+    <g shape-rendering={GEO}>
+      <rect x="0" y="0" width="34" height="24" fill="#6fb4ea" opacity="0.13" />
+      <circle class="tama-sun" cx="4.5" cy="4" r="2.1" fill="#ffd166" />
+      <g class="tama-ball">
+        <circle cx="29.5" cy="13.8" r="1.8" fill="#f4f4f6" />
+        <path d="M29.5 12 A1.8 1.8 0 0 1 31.3 13.8 H29.5 Z" fill="#e05252" />
+        <path d="M29.5 15.6 A1.8 1.8 0 0 1 27.7 13.8 H29.5 Z" fill="#5aa9e6" />
+      </g>
+    </g>
+  );
+}
+
+// Over Clawd (x0 6), so only the head and the paddling arms break the surface.
+export function Water() {
+  const crest = "q0.85 -0.6 1.7 0 ".repeat(21);
+  return (
+    <g shape-rendering={GEO}>
+      <g class="tama-water">
+        <path d={`M-1 14.6 ${crest} V24 H-1 Z`} fill="#3b8fd0" opacity="0.9" />
+        <g fill="#cfe9fa">
+          <rect x="4" y="17.4" width="1.6" height="0.3" />
+          <rect x="15" y="19.6" width="2" height="0.3" />
+          <rect x="26" y="18" width="1.4" height="0.3" />
+        </g>
+      </g>
+      <g fill="#cfe9fa">
+        <rect class="tama-splash" x="6.4" y="13" width="0.5" height="0.5" />
+        <rect class="tama-splash tama-splash2" x="23.4" y="13" width="0.5" height="0.5" />
+      </g>
+    </g>
+  );
+}
+
+export function Goggles({ x0 }) {
+  return (
+    <g class="tama-goggles" shape-rendering={GEO}>
+      <rect x={x0 + 3} y={Y0 + 2.6} width="12" height="0.5" fill="#2b2f36" />
+      {[4.3, 11.3].map((dx) => (
+        <rect key={dx} x={x0 + dx} y={Y0 + 1.5} width="2.4" height="2.8" rx="0.8" fill="#7fd1e6" fill-opacity="0.45"
+              stroke="#2b2f36" stroke-width="0.35" />
+      ))}
+    </g>
+  );
+}
+
+// ---- sledding: winter's ride, seated (x0 5) on a sled over the snow --------
+export function Sled() {
+  return (
+    <g shape-rendering={GEO}>
+      <g class="tama-motion" fill="var(--fg-3)">
+        <rect x="0.6" y="9.6" width="3" height="0.5" />
+        <rect x="1.2" y="12" width="2.6" height="0.5" />
+        <rect x="0.4" y="14.4" width="3.2" height="0.5" />
+      </g>
+      <g fill="#f4f8fb">
+        {[[3.6, 0], [4.4, -0.2], [3.2, -0.4]].map(([x, d]) => (
+          <rect key={d} class="tama-kick" x={x} y="17.8" width="0.6" height="0.6" style={{ animationDelay: `${d}s` }} />
+        ))}
+      </g>
+      <g class="tama-sled">
+        <path d="M5.4 19 H23.4 Q25.8 19 25.4 16.8" fill="none" stroke="#8a93a1" stroke-width="0.4" />
+        <g fill="#8a93a1">
+          {[7.6, 14, 20.4].map((x) => <rect key={x} x={x} y="17.8" width="0.4" height="1.2" />)}
+        </g>
+        <rect x="5" y="16.8" width="18.8" height="1.1" rx="0.3" fill="#b5452a" />
+        <path d="M25.2 17 Q24.4 15.4 22.6 14.6" fill="none" stroke="#e8b84a" stroke-width="0.25" />
+      </g>
+    </g>
+  );
+}
+
+// Round the neck, on the arms' row below the eyes; the end streams behind.
+export function Scarf({ x0 }) {
+  return (
+    <g class="tama-scarf">
+      <rect x={x0 + 3} y={Y0 + 4} width="12" height="1.1" fill="#d64541" />
+      <g fill="#f4f4f6">
+        {[5, 8, 11, 14].map((dx) => <rect key={dx} x={x0 + dx} y={Y0 + 4} width="0.5" height="1.1" />)}
+      </g>
+      <rect class="tama-scarf-tail" x={x0 - 1.4} y={Y0 + 4.2} width="2.8" height="0.8" fill="#d64541" />
+    </g>
+  );
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityAt, activityLabel, BODY, codingMood, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS, MEALS,
-  moodReason, msUntilNextChange, occasionAt, occasionShown, PASTIMES, SCHEDULE, seasonAt, seasonStart,
+  activityAt, activityLabel, BODY, BRUNCH, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
+  isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, occasionAt, occasionShown, PASTIMES, SCHEDULE,
+  seasonAt, seasonStart, upNext, WEEKEND,
 } from "../tamagotchi.js";
 
-const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0);
+const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0); // a Wednesday
 
 describe("activityAt", () => {
   it("follows the day's schedule at every boundary", () => {
@@ -22,9 +23,9 @@ describe("activityAt", () => {
     for (const m of [0, 29, 30, 59]) expect(PASTIMES.map((p) => p.id), `17:${m}`).toContain(activityAt(at(17, m)).id);
   });
 
-  it("covers all 24 hours with no gap or overlap", () => {
-    for (let h = 0; h < 24; h++) {
-      expect(SCHEDULE.filter((s) => h >= s.from && h < s.to)).toHaveLength(1);
+  it("covers all 24 hours with no gap or overlap, weekdays and weekends", () => {
+    for (const windows of [SCHEDULE, WEEKEND]) {
+      for (let h = 0; h < 24; h++) expect(windows.filter((s) => h >= s.from && h < s.to)).toHaveLength(1);
     }
   });
 });
@@ -81,14 +82,120 @@ describe("the evening pastime", () => {
     expect(first.label).toBe(PASTIMES.find((p) => p.id === first.id).label);
   });
 
-  it("never does the same thing twice in one evening, and gives every pastime a turn", () => {
-    const seen = new Set();
-    days(17, 0).forEach((d, n) => {
-      const [a, b] = [activityAt(d).id, activityAt(new Date(d.getTime() + 30 * 60_000)).id];
-      expect(a, `day ${n}`).not.toBe(b);
-      seen.add(a).add(b);
-    });
-    expect([...seen].sort()).toEqual(PASTIMES.map((p) => p.id).sort());
+  it("never does the same thing twice in one evening, and gives every pastime of the season a turn", () => {
+    for (const [season, month] of [["winter", 0], ["summer", 6]]) {
+      const seen = new Set();
+      Array.from({ length: 60 }, (_, n) => new Date(2026, month, 1 + n, 17)).forEach((d, n) => {
+        const [a, b] = [activityAt(d).id, activityAt(new Date(d.getTime() + 30 * 60_000)).id];
+        expect(a, `${season} day ${n}`).not.toBe(b);
+        seen.add(a).add(b);
+      });
+      const pool = PASTIMES.filter((p) => !p.seasons || p.seasons.includes(season)).map((p) => p.id);
+      expect([...seen].sort(), season).toEqual(pool.sort());
+    }
+  });
+
+  it("keeps the outdoor pastimes to their seasons: sledding replaces the ride in winter", () => {
+    const ids = (month) => new Set(Array.from({ length: 28 }, (_, n) => [
+      activityAt(new Date(2026, month, 1 + n, 17)).id, activityAt(new Date(2026, month, 1 + n, 17, 30)).id,
+    ]).flat());
+    expect(ids(0).has("cycle")).toBe(false);
+    for (const month of [4, 9]) expect(ids(month).has("sled"), `month ${month}`).toBe(false);
+    for (const month of [0, 4, 9]) expect(ids(month).has("swim"), `month ${month}`).toBe(false);
+    expect(ids(0).has("garden")).toBe(false);
+  });
+});
+
+describe("the evening's rules", () => {
+  const evening = (d, day) => [17, 17.5].map((t) => activityAt(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 17, (t % 1) * 60), day));
+  // Weekdays in January: no occasion, and every day of the week.
+  const weekdays = Array.from({ length: 40 }, (_, n) => new Date(2026, 0, 5 + n)).filter((d) => d.getDay() % 6);
+
+  it("trick-or-treats every Halloween evening, alternating the ghost run with the kids", () => {
+    for (let date = 24; date <= 31; date++) {
+      const [a, b] = evening(new Date(2026, 9, date));
+      expect([a.id, b.id].sort(), `Oct ${date}`).toEqual(["kids", "run"]);
+      expect(a.trick && b.trick, `Oct ${date}`).toBe(true);
+    }
+    const [a, b] = evening(new Date(2026, 9, 26));
+    const kids = a.id === "kids" ? a : b;
+    expect(kids.label).toBe("trick-or-treating with the kids");
+    expect((a.id === "run" ? a : b).label).toBe("trick-or-treating");
+    // Only the evening: a Halloween-weekend afternoon is an ordinary one.
+    expect(activityAt(new Date(2026, 9, 31, 14)).trick).toBeFalsy();
+    expect(evening(new Date(2026, 10, 2)).some((x) => x.trick)).toBe(false);
+  });
+
+  it("makes Friday's 5:30 a pint with friends", () => {
+    for (const d of weekdays.filter((x) => x.getDay() === 5)) {
+      const [a, b] = evening(d);
+      expect(b.id, d.toDateString()).toBe("beer");
+      expect(a.id, d.toDateString()).not.toBe("beer");
+    }
+  });
+
+  it("toasts a merged PR, and runs off a furious day first", () => {
+    for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
+      expect(evening(d, { merged: true }).map((x) => x.id), d.toDateString()).toContain("beer");
+      expect(evening(d, { furious: true })[0].id, d.toDateString()).toBe("run");
+      expect(evening(d, { merged: true, furious: true }).map((x) => x.id), d.toDateString()).toEqual(["run", "beer"]);
+    }
+    const friday = weekdays.find((x) => x.getDay() === 5);
+    expect(evening(friday, { merged: true, furious: true }).map((x) => x.id)).toEqual(["run", "beer"]);
+  });
+
+  it("moves the unforced half only for a collision", () => {
+    for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
+      const [early, late] = evening(d);
+      const [first, forcedLate] = evening(d, { merged: true });
+      if (first.id !== "beer" || late.id === "beer") continue;
+      // Either it kept its pick, or the plain evening's 5:00 had taken its roll.
+      if (forcedLate.id !== late.id) expect(early.id, d.toDateString()).toBe(forcedLate.id);
+    }
+  });
+
+  it("knocks off at 4pm when every account is walled, instead of napping until 5", () => {
+    const walled = { walled: true };
+    expect(activityAt(at(15, 59), walled).id).toBe("code");
+    const early = activityAt(at(16, 0), walled);
+    expect(PASTIMES.map((p) => p.id)).toContain(early.id);
+    expect([early.from, early.to]).toEqual([16, 16.5]);
+    expect(activityAt(at(16, 30), walled).id).not.toBe(early.id);
+    expect(msUntilNextChange(at(15, 30), walled)).toBe(30 * 60 * 1000);
+    expect(activityAt(at(16, 0)).id).toBe("code");
+  });
+});
+
+describe("weekends off", () => {
+  const sat = (h, m = 0) => new Date(2026, 9, 24, h, m);
+  const sun = (h, m = 0) => new Date(2026, 9, 25, h, m);
+
+  it("sleeps in, has brunch, and takes the afternoon off", () => {
+    expect(activityAt(sat(8, 59)).id).toBe("sleep");
+    const brunch = activityAt(sat(9, 0));
+    expect(brunch.id).toBe("eat");
+    expect(BRUNCH.map((b) => b.id)).toContain(brunch.dish);
+    expect(brunch.label).toMatch(/ for brunch$/);
+    expect([brunch.from, brunch.to]).toEqual([9, 11]);
+    for (let t = 11; t < 18; t += 0.5) {
+      const a = activityAt(sun(Math.floor(t), (t % 1) * 60));
+      expect(PASTIMES.map((p) => p.id), `${t}`).toContain(a.id);
+      expect([a.from, a.to], `${t}`).toEqual([t, t + 0.5]);
+    }
+  });
+
+  it("never codes, and never repeats a pastime back to back", () => {
+    for (const d of [sat, sun]) {
+      let prev = null;
+      for (let h = 0; h < 24; h++) {
+        for (const m of [0, 30]) {
+          const a = activityAt(d(h, m));
+          expect(a.id, `${h}:${m}`).not.toBe("code");
+          if (a.pastime) expect(a.id, `${h}:${m}`).not.toBe(prev);
+          prev = a.pastime ? a.id : null;
+        }
+      }
+    }
   });
 });
 
@@ -101,15 +208,58 @@ describe("meals", () => {
     expect(activityAt(at(18, 30)).label).toMatch(/^having .+ for dinner$/);
   });
 
-  it("never serves dinner what was for lunch, and puts every dish on the menu", () => {
+  it("never serves dinner what was for lunch, and puts every dish of the season on the menu", () => {
     const seen = new Set();
-    days(12, 0).forEach((d, n) => {
+    days(12, 0).filter((d) => d.getDay() % 6).forEach((d, n) => {
       const lunch = activityAt(d).dish;
       const dinner = activityAt(new Date(d.getTime() + 6 * 3600_000)).dish;
       expect(lunch, `day ${n}`).not.toBe(dinner);
       seen.add(lunch).add(dinner);
     });
-    expect([...seen].sort()).toEqual(MEALS.map((m) => m.id).sort());
+    expect([...seen].sort()).toEqual(MEALS.filter((m) => !m.seasons || m.seasons.includes("winter")).map((m) => m.id).sort());
+  });
+
+  it("serves soup only in winter", () => {
+    const dishes = (month) => new Set(Array.from({ length: 28 }, (_, n) => activityAt(new Date(2026, month, 1 + n, 18)).dish));
+    expect(dishes(0).has("soup")).toBe(true);
+    for (const month of [4, 6, 9]) expect(dishes(month).has("soup"), `month ${month}`).toBe(false);
+  });
+
+  it("ends dinner on a dessert in summer and Halloween week: the last half hour", () => {
+    const main = activityAt(new Date(2026, 6, 15, 18, 10));
+    expect([main.from, main.to]).toEqual([18, 18.5]);
+    const dessert = activityAt(new Date(2026, 6, 15, 18, 30));
+    expect([dessert.dish, dessert.label, dessert.from, dessert.to]).toEqual(["icecream", "having ice cream for dessert", 18.5, 19]);
+    expect(activityAt(new Date(2026, 9, 28, 18, 45)).dish).toBe("pie");
+    expect(msUntilNextChange(new Date(2026, 6, 15, 18, 10))).toBe(20 * 60 * 1000);
+    expect(activityAt(at(18, 45)).to).toBe(19); // an ordinary autumn dinner is the whole hour
+  });
+
+  it("roasts for the year-end dinner", () => {
+    expect(activityAt(new Date(2026, 11, 19, 18, 15)).label).toBe("having a roast for dinner");
+  });
+});
+
+describe("upNext", () => {
+  it("names the next change for the hover", () => {
+    const next = upNext(at(12, 10));
+    expect(next.at).toEqual(at(13, 0));
+    expect(next.activity.label).toBe("coding");
+  });
+  it("skips past more of the same: a night's sleep announces the morning", () => {
+    const next = upNext(at(23, 0));
+    expect(next.at).toEqual(new Date(2026, 9, 22, 7));
+    expect(next.activity.id).toBe("coffee");
+    expect(upNext(new Date(2026, 9, 23, 23)).activity.label).toMatch(/ for brunch$/);
+  });
+});
+
+describe("the day log", () => {
+  it("keys on the local date, and only counts today", () => {
+    expect(dayKey(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
+    const log = { merged: "2026-10-21", furious: "2026-10-20" };
+    expect(dayFlags(log, at(17))).toEqual({ merged: true, furious: false });
+    expect(dayFlags({}, at(17))).toEqual({ merged: false, furious: false });
   });
 });
 
@@ -177,10 +327,9 @@ describe("headlines and labels", () => {
     expect(occasionShown(local)).toBe(null);
     expect(occasionShown(new Date(local.getTime() + 86400000))?.id).toBe("yearend");
   });
-  it("turns a Halloween-week run into trick-or-treating", () => {
-    const run = PASTIMES.find((p) => p.id === "run");
-    expect(activityLabel(run, { id: "halloween" })).toBe("trick-or-treating");
-    expect(activityLabel(run, null)).toBe(run.label);
+  it("turns a Halloween-week evening into trick-or-treating", () => {
+    const labels = [17, 17.5].map((t) => activityLabel(activityAt(new Date(2026, 9, 28, 17, (t % 1) * 60))));
+    expect(labels.sort()).toEqual(["trick-or-treating", "trick-or-treating with the kids"]);
   });
 });
 
@@ -244,16 +393,15 @@ describe("mood labels", () => {
   const run = PASTIMES.find((p) => p.id === "run");
 
   it("says how Claude is coding", () => {
-    expect(activityLabel(code, null, "furious")).toBe("coding furiously");
-    expect(activityLabel(coffee, null, "grumpy")).toBe("coding grumpily with a coffee");
-    expect(activityLabel(code, null, "calm")).toBe("coding");
+    expect(activityLabel(code, "furious")).toBe("coding furiously");
+    expect(activityLabel(coffee, "grumpy")).toBe("coding grumpily with a coffee");
+    expect(activityLabel(code, "calm")).toBe("coding");
     // The adverb follows the verb, whatever the schedule calls it.
-    expect(activityLabel({ id: "code", label: "typing with a coffee" }, null, "furious")).toBe("typing furiously with a coffee");
+    expect(activityLabel({ id: "code", label: "typing with a coffee" }, "furious")).toBe("typing furiously with a coffee");
   });
 
   it("leaves every other activity alone", () => {
-    expect(activityLabel(run, null, "furious")).toBe(run.label);
-    expect(activityLabel(run, { id: "halloween" }, "furious")).toBe("trick-or-treating");
+    expect(activityLabel(run, "furious")).toBe(run.label);
   });
 
   it("names the meter behind the mood, and the account when there are several", () => {

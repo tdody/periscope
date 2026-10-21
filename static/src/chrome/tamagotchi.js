@@ -6,8 +6,8 @@ import { isStale, meterLabel, projectsPastLimit } from "./usageRules.js";
 // What Claude is up to, by local hour. Each window runs [from, to); every
 // boundary is on the hour, so the hour alone finds the window. `coffee` keeps
 // the morning's mug on the desk through the first coding hour. A `meal` window
-// serves one of MEALS; the `pastime` window splits into half hours, each one
-// of PASTIMES (activityAt resolves both).
+// serves a dish; a `pastime` window splits into half hours, each one of
+// PASTIMES (activityAt resolves both).
 export const SCHEDULE = [
   { from: 0, to: 7, id: "sleep", label: "sleeping" },
   { from: 7, to: 9, id: "coffee", label: "having coffee" },
@@ -21,15 +21,40 @@ export const SCHEDULE = [
   { from: 21, to: 24, id: "sleep", label: "sleeping" },
 ];
 
-// The evening's free hour, one per half hour. `run` keeps its id so the
-// Halloween trick-or-treat round (activityLabel) still finds it.
+// Weekends off: a lie-in, brunch, and the afternoon free. The duty bubble
+// still rings anywhere; only the desk scenes (moods, the walled nap) go.
+export const WEEKEND = [
+  { from: 0, to: 9, id: "sleep", label: "sleeping" },
+  { from: 9, to: 11, id: "eat", meal: "brunch" },
+  { from: 11, to: 18, pastime: true },
+  { from: 18, to: 19, id: "eat", meal: "dinner" },
+  { from: 19, to: 21, id: "read", label: "reading" },
+  { from: 21, to: 24, id: "sleep", label: "sleeping" },
+];
+
+// The evening's first half hour: Friday's pint, the day's verdicts and
+// Halloween's rounds all land from here. With every account walled, a weekday
+// knocks off an hour early rather than napping at the desk until then.
+const EVENING = 17;
+const KNOCK_OFF = 16;
+const HALF = 0.5;
+
+// `seasons` keeps the outdoor ones to their weather: sledding stands in for
+// the ride on snow.
 export const PASTIMES = [
   { id: "run", label: "out for a run" },
-  { id: "cycle", label: "out cycling" },
+  { id: "cycle", label: "out cycling", seasons: ["spring", "summer", "autumn"] },
   { id: "music", label: "practicing bass" },
   { id: "beer", label: "having a beer with friends" },
   { id: "kids", label: "spending time with the kids" },
+  { id: "game", label: "playing video games" },
+  { id: "garden", label: "gardening", seasons: ["spring", "summer"] },
+  { id: "cook", label: "cooking" },
+  { id: "dog", label: "walking the dog" },
+  { id: "swim", label: "out for a swim", seasons: ["summer"] },
+  { id: "sled", label: "out sledding", seasons: ["winter"] },
 ];
+const TRICKS = { run: "trick-or-treating", kids: "trick-or-treating with the kids" };
 
 // Labels read "having <label> for lunch".
 export const MEALS = [
@@ -40,9 +65,20 @@ export const MEALS = [
   { id: "tacos", label: "tacos" },
   { id: "pasta", label: "pasta" },
   { id: "salad", label: "a salad" },
+  { id: "soup", label: "soup", seasons: ["winter"] },
 ];
-const MEAL_WINDOWS = SCHEDULE.filter((s) => s.meal);
-const HALF = 0.5;
+export const BRUNCH = [
+  { id: "pancakes", label: "pancakes" },
+  { id: "waffles", label: "waffles" },
+  { id: "eggs", label: "eggs and bacon" },
+];
+// The year-end dinner is a roast. Summer and Halloween week end dinner on a
+// dessert, its last half hour; the occasion outranks the season.
+const ROAST = { id: "roast", label: "a roast" };
+const DESSERTS = { halloween: { id: "pie", label: "pumpkin pie" }, summer: { id: "icecream", label: "ice cream" } };
+
+const inSeason = (date) => (x) => !x.seasons || x.seasons.includes(seasonAt(date));
+const hours = (date) => date.getHours() + date.getMinutes() / 60;
 
 // The day's dice: the same date and salt always roll the same, so a reload, a
 // second tab, the hover and the minute backstop all agree on what Clawd is up
@@ -57,37 +93,123 @@ function roll(date, salt) {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-// The day's i-th pick from `list`, never the same as the pick before it: two
-// runs in one evening, or ramen twice in a day, would read as the same scene stuck.
+// The day's i-th pick from `list`, never the same as the pick before it:
+// ramen twice in a day would read as the same scene stuck.
 function pickAt(list, date, salt, i) {
   let idx = roll(date, `${salt}0`) % list.length;
   for (let k = 1; k <= i; k++) idx = (idx + 1 + (roll(date, `${salt}${k}`) % (list.length - 1))) % list.length;
   return list[idx];
 }
 
-export function activityAt(date) {
-  const h = date.getHours();
-  const slot = SCHEDULE.find((s) => h >= s.from && h < s.to);
-  if (slot.meal) {
-    const dish = pickAt(MEALS, date, "meal", MEAL_WINDOWS.indexOf(slot));
-    return { ...slot, label: `having ${dish.label} for ${slot.meal}`, dish: dish.id };
+// `day` is what happened today (dayFlags) plus `walled`, the server's walls.
+function windowsFor(date, day) {
+  if (date.getDay() === 0 || date.getDay() === 6) return WEEKEND;
+  if (!day.walled) return SCHEDULE;
+  return SCHEDULE.map((s) =>
+    s.to === EVENING ? { ...s, to: KNOCK_OFF } : s.from === EVENING ? { ...s, from: KNOCK_OFF } : s);
+}
+
+const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
+
+function mealAt(slot, date) {
+  if (slot.meal === "brunch") return served(slot, pickAt(BRUNCH, date, "brunch", 0), "brunch");
+  const occasion = occasionShown(date)?.id;
+  const dessert = slot.meal === "dinner" && (DESSERTS[occasion] || DESSERTS[seasonAt(date)]);
+  const half = slot.from + HALF;
+  if (dessert && hours(date) >= half) return { ...served(slot, dessert, "dessert"), from: half };
+  // Lunch and dinner roll from one menu as the day's first and second pick,
+  // so dinner never repeats lunch.
+  const main = slot.meal === "dinner" && occasion === "yearend" ? ROAST
+    : pickAt(MEALS.filter(inSeason(date)), date, "meal", slot.meal === "dinner" ? 1 : 0);
+  return { ...served(slot, main, slot.meal), ...(dessert ? { to: half } : {}) };
+}
+
+// The pastime window's half hours, in order. Forced first: Halloween's
+// trick-or-treat rounds, Friday's pint, then the day's verdicts (a furious
+// day is run off before a merge is toasted, and Friday's pint covers the
+// toast). The rest roll from the season's pastimes, never the same twice
+// running, forced neighbours included: a collision steps to the next pastime
+// rather than re-rolling, so forcing one half leaves the others as they were.
+function pastimePlan(slot, date, day) {
+  const byId = (id) => PASTIMES.find((p) => p.id === id);
+  const n = (slot.to - slot.from) / HALF;
+  const at = (t) => (t - slot.from) / HALF;
+  const evening = [EVENING, EVENING + HALF].map(at).filter((i) => i >= 0 && i < n);
+  const forced = [];
+  if (occasionShown(date)?.id === "halloween") {
+    const first = roll(date, "trick") % 2;
+    evening.forEach((i, k) => {
+      const id = (first + k) % 2 ? "kids" : "run";
+      forced[i] = { ...byId(id), label: TRICKS[id], trick: true };
+    });
+  } else {
+    if (date.getDay() === 5) forced[at(EVENING + HALF)] = byId("beer");
+    for (const [flag, id] of [["furious", "run"], ["merged", "beer"]]) {
+      if (!day[flag] || evening.some((i) => forced[i]?.id === id)) continue;
+      const free = evening.find((i) => !forced[i]);
+      if (free !== undefined) forced[free] = byId(id);
+    }
   }
+  const pool = PASTIMES.filter(inSeason(date));
+  const plan = [];
+  for (let i = 0; i < n; i++) {
+    if (forced[i]) {
+      plan.push(forced[i]);
+      continue;
+    }
+    const avoid = [plan[i - 1]?.id, forced[i + 1]?.id];
+    let k = roll(date, `pastime${slot.from + i * HALF}`) % pool.length;
+    while (avoid.includes(pool[k].id)) k = (k + 1) % pool.length;
+    plan.push(pool[k]);
+  }
+  return plan;
+}
+
+export function activityAt(date, day = {}) {
+  const h = date.getHours();
+  const slot = windowsFor(date, day).find((s) => h >= s.from && h < s.to);
+  if (slot.meal) return mealAt(slot, date);
   if (slot.pastime) {
-    const i = Math.floor((h + date.getMinutes() / 60 - slot.from) / HALF);
+    const i = Math.floor((hours(date) - slot.from) / HALF);
     const from = slot.from + i * HALF;
-    return { ...slot, ...pickAt(PASTIMES, date, "pastime", i), from, to: from + HALF };
+    return { ...slot, ...pastimePlan(slot, date, day)[i], from, to: from + HALF };
   }
   return slot;
 }
 
 // Milliseconds until the current window ends, so the sprite changes on the
-// hour (or the pastime's half hour) rather than up to a minute late.
-// setHours(24) rolls to next midnight.
-export function msUntilNextChange(date) {
-  const { to } = activityAt(date);
+// hour (or the half hour) rather than up to a minute late. setHours(24)
+// rolls to next midnight.
+export function msUntilNextChange(date, day = {}) {
+  const { to } = activityAt(date, day);
   const end = new Date(date);
   end.setHours(Math.floor(to), (to % 1) * 60, 0, 0);
   return end - date;
+}
+
+// The hover's "up next": the first window after this one with another
+// label, so a night's sleep announces the morning, not more sleep at midnight.
+export function upNext(date, day = {}) {
+  const { label } = activityAt(date, day);
+  let t = date;
+  for (let k = 0; k < 8; k++) {
+    t = new Date(t.getTime() + msUntilNextChange(t, day));
+    const activity = activityAt(t, day);
+    if (activity.label !== label) return { at: t, activity };
+  }
+  return null;
+}
+
+// The local date, as the clawd_day pref stores it (prefs.noteClawdDay).
+export function dayKey(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// What happened today, from the clawd_day pref: older dates don't count.
+export function dayFlags(log, date) {
+  const today = dayKey(date);
+  return { merged: log?.merged === today, furious: log?.furious === today };
 }
 
 // Seasons and occasions follow Faraday's slack-standup-bot (seasons.js), so the
@@ -177,10 +299,9 @@ export const MOODS = {
   furious: { rank: 2, adverb: "furiously", why: "is burning 🔥" },
 };
 
-// Halloween-week runs are trick-or-treat rounds; coding says how it's going,
-// the adverb after the verb ("coding furiously with a coffee").
-export function activityLabel(activity, occasion, mood = "calm") {
-  if (activity.id === "run" && occasion?.id === "halloween") return "trick-or-treating";
+// Coding says how it's going, the adverb after the verb ("coding furiously
+// with a coffee"); everything else says what activityAt named it.
+export function activityLabel(activity, mood = "calm") {
   const adverb = activity.id === "code" && MOODS[mood]?.adverb;
   if (!adverb) return activity.label;
   const [verb, ...rest] = activity.label.split(" ");

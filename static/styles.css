@@ -429,6 +429,35 @@ html, body {
 .tama .tama-kid { animation: tama-kid 0.7s ease-in-out infinite; }
 .tama .tama-kid2 { animation-delay: -0.35s; }
 @keyframes tama-kid { 50% { transform: translateY(-1.4px); } }
+.tama:has([data-activity="game"]) .tama-creature { animation: tama-bob 1.2s steps(2) infinite; }
+.tama .tama-hero { animation: tama-jump 1s ease-in-out infinite; }
+@keyframes tama-jump { 40%, 60% { transform: translateY(-1.6px); } }
+.tama .tama-thumb { animation: tama-tap 0.3s steps(2) infinite; }
+.tama:has([data-activity="garden"]) .tama-creature { animation: tama-bob 0.8s steps(2) infinite; }
+.tama .tama-drop { opacity: 0; animation: tama-drip 0.9s linear infinite; }
+@keyframes tama-drip { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(2.6px); opacity: 0; } }
+.tama:has([data-activity="cook"]) .tama-creature { animation: tama-bob 0.6s steps(2) infinite; }
+.tama .tama-spoon { transform-origin: left bottom; animation: tama-stir 0.8s ease-in-out infinite alternate; }
+@keyframes tama-stir { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+.tama:has([data-activity="dog"]) .tama-creature { animation: tama-bob 0.5s steps(2) infinite; }
+.tama:has([data-activity="dog"]) .tama-legs-a { animation: tama-stride 0.5s steps(1) infinite; }
+.tama:has([data-activity="dog"]) .tama-legs-b { animation: tama-stride 0.5s steps(1) infinite reverse; }
+.tama .tama-dog { animation: tama-bob 0.3s steps(2) infinite; }
+.tama .tama-dog-a { animation: tama-stride 0.3s steps(1) infinite; }
+.tama .tama-dog-b { opacity: 0; animation: tama-stride 0.3s steps(1) infinite reverse; }
+.tama .tama-tail { transform-origin: right bottom; animation: tama-wag 0.3s ease-in-out infinite alternate; }
+@keyframes tama-wag { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+.tama:has([data-activity="swim"]) .tama-creature { animation: tama-bob 1s steps(2) infinite; }
+.tama .tama-water { animation: tama-sway 2s ease-in-out infinite alternate; }
+@keyframes tama-sway { from { transform: translateX(-0.4px); } to { transform: translateX(0.4px); } }
+.tama .tama-ball { animation: tama-bob 1.4s steps(2) infinite; }
+.tama .tama-splash { opacity: 0; animation: tama-splash 0.8s ease-out infinite; }
+.tama .tama-splash2 { animation-delay: -0.4s; }
+@keyframes tama-splash { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-1.6px); opacity: 0; } }
+.tama:has([data-activity="sled"]) .tama-creature { animation: tama-bob 0.35s steps(2) infinite; }
+.tama .tama-kick { opacity: 0; animation: tama-kick 0.6s ease-out infinite; }
+@keyframes tama-kick { 0% { transform: translate(0, 0); opacity: 0.95; } 100% { transform: translate(-2.4px, -1.6px); opacity: 0; } }
+.tama .tama-scarf-tail { transform-origin: right center; animation: tama-flap 0.3s steps(2) infinite; }
 .tama-z { animation: tama-float 3s linear infinite; }
 .tama-z2 { animation-delay: -1.5s; }
 @keyframes tama-float {
