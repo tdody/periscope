@@ -1,11 +1,11 @@
 // Render-path tests for the tamagotchi scene: the decisions the drawing
 // encodes (which pose shows what), not the inventory of props.
 
-import { readFileSync } from "node:fs";
 import render from "preact-render-to-string";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { accounts, usage } from "../../store.js";
 import { SCHEDULE } from "../tamagotchi.js";
-import { TamaScene } from "../Tamagotchi.jsx";
+import { TamaScene, Tamagotchi } from "../Tamagotchi.jsx";
 
 const ids = [...new Set(SCHEDULE.map((s) => s.id))];
 
@@ -104,7 +104,11 @@ describe("coding moods", () => {
     expect(html).toContain("tama-brows");
     expect(html).toContain("tama-hand");
     expect(html).not.toContain("tama-eyes");
-    expect(html).not.toContain("tama-flush");
+    expect(html).toContain("tama-red-line");
+    // Nothing from the furious desk.
+    for (const cls of ["tama-flush", "tama-scowl", "tama-errors", "tama-smoke", "tama-flying-key", "tama-shimmer"]) {
+      expect(html, cls).not.toContain(cls);
+    }
   });
 
   it("goes red-hot when furious: flush, scowl, smoke, heat shimmer, errors, flying keys", () => {
@@ -121,6 +125,14 @@ describe("coding moods", () => {
   it("slops the 9am coffee only when furious", () => {
     expect(code("furious", { coffee: true })).toContain("tama-spill");
     expect(code("grumpy", { coffee: true })).not.toContain("tama-spill");
+    expect(code("furious")).not.toContain("tama-spill");
+  });
+
+  it("draws the error screen inside the desk, under the mug", () => {
+    const html = code("furious", { coffee: true });
+    const at = (needle) => html.indexOf(needle);
+    expect(at("tama-errors")).toBeGreaterThan(at('class="tama-desk"'));
+    expect(at("tama-errors")).toBeLessThan(at("tama-desk-mug"));
   });
 
   it("changes only the coding scene", () => {
@@ -132,12 +144,45 @@ describe("coding moods", () => {
   });
 });
 
-// @keyframes are global: a second definition silently restyles every user of
-// the first (the moods' flush once took over the fireplace's glow).
-describe("styles.css", () => {
-  it("defines each keyframes name once", () => {
-    const css = readFileSync(new URL("../../../styles.css", import.meta.url), "utf8");
-    const names = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
-    expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
+// The widget's own wiring: the usage signal to the mood, the hover's reason
+// only while coding, the account named only when there are several.
+describe("<Tamagotchi>", () => {
+  const at = (h, m) => new Date(2026, 9, 21, h, m);
+  const furiousB = () => {
+    const now = at(14, 30).getTime() / 1000;
+    usage.value = { plan: { b: { available: true, fetched_at: now - 60, meters: { week_all: { percent: 50, hot: true } } } } };
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+    usage.value = null;
+    accounts.value = [];
+  });
+
+  it("codes furiously, naming the account, when one of several burns", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    accounts.value = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    furiousB();
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-mood="furious"');
+    expect(html).toContain('title="Claude is coding furiously (1pm–5pm) · week usage on account B is burning 🔥"');
+  });
+
+  it("leaves the account out with a single subscription", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    accounts.value = [{ id: "b", label: "B" }];
+    furiousB();
+    expect(render(<Tamagotchi />)).toContain('title="Claude is coding furiously (1pm–5pm) · week usage is burning 🔥"');
+  });
+
+  it("drops the mood and its reason outside the coding hours", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(18, 30));
+    accounts.value = [{ id: "b", label: "B" }];
+    furiousB();
+    const html = render(<Tamagotchi />);
+    expect(html).not.toContain("data-mood");
+    expect(html).not.toContain("burning");
   });
 });

@@ -14,7 +14,7 @@ import { useEffect, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
 import {
-  activityAt, activityLabel, BODY, codingMood, EYES, gridCells, headlineAt, hourLabel, LEGS, moodReason,
+  activityAt, activityLabel, BODY, codingMood, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
   msUntilNextChange, occasionShown, seasonAt,
 } from "./tamagotchi.js";
 
@@ -280,7 +280,33 @@ function Confetti() {
 }
 
 // What sits beside (behind) and in front of the mascot for each activity.
-function Behind({ activity, season, occasion, ghost, coffee }) {
+// The coding monitor's lines, by mood (tamagotchi.MOODS): grumpy turns one
+// line red; furious fills the screen with errors. Drawn inside the desk, under
+// the morning mug, so they rattle with the monitor and never cover the mug.
+function CodeScreen({ mood }) {
+  if (mood === "furious") {
+    return (
+      <g class="tama-errors" fill="#e05252">
+        <rect x="24" y="7" width="4.4" height="0.6" />
+        <rect x="24" y="8.4" width="6.2" height="0.6" />
+        <rect x="24.8" y="9.8" width="3.6" height="0.6" />
+        <rect x="29.4" y="9.8" width="0.6" height="0.6" fill="#ffd166" />
+      </g>
+    );
+  }
+  return (
+    <g>
+      <rect x="24" y="7" width="4.4" height="0.6" fill="var(--accent)" />
+      {mood === "grumpy"
+        ? <rect class="tama-red-line" x="24" y="8.4" width="3" height="0.6" fill="#e05252" />
+        : <rect x="24" y="8.4" width="3" height="0.6" fill="#7fbf7f" />}
+      <rect x="24.8" y="9.8" width="3.4" height="0.6" fill="#c792ea" />
+      <rect class="tama-cursor" x="28.6" y="9.8" width="0.6" height="0.6" fill="#e6e9ef" />
+    </g>
+  );
+}
+
+function Behind({ activity, season, occasion, ghost, coffee, mood = "calm" }) {
   switch (activity) {
     case "sleep":
       return (
@@ -317,11 +343,9 @@ function Behind({ activity, season, occasion, ghost, coffee }) {
             <rect x="21" y="14.1" width="0.9" height="4.9" fill="#6f533c" />
             <rect x="32.2" y="14.1" width="0.9" height="4.9" fill="#6f533c" />
             <rect x="26.9" y="12" width="1.2" height="1.2" fill="var(--fg-3)" />
-            <rect x="23" y="5.6" width="9" height="6.4" rx="0.4" fill="#1d2026" stroke="var(--fg-3)" stroke-width="0.3" />
-            <rect x="24" y="7" width="4.4" height="0.6" fill="var(--accent)" />
-            <rect x="24" y="8.4" width="3" height="0.6" fill="#7fbf7f" />
-            <rect x="24.8" y="9.8" width="3.4" height="0.6" fill="#c792ea" />
-            <rect class="tama-cursor" x="28.6" y="9.8" width="0.6" height="0.6" fill="#e6e9ef" />
+            <rect x="23" y="5.6" width="9" height="6.4" rx="0.4" fill={mood === "furious" ? "#2a1416" : "#1d2026"}
+                  stroke="var(--fg-3)" stroke-width="0.3" />
+            <CodeScreen mood={mood} />
             <rect x="20.4" y="12.6" width="4.2" height="0.6" rx="0.2" fill="#c9ced6" />
           </g>
           {coffee && (
@@ -425,7 +449,8 @@ function InFront({ activity }) {
 // Furious, "red-hot": a deep pulsing flush and a scowl, hammering hands, keys
 // flying, the screen full of errors, smoke off the keyboard, heat shimmer,
 // the desk rattling. The face sits in Clawd's group so it bobs and shakes
-// with it; the hands and desk props use the coding pose's fixed desk.
+// with it; the hands and desk props use the coding pose's fixed desk; the
+// screens are CodeScreen's.
 function MoodFace({ x0, mood }) {
   return (
     <g class="tama-mood">
@@ -460,17 +485,13 @@ function MoodFace({ x0, mood }) {
   );
 }
 
+// Furious only, and only what has to draw over Clawd and the desk: flying
+// keys, smoke off the keyboard, heat shimmer, the spilling mug. (The screens
+// are CodeScreen's, inside the desk.)
 function MoodDesk({ mood, x0, coffee, hat }) {
-  if (mood === "grumpy") return <rect x="24" y="8.4" width="3" height="0.6" fill="#e05252" />;
+  if (mood !== "furious") return null;
   return (
     <g>
-      <g class="tama-errors" fill="#e05252">
-        <rect x="23.4" y="6" width="8.2" height="5.6" fill="#2a1416" />
-        <rect x="24" y="7" width="4.4" height="0.6" />
-        <rect x="24" y="8.4" width="6.2" height="0.6" />
-        <rect x="24.8" y="9.8" width="3.6" height="0.6" />
-        <rect x="29.4" y="9.8" width="0.6" height="0.6" fill="#ffd166" />
-      </g>
       <g fill="#c9ced6">
         <rect class="tama-flying-key" x="21.4" y="12" width="0.7" height="0.7" />
         <rect class="tama-flying-key tama-flying-key2" x="23.1" y="12" width="0.7" height="0.7" />
@@ -505,13 +526,14 @@ export function TamaScene({
   const ghost = occasion === "halloween" && activity === "run";
   const hat = occasion === "yearend" ? "santa" : occasion === "newyear" ? "party" : null;
   // Only the coding scene has moods.
-  const moody = activity === "code" && (mood === "grumpy" || mood === "furious");
+  const moody = activity === "code" && MOODS[mood]?.rank > 0;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {occasion === "newyear" && <Fireworks />}
-      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee} />
+      <Behind activity={activity} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
+              mood={moody ? mood : "calm"} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
@@ -590,7 +612,7 @@ export function Tamagotchi() {
   const headline = headlineAt(now);
   const coding = a.id === "code";
   const why = coding && reason ? ` · ${reason}` : "";
-  const label = `Claude is ${activityLabel(a, occasion, coding ? mood : "calm")} (${hourLabel(a.from)}–${hourLabel(a.to)})${why}${headline ? ` · ${headline}` : ""}`;
+  const label = `Claude is ${activityLabel(a, occasion, mood)} (${hourLabel(a.from)}–${hourLabel(a.to)})${why}${headline ? ` · ${headline}` : ""}`;
   return (
     <button
       type="button"

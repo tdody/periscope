@@ -452,11 +452,15 @@ html, body {
 .tama .tama-clack rect { animation: tama-clack 0.24s steps(2) infinite; }
 .tama .tama-clack rect + rect { animation-delay: -0.12s; }
 .tama [data-mood="furious"] .tama-clack rect { animation-duration: 0.12s; }
+.tama [data-mood="furious"] .tama-clack rect + rect { animation-delay: -0.06s; }
 @keyframes tama-clack { 50% { opacity: 0; } }
 .tama .tama-flush { animation: tama-flush 0.9s ease-in-out infinite alternate; }
 @keyframes tama-flush { from { opacity: 0.35; } to { opacity: 0.6; } }
 .tama .tama-errors { animation: tama-errors 0.5s steps(2) infinite; }
 @keyframes tama-errors { 50% { opacity: 0.55; } }
+/* Particles are hidden until their keyframes show them: with motion reduced
+   (animation: none) they'd otherwise freeze, opaque, over Clawd's hands. */
+.tama .tama-flying-key, .tama .tama-smoke, .tama .tama-spill circle { opacity: 0; }
 .tama .tama-flying-key { transform-origin: center; animation: tama-fly-l 0.8s ease-out infinite; }
 .tama .tama-flying-key2 { animation-name: tama-fly-r; animation-delay: -0.3s; }
 .tama .tama-flying-key3 { animation-name: tama-fly-up; animation-delay: -0.55s; }
