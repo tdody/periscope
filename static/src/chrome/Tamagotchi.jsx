@@ -17,25 +17,24 @@
 import { useComputed, useSignal } from "@preact/signals";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
-import { openCleanupModal } from "../overlays/CleanupModal.jsx";
 import { selectedPid } from "../keys.js";
-import { openNeedsPane, openReadyPane, revealPane, selectPane } from "../split/alertFeed.js";
 import { buildRunning } from "../split/attention.js";
 import {
   alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, walls, windows,
 } from "../store.js";
+import { plural } from "../util.js";
+import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
-import { endParty, mergeParties, startClawdWatch } from "./clawdWatch.js";
+import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
-  AlarmClock, ApiScreen, ArmsUp, Broom, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
-  LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle, SweepHand,
+  AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
+  LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import {
   activityAt, activityLabel, BODY, codingMood, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
   msUntilNextChange, occasionShown, SKIN, seasonAt, Y0,
 } from "./tamagotchi.js";
-import { updatePopoverRequest } from "./UpdatePill.jsx";
 
 
 // Where the mascot stands per activity: centred on its feet by default; the
@@ -574,8 +573,13 @@ export function TamaScene({
   const { scene, atDesk } = view;
   const { x0, sitting } = POSES[scene] || STANDING;
   const ghost = occasion === "halloween" && activity === "run";
-  const ringing = kind === "bell" && activity === "sleep";
-  const asleep = (activity === "sleep" && !ringing) || scene === "nap";
+  // Asleep — the night's sleep or the walled nap at the desk — only the bell
+  // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
+  // nap.
+  const sleeping = activity === "sleep" || scene === "nap";
+  const ringing = kind === "bell" && sleeping;
+  const asleep = sleeping && !ringing;
+  const deskBell = kind === "bell" && (atDesk || scene === "nap");
   const pose = ghost || asleep ? null : atDesk || FACE_KINDS.has(kind) ? kind : null;
   const celebrating = !ghost && !asleep && (pose === "done" || pose === "merged");
   const fullParty = pose === "merged";
@@ -603,7 +607,7 @@ export function TamaScene({
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
       <Behind activity={scene === "nap" ? "code" : scene} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
-              ringing={ringing} keyboard={!(atDesk && (kind === "bell" || kind === "ctx"))} mood={moody ? mood : "calm"}
+              ringing={ringing} keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"}
               screen={screen} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
@@ -613,9 +617,8 @@ export function TamaScene({
         {pose === "ctx" && <Worried x0={x0} />}
         {atDesk && celebrating && <ArmsUp x0={x0} />}
         {atDesk && pose === "ci" && <Extinguisher />}
-        {atDesk && pose === "bell" && <SlapHand />}
-        {!atDesk && pose === "bell" && <Startle x0={x0} />}
-        {scene === "sweep" && <SweepHand />}
+        {deskBell && <SlapHand />}
+        {pose === "bell" && !deskBell && <Startle x0={x0} />}
         {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {activity === "run" && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && <Pail x0={x0} />}
@@ -626,10 +629,9 @@ export function TamaScene({
         {hat === "party" && <PartyHat x0={x0} />}
       </g>
       <InFront activity={activity} />
-      {atDesk && <DeskProps kind={kind} />}
-      {scene === "nap" && <DeskZs />}
-      {ringing && <AlarmClock />}
-      {scene === "sweep" && <Broom />}
+      {(atDesk || deskBell) && <DeskProps kind={kind} />}
+      {scene === "nap" && !ringing && <DeskZs />}
+      {ringing && activity === "sleep" && <AlarmClock />}
       {celebrating && <Sparkles />}
       {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} />}
       {(occasion === "newyear" || fullParty) && <Confetti />}
@@ -706,6 +708,7 @@ export function Tamagotchi() {
   // The hover's wait times tick by the minute, so a long wait re-renders once
   // a minute, not once a poll.
   const dutyKey = useComputed(() => {
+    minute.value; // wait times and the party's ten minutes move on without a poll
     const nowSec = Date.now() / 1000;
     const items = dutyItems({
       windows: windows.value || [], alerts: alerts.value || [],
@@ -728,12 +731,11 @@ export function Tamagotchi() {
   const headline = headlineAt(now);
   // The same view TamaScene draws from, so the hover can't describe another scene.
   const view = deskView(a.id, top?.kind, !!d.wall);
-  const doing = view.scene === "nap" ? "napping at the desk" : view.scene === "sweep" ? "tidying up"
-    : activityLabel(a, occasion, view.moodShown ? mood : "calm");
+  const doing = view.scene === "nap" ? "napping at the desk" : activityLabel(a, occasion, view.moodShown ? mood : "calm");
   const parts = [
     ...(d.wall ? [wallPhrase(d.wall)] : []),
     ...d.items.map((i) => i.phrase),
-    ...(view.showsPanes && d.working ? [`${d.working} agent${d.working === 1 ? "" : "s"} working`] : []),
+    ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
     ...(view.moodShown && reason ? [reason] : []),
     ...(headline ? [headline] : []),
   ];
@@ -741,38 +743,12 @@ export function Tamagotchi() {
     + (top?.target ? ` · click to ${top.target.says}` : "");
 
   function pet() { setPets((n) => n + 1); setPetted(true); }
-  // A click goes to whatever the bubble shows, through the rail's own row
-  // behaviour, with the pane looked up by pid now rather than when the item
-  // was built.
-  function act(t) {
-    const w = t.pid != null ? (windows.value || []).find((x) => String(x.pid) === String(t.pid)) : null;
-    if (t.action === "cleanup") return openCleanupModal();
-    if (t.action === "update") { updatePopoverRequest.value += 1; return; }
-    if (t.action === "needs") return openNeedsPane(w);
-    if (t.action === "ready") return openReadyPane(w);
-    if (t.action === "reveal") return revealPane(t.target);
-    if (t.action === "party") endParty(t.key);
-    selectPane(w);
-  }
-  // The cleanup dialog and the update popover open over the mascot, so a
-  // double-click's second click would land on them and close what the first
-  // opened: those two wait out the double-click before opening.
-  const pending = useRef(null);
-  useEffect(() => () => clearTimeout(pending.current), []);
-  function onClick(e) {
-    if (e.detail > 1) return;
-    const t = top?.target;
-    if (!t) return pet();
-    if (t.action === "cleanup" || t.action === "update") {
-      pending.current = setTimeout(() => act(t), 250);
-      return;
-    }
-    act(t);
-  }
-  function onDblClick() {
-    clearTimeout(pending.current);
-    pet();
-  }
+  // Clicks (clawdClick.js) read the bubble's current item through a ref, so
+  // the handlers — and their pending double-click timer — live for the widget.
+  const topRef = useRef(top);
+  topRef.current = top;
+  const [click] = useState(() => clickHandlers({ target: () => topRef.current?.target, pet }));
+  useEffect(() => () => click.dispose(), []);
   return (
     <button
       type="button"
@@ -780,8 +756,8 @@ export function Tamagotchi() {
       title={label}
       aria-label={label}
       // The second click of a double-click is the pet, not a second action.
-      onClick={onClick}
-      onDblClick={onDblClick}
+      onClick={click.onClick}
+      onDblClick={click.onDblClick}
     >
       <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
                  mood={mood} petted={petted} petKey={pets}

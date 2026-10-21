@@ -514,9 +514,6 @@ html, body {
 .tama .tama-type { transform-origin: left center; animation: tama-type 2.6s steps(6) infinite; }
 .tama [data-working="3"] .tama-type, .tama [data-working="4"] .tama-type { animation-duration: 1.6s; }
 @keyframes tama-type { 0% { transform: scaleX(0); } 55%, 100% { transform: scaleX(1); } }
-.tama .tama-broom { transform-origin: 70% 0%; animation: tama-sweep 0.9s ease-in-out infinite alternate; }
-@keyframes tama-sweep { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
-.tama .tama-note { animation: tama-float 2.4s linear infinite; }
 .tama .tama-parcel { animation: tama-bounce 1.6s steps(1) infinite; }
 @keyframes tama-bounce { 70% { transform: translateY(-0.7px); } 80% { transform: translateY(0); } 88% { transform: translateY(-0.35px); } 96% { transform: translateY(0); } }
 /* Nothing running: Clawd stops typing. */
@@ -524,6 +521,8 @@ html, body {
 .tama [data-pose="done"] .tama-creature, .tama [data-pose="merged"] .tama-creature { animation: tama-bob 0.5s steps(2) infinite; }
 .tama [data-pose="api"] .tama-creature { animation: tama-woozy 1.4s ease-in-out infinite alternate; }
 @keyframes tama-woozy { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+/* The bell wakes Clawd from the nap: up from the slump, tapping the bell. */
+.tama [data-activity="nap"][data-pose="bell"] .tama-creature { animation: tama-bob 0.6s steps(2) infinite; }
 .tama [data-pose="bell"][data-urgent] .tama-creature { animation: tama-bob 0.18s steps(2) infinite; }
 .tama [data-activity="nap"] .tama-creature { animation: tama-slump 3.2s ease-in-out infinite; }
 @keyframes tama-slump { 0%, 100% { transform: translate(0.6px, 0.9px) rotate(6deg); } 50% { transform: translate(0.6px, 1.1px) rotate(6deg) scaleY(0.95); } }

@@ -18,8 +18,7 @@ import { modalRequest } from "./modalRequest.js";
 
 const open = signal(false);
 
-// Exported for Clawd (chrome/Tamagotchi.jsx), whose broom opens this modal.
-export function openCleanupModal() {
+function openCleanupModal() {
   open.value = true;
   track("overlay.open", { which: "cleanup" });
 }

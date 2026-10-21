@@ -6,18 +6,16 @@
 // (split/alertFeed.js openNeedsPane / openReadyPane), and the context band is
 // the rail's ctxClass: Clawd and the rail can never disagree about a pane.
 
-import { buildNeedsYou, buildReady, waitTier } from "../split/attention.js";
+import { awaitingReplyByPid, buildNeedsYou, buildReady, waitTier } from "../split/attention.js";
 import { ctxClass } from "../split/ctxBand.js";
-import { paneLabel } from "../util.js";
+import { paneLabel, plural } from "../util.js";
 
 // One slot, highest first: what each one is costing you right now. A blocked
 // agent beats a stalled API beats a blocked merge beats waiting results; the
 // merge party is ten minutes long and a context warning can wait that long;
-// cleanup and the update are housekeeping.
-export const DUTY_ORDER = ["bell", "api", "ci", "done", "merged", "ctx", "clean", "update"];
+// the update is housekeeping.
+export const DUTY_ORDER = ["bell", "api", "ci", "done", "merged", "ctx", "update"];
 export const PARTY_S = 600;
-
-const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 function waited(sinceSec, nowSec) {
   const min = Math.floor((nowSec - sinceSec) / 60);
@@ -47,22 +45,39 @@ export function dutyItems({
   const live = windows.filter(notSelected);
   const byPid = new Map(windows.map((w) => [String(w.pid), w]));
 
-  // A live question's age comes from the server's needs-input edge stamp
-  // (needs_since), so it survives a reload; an event row's from its alert.
-  const needs = buildNeedsYou(windows, alerts, dismissedAlertIds, dismissedNeedsPids).filter((r) => notSelected(r.w));
-  if (needs.length) {
-    const since = (r) => (r.kind === "event" ? r.ts : (r.w?.needs_since || nowSec));
-    const oldest = needs.reduce((a, b) => (since(b) < since(a) ? b : a));
-    const name = oldest.w ? paneLabel(oldest.w) : oldest.name || oldest.session || "a pane";
-    items.push({
-      kind: "bell", count: needs.length, label: String(needs.length),
-      urgent: waitTier(since(oldest), nowSec) !== "fresh",
-      phrase: needs.length === 1 ? `${name} needs you${waited(since(oldest), nowSec)}`
-        : `needs you in ${needs.length} panes · ${name} has waited longest${waited(since(oldest), nowSec)}`,
+  // Panes, not rows: a pane can have both a live needs-input row and an
+  // unacked need_human event (Claude notifies while its pane sits waiting), and
+  // the rail lists both. A pane waits since the earlier of the server's
+  // needs-input stamp (needs_since, which survives a reload) and its oldest
+  // unanswered event — that event time is the rail's own urgency tier
+  // (awaitingReplyByPid), so Clawd's red bubble and the rail's wait-urgent agree.
+  const asked = awaitingReplyByPid(windows, alerts, dismissedAlertIds);
+  const waiting = new Map();
+  for (const r of buildNeedsYou(windows, alerts, dismissedAlertIds, dismissedNeedsPids)) {
+    if (!notSelected(r.w)) continue;
+    const key = r.w?.pid != null ? `pid:${r.w.pid}` : `target:${r.target}`;
+    const since = Math.min(
+      r.kind === "event" ? r.ts : (r.w.needs_since || nowSec),
+      ...(r.w?.pid != null && asked.has(r.w.pid) ? [asked.get(r.w.pid)] : []),
+    );
+    const prev = waiting.get(key);
+    waiting.set(key, {
       // A live row opens the way the rail's NEEDS YOU row does; an event row
       // reveals its pane, as the rail's event row does.
-      target: oldest.kind === "live" ? pane("needs", oldest.w)
-        : { action: "reveal", target: oldest.target, says: `open ${name}` },
+      row: prev?.row.kind === "live" ? prev.row : r,
+      since: prev ? Math.min(prev.since, since) : since,
+    });
+  }
+  if (waiting.size) {
+    const oldest = [...waiting.values()].reduce((a, b) => (b.since < a.since ? b : a));
+    const r = oldest.row;
+    const name = r.w ? paneLabel(r.w) : r.name || r.session || "a pane";
+    items.push({
+      kind: "bell", count: waiting.size, label: String(waiting.size),
+      urgent: waitTier(oldest.since, nowSec) !== "fresh",
+      phrase: waiting.size === 1 ? `${name} needs you${waited(oldest.since, nowSec)}`
+        : `needs you in ${waiting.size} panes · ${name} has waited longest${waited(oldest.since, nowSec)}`,
+      target: r.kind === "live" ? pane("needs", r.w) : { action: "reveal", target: r.target, says: `open ${name}` },
     });
   }
 
@@ -135,27 +150,6 @@ export function dutyItems({
     });
   }
 
-  // A pane at a linked worktree's root whose linked PR merged or closed: the
-  // worktree's work is done, and it's exactly what the cleanup dialog lists and
-  // its archive kills. The main checkout and subdirs never count, or a PR
-  // linked from them would keep Clawd sweeping forever. Read off /api/state,
-  // not /api/cleanup/candidates, which walks every worktree's git state.
-  const finished = new Map();
-  for (const w of live) {
-    if (w.linked_worktree_root && w.pr && (w.pr_state === "merged" || w.pr_state === "closed") && !finished.has(w.cwd)) {
-      finished.set(w.cwd, w);
-    }
-  }
-  if (finished.size) {
-    const [w] = finished.values();
-    items.push({
-      kind: "clean", count: finished.size, label: String(finished.size),
-      phrase: finished.size === 1 ? `PR #${w.pr} is ${w.pr_state}: ${paneLabel(w)}'s worktree can be cleaned up`
-        : `${finished.size} worktrees ready to clean up`,
-      target: { action: "cleanup", says: "review the cleanup" },
-    });
-  }
-
   if (update?.behind > 0 && !update.running) {
     items.push({
       kind: "update", count: 1, label: "new",
@@ -192,12 +186,12 @@ export function wallPhrase({ day, time }) {
 // monitor keeps mirroring the working agents.
 const SCREEN_KINDS = new Set(["done", "merged", "ci", "api", "ctx"]);
 
-// What the scene plays, for the drawing and the hover alike: a nap while
-// every account is walled, a sweep when cleanup is on top, else the
-// schedule's. At the desk, the mood shows only with nothing on duty, and the
-// monitor mirrors the agents unless the top kind needs the screen.
+// What the scene plays, for the drawing and the hover alike: a nap at the
+// desk while every account is walled, else the schedule's. At the desk, the
+// mood shows only with nothing on duty, and the monitor mirrors the agents
+// unless the top kind needs the screen.
 export function deskView(activity, topKind, walled) {
-  const scene = activity !== "code" ? activity : walled ? "nap" : topKind === "clean" ? "sweep" : activity;
+  const scene = activity === "code" && walled ? "nap" : activity;
   const atDesk = scene === "code";
   return { scene, atDesk, moodShown: atDesk && !topKind, showsPanes: atDesk && !SCREEN_KINDS.has(topKind) };
 }
@@ -217,7 +211,7 @@ export function nextMergeWatch({ states, parties }, windows, nowSec) {
     next[w.pid] = { pr: w.pr, state: w.pr_state };
     const key = `${w.pid}#${w.pr}`;
     if (was?.pr === w.pr && was.state === "open" && w.pr_state === "merged" && !out.some((p) => p.key === key)) {
-      out.push({ key, pid: w.pid, pr: w.pr, title: w.pr_title || "", at: nowSec });
+      out.push({ key, pid: w.pid, pr: w.pr, at: nowSec });
     }
   }
   return { states: next, parties: out };
