@@ -46,6 +46,11 @@ _completed_at: dict[str, int] = {}
 # idle edge that drives `_completed_at`. Keyed by pid (not target) so a
 # session rename doesn't lose the prior state and refire the transition.
 _prev_state: dict[str, str | None] = {}
+# When the pane entered needs-input, stamped on that edge and cleared when it
+# leaves. Keyed by pid like `_prev_state`. Published as `needs_since` so a
+# question's age survives a browser reload (Clawd's red bell, 10 minutes in);
+# in-memory only, so a server restart re-stamps a pane still waiting.
+_needs_since: dict[str, int] = {}
 # Structured-agent transition baselines.  Unlike `_prev_state`, these carry
 # session/turn identity so an idle edge from a different turn can never finish
 # stale work.  Values are (provider, session_id, turn_id, state).
@@ -170,7 +175,16 @@ def record_state_transition(pid: str, target: str, state: str | None, now_ts: in
     prev = _prev_state.get(pid)
     if prev in ("working", "needs-input") and state == "idle":
         _completed_at[target] = now_ts
+    if state == "needs-input":
+        _needs_since.setdefault(pid, now_ts)
+    else:
+        _needs_since.pop(pid, None)
     _prev_state[pid] = state
+
+
+def needs_since_for(pid: str) -> int:
+    """When `pid` entered needs-input, or 0 when it isn't waiting."""
+    return _needs_since.get(pid, 0)
 
 
 def record_agent_state_transition(

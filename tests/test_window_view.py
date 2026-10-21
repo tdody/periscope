@@ -33,6 +33,7 @@ def reset_panes_and_channels(monkeypatch):
     panes._acted_at.clear()
     panes._completed_at.clear()
     panes._prev_state.clear()
+    panes._needs_since.clear()
     panes._agent_transition_baseline.clear()
     panes._spinner_last_seen.clear()
     panes._agent_last_seen.clear()
@@ -51,6 +52,7 @@ def reset_panes_and_channels(monkeypatch):
     panes._acted_at.clear()
     panes._completed_at.clear()
     panes._prev_state.clear()
+    panes._needs_since.clear()
     panes._agent_transition_baseline.clear()
     panes._spinner_last_seen.clear()
     panes._agent_last_seen.clear()
@@ -155,6 +157,24 @@ def test_view_done_refinement_promotes_idle_to_done_after_busy(mocker, clean_sta
     assert view["completed_at"] == 5000
     # Stamp update should record the new completed_at for persistence.
     assert stamp == (pid, 5000, 0)
+
+
+def test_view_stamps_when_a_pane_started_waiting(mocker, clean_state):
+    """needs_since holds the needs-input edge across polls and clears when the
+    pane stops waiting, so a question's age doesn't reset on a reload."""
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    _stub_subsystems(mocker, pane_content="x")
+    mocker.patch("periscope.window_view.capture", return_value="x")
+    parse = mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "needs-input", "spinner": None},
+    )
+    assert build_window_view(_window(pid=pid), now_ts=1000)[0]["needs_since"] == 1000
+    assert build_window_view(_window(pid=pid), now_ts=1600)[0]["needs_since"] == 1000
+    parse.return_value = {"agent": "claude", "state": "working", "spinner": "✻"}
+    assert build_window_view(_window(pid=pid), now_ts=1700)[0]["needs_since"] == 0
 
 
 # --- account attribution ---------------------------------------------------
