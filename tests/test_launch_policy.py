@@ -5,6 +5,7 @@ account's plan-usage payload in the exact shape `usage.parse_plan_usage`
 produces and `/api/state` serializes."""
 
 from dataclasses import replace
+from datetime import datetime
 
 from periscope.launch_policy import (
     LaunchInputs,
@@ -15,6 +16,7 @@ from periscope.launch_policy import (
     pressured,
     sublimit,
     walled,
+    walls,
 )
 
 WED = 1_800_000_000  # B's weekly reset
@@ -209,6 +211,59 @@ def test_explicit_default_model_means_no_override():
 
 def test_explicit_model_arg_beats_the_pin():
     assert pick(model_arg="sonnet", model_pin="fable") == ("b", "sonnet")
+
+
+def test_everything_walled_says_when_that_account_is_back_not_just_its_session():
+    # A weekly wall outlasts the session reset by days; the hover says so.
+    launch = choose(replace(BASE, usage={"default": acct(week=100, resets=SUN, session_resets=WED + 600),
+                                         "b": acct(week=100, resets=WED, session_resets=WED + 7200)}))
+    assert launch.account == "default"
+    assert launch.reason.endswith(f"back {datetime.fromtimestamp(SUN).strftime('%a %H:%M')}")
+
+
+# --- walls: whether ANY account can take an unnamed launch (Clawd's nap) -----
+
+def _walls(**kw):
+    return walls(replace(BASE, **kw))
+
+
+def test_walls_is_none_while_any_account_has_room():
+    assert _walls(usage={"default": acct(week=100, resets=SUN), "b": acct(resets=WED)}) is None
+
+
+def test_walls_says_when_the_soonest_account_is_back():
+    assert _walls(usage={"default": acct(week=100, resets=SUN),
+                         "b": acct(session=100, session_resets=WED + 600)}) == {"until": WED + 600}
+
+
+def test_an_account_is_back_once_every_meter_walling_it_resets():
+    assert _walls(usage={"default": acct(session=100, week=100, resets=SUN, session_resets=WED)}) == {"until": SUN}
+
+
+def test_model_sublimits_wall_like_choose():
+    # Fable and Opus both walled on every account: nothing `choose` would try can run.
+    walled_subs = {"default": acct(resets=SUN, week_fable=100, week_opus=100),
+                   "b": acct(resets=WED, week_fable=100, week_opus=100)}
+    assert _walls(usage=walled_subs) == {"until": WED}
+    # Opus still has room, as `choose` would find.
+    assert _walls(usage={"default": acct(resets=SUN, week_fable=100), "b": acct(resets=WED, week_fable=100)}) is None
+    # A model pin narrows it to that model's sub-limit.
+    assert _walls(usage={"default": acct(resets=SUN, week_fable=100), "b": acct(resets=WED, week_fable=100)},
+                  model_pin="fable") == {"until": WED}
+
+
+def test_no_data_is_not_room_and_no_data_at_all_is_not_a_wall():
+    assert _walls(usage={"default": NO_DATA, "b": acct(week=100, resets=WED)}) == {"until": WED}
+    assert _walls(usage={"default": NO_DATA, "b": NO_DATA}) is None
+
+
+def test_walls_ignore_the_account_pin():
+    assert _walls(usage={"default": acct(week=100, resets=SUN), "b": acct(resets=WED)}, account_pin="default") is None
+
+
+def test_walls_without_a_reported_reset():
+    assert _walls(usage={"default": acct(week=100, resets=None)}) == {"until": None}
+    assert _walls(usage={"default": acct(week=100, resets=None), "b": acct(week=100, resets=WED)}) == {"until": WED}
 
 
 def test_no_usage_data_falls_back_to_default_without_waiting():

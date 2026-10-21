@@ -125,6 +125,22 @@ def walled(meters: Mapping[str, Meter], *, model: str | None = None) -> bool:
     return _pct(sublimit(meters, model)) >= 100
 
 
+def _back(meters: Mapping[str, Meter], model: str | None) -> int | None:
+    """When a walled (account, model) pair can work again: once every meter
+    walling it has reset. None when one of those meters reports no reset."""
+    walls_on = [m for m in (meters.get("session"), meters.get("week_all"),
+                            sublimit(meters, model) if model else None) if _pct(m) >= 100]
+    resets = [(m or {}).get("resets_at") for m in walls_on]
+    known = [r for r in resets if r is not None]
+    return max(known) if known and len(known) == len(resets) else None
+
+
+def _soonest_back(meters: Mapping[str, Meter], models: tuple[str, ...]) -> int | None:
+    """When the account can take a launch on any of `models` again."""
+    backs = [b for model in models if (b := _back(meters, model)) is not None]
+    return min(backs) if backs else None
+
+
 def pressured(meters: Mapping[str, Meter], *, now: float) -> bool:
     """On pace to wall the 5h session within PRESSURE_HORIZON_S of `now`
     (`attach_projections` sets `limit_at` only when the projected crossing
@@ -206,9 +222,29 @@ def choose(inputs: LaunchInputs) -> Launch:
 
     # Everything is walled: the user is blocked either way, so minimize the wait.
     aid, meters = min(pairs, key=lambda p: (p[1].get("session") or {}).get("resets_at") or float("inf"))
-    soonest = (meters.get("session") or {}).get("resets_at")
-    when = _clock(soonest)
-    return Launch(aid, _out(models[0]), f"{aid} · every meter walled; session resets {when}")
+    # The hover says when this account works again — its session reset only
+    # if that's what walls it (a weekly wall outlasts it by days).
+    back = _soonest_back(meters, models) or (meters.get("session") or {}).get("resets_at")
+    return Launch(aid, _out(models[0]), f"{aid} · every meter walled; back {_clock(back)}")
+
+
+def walls(inputs: LaunchInputs) -> dict | None:
+    """Whether NO account can take an unnamed launch, and until when:
+    `{"until": epoch}` (or `{"until": None}` when no walling meter reports a
+    reset), or None while any account with data has room for a model `choose`
+    would try. No account with data at all is None too: no data is not a wall.
+
+    The same `walled(meters, model=…)` as `choose`, over every account with
+    data and the models it would try (the model pin's, else FALLBACK_MODELS).
+    The account pin is ignored: the question is whether ANY account can work.
+    Published on /api/state as `walls`; Clawd naps on it."""
+    model_pin = inputs.model_pin if inputs.model_pin not in (None, "", "auto") else None
+    models = (model_pin,) if model_pin else FALLBACK_MODELS
+    accounts = [m for a in inputs.accounts if (m := _meters(inputs, a)) is not None]
+    if not accounts or any(not walled(m, model=model) for m in accounts for model in models):
+        return None
+    backs = [b for m in accounts if (b := _soonest_back(m, models)) is not None]
+    return {"until": min(backs) if backs else None}
 
 
 def choose_move(inputs: LaunchInputs, current: str) -> str | None:

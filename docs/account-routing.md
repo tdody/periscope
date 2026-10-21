@@ -108,6 +108,21 @@ as "Move anyway?" on exactly that 409 (matched on the detail's
 `session looks live` prefix; the server test and the client test pin the
 text together).
 
+## Every account walled — `/api/state.walls`
+
+`launch_policy.walls` answers "can ANY account take an unnamed launch right
+now?" with the same `walled(meters, model=…)` that `choose` applies, over every
+account with data and the models `choose` would try (the model pin's, else
+`FALLBACK_MODELS`). The account pin is ignored, since the question is about
+any account. An account without data is not room (as in `choose`), but no data
+on every account is not a wall either. When every candidate is walled it
+returns `{"until": …}`: the soonest moment some account works again, i.e. the
+latest reset among the meters walling it, minimized over accounts and models.
+The header tamagotchi naps at its desk on this, showing that time, so its
+answer and the launch chip's can't diverge. Rule 6's hover says the same
+time ("every meter walled; back Thu 15:00") rather than the session reset,
+which a weekly wall outlasts by days.
+
 ## 💤 — Fable budget on pace to go unused
 
 The pill marks an account 💤 when its `week_fable*` meter projects under 100%
