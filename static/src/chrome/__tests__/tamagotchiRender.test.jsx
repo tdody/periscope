@@ -67,8 +67,10 @@ describe("pastimes and meals", () => {
     expect(render(<TamaScene activity="cycle" season="winter" />)).not.toContain("tama-snowcap");
   });
 
-  it("holds the guitar in Clawd's group, so it bobs with the strum", () => {
-    expect(inCreature(render(<TamaScene activity="music" />), "tama-guitar")).toBe(true);
+  it("holds the bass in Clawd's group, so it bobs with the groove, plugged into an amp", () => {
+    const html = render(<TamaScene activity="music" />);
+    expect(inCreature(html, "tama-bass")).toBe(true);
+    expect(html).toContain("tama-amp");
   });
 
   it("clinks a pint with a friend, and the kids come in twos", () => {

@@ -413,6 +413,8 @@ html, body {
 @keyframes tama-spin { to { transform: rotate(360deg); } }
 .tama:has([data-activity="music"]) .tama-creature { animation: tama-bob 0.5s steps(2) infinite; }
 .tama .tama-strum { animation: tama-tap 0.25s steps(2) infinite; }
+.tama .tama-speaker { transform-origin: center; animation: tama-thump 0.5s steps(2) infinite; }
+@keyframes tama-thump { 50% { transform: scale(1.1); } }
 .tama .tama-note { animation: tama-float 2.4s linear infinite; }
 .tama .tama-note2 { animation-delay: -1.2s; }
 .tama:has([data-activity="beer"]) .tama-creature, .tama .tama-friend { animation: tama-bob 0.9s steps(2) infinite; }

@@ -1,6 +1,6 @@
 // Easter egg in the header's top-right corner: Clawd, the Claude Code banner
 // mascot, living its day on the local clock: asleep, coffee, coding, lunch,
-// an evening pastime per half hour (a run, a ride, music, a beer with friends,
+// an evening pastime per half hour (a run, a ride, bass, a beer with friends,
 // the kids), dinner, a book (tamagotchi.js has the schedule; TamaPastimes.jsx
 // draws the pastimes and the dishes). Double-click to pet it.
 //
@@ -34,7 +34,7 @@ import {
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
-import { Bike, ClawdPint, Dish, Friend, Guitar, Helmet, Kids, MusicStand } from "./TamaPastimes.jsx";
+import { Bass, BassAmp, Bike, ClawdPint, Dish, Friend, Helmet, Kids } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, codingMood, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
   msUntilNextChange, occasionShown, SKIN, seasonAt, Y0,
@@ -43,7 +43,7 @@ import {
 // Where the mascot stands per activity: centred on its feet by default; the
 // two sitting scenes shift it left to make room for the desk / fireplace, and
 // tuck its legs out of sight. The friend and the kids need the right half,
-// the music stand a little of it; the ride lifts Clawd onto the saddle.
+// the bass amp a little of it; the ride lifts Clawd onto the saddle.
 const POSES = {
   code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true },
   music: { x0: 6 }, beer: { x0: 1 }, kids: { x0: 1 }, cycle: { x0: 7, lift: 2 },
@@ -435,7 +435,7 @@ function Behind({
         </g>
       );
     case "music":
-      return <MusicStand />;
+      return <BassAmp />;
     case "beer":
       return <Friend />;
     case "kids":
@@ -636,7 +636,7 @@ export function TamaScene({
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
         {face}
-        {scene === "music" && <Guitar x0={x0} />}
+        {scene === "music" && <Bass x0={x0} />}
         {scene === "beer" && <ClawdPint x0={x0} />}
         {scene === "cycle" && !hat && <Helmet x0={x0} />}
         {pose === "api" && <Stars x0={x0} />}

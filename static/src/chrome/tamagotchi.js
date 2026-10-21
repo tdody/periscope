@@ -26,7 +26,7 @@ export const SCHEDULE = [
 export const PASTIMES = [
   { id: "run", label: "out for a run" },
   { id: "cycle", label: "out cycling" },
-  { id: "music", label: "practicing music" },
+  { id: "music", label: "practicing bass" },
   { id: "beer", label: "having a beer with friends" },
   { id: "kids", label: "spending time with the kids" },
 ];

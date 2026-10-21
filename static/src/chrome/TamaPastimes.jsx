@@ -78,23 +78,32 @@ export function Helmet({ x0 }) {
   );
 }
 
-// ---- music practice: a guitar across the body, a stand with the score -------
-export function Guitar({ x0 }) {
-  const neck = `M${x0 + 10.2} ${14} L${x0 + 19} 11.3 L${x0 + 19.3} 12.2 L${x0 + 10.5} ${14.9} Z`;
+// ---- bass practice: a bass across the body, plugged into a combo amp -------
+// Lake Placid blue, so it doesn't melt into Clawd's orange. The neck rises
+// gently: steeper, it crosses the eye. The headstock clears the amp's top.
+export function Bass({ x0 }) {
   return (
-    <g class="tama-guitar" shape-rendering={GEO}>
-      <path d={neck} fill="#6b4a33" />
-      <path d={`M${x0 + 19} 11.1 L${x0 + 21.2} 10.3 L${x0 + 21.5} 11.4 L${x0 + 19.3} 12.4 Z`} fill="#3a2a1a" />
-      {/* Sunburst: a dark rim, so the guitar doesn't melt into Clawd's orange. */}
-      <ellipse cx={x0 + 5.6} cy="15.2" rx="2.7" ry="2.2" fill="#5a2612" />
-      <ellipse cx={x0 + 9} cy="14.6" rx="2" ry="1.7" fill="#5a2612" />
-      <ellipse cx={x0 + 5.7} cy="15.2" rx="2" ry="1.55" fill="#e8b84a" />
-      <ellipse cx={x0 + 8.9} cy="14.6" rx="1.35" ry="1.1" fill="#e8b84a" />
-      <circle cx={x0 + 8.3} cy="14.7" r="0.75" fill="#3a2414" />
-      <rect x={x0 + 4.5} y="14.9" width="1.5" height="0.5" fill="#5a3a26" />
-      <line x1={x0 + 5.3} y1="15.1" x2={x0 + 19.2} y2="11.75" stroke="#efe6d8" stroke-width="0.12" />
-      <rect x={x0 + 16.2} y="11.9" width="1" height="0.9" fill={SKIN} />
-      <rect class="tama-strum" x={x0 + 6.6} y="13.9" width="1.1" height="0.9" fill={SKIN} />
+    <g class="tama-bass" shape-rendering={GEO}>
+      <path d={`M${x0 + 9.6} 13.7 L${x0 + 23} 9.6 L${x0 + 23.3} 10.5 L${x0 + 9.9} 14.6 Z`} fill="#4a2c1a" />
+      <g fill="#efe6d8">
+        {[13.5, 16.5, 19.5].map((dx) => <circle key={dx} cx={x0 + dx} cy={14.15 - 0.306 * (dx - 9.75)} r="0.13" />)}
+      </g>
+      <path d={`M${x0 + 23} 9.4 L${x0 + 26.4} 8.2 L${x0 + 26.7} 9.1 L${x0 + 23.3} 10.7 Z`} fill="#e3c48a" />
+      <g fill="#c9ced6">
+        {[23.9, 24.7, 25.5, 26.2].map((dx, i) => <circle key={dx} cx={x0 + dx} cy={9.1 - i * 0.3} r="0.25" />)}
+      </g>
+      <ellipse cx={x0 + 5} cy="15.3" rx="3" ry="2.1" fill="#3f6fb5" />
+      <ellipse cx={x0 + 8.1} cy="14.4" rx="1.9" ry="1.5" fill="#3f6fb5" />
+      <ellipse cx={x0 + 9.4} cy="13.4" rx="1.1" ry="0.6" fill="#3f6fb5" />
+      <ellipse cx={x0 + 6.6} cy="14.7" rx="2" ry="1.1" fill="#f4f1ea" />
+      <rect x={x0 + 5.6} y="14.1" width="1.4" height="0.9" rx="0.2" fill="#1d1f24" />
+      <rect x={x0 + 2.6} y="14.9" width="1.6" height="0.7" fill="#c9ced6" />
+      <g stroke="#e6e9ef" stroke-width="0.1">
+        <line x1={x0 + 3.4} y1="15.1" x2={x0 + 23.1} y2="9.9" />
+        <line x1={x0 + 3.4} y1="15.4" x2={x0 + 23.2} y2="10.2" />
+      </g>
+      <rect x={x0 + 17.5} y="11.1" width="1" height="0.9" fill={SKIN} />
+      <rect class="tama-strum" x={x0 + 7.4} y="14.6" width="1.1" height="0.8" fill={SKIN} />
     </g>
   );
 }
@@ -109,25 +118,24 @@ function Note({ x, y, cls }) {
   );
 }
 
-export function MusicStand() {
+// The cable runs from the bass (Clawd at x0 6) along the floor, behind the legs.
+export function BassAmp() {
   return (
-    <g shape-rendering={GEO}>
-      <Note x={24.6} y={6} cls="tama-note" />
-      <Note x={26.4} y={4} cls="tama-note tama-note2" />
-      <rect x="27.8" y="8.8" width="5.6" height="4" fill="#f4f1ea" />
-      <g fill="#b9b2a4">
-        <rect x="28.3" y="9.6" width="4.6" height="0.15" />
-        <rect x="28.3" y="10.6" width="4.6" height="0.15" />
-        <rect x="28.3" y="11.6" width="4.6" height="0.15" />
+    <g class="tama-amp" shape-rendering={GEO}>
+      <Note x={24.4} y={6} cls="tama-note" />
+      <Note x={26.6} y={4.4} cls="tama-note tama-note2" />
+      <path d="M9 17.2 C8.6 19, 12 18.9, 16 18.9 S26.4 18.9, 27.6 17.6" fill="none" stroke="#1d1f24" stroke-width="0.3" />
+      <rect x="27.6" y="12.6" width="6" height="6.4" rx="0.3" fill="#2b2f36" />
+      <rect x="27.6" y="12.6" width="6" height="1.2" fill="#3b404a" />
+      <g fill="#c9ced6">
+        {[28.4, 29.3, 30.2, 31.1].map((x) => <circle key={x} cx={x} cy="13.2" r="0.25" />)}
       </g>
-      <g fill="#3b404a">
-        <circle cx="29" cy="9.7" r="0.3" />
-        <circle cx="30.4" cy="10.5" r="0.3" />
-        <circle cx="31.8" cy="11.5" r="0.3" />
-        <rect x="27.6" y="12.8" width="6" height="0.5" />
-        <rect x="30.35" y="13.3" width="0.5" height="5.2" />
+      <circle cx="32.8" cy="13.2" r="0.2" fill="#e05252" />
+      <rect x="28" y="14.2" width="5.2" height="4.4" fill="#4a4f58" />
+      <g class="tama-speaker">
+        <circle cx="30.6" cy="16.4" r="1.8" fill="#3b404a" />
+        <circle cx="30.6" cy="16.4" r="0.7" fill="#2b2f36" />
       </g>
-      <path d="M30.6 18.3 L28.4 19 M30.6 18.3 L32.8 19" stroke="#3b404a" stroke-width="0.4" />
     </g>
   );
 }
