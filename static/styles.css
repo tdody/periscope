@@ -87,6 +87,9 @@ html, body {
 
 /* Single sticky parent so the two rows stack without computing offsets. */
 .periscope-header {
+  /* The left column's right gutter (.topbar, .filters) — also how far the
+     tamagotchi at 5x can widen into that column (.tama). */
+  --header-gutter: 20px;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -106,7 +109,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 12px 20px 10px;
+  padding: 12px var(--header-gutter) 10px;
   background: linear-gradient(to bottom, oklch(0.25 0.008 250), transparent);
 }
 
@@ -361,11 +364,30 @@ html, body {
    as tall as the two of them together. */
 .tama {
   box-sizing: content-box; width: 136px; height: 96px; padding: 0;
-  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px 20px 4px 0;
+  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px var(--header-gutter) 4px 0;
   border: 1px solid var(--line); border-radius: 16px;
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }
 .tama:hover { border-color: var(--fg-3); }
+/* As big as the corner allows: 5x (170×120), when the header is tall enough.
+   Width is the limit: the spawn pins and the counts end at the left column's
+   gutter at every window width, so the widget widens into that gutter, leaving
+   --tama-gap to them and to the window edge — room for 5x, the largest integer
+   scale. Height needs the 124px header that three rows of pins give (the
+   account row, data-pin-rows="3", set by Header.jsx); with one account the
+   header is 107px and the widget stays at 4x.
+   The overhang is a decision, not a side effect: 4px from the top, the 122px
+   widget ends 2px below the 124px header, inside the pane header's 5px top
+   padding — the corner the Transcript/Terminal toggle gave up for the tab bar
+   — and above the pane header's content at any width. The negative bottom
+   margin keeps the widget's margin box (120px) under the rows' 123px, so it
+   never sets the header's height. */
+.periscope-header[data-pin-rows="3"] .tama {
+  --tama-gap: 3px;
+  width: 170px; height: 120px; border-radius: 18px;
+  align-self: start;
+  margin: 4px var(--tama-gap) -6px calc(var(--tama-gap) - var(--header-gutter));
+}
 .tama svg { display: block; width: 100%; height: 100%; }
 .tama g, .tama rect, .tama path, .tama text, .tama circle, .tama ellipse, .tama polygon, .tama line { transform-box: fill-box; }
 .tama-creature { transform-origin: center bottom; }
@@ -540,7 +562,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px;
+  padding: 10px var(--header-gutter);
 }
 
 .filter-btn {
@@ -2497,6 +2519,10 @@ body.col-resizing iframe { pointer-events: none; }
   display: flex; gap: 8px; align-items: baseline; font-size: 12px;
   flex-wrap: wrap;
 }
+/* The one-line height the 21.6px Transcript/Terminal toggle gave a Claude
+   pane's header before it moved to the tab bar, kept so the move shifted
+   nothing below the header. */
+.detail-pane-header[data-agent="claude"] { min-height: 32.6px; }
 .detail-pane-header .hsep, .detail-review-header .hsep { opacity: .5; }
 .detail-pane-header .header-pr, .detail-pane-header .header-linear {
   color: var(--fg-1); text-decoration: none; font-family: var(--mono);
@@ -3037,15 +3063,19 @@ body.col-resizing iframe { pointer-events: none; }
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
 }
 
-/* Transcript / Terminal toggle in the pane header */
+/* Transcript / Terminal toggle, at the tab bar's right end. Outside the
+   scrolling tab list, so overflowing file tabs can't push it out of reach;
+   the top margin matches the list's padding so it centres on the tabs. */
 .detail-mode-toggle {
   margin-left: auto;
+  flex: none;
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   overflow: hidden;
   align-self: center;
 }
+.detail-tab-bar > .detail-mode-toggle { margin-top: 4px; }
 .detail-mode-toggle button {
   font-family: var(--sans); font-size: 11px; line-height: 1.6;
   padding: 1px 9px; cursor: pointer;
@@ -3581,13 +3611,21 @@ body.col-resizing iframe { pointer-events: none; }
 /* Browser-style tab strip above the pane meta-header. The first tab is
    the pane (terminal/transcript); each Cmd+click on a file path adds a
    tab. State persists per-pid across rail selection changes. */
+/* The tab bar: the pane's tabs, scrolling when they overflow, and the
+   Transcript/Terminal toggle beside them at the right end. */
+.detail-tab-bar {
+  display: flex;
+  align-items: stretch;
+  padding-right: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-1);
+}
 .detail-tab-strip {
   display: flex;
   align-items: stretch;
   gap: 2px;
   padding: 4px 6px 0 6px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--bg-1);
+  flex: 1; min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }

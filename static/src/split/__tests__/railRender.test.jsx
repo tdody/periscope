@@ -293,7 +293,7 @@ describe("delegation lineage placement", () => {
     const w = paneWin({ pid: "work1", index: 1, target: "managed:1", name: "porter", pane_id: "%2",
                         spawned_by: "lead1", spawner_name: "world-model-driver",
                         status_line: "porting the mover" });
-    const html = render(<PaneHeader w={w} mode="terminal" onMode={() => {}} />);
+    const html = render(<PaneHeader w={w} />);
     expect(html).toContain("header-lineage");
     expect(html).toContain("↳ launched by world-model-driver");
     expect(html).not.toContain("lineage-gone");   // live lead stays clickable
@@ -308,7 +308,7 @@ describe("delegation lineage placement", () => {
     windows.value = [];
     const w = paneWin({ pid: "work1", index: 1, target: "managed:1", name: "porter", pane_id: "%2",
                         spawned_by: "gone", spawner_name: "model-migration" });
-    const html = render(<PaneHeader w={w} mode="terminal" onMode={() => {}} />);
+    const html = render(<PaneHeader w={w} />);
     expect(html).toContain("↳ launched by model-migration");
     expect(html).toContain("lineage-gone");
   });
@@ -316,7 +316,7 @@ describe("delegation lineage placement", () => {
   it("shows no lineage line on a hand-created pane's header", () => {
     windows.value = [];
     const w = paneWin({ pid: "solo1", index: 0, target: "managed:0", name: "claude", pane_id: "%1" });
-    expect(render(<PaneHeader w={w} mode="terminal" onMode={() => {}} />)).not.toContain("lineage");
+    expect(render(<PaneHeader w={w} />)).not.toContain("lineage");
   });
 });
 

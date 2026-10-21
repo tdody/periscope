@@ -3,7 +3,7 @@ import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { passesFilter } from "../filter.js";
 import { Inspector } from "../inspector/Inspector.jsx";
-import { computeMode, PaneHeader } from "../split/Detail.jsx";
+import { computeMode, ModeToggle, PaneHeader, TabStrip } from "../split/Detail.jsx";
 import { AGENT_META, paneLabel } from "../util.js";
 
 describe("agent presentation", () => {
@@ -34,10 +34,23 @@ describe("agent presentation", () => {
       mem: { rss_gb: 4, age_s: 86400 },
     };
     expect(computeMode(w)).toBe("terminal");
-    const html = render(h(PaneHeader, { w, mode: "terminal", onMode: () => {} }));
-    expect(html).not.toContain("Transcript");
+    const html = render(h(PaneHeader, { w }));
     expect(html).not.toContain("header-rename");
     expect(html).not.toContain("header-mem");
+    expect(html).toContain('data-agent="codex"');
+  });
+
+  it("keeps the tab list to tabs and the toggle beside it, out of the header", () => {
+    const w = { agent: "claude", pid: "claude-1", target: "dev:2", state: "idle" };
+    const strip = render(h(TabStrip, { pid: w.pid, paneLabel: "dev" }));
+    expect(strip).toContain('role="tablist"');
+    expect(strip).not.toContain("Transcript");
+    const toggle = render(h(ModeToggle, { mode: "terminal", onMode: () => {} }));
+    expect(toggle).toMatch(/class="is-active"[^>]*>Terminal</);
+    // The header names the agent (its CSS keeps the toggle's old line height) and holds no toggle.
+    const header = render(h(PaneHeader, { w }));
+    expect(header).toContain('data-agent="claude"');
+    expect(header).not.toContain("Transcript");
   });
 
   it("does not show Claude channel-link prompts for Codex", () => {

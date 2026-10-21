@@ -13,13 +13,14 @@
 // Task 8). They are inert placeholders until then; the vanilla path still owns
 // those surfaces while only chrome is Preact-mounted.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { multiAccount } from "../accounts.js";
 import { useEscape } from "../hooks/useEscape.js";
 import { windows } from "../store.js";
 import { track } from "../track.js";
 import { FilterBar } from "./FilterBar.jsx";
+import { PanelToggles } from "./PanelToggles.jsx";
 import { SpawnAccountPicker } from "./SpawnAccountPicker.jsx";
 import { SpawnEffortPicker } from "./SpawnEffortPicker.jsx";
-import { PanelToggles } from "./PanelToggles.jsx";
 import { SpawnModelPicker } from "./SpawnModelPicker.jsx";
 import { Tamagotchi } from "./Tamagotchi.jsx";
 import { UpdatePill } from "./UpdatePill.jsx";
@@ -124,7 +125,10 @@ export function Header() {
   }, []);
 
   return (
-    <header class="periscope-header" ref={headerRef}>
+    // data-pin-rows: the spawn pins stack three rows when the account row
+    // shows (SpawnAccountPicker), which makes the header tall enough for the
+    // tamagotchi at 5x (styles.css, .tama).
+    <header class="periscope-header" ref={headerRef} data-pin-rows={multiAccount() ? 3 : 2}>
       <div class="topbar">
         <span class="brand">
           periscope<i class="brand-cursor"></i>
