@@ -19,9 +19,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { accountLabel, moveAccountTarget, multiAccount } from "../accounts.js";
 import { profileLabel } from "../profiles.js";
 import { AGENT_META, memHint, paneLabel, prStateMeta, prUrl, relTime } from "../util.js";
-import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 import { waitTier } from "./attention.js";
 import { ctxClass } from "./ctxBand.js";
+import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 
 // Narrator status dims after 15 min: the work moved on (or the pane went
 // quiet) and the one-liner no longer reflects "now".
