@@ -337,6 +337,63 @@ html, body {
   margin-left: auto;
 }
 .meta b { color: var(--fg-1); font-weight: 500; }
+
+/* Claude tamagotchi (chrome/Tamagotchi.jsx): the easter egg in the top-right
+   corner. A 34×24 pixel scene at 2× — small enough to sit beside the counts
+   without growing the top bar. CSS transforms on SVG groups move in scene
+   units, hence the sub-pixel distances. */
+.tama {
+  flex: 0 0 auto; width: 68px; height: 48px; padding: 0;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg-1); cursor: pointer; overflow: hidden;
+}
+.tama:hover { border-color: var(--fg-3); }
+.tama svg { display: block; width: 100%; height: 100%; }
+.tama g, .tama rect, .tama path, .tama text { transform-box: fill-box; }
+.tama-creature { transform-origin: center bottom; }
+.tama-eyes { transform-origin: center; animation: tama-blink 4.5s infinite; }
+@keyframes tama-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.15); } }
+.tama:has([data-activity="sleep"]) .tama-creature { animation: tama-breathe 3.2s ease-in-out infinite; }
+@keyframes tama-breathe { 50% { transform: scaleY(0.93); } }
+.tama:has([data-activity="code"]) .tama-creature,
+.tama:has([data-activity="eat"]) .tama-creature { animation: tama-bob 0.6s steps(2) infinite; }
+.tama:has([data-activity="run"]) .tama-creature { animation: tama-bob 0.3s steps(2) infinite; }
+@keyframes tama-bob { 50% { transform: translateY(-0.5px); } }
+.tama-legs-b { opacity: 0; }
+.tama:has([data-activity="run"]) .tama-legs-a { animation: tama-stride 0.3s steps(1) infinite; }
+.tama:has([data-activity="run"]) .tama-legs-b { animation: tama-stride 0.3s steps(1) infinite reverse; }
+@keyframes tama-stride { 0% { opacity: 1; } 50% { opacity: 0; } }
+.tama-z { animation: tama-float 3s linear infinite; }
+.tama-z2 { animation-delay: -1.5s; }
+@keyframes tama-float {
+  0% { transform: translate(0, 2px); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translate(2px, -4px); opacity: 0; }
+}
+.tama-steam { animation: tama-steam 2s ease-in infinite; }
+.tama-steam2 { animation-delay: -1s; }
+@keyframes tama-steam {
+  0% { transform: translateY(1px); opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { transform: translateY(-3px); opacity: 0; }
+}
+.tama-cursor { animation: tama-cursor 1s steps(1) infinite; }
+@keyframes tama-cursor { 50% { opacity: 0; } }
+.tama-motion rect { animation: tama-motion 0.6s linear infinite; }
+.tama-motion rect:nth-child(2) { animation-delay: -0.2s; }
+.tama-motion rect:nth-child(3) { animation-delay: -0.4s; }
+@keyframes tama-motion { 0% { transform: translateX(2px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateX(-2px); opacity: 0; } }
+.tama-sweat { animation: tama-steam 1.2s ease-in infinite; }
+.tama-page { transform-origin: left center; animation: tama-page 5s ease-in-out infinite; }
+@keyframes tama-page { 0%, 70% { transform: scaleX(1); } 85%, 100% { transform: scaleX(-1); } }
+/* Petting: a hop and a heart, replayed on every click (keyed in the JSX). */
+.tama .tama-creature.tama-hop { animation: tama-hop 0.6s ease-out 1; }
+@keyframes tama-hop { 35% { transform: translateY(-3px); } }
+.tama-heart { animation: tama-heart 0.9s ease-out forwards; }
+@keyframes tama-heart { 0% { transform: translateY(2px) scale(0.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-3px) scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tama * { animation: none !important; } }
+/* A nicety, not a control: give the room back on narrow windows. */
+@media (max-width: 1100px) { .tama { display: none; } }
 .meta .count-needs   { color: var(--s-needs); }
 .meta .count-working { color: var(--s-working); }
 .meta .count-done    { color: var(--s-done); }
