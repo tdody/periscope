@@ -121,19 +121,35 @@ const WIDTH_PIN_TOLERANCE = 4;   // cols; absorbs scrollbar/rounding wobble, not
 // pane under the live one. A pane is shorter than the container both when its
 // window is split (periscope sizes the window, the pane gets a slice) and
 // after a height-only resize, which is deliberately not sent (scheduleFit).
-let paneRows = 0;                // tmux's pane height, from the last size message
+// Cols follow the pane the same way, so a left/right split shows the pane's
+// width instead of flipping between it and the container's on every fit.
+let paneCols = 0;                // tmux's pane dims, from the last size message
+let paneRows = 0;
 let fitRows = 0;                 // the container's height in rows — what we ask tmux for
 
 // Pure: the xterm dims for a proposed fit. Width snaps to the pin within
-// tolerance (and re-pins beyond it); height is the pane's when known.
-export function fitDims(proposedCols, proposedRows, pinned, knownPaneRows) {
+// tolerance (and re-pins beyond it); each dimension is the pane's when known.
+export function fitDims(proposedCols, proposedRows, pinned, knownPaneCols, knownPaneRows) {
   let cols = proposedCols;
   let pin = pinned;
   if (pin > 0 && cols !== pin) {
     if (Math.abs(cols - pin) > WIDTH_PIN_TOLERANCE) pin = cols;
     else cols = pin;
   }
-  return { cols, rows: knownPaneRows > 0 ? knownPaneRows : proposedRows, pinnedCols: pin };
+  return {
+    cols: knownPaneCols > 0 ? Math.min(knownPaneCols, cols) : cols,
+    rows: knownPaneRows > 0 ? knownPaneRows : proposedRows,
+    pinnedCols: pin,
+  };
+}
+
+// Pure: the dims to ask tmux for, on a resize or a reconnect — the CONTAINER's
+// (the pinned width, the fitted rows), never the xterm's. Those are the pane's,
+// a slice of the window on a split, and resize-window applies the hint to the
+// whole window: echoing them back shrank a split window on every reconnect.
+// The xterm's dims stand in only until a fit has measured the container.
+export function hintDims({ pinnedCols, fitRows, termCols, termRows }) {
+  return { cols: pinnedCols || termCols, rows: fitRows || termRows };
 }
 let containerEl = null;          // set by setTerminalContainer() before startLiveTerminal()
 let xtermHost = null;            // persistent parent for term.open(); moved between mounts
@@ -703,6 +719,7 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "size") {
+          paneCols = msg.cols;
           paneRows = msg.rows;
           term.resize(msg.cols, msg.rows);
         } else if (msg.type === "mouse") {
@@ -743,9 +760,9 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       if (!term || termWsTarget !== target || termIntentionalClose) return;
       // Re-send current dims so the reconnected server resizes tmux before
       // its initial paint — same reasoning as the first connect. The
-      // container's rows, not term.rows: those are the pane's, and on a
-      // split window echoing them back would shrink the window every retry.
-      connectTerminalWs(target, term.cols, fitRows || term.rows);
+      // container's, not term's: those are the pane's (hintDims).
+      const hint = hintDims({ pinnedCols, fitRows, termCols: term.cols, termRows: term.rows });
+      connectTerminalWs(target, hint.cols, hint.rows);
     }, delay);
   };
 }
@@ -768,7 +785,7 @@ function scheduleFit() {
     // Rows stay at the pane's height (see paneRows) — proposeDimensions, not
     // fit(), so the xterm never transiently grows and drags scrollback down.
     fitRows = proposed.rows;
-    const next = fitDims(proposed.cols, proposed.rows, pinnedCols, paneRows);
+    const next = fitDims(proposed.cols, proposed.rows, pinnedCols, paneCols, paneRows);
     pinnedCols = next.pinnedCols;
     if (term.cols !== next.cols || term.rows !== next.rows) term.resize(next.cols, next.rows);
     // Only send a resize message when the dims actually changed since the
@@ -790,12 +807,15 @@ function scheduleFit() {
     //      re-syncs height — empty only because the xterm stays at the
     //      pane's height (paneRows); grown to the container, those rows
     //      showed a stale copy of the screen.
-    if (term.cols === lastSentCols) return;
+    // Compared and sent as the container's dims (hintDims): term.cols is the
+    // pane's, which on a left/right split never equals what we last sent.
+    const ask = hintDims({ pinnedCols, fitRows, termCols: term.cols, termRows: term.rows });
+    if (ask.cols === lastSentCols) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
-      lastSentCols = term.cols;
-      _lastSentRows = fitRows;
+      lastSentCols = ask.cols;
+      _lastSentRows = ask.rows;
       // The server's reconcile answers with the pane's real size.
-      termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: fitRows }));
+      termWs.send(JSON.stringify({ type: "resize", cols: ask.cols, rows: ask.rows }));
     }
   }, 80);
 }
@@ -817,6 +837,7 @@ export function stopLiveTerminal() {
   }
   lastSentCols = 0;
   _lastSentRows = 0;
+  paneCols = 0;
   paneRows = 0;
   if (fitDebounce) {
     clearTimeout(fitDebounce);
