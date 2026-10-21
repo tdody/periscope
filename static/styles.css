@@ -356,7 +356,7 @@ html, body {
 }
 .tama:hover { border-color: var(--fg-3); }
 .tama svg { display: block; width: 100%; height: 100%; }
-.tama g, .tama rect, .tama path, .tama text { transform-box: fill-box; }
+.tama g, .tama rect, .tama path, .tama text, .tama circle, .tama ellipse, .tama polygon, .tama line { transform-box: fill-box; }
 .tama-creature { transform-origin: center bottom; }
 .tama-eyes { transform-origin: center; animation: tama-blink 4.5s infinite; }
 @keyframes tama-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.15); } }
@@ -399,6 +399,7 @@ html, body {
   100% { transform: translate(-3px, 21px) rotate(160deg); opacity: 0.2; }
 }
 .tama-sun { transform-origin: center; animation: tama-sun 3s ease-in-out infinite alternate; }
+@keyframes tama-sun { to { transform: scale(1.12); } }
 /* Occasions: a flapping bat, a flickering jack-o'-lantern, twinkling tree
    lights, fireworks. */
 .tama-bat { transform-origin: center; animation: tama-flap 0.4s steps(2) infinite; }
@@ -414,7 +415,6 @@ html, body {
   20% { opacity: 1; }
   100% { transform: scale(1.15); opacity: 0; }
 }
-@keyframes tama-sun { to { transform: scale(1.12); } }
 .tama-flame { transform-origin: center bottom; animation: tama-flicker 0.9s ease-in-out infinite alternate; }
 .tama-flame2 { animation-duration: 0.6s; animation-delay: -0.3s; }
 @keyframes tama-flicker { 0% { transform: scaleY(1) skewX(0deg); } 50% { transform: scaleY(0.82) skewX(-4deg); } 100% { transform: scaleY(1.08) skewX(3deg); } }
@@ -422,14 +422,13 @@ html, body {
 @keyframes tama-glow { from { opacity: 0.12; } to { opacity: 0.24; } }
 .tama-page { transform-origin: left center; animation: tama-page 5s ease-in-out infinite; }
 @keyframes tama-page { 0%, 70% { transform: scaleX(1); } 85%, 100% { transform: scaleX(-1); } }
-/* Petting: a hop and a heart, replayed on every click (keyed in the JSX). */
-.tama .tama-creature.tama-hop { animation: tama-hop 0.6s ease-out 1; }
+/* Petting: a hop and a heart, replayed on every click (keyed in the JSX).
+   Doubled class: the per-activity `.tama:has([data-activity=…]) .tama-creature`
+   rules above tie this at (0,3,0), and a tie resolves by source order. */
+.tama .tama-creature.tama-hop.tama-hop { animation: tama-hop 0.6s ease-out 1; }
 @keyframes tama-hop { 35% { transform: translateY(-3px); } }
 .tama-heart { animation: tama-heart 0.9s ease-out forwards; }
 @keyframes tama-heart { 0% { transform: translateY(2px) scale(0.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-3px) scale(1); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .tama * { animation: none !important; } }
-/* A nicety, not a control: give the room back on narrow windows. */
-@media (max-width: 1100px) { .tama { display: none; } }
 .meta .count-needs   { color: var(--s-needs); }
 .meta .count-working { color: var(--s-working); }
 .meta .count-done    { color: var(--s-done); }
@@ -1005,6 +1004,7 @@ body.modal-open { overflow: hidden; }
    the squeeze. */
 @media (max-width: 1100px) {
   .modal-side { display: none; }
+  .tama { display: none; } /* a nicety, not a control */
 }
 
 .modal-side-section {
@@ -1300,6 +1300,7 @@ body.modal-open { overflow: hidden; }
   /* Row-enter animations too — the transition clamp above doesn't cover
      keyframes, and enter motion is the one thing that would still move. */
   .attn-row, .rail-row { animation: none !important; }
+  .tama * { animation: none !important; }
 }
 
 /* ─── Motion on data-driven change ───────────────────────────────
