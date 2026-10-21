@@ -404,6 +404,29 @@ html, body {
 .tama:has([data-activity="run"]) .tama-legs-a { animation: tama-stride 0.3s steps(1) infinite; }
 .tama:has([data-activity="run"]) .tama-legs-b { animation: tama-stride 0.3s steps(1) infinite reverse; }
 @keyframes tama-stride { 0% { opacity: 1; } 50% { opacity: 0; } }
+/* The evening pastimes (tamagotchi.PASTIMES, TamaPastimes.jsx). Before the
+   mood and duty rules, which outrank them at equal specificity by coming later. */
+.tama:has([data-activity="cycle"]) .tama-creature { animation: tama-bob 0.4s steps(2) infinite; }
+.tama:has([data-activity="cycle"]) .tama-legs-a { animation: tama-stride 0.4s steps(1) infinite; }
+.tama:has([data-activity="cycle"]) .tama-legs-b { animation: tama-stride 0.4s steps(1) infinite reverse; }
+.tama .tama-spokes, .tama .tama-crank { transform-origin: center; animation: tama-spin 0.5s linear infinite; }
+@keyframes tama-spin { to { transform: rotate(360deg); } }
+.tama:has([data-activity="music"]) .tama-creature { animation: tama-bob 0.5s steps(2) infinite; }
+.tama .tama-strum { animation: tama-tap 0.25s steps(2) infinite; }
+.tama .tama-note { animation: tama-float 2.4s linear infinite; }
+.tama .tama-note2 { animation-delay: -1.2s; }
+.tama:has([data-activity="beer"]) .tama-creature, .tama .tama-friend { animation: tama-bob 0.9s steps(2) infinite; }
+.tama .tama-friend { animation-delay: -0.45s; }
+.tama .tama-clink { animation: tama-clink 2.4s ease-in-out infinite; }
+.tama .tama-clink2 { animation-name: tama-clink-r; }
+@keyframes tama-clink { 0%, 60%, 100% { transform: translateX(0); } 75% { transform: translateX(0.5px); } }
+@keyframes tama-clink-r { 0%, 60%, 100% { transform: translateX(0); } 75% { transform: translateX(-0.5px); } }
+.tama .tama-cheers { opacity: 0; animation: tama-cheers 2.4s steps(1) infinite; }
+@keyframes tama-cheers { 72% { opacity: 1; } 82% { opacity: 0; } }
+.tama:has([data-activity="kids"]) .tama-creature { animation: tama-bob 0.7s steps(2) infinite; }
+.tama .tama-kid { animation: tama-kid 0.7s ease-in-out infinite; }
+.tama .tama-kid2 { animation-delay: -0.35s; }
+@keyframes tama-kid { 50% { transform: translateY(-1.4px); } }
 .tama-z { animation: tama-float 3s linear infinite; }
 .tama-z2 { animation-delay: -1.5s; }
 @keyframes tama-float {

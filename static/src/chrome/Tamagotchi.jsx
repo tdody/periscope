@@ -1,14 +1,17 @@
 // Easter egg in the header's top-right corner: Clawd, the Claude Code banner
 // mascot, living its day on the local clock: asleep, coffee, coding, lunch,
-// a run, dinner, a book (tamagotchi.js has the schedule). Double-click to pet it.
+// an evening pastime per half hour (a run, a ride, music, a beer with friends,
+// the kids), dinner, a book (tamagotchi.js has the schedule; TamaPastimes.jsx
+// draws the pastimes and the dishes). Double-click to pet it.
 //
 // It's also on duty (clawdDuty.js decides what, TamaDuty.jsx draws it): one
 // thing at a time, highest priority first, with a bubble counting what's
 // waiting — and a click goes straight to it. Petting stays a single click
 // when nothing is pending.
 //
-// Coding happens at a desk, reading in an armchair by the fireplace, and the
-// run outdoors in the current season; the rest are standing poses with a prop.
+// Coding happens at a desk, reading in an armchair by the fireplace, the run
+// and the ride outdoors in the current season; the rest are standing poses
+// with a prop.
 //
 // Pure pixel art: a 34×24 scene where each sprite cell is 1×2 (the banner's
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
@@ -31,17 +34,25 @@ import {
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
+import { Bike, ClawdPint, Dish, Friend, Guitar, Helmet, Kids, MusicStand } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, codingMood, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS, MOODS, moodReason,
   msUntilNextChange, occasionShown, SKIN, seasonAt, Y0,
 } from "./tamagotchi.js";
 
-
 // Where the mascot stands per activity: centred on its feet by default; the
 // two sitting scenes shift it left to make room for the desk / fireplace, and
-// tuck its legs out of sight.
-const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
-const STANDING = { x0: 8, sitting: false };
+// tuck its legs out of sight. The friend and the kids need the right half,
+// the music stand a little of it; the ride lifts Clawd onto the saddle.
+const POSES = {
+  code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true },
+  music: { x0: 6 }, beer: { x0: 1 }, kids: { x0: 1 }, cycle: { x0: 7, lift: 2 },
+};
+const STANDING = { x0: 8 };
+// The two stride frames alternate: running, and pedalling.
+const STRIDING = new Set(["run", "cycle"]);
+// Nothing on duty, Clawd smiles in company.
+const SMILING = new Set(["beer", "kids"]);
 const BODY_CELLS = gridCells(BODY);
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
@@ -167,11 +178,13 @@ function JackOLantern({ x, y }) {
 }
 
 // Where the jack-o'-lantern sits in each non-run scene: on the floor, under
-// the desk, on the mantel.
+// the desk, on the mantel. The friend and the kids leave no floor for one.
 const JACK_SPOTS = {
   sleep: { x: 1.5, y: 16.4 },
   coffee: { x: 1.5, y: 16.4 },
   eat: { x: 1.5, y: 16.4 },
+  music: { x: 1.5, y: 16.4 },
+  cycle: { x: 0.6, y: 16.4 },
   code: { x: 25.5, y: 16.4 },
   read: { x: 24.6, y: 3.4 },
 };
@@ -320,7 +333,9 @@ function CodeScreen({ mood }) {
   );
 }
 
-function Behind({ activity, season, occasion, ghost, coffee, ringing, keyboard = true, mood = "calm", screen = null }) {
+function Behind({
+  activity, season, occasion, ghost, coffee, ringing, keyboard = true, mood = "calm", screen = null, dish,
+}) {
   switch (activity) {
     case "sleep":
       if (ringing) return null;
@@ -411,15 +426,20 @@ function Behind({ activity, season, occasion, ghost, coffee, ringing, keyboard =
         </g>
       );
     case "eat":
+      return <Dish dish={dish} />;
+    case "cycle":
       return (
         <g>
-          <line x1="29.2" y1="10.4" x2="28.1" y2="15.6" stroke="#b07a4f" stroke-width="0.45" />
-          <line x1="30.4" y1="10.7" x2="29" y2="15.6" stroke="#b07a4f" stroke-width="0.45" />
-          <rect x="26.8" y="15.3" width="4.9" height="1.5" rx="0.7" fill="#f8f4ea" />
-          <rect x="26" y="16.2" width="6.5" height="2.8" rx="1.2" fill="#e8e2d4" />
-          <rect class="tama-steam" x="31.6" y="12.2" width="0.5" height="1.6" fill="var(--fg-3)" />
+          <Scenery season={season} night={false} />
+          <Bike />
         </g>
       );
+    case "music":
+      return <MusicStand />;
+    case "beer":
+      return <Friend />;
+    case "kids":
+      return <Kids />;
     case "run":
       return (
         <g>
@@ -566,12 +586,12 @@ function DeskProps({ kind }) {
 
 export function TamaScene({
   activity, season = "summer", occasion = null, coffee = false, mood = "calm", petted = false, petKey = 0,
-  duty = null, working, walled = null, party = false,
+  duty = null, working, walled = null, party = false, dish,
 }) {
   const kind = duty?.kind || null;
   const view = deskView(activity, kind, !!walled);
   const { scene, atDesk } = view;
-  const { x0, sitting } = POSES[scene] || STANDING;
+  const { x0, sitting = false, lift = 0 } = POSES[scene] || STANDING;
   const ghost = occasion === "halloween" && activity === "run";
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
@@ -598,6 +618,7 @@ export function TamaScene({
     : celebrating ? <HappyEyes x0={x0} />
     : pose === "api" ? <XEyes x0={x0} />
     : pose === "update" ? <LookDown x0={x0} />
+    : !pose && SMILING.has(scene) ? <HappyEyes x0={x0} />
     : <Eyes x0={x0} />;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
@@ -608,11 +629,16 @@ export function TamaScene({
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
       <Behind activity={scene === "nap" ? "code" : scene} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
               ringing={ringing} keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"}
-              screen={screen} />
+              screen={screen} dish={dish} />
       {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
+      {/* The lift sits on a wrapper: the creature's CSS bob sets `transform`. */}
+      <g transform={lift ? `translate(0 ${-lift})` : undefined}>
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
         {face}
+        {scene === "music" && <Guitar x0={x0} />}
+        {scene === "beer" && <ClawdPint x0={x0} />}
+        {scene === "cycle" && !hat && <Helmet x0={x0} />}
         {pose === "api" && <Stars x0={x0} />}
         {pose === "ctx" && <Worried x0={x0} />}
         {atDesk && celebrating && <ArmsUp x0={x0} />}
@@ -620,13 +646,14 @@ export function TamaScene({
         {deskBell && <SlapHand />}
         {pose === "bell" && !deskBell && <Startle x0={x0} />}
         {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
-        {activity === "run" && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
+        {STRIDING.has(activity) && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && <Pail x0={x0} />}
         {activity === "run" && season === "winter" && !hat && !ghost && (
           <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
         )}
         {hat === "santa" && <SantaHat x0={x0} />}
         {hat === "party" && <PartyHat x0={x0} />}
+      </g>
       </g>
       <InFront activity={activity} />
       {(atDesk || deskBell) && <DeskProps kind={kind} />}
@@ -670,7 +697,7 @@ export function Tamagotchi() {
   }, [now]);
   // Minute backstop for a laptop that slept through the boundary. Keeps the
   // old date while nothing drawn would change, so the ~250-node SVG isn't
-  // rebuilt every minute for the nine changes a day.
+  // rebuilt every minute for the dozen changes a day.
   useEffect(() => {
     const i = setInterval(() => {
       const d = new Date();
@@ -763,7 +790,7 @@ export function Tamagotchi() {
       onClick={click.onClick}
       onDblClick={click.onDblClick}
     >
-      <TamaScene activity={a.id} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
+      <TamaScene activity={a.id} dish={a.dish} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
                  mood={mood} petted={petted} petKey={pets}
                  duty={top && { kind: top.kind, label: top.label, urgent: !!top.urgent, more: d.more, pct: top.pct, cost: top.cost }}
                  working={d.working} walled={d.wall} party={d.items.some((i) => i.kind === "merged")} />

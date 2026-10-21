@@ -28,12 +28,64 @@ describe("<TamaScene>", () => {
 
   it("tucks the legs away in the seated scenes and keeps the standing poses on their feet", () => {
     for (const id of ["code", "read"]) expect(render(<TamaScene activity={id} />), id).not.toContain("tama-legs-a");
-    for (const id of ["sleep", "coffee", "eat", "run"]) expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
+    for (const id of ["sleep", "coffee", "eat", "run", "cycle", "music", "beer", "kids"]) {
+      expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
+    }
   });
 
-  it("only dresses the run in the season", () => {
-    expect(render(<TamaScene activity="run" season="winter" />)).toContain("tama-scenery");
-    expect(render(<TamaScene activity="code" season="winter" />)).not.toContain("tama-scenery");
+  it("only dresses the outdoor pastimes in the season", () => {
+    for (const id of ["run", "cycle"]) expect(render(<TamaScene activity={id} season="winter" />), id).toContain("tama-scenery");
+    for (const id of ["code", "music", "beer", "kids"]) {
+      expect(render(<TamaScene activity={id} season="winter" />), id).not.toContain("tama-scenery");
+    }
+  });
+});
+
+describe("pastimes and meals", () => {
+  // The order a group's markup opens in, so "inside Clawd's group" is checkable.
+  const inCreature = (html, cls) => {
+    const start = html.indexOf("tama-creature");
+    const end = html.indexOf("tama-legs-a");
+    const at = html.indexOf(cls);
+    return start > -1 && at > start && at < end;
+  };
+
+  it.each(MEALS.map((m) => m.id))("serves %s", (dish) => {
+    expect(render(<TamaScene activity="eat" dish={dish} />)).toContain(`data-dish="${dish}"`);
+  });
+
+  it("serves ramen when no dish is named", () => {
+    expect(render(<TamaScene activity="eat" />)).toContain('data-dish="ramen"');
+  });
+
+  it("pedals the bike in a helmet, under any hat instead", () => {
+    const html = render(<TamaScene activity="cycle" />);
+    expect(html).toContain("tama-bike");
+    expect(html).toContain("tama-legs-b");
+    expect(inCreature(html, "tama-helmet")).toBe(true);
+    expect(render(<TamaScene activity="cycle" occasion="yearend" />)).not.toContain("tama-helmet");
+    expect(render(<TamaScene activity="cycle" season="winter" />)).not.toContain("tama-snowcap");
+  });
+
+  it("holds the guitar in Clawd's group, so it bobs with the strum", () => {
+    expect(inCreature(render(<TamaScene activity="music" />), "tama-guitar")).toBe(true);
+  });
+
+  it("clinks a pint with a friend, and the kids come in twos", () => {
+    const beer = render(<TamaScene activity="beer" />);
+    expect(beer).toContain("tama-friend");
+    expect(beer.split("tama-pint").length - 1).toBe(2);
+    expect(render(<TamaScene activity="kids" />).split('class="tama-kid').length - 1).toBe(2);
+  });
+
+  it("smiles with friends and the kids, unless something on duty takes the face", () => {
+    for (const id of ["beer", "kids"]) {
+      expect(render(<TamaScene activity={id} />), id).toContain("tama-happy-eyes");
+      const bell = render(<TamaScene activity={id} duty={{ kind: "bell", label: "1", more: 0 }} />);
+      expect(bell, id).not.toContain("tama-happy-eyes");
+      expect(bell, id).toContain("tama-startle");
+    }
+    expect(render(<TamaScene activity="music" />)).not.toContain("tama-happy-eyes");
   });
 });
 
@@ -174,6 +226,14 @@ describe("<Tamagotchi>", () => {
     accounts.value = [{ id: "b", label: "B" }];
     furiousB();
     expect(render(<Tamagotchi />)).toContain('title="Claude is coding furiously (1pm–5pm) · week usage is burning 🔥"');
+  });
+
+  it("names the half hour and the dish in the hover line", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(17, 40));
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is [^"(]+ \(5:30pm–6pm\)/);
+    vi.setSystemTime(at(12, 10));
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\)/);
   });
 
   it("drops the mood and its reason outside the coding hours", () => {
