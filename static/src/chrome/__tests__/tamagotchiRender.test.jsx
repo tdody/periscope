@@ -4,8 +4,8 @@
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accounts, usage } from "../../store.js";
+import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { SCHEDULE } from "../tamagotchi.js";
-import { TamaScene, Tamagotchi } from "../Tamagotchi.jsx";
 
 const ids = [...new Set(SCHEDULE.map((s) => s.id))];
 

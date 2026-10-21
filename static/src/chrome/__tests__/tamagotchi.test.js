@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityAt, activityLabel, codingMood, moodReason, BODY, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,
+  activityAt, activityLabel, BODY, codingMood, gridCells, headlineAt, hourLabel, isFirstDayOfSeason, LEGS,moodReason, 
   msUntilNextChange, occasionAt, occasionShown, SCHEDULE, seasonAt, seasonStart,
 } from "../tamagotchi.js";
 
