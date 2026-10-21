@@ -1,6 +1,7 @@
 """Tests for periscope.tmux_persist — the ~/.tmux.conf line rules and the
 healthz status built from live tmux options."""
 
+import subprocess
 import time
 from pathlib import Path
 
@@ -122,6 +123,21 @@ def test_owned_conf_declares_plugins_nobody_else_does(home):
     (home / ".tmux.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
     text = tp.owned_conf_text(REPO, tp.plugins_declared_elsewhere())
     assert tp.declared_plugins(text) == ["tpm", "tmux-resurrect"]
+
+
+def test_install_omits_declared_plugins_and_converges(home, monkeypatch):
+    # The root-cause fix is install's own call: the helpers above pinned
+    # nothing about it, and owned_conf_text(REPO) there re-declared all three.
+    # rc 1 skips TPM's install_plugins and the live-server re-source.
+    monkeypatch.setattr(tp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).mkdir(parents=True)
+    (home / ".tmux.conf").write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
+    tp.install(REPO)
+    assert tp.declared_plugins(tp.owned_conf().read_text()) == []
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    # Sourced now, the owned file must not count as "elsewhere" the second time.
+    assert not any(a.startswith("wrote") for a in tp.install(REPO))
 
 
 def test_plugin_declarations_follow_sourced_files(home):
