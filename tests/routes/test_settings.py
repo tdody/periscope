@@ -203,3 +203,31 @@ def test_patch_poke_grace_min_bounds(client, mocker):
     assert client.patch("/api/settings", json={"poke_grace_min": 0}).status_code == 400
     assert client.patch("/api/settings", json={"poke_grace_min": 721}).status_code == 400
     update_spy.assert_called_once_with({"poke_grace_min": 45})
+
+
+def test_patch_repo_roots_normalizes_and_validates(client, mocker, tmp_path):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    mocker.patch("periscope.routes.settings.get_settings", return_value={})
+    a = tmp_path / "a"
+    a.mkdir()
+    r = client.patch("/api/settings", json={"repo_roots": [f"{a}/", "", str(a), "~"]})
+    assert r.status_code == 200, r.text
+    # Trailing slash stripped, blanks dropped, duplicates collapsed, `~` kept
+    # as typed (expanded at read, store.repo_roots).
+    update_spy.assert_called_once_with({"repo_roots": [str(a), "~"]})
+
+
+def test_patch_repo_roots_rejects_a_non_directory(client, mocker, tmp_path):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    r = client.patch("/api/settings", json={"repo_roots": [str(tmp_path / "nope")]})
+    assert r.status_code == 400
+    assert "not a directory" in r.json()["detail"]
+    update_spy.assert_not_called()
+
+
+def test_patch_repo_roots_null_clears(client, mocker):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    mocker.patch("periscope.routes.settings.get_settings", return_value={})
+    r = client.patch("/api/settings", json={"repo_roots": None})
+    assert r.status_code == 200
+    update_spy.assert_called_once_with({"repo_roots": None})

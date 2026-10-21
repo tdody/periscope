@@ -38,6 +38,7 @@ class SettingsPatch(BaseModel):
     editor: str | None = None
     poke_at: str | None = None
     poke_grace_min: int | None = None
+    repo_roots: list[str] | None = None
 
 
 @router.patch("/api/settings")
@@ -137,6 +138,26 @@ def settings_patch(body: SettingsPatch):
             patch["poke_grace_min"] = v
         else:
             raise HTTPException(400, f"poke_grace_min must be 1..720: {v!r}")
+
+    if "repo_roots" in sent:
+        v = body.repo_roots
+        if v is None:
+            patch["repo_roots"] = None
+        else:
+            # Reject a path that isn't a directory here, where the user can see
+            # it: the scan silently skips missing roots, so a typo would read
+            # as "periscope found nothing" with no further clue.
+            roots: list[str] = []
+            for raw in v:
+                r = raw.strip()
+                if not r:
+                    continue
+                r = r.rstrip("/") or "/"
+                if not os.path.isdir(os.path.expanduser(r)):
+                    raise HTTPException(400, f"repo root is not a directory: {r}")
+                if r not in roots:
+                    roots.append(r)
+            patch["repo_roots"] = roots
 
     if "editor" in sent:
         v = body.editor

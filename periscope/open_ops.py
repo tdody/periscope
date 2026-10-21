@@ -212,16 +212,18 @@ def ensure_session(
     return session, agent_pid
 
 
-def _discover_repos() -> set[str]:
-    """Known-project repos + git repos one level under ~/dev (skipping
-    hidden dirs + the worktrees container). Mirrors projects_discoverable."""
+def discover_repos() -> set[str]:
+    """Known-project repos + git repos one level under each settings.repo_roots
+    entry (skipping hidden dirs + the worktrees container)."""
     repos: set[str] = set()
     for p in projects.all_projects().values():
         if p.get("repo"):
             repos.add(os.path.realpath(p["repo"] or ""))
-    dev = Path.home() / "dev"
-    if dev.is_dir():
-        for child in dev.iterdir():
+    for root in store.repo_roots():
+        root_path = Path(root)
+        if not root_path.is_dir():
+            continue
+        for child in root_path.iterdir():
             if child.is_dir() and not child.name.startswith(".") \
                and child.name != "worktrees" and (child / ".git").exists():
                 repos.add(str(child.resolve()))
@@ -325,9 +327,11 @@ def open_target(
 
 
 def build_catalog() -> dict:
-    """GET /api/open/catalog payload: {repos:[...], worktrees:[...]}."""
+    """GET /api/open/catalog payload: {repos:[...], worktrees:[...], roots:[...]}.
+    `roots` is the expanded scan list, so an empty catalog can say where it
+    looked."""
     repos_out, worktrees_out = [], []
-    for repo in sorted(_discover_repos()):
+    for repo in sorted(discover_repos()):
         # Sorted by commit recency, NOT alphabetically: the launcher shows only
         # the first handful of branches and hides the rest behind a search, so
         # the order decides what's reachable without typing. `git branch` sorts
@@ -348,4 +352,4 @@ def build_catalog() -> dict:
                 "branch": branch,
                 "is_main": os.path.realpath(path) == os.path.realpath(repo),
             })
-    return {"repos": repos_out, "worktrees": worktrees_out}
+    return {"repos": repos_out, "worktrees": worktrees_out, "roots": store.repo_roots()}

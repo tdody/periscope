@@ -406,3 +406,11 @@ def test_poke_log_tolerates_a_state_file_that_predates_it(clean_state):
     assert store.get_poke_log() == {}
     store.record_poke("default", {"date": "2026-09-08", "at": 1, "resets_at": None, "verified": False})
     assert store.get_poke_log()["default"]["verified"] is False
+
+
+def test_repo_roots_defaults_to_dev_and_expands_tilde(clean_state, monkeypatch, tmp_path):
+    from periscope import store
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert store.repo_roots() == [str(tmp_path / "dev")]
+    clean_state["settings"]["repo_roots"] = ["~/code", "/srv/x"]
+    assert store.repo_roots() == [str(tmp_path / "code"), "/srv/x"]

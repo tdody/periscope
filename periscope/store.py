@@ -104,6 +104,7 @@ class Settings(TypedDict, total=False):
     editor: str  # display name of a KNOWN_EDITORS entry; unset => no open-in-editor action
     poke_at: str  # local HH:MM the session poke fires; unset => "08:00", "" => disabled (validated by PATCH /api/settings)
     poke_grace_min: int  # minutes past poke_at a missed poke may still fire; unset => 90
+    repo_roots: list[str]  # dirs scanned one level deep for repos, "~" allowed; unset => DEFAULT_REPO_ROOTS
 
 
 class PokeEntry(TypedDict):
@@ -573,6 +574,19 @@ def update_settings(patch: dict) -> None:
             else:
                 cur[k] = v
         _write_state(_STATE)
+
+
+DEFAULT_REPO_ROOTS = ("~/dev",)
+
+
+def repo_roots() -> list[str]:
+    """settings.repo_roots with `~` expanded. Stored as typed so the modal
+    shows `~/dev` back and state.json survives a different $HOME."""
+    with _STATE_LOCK:
+        roots = _STATE.get("settings", {}).get("repo_roots")
+    if roots is None:
+        roots = list(DEFAULT_REPO_ROOTS)
+    return [os.path.expanduser(r) for r in roots]
 
 
 def get_poke_log() -> dict[str, PokeEntry]:

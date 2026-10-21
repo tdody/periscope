@@ -29,6 +29,14 @@ uv run server.py
 Open <http://127.0.0.1:17374/>. Polls every 3s; the modal opens a live
 WebSocket bridge to the selected pane.
 
+### Opening a repo
+
+⌘K lists every git repo one level under each of your **repo roots**
+(⚙ settings → Repo roots; `~/dev` by default), plus anything periscope has
+opened before. A repo that lives elsewhere can be opened once by typing its
+path into ⌘K (`~/work/fdy` ↵) — it is registered from then on — or add its
+parent directory as a root.
+
 For the always-on / launchd-managed setup and the prod/dev port split,
 see [CLAUDE.md → Development workflow](./CLAUDE.md#development-workflow-prod--dev-split)
 and `bin/periscope`.

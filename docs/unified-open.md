@@ -72,10 +72,12 @@ Invariants worth knowing before touching it:
 - **`_layout_two_window` stamps BOTH windows** (claude + shell) so the full
   pane list is known synchronously — `place_in_rail` needs it without waiting
   for the next poll's `resolve_pids`.
-- **The catalog is repo/worktree-scoped (v1).** Arbitrary non-git dirs 400;
-  ad-hoc live sessions outside the discoverable roots are not rail-addable
-  (the old `OpenPickerModal` was retired). Widen the catalog if that need
-  returns.
+- **The catalog is repo/worktree-scoped (v1).** `discover_repos` scans each
+  `settings.repo_roots` entry one level deep (`~/dev` when unset) and unions
+  the registered projects, so a repo opened once by path stays listed
+  wherever it lives. Arbitrary non-git dirs 400; ad-hoc live sessions
+  outside the discoverable roots are not rail-addable (the old
+  `OpenPickerModal` was retired). Widen the catalog if that need returns.
 - **Real-tmux tests need a clean `.venv`.** `tests/test_open_ops.py` +
   `tests/test_worktree_spawn.py` spawn real tmux on an isolated `-L` socket
   (`PERISCOPE_TMUX_SOCKET`) with a stub exec (`PERISCOPE_CLAUDE_EXEC`); both
