@@ -33,6 +33,7 @@ export function SettingsModal() {
   const [overrides, setOverrides] = useState([]);
   const [editor, setEditor] = useState("");
   const [editorsAvailable, setEditorsAvailable] = useState([]);
+  const [roots, setRoots] = useState("");   // textarea text, one root per line
 
   useEffect(() => {
     const btn = document.getElementById("settings-btn");
@@ -55,6 +56,9 @@ export function SettingsModal() {
       // the stored value then shows as "(none)" rather than a dead option.
       setEditorsAvailable(body.editors_available || []);
       setEditor(s.editor ?? "");
+      // Unset shows the server default (store.DEFAULT_REPO_ROOTS) so a fresh
+      // install sees where periscope is looking before it saves anything.
+      setRoots((s.repo_roots ?? ["~/dev"]).join("\n"));
     })();
   }, [open.value]);
 
@@ -73,6 +77,7 @@ export function SettingsModal() {
       worktree_layout_overrides: overridesMap,
       // null clears; the server rejects any name it can't currently detect.
       editor: editor || null,
+      repo_roots: roots.split("\n").map((r) => r.trim()).filter(Boolean),
     };
     setSubmitting(true);
     const { error: err } = await modalRequest("save settings", "/api/settings", {
@@ -122,6 +127,20 @@ export function SettingsModal() {
               ))}
             </select>
           </label>
+          <label>
+            Repo roots
+            <textarea
+              id="settings-repo-roots"
+              rows={3}
+              spellcheck={false}
+              value={roots}
+              onInput={(e) => setRoots(e.currentTarget.value)}
+            />
+          </label>
+          <p class="settings-overrides-hint">
+            One directory per line. Repos one level under each are offered in ⌘K;
+            a repo elsewhere can be opened once by typing its path there.
+          </p>
           <label>
             Default worktree layout
             <select
