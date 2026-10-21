@@ -49,8 +49,7 @@ _PANE_FIELDS = 11
 
 _CHANNEL_RE = re.compile(r"--dangerously-load-development-channels (\S+)")
 # UUID-only: a captured --system-prompt can quote "--resume <word>" as text.
-_RESUME_ARG_RE = re.compile(
-    r"\s*--resume[= ]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b")
+_RESUME_ARG_RE = re.compile(r"\s*--resume[= ]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b")
 
 _CONTINUUM_SAVE_SH = Path.home() / ".tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
 
@@ -213,8 +212,7 @@ def _dedupe_resumes(
         def rank(i: int) -> tuple[float, bool, int]:
             parts = out[i].split("\t", _PANE_FIELDS - 1)
             pane_id = pane_map.get(f"{parts[1]}:{parts[2]}.{parts[5]}")
-            return (activity.get(pane_id, float("-inf")) if pane_id else float("-inf"),
-                    parts[8] == "1", -i)
+            return (activity.get(pane_id, float("-inf")) if pane_id else float("-inf"), parts[8] == "1", -i)
 
         keeper = max(idxs, key=rank)
         for i in idxs:
@@ -248,11 +246,9 @@ def rewrite_save_file(save_path: Path) -> int:
 
     # After the rewrite: a line keeps a captured `--resume` it already carried
     # (argv) even when unresolvable, so duplicates can come from either source.
-    out_lines, demoted = _dedupe_resumes(
-        out_lines, pane_map, session_status.pane_session_activity())
+    out_lines, demoted = _dedupe_resumes(out_lines, pane_map, session_status.pane_session_activity())
     if demoted:
-        print(f"resurrect-resume: dropped duplicate --resume on {', '.join(demoted)}",
-              file=sys.stderr)
+        print(f"resurrect-resume: dropped duplicate --resume on {', '.join(demoted)}", file=sys.stderr)
         rewritten += len(demoted)
 
     if rewritten:

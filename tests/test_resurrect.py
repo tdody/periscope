@@ -353,6 +353,7 @@ def test_rewrite_save_file_missing_db_is_noop(tmp_path, monkeypatch):
 
 # --- _dedupe_resumes: one pane per session keeps --resume ----------------
 
+
 def _active_line(session, window, pane, command, active):
     parts = _pane_line(session, window, pane, command).split("\t")
     parts[8] = active
@@ -377,7 +378,7 @@ def test_duplicate_resume_falls_back_to_active_then_first():
     lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "1")]
     out, demoted = resurrect._dedupe_resumes(lines, {}, {})
     assert demoted == ["p:6.0"]
-    assert out[0].endswith(":CLAUDE_CONFIG_DIR=/a claude")     # env prefix kept
+    assert out[0].endswith(":CLAUDE_CONFIG_DIR=/a claude")  # env prefix kept
     lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "0")]
     assert resurrect._dedupe_resumes(lines, {}, {})[1] == ["p:6.1"]
 
@@ -386,7 +387,7 @@ def test_distinct_sessions_and_prompt_text_untouched():
     lines = [
         _pane_line("p", "1", "0", f"claude --resume {SID}"),
         _pane_line("p", "2", "0", f"claude --resume {OLD_SID}"),
-        _pane_line("p", "3", "0", f"claude {SYS}"),           # "--resume not-a-flag" in text
+        _pane_line("p", "3", "0", f"claude {SYS}"),  # "--resume not-a-flag" in text
         _pane_line("p", "4", "0", f"claude {SYS}"),
     ]
     assert resurrect._dedupe_resumes(lines, {}, {}) == (lines, [])
@@ -397,8 +398,9 @@ def test_rewrite_save_file_dedupes_captured_resumes(tmp_path, monkeypatch):
     monkeypatch.setattr(resurrect, "_live_pane_map", dict)
     monkeypatch.setattr(resurrect.session_status, "pane_session_activity", dict)
     save = tmp_path / "last"
-    save.write_text("\n".join(
-        _active_line("p", "6", str(i), f"claude --resume {SID}", "1" if i == 1 else "0")
-        for i in range(3)) + "\n")
+    save.write_text(
+        "\n".join(_active_line("p", "6", str(i), f"claude --resume {SID}", "1" if i == 1 else "0") for i in range(3))
+        + "\n"
+    )
     assert resurrect.rewrite_save_file(save) == 2
     assert [SID in line for line in save.read_text().splitlines()] == [False, True, False]
