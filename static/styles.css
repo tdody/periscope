@@ -2037,10 +2037,24 @@ body.col-resizing iframe { pointer-events: none; }
 #split-view.hidden { display: none; }
 
 #rail {
+  grid-column: 1;
   overflow-y: auto;
   border-right: 1px solid var(--line);
   background: var(--bg-1);
 }
+
+/* Panel toggles (split/panels.js). Explicit columns so a hidden #rail can be
+   display:none without #detail auto-placing into the rail's column. The
+   context column is unmounted by Detail.jsx; only its width var drops here,
+   which also pulls the transcript host, ⌘F bar and scroll button flush right. */
+#detail { grid-column: 2; }
+#split-view[data-rail-hidden] { --rail-w-eff: 0px; }
+#split-view[data-rail-hidden] #rail,
+#split-view[data-rail-hidden] .col-resize-rail { display: none; }
+#split-view[data-side-hidden] { --side-w-eff: 0px; }
+.panel-toggles { display: inline-flex; gap: 2px; }
+.panel-toggle { display: inline-flex; align-items: center; padding-top: 3px; padding-bottom: 3px; }
+.panel-toggle[aria-pressed="false"] { opacity: 0.6; }
 
 #detail {
   display: flex;

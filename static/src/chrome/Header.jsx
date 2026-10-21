@@ -19,6 +19,7 @@ import { track } from "../track.js";
 import { FilterBar } from "./FilterBar.jsx";
 import { SpawnAccountPicker } from "./SpawnAccountPicker.jsx";
 import { SpawnEffortPicker } from "./SpawnEffortPicker.jsx";
+import { PanelToggles } from "./PanelToggles.jsx";
 import { SpawnModelPicker } from "./SpawnModelPicker.jsx";
 import { Tamagotchi } from "./Tamagotchi.jsx";
 import { UpdatePill } from "./UpdatePill.jsx";
@@ -197,6 +198,7 @@ export function Header() {
         </Dropdown>
 
         <span class="filters-spacer"></span>
+        <PanelToggles />
       </nav>
     </header>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRefreshKey, refreshTargetFor, selectedPid } from "../keys.js";
+import { isRefreshKey, panelToggleFor, refreshTargetFor, selectedPid } from "../keys.js";
 
 const key = (over = {}) => ({ key: "r", metaKey: false, ctrlKey: false, shiftKey: false, ...over });
 
@@ -61,5 +61,24 @@ describe("refreshTargetFor", () => {
     // you are actually looking at.
     const tabs = { other: "file:/tmp/x.html", aa11: "pane" };
     expect(refreshTargetFor("pane:aa11", tabs)).toBe("terminal");
+  });
+});
+
+describe("panelToggleFor", () => {
+  // e.code, not e.key: on a Mac, holding ⌥ turns e.key for B into "∫".
+  const b = (over = {}) => ({ code: "KeyB", key: "b", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
+
+  it("⌘B toggles the navigator, ⌥⌘B the context column", () => {
+    expect(panelToggleFor(b({ metaKey: true }))).toBe("rail");
+    expect(panelToggleFor(b({ metaKey: true, altKey: true, key: "∫" }))).toBe("side");
+  });
+  it("accepts ctrl for a non-mac keyboard", () => {
+    expect(panelToggleFor(b({ ctrlKey: true }))).toBe("rail");
+    expect(panelToggleFor(b({ ctrlKey: true, altKey: true }))).toBe("side");
+  });
+  it("ignores a bare B, shifted chords, and other keys", () => {
+    expect(panelToggleFor(b())).toBe(null);
+    expect(panelToggleFor(b({ metaKey: true, shiftKey: true }))).toBe(null);
+    expect(panelToggleFor(b({ metaKey: true, code: "KeyN", key: "n" }))).toBe(null);
   });
 });

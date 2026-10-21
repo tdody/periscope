@@ -7,6 +7,7 @@
 // the rare intent; refreshing the thing you are looking at is the common one,
 // and the browser's default served the rare case. Full reload moves to ⌘⇧R.
 
+import { togglePanel } from "./split/panels.js";
 import { docRefreshNonce, paneActiveTab, railSelection } from "./store.js";
 import { requestTerminalReconcile } from "./terminal/terminalCore.js";
 
@@ -33,8 +34,22 @@ export function isRefreshKey(e) {
   return (e.metaKey || e.ctrlKey) && (e.key === "r" || e.key === "R");
 }
 
+// ⌘B → "rail" (navigator), ⌥⌘B → "side" (context column), else null — VS
+// Code's primary / secondary side bar chords. e.code, not e.key: holding ⌥ on a
+// Mac turns e.key for B into "∫". Ctrl too, for a non-mac keyboard.
+export function panelToggleFor(e) {
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyB") return null;
+  return e.altKey ? "side" : "rail";
+}
+
 export function installKeys(target = window) {
   target.addEventListener("keydown", (e) => {
+    const panel = panelToggleFor(e);
+    if (panel) {
+      e.preventDefault();
+      togglePanel(panel);
+      return;
+    }
     if (!isRefreshKey(e)) return;
     // Always preventDefault once we've claimed the chord — otherwise the
     // browser reloads out from under whichever branch we take.
