@@ -88,10 +88,23 @@ export function UpdatePill() {
   }, [behind]);
 
   // Before the early return (hooks run unconditionally); `toggle` is hoisted.
+  // Opened from Clawd, focus moves to the update button: the pill sits far
+  // earlier in tab order than the mascot, and the dialog announces nothing.
   const popoverRequest = updatePopoverRequest.value;
+  const goRef = useRef(null);
+  const focusGo = useRef(false);
   useEffect(() => {
-    if (popoverRequest && behind && !open) toggle();
+    if (popoverRequest && behind && !open) {
+      focusGo.current = true;
+      toggle();
+    }
   }, [popoverRequest]);
+  useEffect(() => {
+    if (open && focusGo.current) {
+      focusGo.current = false;
+      goRef.current?.focus();
+    }
+  }, [open]);
 
   // No info yet (dev instance, or pre-first-check), current, and not mid-run.
   if (!info || (!behind && !info.running && !busy && !error)) return null;
@@ -189,7 +202,7 @@ export function UpdatePill() {
         <div class="update-commits">
           <CommitList commits={commits} behind={n} />
         </div>
-        <button type="button" class="update-pill update-menu-go" onClick={start}>
+        <button type="button" class="update-pill update-menu-go" ref={goRef} onClick={start}>
           {error ? "retry — " : ""}pull, re-provision and restart
         </button>
       </div>
