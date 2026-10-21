@@ -20,7 +20,8 @@ import { useState } from "preact/hooks";
 import { multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
 import { relTime } from "../util.js";
-import { hiddenAlerts, isFableKey, projectsPastLimit, summarizeAccounts, wasteMark } from "./usageSummary.js";
+import { projectsPastLimit } from "./usageRules.js";
+import { hiddenAlerts, isFableKey, summarizeAccounts, wasteMark } from "./usageSummary.js";
 
 function fmtTokens(n) {
   if (!n) return "0";

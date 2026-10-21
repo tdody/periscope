@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { accounts } from "../../store.js";
-import { hiddenAlerts, isStale, projectsPastLimit, STALE_AFTER_S, summarizeAccounts, WASTE_HORIZON_S, wasteMark } from "../usageSummary.js";
+import { isStale, projectsPastLimit, STALE_AFTER_S } from "../usageRules.js";
+import { hiddenAlerts, summarizeAccounts, WASTE_HORIZON_S, wasteMark } from "../usageSummary.js";
 
 const NOW = 1_800_000_000;
 

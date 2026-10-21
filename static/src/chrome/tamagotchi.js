@@ -1,7 +1,7 @@
 // The header's Claude tamagotchi (Tamagotchi.jsx): the pure parts, so the
 // day schedule and the sprite unit-test without a clock or a DOM.
 
-import { isStale, meterLabel, projectsPastLimit } from "./usageSummary.js";
+import { isStale, meterLabel, projectsPastLimit } from "./usageRules.js";
 
 // What Claude is up to, by local hour. Each window runs [from, to); every
 // boundary is on the hour, so the hour alone decides. `coffee` keeps the
