@@ -21,6 +21,9 @@ import { profileLabel } from "../profiles.js";
 import { AGENT_META, memHint, paneLabel, prStateMeta, prUrl, relTime } from "../util.js";
 import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 import { waitTier } from "./attention.js";
+import { ctxClass } from "./ctxBand.js";
+
+export { ctxClass };
 
 // Narrator status dims after 15 min: the work moved on (or the pane went
 // quiet) and the one-liner no longer reflects "now".
@@ -46,29 +49,6 @@ function ciClass(ci) {
 function shortModel(m) {
   if (!m) return null;
   return m.replace(/\s*\(.*$/, "").trim();
-}
-
-// Today's context-window ramp: auto-compact proximity, a different hazard
-// from cost pressure ("this is about to lose history" vs "this is expensive
-// to keep carrying"). The two compose — this band still paints when cost
-// pressure has nothing to say (band "none" or no session), so a pane sitting
-// at 90% of its window keeps its red warning even though clearing it
-// wouldn't pay off yet.
-function pctBand(p) {
-  if (p == null) return "";
-  if (p >= 80) return " ctx-hot";
-  if (p >= 60) return " ctx-warn";
-  return "";
-}
-
-// The server sends "none" | "warn" | "hot", and omits the key entirely when it
-// has nothing to say. Cost pressure wins only when it actually has something
-// to say (warn/hot); "none" and absent both fall through to the percent
-// bands, so the auto-compact warning isn't silenced for the common case of a
-// classified pane that just isn't cost-pressured.
-export function ctxClass(w) {
-  if (w.ctx_class && w.ctx_class !== "none") return ` ctx-${w.ctx_class}`;
-  return pctBand(w.context_pct);
 }
 
 function fmtCtxTokens(n) {
