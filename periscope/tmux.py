@@ -18,7 +18,6 @@ from periscope import config
 
 # Strip SGR escape sequences from captured pane text before parsing.
 _ANSI_SGR_RE = re.compile(r"\x1b\[[\d;]*m")
-_FG_COLOR_RE = re.compile(r"\x1b\[38(?:;\d+)+m")
 
 
 def _tmux_argv(*args: str) -> list[str]:

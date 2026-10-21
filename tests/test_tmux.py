@@ -9,7 +9,6 @@ import subprocess
 from periscope import config
 from periscope.tmux import (
     _ANSI_SGR_RE,
-    _FG_COLOR_RE,
     _run,
     _tmux_mutate,
     capture,
@@ -22,11 +21,6 @@ from periscope.tmux import (
 def test_ansi_sgr_re_strips_color_codes():
     s = "\x1b[31mred\x1b[0m plain"
     assert _ANSI_SGR_RE.sub("", s) == "red plain"
-
-
-def test_fg_color_re_matches_extended_palette():
-    s = "\x1b[38;5;196mbright red\x1b[0m"
-    assert _FG_COLOR_RE.search(s) is not None
 
 
 def test_tmux_invokes_subprocess_with_tmux_prefix(mocker):
