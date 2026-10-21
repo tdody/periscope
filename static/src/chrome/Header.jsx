@@ -20,6 +20,7 @@ import { FilterBar } from "./FilterBar.jsx";
 import { SpawnAccountPicker } from "./SpawnAccountPicker.jsx";
 import { SpawnEffortPicker } from "./SpawnEffortPicker.jsx";
 import { SpawnModelPicker } from "./SpawnModelPicker.jsx";
+import { Tamagotchi } from "./Tamagotchi.jsx";
 import { UpdatePill } from "./UpdatePill.jsx";
 import { UsagePill } from "./UsagePill.jsx";
 
@@ -142,6 +143,7 @@ export function Header() {
           <Counts />
           <span id="last-update"></span>
         </div>
+        <Tamagotchi />
       </div>
       <nav class="filters" id="filters">
         <a

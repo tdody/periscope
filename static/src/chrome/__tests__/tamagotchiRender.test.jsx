@@ -1,0 +1,77 @@
+// Render-path tests for the tamagotchi scene: the decisions the drawing
+// encodes (which pose shows what), not the inventory of props.
+
+import render from "preact-render-to-string";
+import { describe, expect, it } from "vitest";
+import { SCHEDULE } from "../tamagotchi.js";
+import { TamaScene } from "../Tamagotchi.jsx";
+
+const ids = [...new Set(SCHEDULE.map((s) => s.id))];
+
+describe("<TamaScene>", () => {
+  it.each(ids)("draws the mascot for %s", (id) => {
+    const html = render(<TamaScene activity={id} />);
+    expect(html).toContain(`data-activity="${id}"`);
+    expect(html).toContain("tama-body");
+  });
+
+  it("closes the eyes only while asleep", () => {
+    expect(render(<TamaScene activity="sleep" />)).toContain("tama-eyes-closed");
+    expect(render(<TamaScene activity="code" />)).not.toContain("tama-eyes-closed");
+  });
+
+  it("shows a heart only while petted", () => {
+    expect(render(<TamaScene activity="code" />)).not.toContain("tama-heart");
+    expect(render(<TamaScene activity="code" petted />)).toContain("tama-heart");
+  });
+
+  it("tucks the legs away in the seated scenes and keeps the standing poses on their feet", () => {
+    for (const id of ["code", "read"]) expect(render(<TamaScene activity={id} />), id).not.toContain("tama-legs-a");
+    for (const id of ["sleep", "coffee", "eat", "run"]) expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
+  });
+
+  it("only dresses the run in the season", () => {
+    expect(render(<TamaScene activity="run" season="winter" />)).toContain("tama-scenery");
+    expect(render(<TamaScene activity="code" season="winter" />)).not.toContain("tama-scenery");
+  });
+});
+
+describe("occasions", () => {
+  const scene = (activity, occasion, season = "autumn") =>
+    render(<TamaScene activity={activity} season={season} occasion={occasion} />);
+
+  it("the Halloween ghost sheet replaces the eyes and the sun", () => {
+    const html = scene("run", "halloween");
+    expect(html).toContain("tama-ghost");
+    expect(html).not.toContain("tama-eyes");
+    expect(html).not.toContain("tama-sun");
+  });
+
+  it("stays plain outside an occasion", () => {
+    for (const id of ["run", "read", "code"]) {
+      const html = scene(id, null);
+      for (const cls of ["tama-ghost", "tama-jack", "tama-xmas-tree", "tama-hat-", "tama-firework"]) {
+        expect(html, `${id} ${cls}`).not.toContain(cls);
+      }
+    }
+  });
+});
+
+describe("things that follow Clawd", () => {
+  it("offsets the pet heart with a wrapper, not on the animated path", () => {
+    // The heart's float animation sets `transform` in CSS, which overrides a
+    // transform *attribute* on the same element: the seated-pose offset has
+    // to live on a parent, or the heart lands beside Clawd's head.
+    const html = render(<TamaScene activity="code" petted />);
+    expect(html).toMatch(/<g transform="translate\(-5 0\)"><path[^>]*class="tama-heart"/);
+    expect(html).not.toMatch(/<path[^>]*transform=[^>]*class="tama-heart"/);
+  });
+
+  it("draws the winter snow cap inside Clawd's group, so it bobs with it", () => {
+    const html = render(<TamaScene activity="run" season="winter" />);
+    const creature = html.indexOf("tama-creature");
+    expect(creature).toBeGreaterThan(-1);
+    expect(html.indexOf("tama-snowcap")).toBeGreaterThan(creature);
+    expect(html.indexOf("tama-snowcap")).toBeGreaterThan(html.indexOf("tama-body"));
+  });
+});
