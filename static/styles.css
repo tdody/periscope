@@ -384,6 +384,11 @@ html, body {
 .tama-motion rect:nth-child(3) { animation-delay: -0.4s; }
 @keyframes tama-motion { 0% { transform: translateX(2px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateX(-2px); opacity: 0; } }
 .tama-sweat { animation: tama-steam 1.2s ease-in infinite; }
+.tama-flame { transform-origin: center bottom; animation: tama-flicker 0.9s ease-in-out infinite alternate; }
+.tama-flame2 { animation-duration: 0.6s; animation-delay: -0.3s; }
+@keyframes tama-flicker { 0% { transform: scaleY(1) skewX(0deg); } 50% { transform: scaleY(0.82) skewX(-4deg); } 100% { transform: scaleY(1.08) skewX(3deg); } }
+.tama-glow { animation: tama-glow 1.8s ease-in-out infinite alternate; }
+@keyframes tama-glow { from { opacity: 0.12; } to { opacity: 0.24; } }
 .tama-page { transform-origin: left center; animation: tama-page 5s ease-in-out infinite; }
 @keyframes tama-page { 0%, 70% { transform: scaleX(1); } 85%, 100% { transform: scaleX(-1); } }
 /* Petting: a hop and a heart, replayed on every click (keyed in the JSX). */

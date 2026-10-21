@@ -34,3 +34,26 @@ describe("<TamaScene>", () => {
     expect(render(<TamaScene activity="code" petted />)).toContain("tama-heart");
   });
 });
+
+describe("sitting scenes", () => {
+  it("codes at a desk, seated, legs tucked away", () => {
+    const html = render(<TamaScene activity="code" />);
+    expect(html).toContain("tama-desk");
+    expect(html).toContain("tama-chair");
+    expect(html).not.toContain("tama-legs-a");
+  });
+
+  it("reads in an armchair by the fireplace", () => {
+    const html = render(<TamaScene activity="read" />);
+    expect(html).toContain("tama-fire");
+    expect(html).toContain("tama-flame");
+    expect(html).toContain("tama-chair");
+    expect(html).not.toContain("tama-legs-a");
+  });
+
+  it("keeps the standing poses on their feet", () => {
+    for (const id of ["sleep", "coffee", "eat", "run"]) {
+      expect(render(<TamaScene activity={id} />)).toContain("tama-legs-a");
+    }
+  });
+});
