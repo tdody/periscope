@@ -338,7 +338,8 @@ describe("<Rail> context chip", () => {
   });
 });
 
-import { ctxClass, ctxChipText } from "../RailRows.jsx";
+import { ctxClass } from "../ctxBand.js";
+import { ctxChipText } from "../RailRows.jsx";
 
 describe("ctxClass", () => {
   it("uses the server band when present", () => {
