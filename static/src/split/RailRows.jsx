@@ -23,8 +23,6 @@ import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 import { waitTier } from "./attention.js";
 import { ctxClass } from "./ctxBand.js";
 
-export { ctxClass };
-
 // Narrator status dims after 15 min: the work moved on (or the pane went
 // quiet) and the one-liner no longer reflects "now".
 const STATUS_STALE_S = 900;
