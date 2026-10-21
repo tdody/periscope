@@ -163,8 +163,9 @@ def test_ensure_project_idempotent_no_409(tmp_git_repo, clean_state):
 def test_ensure_session_spawns_when_dead(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
-    session, claude_pid = open_ops.ensure_session(proj, repo)
+    session, claude_pid, created = open_ops.ensure_session(proj, repo)
     assert session == config.MANAGED_SESSION and claude_pid
+    assert claude_pid in created and len(created) == 2  # agent + shell, for the caller to tag by pid
     assert _tmux_mutate("has-session", "-t", session)[0] is True
 
 
@@ -172,9 +173,10 @@ def test_ensure_session_spawns_when_dead(tmp_git_repo, clean_state, tmux_test_se
 def test_ensure_session_focuses_when_live_and_ours(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
-    s1, pid1 = open_ops.ensure_session(proj, repo)
-    s2, pid2 = open_ops.ensure_session(proj, repo)  # must NOT spawn a 2nd window pair
+    s1, pid1, _ = open_ops.ensure_session(proj, repo)
+    s2, pid2, created = open_ops.ensure_session(proj, repo)  # must NOT spawn a 2nd window pair
     assert s1 == s2 and pid1 == pid2
+    assert created == ()  # a focus made nothing, so nothing gets tagged by pid
 
 
 @needs_tmux
@@ -201,8 +203,8 @@ def test_ensure_session_two_repos_share_session_distinct_panes(tmp_path, clean_s
     repo_a, repo_b = _repo("a"), _repo("b")
     proj_a = open_ops.ensure_project(repo_a, repo_a)
     proj_b = open_ops.ensure_project(repo_b, repo_b)
-    sess_a, pid_a = open_ops.ensure_session(proj_a, repo_a)
-    sess_b, pid_b = open_ops.ensure_session(proj_b, repo_b)
+    sess_a, pid_a, _ = open_ops.ensure_session(proj_a, repo_a)
+    sess_b, pid_b, _ = open_ops.ensure_session(proj_b, repo_b)
 
     assert sess_a == sess_b == config.MANAGED_SESSION
     assert pid_a and pid_b and pid_a != pid_b

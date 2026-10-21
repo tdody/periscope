@@ -182,27 +182,19 @@ def ensure_session(
     pinned_dir: str,
     agent: Literal["claude", "codex"] = "claude",
     account: str | None = None,
-) -> tuple[str, str]:
-    session, agent_pid, _ = _ensure_session(project, pinned_dir, agent, account)
-    return session, agent_pid
-
-
-def _ensure_session(
-    project: projects.Project,
-    pinned_dir: str,
-    agent: Literal["claude", "codex"] = "claude",
-    account: str | None = None,
 ) -> tuple[str, str, tuple[str, ...]]:
     """Idempotent create-or-focus into the single shared MANAGED_SESSION.
     `pinned_dir` is the project's key (taken explicitly — Project is a
-    TypedDict with no self-key). Returns (tmux_session, claude_pid).
+    TypedDict with no self-key). Returns (tmux_session, agent_pid,
+    created_pids).
 
     "Already open?" is answered by cwd ownership WITHIN the shared session
     (every project's panes live there now) — not by a session named after the
     project, which no longer exists. So there's no foreign-name dedupe here.
 
-    Also returns the pids of the panes it CREATED (empty on the focus path),
-    so the caller can tag them without trusting their live cwd."""
+    `created_pids` are the panes this call made (empty on the focus path): the
+    caller tags them by pid, because a fresh pane's live cwd can't be trusted
+    yet (see `_open_path`)."""
     session = config.MANAGED_SESSION
     if _session_live(session) and _session_owns_dir(session, pinned_dir):
         existing = _agent_pid_for_dir(session, pinned_dir, agent)
@@ -271,7 +263,7 @@ def _open_path(
     toplevel = _git_toplevel(path)  # ValueError if non-git
     repo = resolve_repo(toplevel)  # --git-common-dir → parent
     project = ensure_project(toplevel, repo)
-    session, agent_pid, created = _ensure_session(project, toplevel, agent)
+    session, agent_pid, created = ensure_session(project, toplevel, agent)
     # Rebuild the full pane list from the now-live session. list_windows()
     # is a live shell-out, so freshly-stamped windows are visible
     # synchronously; pid_raw is the @periscope_id, "" for unmanaged.
