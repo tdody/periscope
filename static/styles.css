@@ -359,34 +359,36 @@ html, body {
    move in scene units, hence the sub-pixel distances. */
 /* content-box so the border sits outside the scene, at an exact 4x (136×96):
    inside a border-box the border eats the scale and the crisp pixel edges
-   snap unevenly. It spans the header's two rows in its own right-hand column
+   snap unevenly. The 3px border is Clawd's shell — a bezel that reads as its
+   own device, so the pins and counts next to it don't feel like part of the
+   scene. It spans the header's two rows in its own right-hand column
    (.periscope-header), so it stays clear of both rows' content and is about
    as tall as the two of them together. */
 .tama {
   box-sizing: content-box; width: 136px; height: 96px; padding: 0;
-  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 4px var(--header-gutter) 4px 0;
-  border: 1px solid var(--line); border-radius: 16px;
+  grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 2px var(--header-gutter) 2px 0;
+  border: 3px solid var(--bg-3); border-radius: 16px;
   background: var(--bg-1); cursor: pointer; overflow: hidden;
 }
 .tama:hover { border-color: var(--fg-3); }
 /* As big as the corner allows: 5x (170×120), when the header is tall enough.
    Width is the limit: the spawn pins and the counts end at the left column's
    gutter at every window width, so the widget widens into that gutter, leaving
-   --tama-gap to them and to the window edge — room for 5x, the largest integer
-   scale. Height needs the 124px header that three rows of pins give (the
-   account row, data-pin-rows="3", set by Header.jsx); with one account the
-   header is 107px and the widget stays at 4x.
-   The overhang is a decision, not a side effect: 4px from the top, the 122px
-   widget ends 2px below the 124px header, inside the pane header's 5px top
+   --tama-gap of breathing room to them and to the window edge — room for 5x,
+   the largest integer scale. Height needs the 124px header that three rows of
+   pins give (the account row, data-pin-rows="3", set by Header.jsx); with one
+   account the header is 107px and the widget stays at 4x.
+   The overhang is a decision, not a side effect: 2px from the top, the 126px
+   widget ends 4px below the 124px header, inside the pane header's 5px top
    padding — the corner the Transcript/Terminal toggle gave up for the tab bar
    — and above the pane header's content at any width. The negative bottom
    margin keeps the widget's margin box (120px) under the rows' 123px, so it
    never sets the header's height. */
 .periscope-header[data-pin-rows="3"] .tama {
-  --tama-gap: 3px;
+  --tama-gap: 12px;
   width: 170px; height: 120px; border-radius: 18px;
   align-self: start;
-  margin: 4px var(--tama-gap) -6px calc(var(--tama-gap) - var(--header-gutter));
+  margin: 2px var(--tama-gap) -8px calc(var(--tama-gap) - var(--header-gutter));
 }
 .tama svg { display: block; width: 100%; height: 100%; }
 .tama g, .tama rect, .tama path, .tama text, .tama circle, .tama ellipse, .tama polygon, .tama line { transform-box: fill-box; }
