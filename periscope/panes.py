@@ -511,8 +511,23 @@ def _sgr_fg(params: list[str], fg: tuple | None, dim: bool) -> tuple[tuple | Non
     return fg, dim
 
 
+def _ghost_colored(fg: tuple | None, dim: bool) -> bool:
+    if dim or fg == ("basic", 90):
+        return True
+    if fg and fg[0] == "256":
+        return fg[1] in _GHOST_256
+    if fg and fg[0] == "rgb":
+        return max(fg[1:]) - min(fg[1:]) <= 24 and max(fg[1:]) <= 160
+    return False
+
+
+# Claude Code's placeholder for a pasted block, drawn grey like a suggestion but
+# very much a draft — and possibly the whole of it.
+_PASTE_PLACEHOLDER_RE = re.compile(r"\[Pasted text #\d+")
+
+
 def _input_is_ghost(raw: str) -> bool:
-    """True when the first character after the `❯` is drawn like Claude Code's
+    """True when EVERY glyph after the `❯` is drawn like Claude Code's
     greyed-out suggestion: dim, bright-black, or dark grey.
 
     Decided positively, so anything unrecognized counts as typed. The old rule
@@ -520,10 +535,16 @@ def _input_is_ghost(raw: str) -> bool:
     which draws a draft in the default fg, the same as the ❯. A draft read as
     ghost text, and the per-pane /effort picker pasted onto it and submitted
     it. Reading a ghost suggestion as a draft only costs a refused send.
+
+    Every glyph, not the first: a draft can open with a grey paste placeholder
+    and continue in the default fg.
     """
+    if _PASTE_PLACEHOLDER_RE.search(_ANSI_SGR_RE.sub("", raw)):
+        return False
     fg: tuple | None = None
     dim = False
     after_prompt = False
+    seen = False
     for part in _SGR_SPLIT_RE.split(raw):
         if part.startswith("\x1b["):
             fg, dim = _sgr_fg(part[2:-1].split(";"), fg, dim)
@@ -532,14 +553,10 @@ def _input_is_ghost(raw: str) -> bool:
             if not after_prompt:
                 after_prompt = ch == "❯"
             elif not ch.isspace():
-                if dim or fg == ("basic", 90):
-                    return True
-                if fg and fg[0] == "256":
-                    return fg[1] in _GHOST_256
-                if fg and fg[0] == "rgb":
-                    return max(fg[1:]) - min(fg[1:]) <= 24 and max(fg[1:]) <= 160
-                return False
-    return False
+                if not _ghost_colored(fg, dim):
+                    return False
+                seen = True
+    return seen
 
 
 def _detect_pending_input(
