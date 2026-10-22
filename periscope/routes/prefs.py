@@ -30,6 +30,11 @@ from periscope.store import (
 
 router = APIRouter()
 
+# The header tamagotchi's creatures: Clawd plus build_critters.py's CRITTERS,
+# the list static/src/chrome/critters.js is built from. A test keeps the two
+# in step (tests/routes/test_prefs.py).
+TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss")
+
 
 @router.get("/api/prefs")
 def get_prefs():
@@ -79,6 +84,9 @@ class UIPatch(BaseModel):
     # from one window's stale cache dropped the other kind's note.
     clawd_merged: str | None = None
     clawd_furious: str | None = None
+    # Settings → Tamagotchi: one of TAMA_CRITTERS. Declared, or Pydantic drops
+    # it and the client's optimistic pick reverts on the echo.
+    tama_critter: str | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
@@ -92,6 +100,8 @@ def patch_prefs_ui(body: UIPatch):
     # `view` is validated against a fixed enum to keep junk out of the file.
     if "view" in patch and patch["view"] not in ("grid", "stream", "split"):
         raise HTTPException(400, f"invalid view: {patch['view']!r}")
+    if "tama_critter" in patch and patch["tama_critter"] not in TAMA_CRITTERS:
+        raise HTTPException(400, f"invalid tama_critter: {patch['tama_critter']!r}")
     if "detail_mode_by_pid" in patch:
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):

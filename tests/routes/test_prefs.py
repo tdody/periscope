@@ -1,5 +1,10 @@
 """Tests for /api/prefs/*."""
 
+import pytest
+
+import build_critters
+from periscope.routes.prefs import TAMA_CRITTERS
+
 
 def test_get_prefs_returns_state(client, clean_state):
     clean_state["ui"]["view"] = "grid"
@@ -85,6 +90,25 @@ def test_patch_prefs_ui_panel_visibility_round_trips(client, clean_state):
     r = client.patch("/api/prefs/ui", json={"rail_hidden": False})
     assert r.json()["ui"]["rail_hidden"] is False
     assert r.json()["ui"]["side_hidden"] is True
+
+
+@pytest.mark.parametrize("critter", TAMA_CRITTERS)
+def test_patch_prefs_ui_tama_critter_round_trips(client, clean_state, critter):
+    r = client.patch("/api/prefs/ui", json={"tama_critter": critter})
+    assert r.status_code == 200
+    assert r.json()["ui"]["tama_critter"] == critter
+
+
+def test_patch_prefs_ui_rejects_unknown_tama_critter(client, clean_state):
+    r = client.patch("/api/prefs/ui", json={"tama_critter": "dragon"})
+    assert r.status_code == 400
+    assert "tama_critter" in r.json()["detail"]
+
+
+def test_tama_critters_match_the_generated_sprites():
+    # The client builds its list from build_critters.py's; a critter added
+    # there but not here would 400 on pick.
+    assert ("clawd", *build_critters.CRITTERS) == TAMA_CRITTERS
 
 
 def test_put_window_annotation(client, clean_state):
