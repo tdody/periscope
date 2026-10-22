@@ -31,6 +31,42 @@ Invariants worth knowing before touching it:
   *within* the shared session. cwd collides (multiple panes per dir), which the
   pre-tracks design deliberately avoided. Consequence: when a pane already owns
   the target cwd, **no window is created** — the call is a pure focus.
+- **A fresh pane's cwd lies.** `pane_current_path` is the FOREGROUND process's
+  cwd, and while a new pane's shell runs its rc that can be a subshell
+  elsewhere (oh-my-zsh's `cd $ZSH` reads as `~/.oh-my-zsh` ~60ms in, sometimes
+  as `""`). Two readers got bitten. The open's tag loop left the new shell (and
+  under load the agent pane) untagged, so `ensure_session` returns the pids it
+  created and `_open_path` tags those by pid. And create-or-focus missed the
+  pair it had just made, so a repeat open in that window (opening the same
+  dir again a moment later) spawned a second pair; `_layout_two_window`
+  now stamps `@periscope_opened` (`"<epoch> <dir>"`) next to `@periscope_id`,
+  and `_sits_at` counts it as the window's dir for `_OPENED_TRUST_S` (60s).
+  Only that long: the agent window outlives its agent (quit claude, `cd`
+  elsewhere, start another), and a record trusted forever would focus that
+  pane on every later open of the first dir. `_sits_at` is the open's one
+  test of "at this dir" (the tag loop's cwd claim uses it too), and it reads
+  an empty cwd as unknown: `realpath("")` is the server's own cwd, and prod
+  runs from the periscope checkout, so opening that checkout focused or
+  claimed any project's fresh pane reading `""`.
+- **Create-or-focus is check-then-create, so it runs under a per-dir lock.**
+  The record only helps a repeat that starts after the first open returned.
+  A double submit is two concurrent POSTs (`open_endpoint` is a sync `def`, so
+  each runs on its own threadpool thread), and the MCP `open` tool races ⌘K
+  the same way. The agent window gets its `@periscope_id` only as
+  `_layout_two_window`'s last step, so a second check landing mid-layout saw
+  no agent at the dir and built a second pair. `_open_path` holds
+  `repo_locks.open_lock(toplevel)` across `ensure_project` + `ensure_session`.
+  `resolve_worktree_session` (MCP `spawn_claude` with `workspace="new"`, and
+  every commander spawn) takes it too, around its own `ensure_project` and
+  session-name dedupe: it inserts the same project row, so a spawn racing a
+  threadpool open (⌘K, `/api/workspaces/spawn`) of a dir neither had
+  registered died "project already exists". Those MCP handlers run one at a
+  time on the event loop (so two spawns never race each other), and can wait
+  out a ⌘K open's layout; nothing done under the lock waits on the loop, so
+  they can't deadlock. It is its own namespace, not `repo_lock(toplevel)`: a main checkout's
+  toplevel IS its repo, and the open must not queue behind (or, being
+  non-reentrant, deadlock with) the repo's git lock. `OpenOmnibox.post()`
+  also drops a pick while one is in flight.
 - **A focus that isn't visible reads as a no-op.** Because of the above, the
   client MUST select the returned `claude_pid`; `OpenOmnibox.post()` sets
   `railSelection` + `prefs.setLastSelected`. Without it, opening something
@@ -71,7 +107,7 @@ Invariants worth knowing before touching it:
   onto it. The cache stays for the 3s poll's affiliation chips.
 - **`_layout_two_window` stamps BOTH windows** (claude + shell) so the full
   pane list is known synchronously — `place_in_rail` needs it without waiting
-  for the next poll's `resolve_pids`.
+  for the next poll's `resolve_pids` — and the open tags them by those pids.
 - **The catalog is repo/worktree-scoped (v1).** `discover_repos` scans each
   `settings.repo_roots` entry one level deep (`~/dev` when unset) and unions
   the registered projects, so a repo opened once by path stays listed

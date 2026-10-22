@@ -4,6 +4,10 @@ import pytest
 
 from periscope import activity
 
+# conftest stubs the seam for every test (a tick must never rewrite the real
+# ~/.config/periscope/tmux.conf); this is the real one, bound before it does.
+_heal_tmux_conf = activity._heal_tmux_conf
+
 
 @pytest.fixture(autouse=True)
 def fresh_db(fresh_activity_db):
@@ -544,6 +548,46 @@ def test_worker_tick_syncs_bg_jobs(monkeypatch, fresh_activity_db):
     monkeypatch.setattr(bg_commander, "sync_jobs", lambda **kw: called.__setitem__("sync", True))
     activity._worker_tick({})
     assert called["sync"] is True
+
+
+def test_worker_tick_heals_the_tmux_conf(monkeypatch, fresh_activity_db):
+    monkeypatch.setattr(activity, "list_windows", list)
+    called = []
+    monkeypatch.setattr(activity, "_heal_tmux_conf", lambda: called.append(True))
+    activity._worker_tick({})
+    assert called == [True]
+
+
+def test_worker_tick_survives_a_failing_heal(monkeypatch, fresh_activity_db):
+    # heal writes ~/.config/periscope/tmux.conf; an OSError there must not skip
+    # the rest of the tick (update check, WAL checkpoint, fd watchdog).
+    from periscope import updater
+
+    monkeypatch.setattr(activity, "list_windows", list)
+
+    def heal():
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(activity, "_heal_tmux_conf", heal)
+    checked = []
+    monkeypatch.setattr(updater, "check", lambda: checked.append(True))
+    activity._worker_tick({})
+    assert checked == [True]
+
+
+def test_heal_tmux_conf_is_prod_only_and_points_at_this_checkout(monkeypatch):
+    from pathlib import Path
+
+    from periscope import config, tmux_persist
+
+    calls = []
+    monkeypatch.setattr(tmux_persist, "heal", lambda repo: calls.append(repo) or True)
+    monkeypatch.setattr(config, "is_prod", lambda: False)
+    _heal_tmux_conf()
+    assert calls == []
+    monkeypatch.setattr(config, "is_prod", lambda: True)
+    _heal_tmux_conf()
+    assert calls == [Path(activity.__file__).resolve().parent.parent]
 
 
 def test_pane_workspace_set_get(fresh_activity_db):

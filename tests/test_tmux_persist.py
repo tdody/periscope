@@ -1,6 +1,8 @@
-"""Tests for periscope.tmux_persist — the ~/.tmux.conf line rules and the
-healthz status built from live tmux options."""
+"""Tests for periscope.tmux_persist — the user-conf line rules, the counts of
+what TPM reads and tmux executes, and the healthz status built from live tmux
+options."""
 
+import subprocess
 import time
 from pathlib import Path
 
@@ -16,6 +18,11 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local/share"))
+    # The host's /etc/tmux.conf would land in every exact count below, and the
+    # live server's config list would point the run count at the real ~/.tmux.conf.
+    monkeypatch.setattr(tp, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
+    monkeypatch.setattr(tp, "_live_config_files", list)
+    monkeypatch.setattr(tp, "_live_env", lambda name: None)
     return tmp_path
 
 
@@ -25,7 +32,7 @@ def home(tmp_path, monkeypatch):
 def test_source_line_inserted_above_existing_tpm_run(home):
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on\nset -g @plugin 'tmux-plugins/tpm'\nrun '~/.tmux/plugins/tpm/tpm'\n")
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
     lines = conf.read_text().splitlines()
     assert lines[-2] == tp.source_line()
     assert lines[-1] == "run '~/.tmux/plugins/tpm/tpm'"
@@ -35,13 +42,24 @@ def test_source_line_inserted_above_existing_tpm_run(home):
 def test_source_line_appended_with_tpm_run_when_absent(home):
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on")  # no trailing newline
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line(), tp.TPM_RUN_LINE]
     assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+
+
+def test_source_line_goes_above_a_sourced_tpm_run(home):
+    # TPM's run line in a sourced file went unseen and a second one was
+    # appended: TPM, and every plugin with it, ran twice.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tpm'\n" + tp.TPM_RUN_LINE + "\n")
+    conf = home / ".tmux.conf"
+    conf.write_text("set -g mouse on\nsource-file ~/plugins.conf\n")
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
+    assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\nsource-file ~/plugins.conf\n"
+    assert tp.tpm_runs() == 1
 
 
 def test_ensure_sourced_creates_missing_conf(home):
     conf = home / ".tmux.conf"
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line(), tp.TPM_RUN_LINE]
     assert conf.read_text() == f"{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
 
 
@@ -50,7 +68,7 @@ def test_ensure_sourced_is_idempotent(home):
     conf.write_text("run-shell ~/.tmux/plugins/tpm/tpm\n")
     tp.ensure_sourced(conf)
     before = conf.read_text()
-    assert tp.ensure_sourced(conf) is False
+    assert tp.ensure_sourced(conf) == []
     assert conf.read_text() == before
 
 
@@ -58,7 +76,33 @@ def test_source_line_recognised_with_quotes_and_tilde(home):
     conf = home / ".tmux.conf"
     conf.write_text('source-file -q "~/.config/periscope/tmux.conf"\nrun ~/.tmux/plugins/tpm/tpm\n')
     assert tp.is_sourced(conf) is True
-    assert tp.ensure_sourced(conf) is False
+    assert tp.ensure_sourced(conf) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "source-file ~/.config/periscope/*.conf",
+        "source-file ~/a.conf ~/.config/periscope/tmux.conf",
+        "source-file ~/.config/periscope/tmux.conf ~/a.conf",
+    ],
+)
+def test_a_glob_or_multi_path_source_of_the_owned_file_counts(home, monkeypatch, line):
+    # The counts resolved these lines as TPM does, is_sourced by first word
+    # only: healthz said conf_sourced false and install added a second source
+    # line — every plugin declared twice, which heal can't undo.
+    (home / "a.conf").write_text("set -g mouse on\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(f"{line}\n{tp.TPM_RUN_LINE}\n")
+    tp.owned_conf().parent.mkdir(parents=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {}))
+    assert tp.is_sourced(conf)
+    assert tp.ensure_sourced(conf) == []
+    _install(home, monkeypatch)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    # The line sources more than periscope's file: uninstall leaves it.
+    tp.uninstall()
+    assert conf.read_text() == f"{line}\n{tp.TPM_RUN_LINE}\n"
 
 
 def test_remove_sourced_round_trips_and_leaves_tpm_run(home):
@@ -66,9 +110,16 @@ def test_remove_sourced_round_trips_and_leaves_tpm_run(home):
     original = "set -g mouse on\nrun '~/.tmux/plugins/tpm/tpm'\n"
     conf.write_text(original)
     tp.ensure_sourced(conf)
-    assert tp.remove_sourced(conf) is True
+    assert tp.remove_sourced(conf) == [tp.source_line()]
     assert conf.read_text() == original
-    assert tp.remove_sourced(conf) is False
+    assert tp.remove_sourced(conf) == []
+
+
+def test_ensure_sourced_round_trips_non_utf8_bytes(home):
+    conf = home / ".tmux.conf"
+    conf.write_bytes(b"# caf\xe9\nrun '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
+    assert conf.read_bytes() == b"# caf\xe9\n" + tp.source_line().encode() + b"\nrun '~/.tmux/plugins/tpm/tpm'\n"
 
 
 def test_uninstall_removes_owned_file_and_line(home):
@@ -83,12 +134,753 @@ def test_uninstall_removes_owned_file_and_line(home):
 
 
 def test_owned_conf_carries_this_checkouts_hook():
-    text = tp.owned_conf_text(REPO)
+    text = tp.owned_conf_text(REPO, ())
     assert "set -g @resurrect-hook-post-save-layout '/opt/periscope/bin/periscope resurrect-rewrite'" in text
     assert "set -g @resurrect-processes '~claude'" in text
     assert "set -g @continuum-restore 'on'" in text
-    # TPM is run from ~/.tmux.conf, after this file is sourced — never here.
+    # TPM is run from the user conf, after this file is sourced — never here.
     assert not any(line.startswith("run") for line in text.splitlines())
+
+
+# --- plugin declarations: exactly once across what TPM reads -------------
+
+USER_PLUGINS = (
+    "set -g @plugin 'tmux-plugins/tpm'\n"
+    "set -g @plugin 'tmux-plugins/tmux-resurrect'\n"
+    "set -g @plugin 'tmux-plugins/tmux-continuum'\n"
+)
+
+
+def test_declared_plugins_matches_tpms_parse():
+    text = (
+        "set -g @plugin 'tmux-plugins/tpm'\n"
+        'set-option -g @plugin "https://github.com/x/tmux-continuum.git#v3"\n'
+        "# set -g @plugin 'tmux-plugins/tmux-resurrect'\n"
+    )
+    assert tp.declared_plugins(text) == ["tpm", "tmux-continuum"]
+
+
+def test_owned_conf_omits_plugins_the_user_already_declares(home):
+    # Regression: the user's own @plugin lines + ours made TPM run continuum
+    # twice, and two racing restores split a window into an extra pane.
+    (home / ".tmux.conf").write_text(USER_PLUGINS)
+    text = tp.owned_conf_text(REPO, tp.plugins_declared_elsewhere())
+    assert tp.declared_plugins(text) == []
+    assert "@continuum-restore 'on'" in text  # options are still ours
+
+
+def test_owned_conf_declares_plugins_nobody_else_does(home):
+    (home / ".tmux.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    text = tp.owned_conf_text(REPO, tp.plugins_declared_elsewhere())
+    assert tp.declared_plugins(text) == ["tpm", "tmux-resurrect"]
+
+
+def _stub_install(home, monkeypatch, run=None):
+    """TPM's clone and plugins present, its install_plugins a no-op, and no
+    tmux server (rc 1) to re-source — unless `run` answers first."""
+
+    def fake(args, check=False, **kw):
+        r = (run and run(args)) or subprocess.CompletedProcess(args, 1 if args[0] == "tmux" else 0, "", "")
+        if check and r.returncode:
+            raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
+        return r
+
+    monkeypatch.setattr(tp.subprocess, "run", fake)
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).mkdir(parents=True, exist_ok=True)
+
+
+def _install(home, monkeypatch):
+    _stub_install(home, monkeypatch)
+    return tp.install(REPO)
+
+
+def test_install_omits_declared_plugins_and_converges(home, monkeypatch):
+    # The root-cause fix is install's own call: the helpers above pinned
+    # nothing about it, and owned_conf_text(REPO) there re-declared all three.
+    (home / ".tmux.conf").write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    assert tp.declared_plugins(tp.owned_conf().read_text()) == []
+    assert f"tmux-continuum: declared in {home / '.tmux.conf'}" in tp.owned_conf().read_text()
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    # Sourced now, the owned file must not count as "elsewhere" the second time.
+    assert not any(a.startswith("wrote") for a in _install(home, monkeypatch))
+
+
+def test_heal_redeclares_a_plugin_the_user_conf_dropped(home, monkeypatch):
+    # The owned file's list is a snapshot of the user's conf at install: drop a
+    # line it deferred to and TPM saw continuum nowhere — no auto-restore after
+    # the next reboot, and only a healthz field nothing reads to say so.
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    assert tp.heal(REPO) is False  # nothing drifted
+    conf.write_text(conf.read_text().replace("set -g @plugin 'tmux-plugins/tmux-continuum'\n", ""))
+    assert tp.plugin_declarations()["tmux-continuum"] == 0
+    assert tp.heal(REPO) is True
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.heal(REPO) is False
+
+
+def test_heal_drops_a_plugin_the_user_conf_added(home, monkeypatch):
+    conf = home / ".tmux.conf"
+    conf.write_text(tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    conf.write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n" + conf.read_text())
+    assert tp.plugin_declarations()["tmux-continuum"] == 2
+    assert tp.heal(REPO) is True
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+
+
+# heal runs on every 30s worker tick: a state it cannot fix must not write
+# (and log a drift warning) on every one of them, ~2,880 times a day.
+
+
+def test_heal_leaves_a_drift_it_cannot_fix(home, monkeypatch):
+    # The user's own files declare continuum twice: regenerating the owned file
+    # changes nothing, so writing it would repeat forever.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    (home / ".tmux.conf").write_text(USER_PLUGINS + "source-file ~/plugins.conf\n" + tp.TPM_RUN_LINE + "\n")
+    with pytest.raises(tp.InstallError, match="tmux-continuum declared 2 times"):
+        _install(home, monkeypatch)
+    before = tp.owned_conf().read_text()
+    assert tp.plugin_declarations()["tmux-continuum"] == 2
+    assert tp.heal(REPO) is False
+    assert tp.heal(REPO) is False
+    assert tp.owned_conf().read_text() == before
+
+
+def test_heal_leaves_an_unsourced_owned_file_alone(home, monkeypatch):
+    # The user removed the source line: every count is 0, and the owned file
+    # already says what regenerating would — re-sourcing is install's call.
+    conf = home / ".tmux.conf"
+    conf.write_text(tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    tp.remove_sourced(conf)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
+    assert tp.heal(REPO) is False
+
+
+def test_heal_leaves_an_undrifted_file_alone(home):
+    # Every count at 1: nothing to heal, even though this checkout's hook path
+    # differs — repointing the hook is install's job, not a tick's.
+    tp.ensure_sourced(home / ".tmux.conf")
+    tp.owned_conf().parent.mkdir(parents=True)
+    text = tp.owned_conf_text(Path("/elsewhere/periscope"), {})
+    tp.owned_conf().write_text(text)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.heal(REPO) is False
+    assert tp.owned_conf().read_text() == text
+
+
+def test_heal_never_creates_the_owned_file(home):
+    # A user who never ran install-tmux: every count is 0, so only the
+    # never-create guard stops each prod tick writing the file (and logging a
+    # drift warning) — a conf declaring all three returned on the all-1 guard.
+    (home / ".tmux.conf").write_text("set -g mouse on\n")
+    tp.owned_conf().parent.mkdir(parents=True)  # periscope's config dir always exists in prod
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
+    assert tp.heal(REPO) is False
+    assert not tp.owned_conf().exists()
+
+
+def test_system_conf_is_read_like_the_user_conf(home):
+    tp.SYSTEM_CONF.parent.mkdir()
+    tp.SYSTEM_CONF.write_text("set -g @plugin 'tmux-plugins/tpm'\n")
+    assert tp.plugins_declared_elsewhere() == {"tpm": tp.SYSTEM_CONF}
+    assert tp.plugin_declarations()["tpm"] == 1
+
+
+def test_plugin_declarations_follow_sourced_files(home):
+    extra = home / "plugins.conf"
+    extra.write_text("set -g @plugin 'tmux-plugins/tpm'\n")
+    (home / ".tmux.conf").write_text(f"source-file {extra}\n")
+    assert "tpm" in tp.plugins_declared_elsewhere()
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "source-file $HOME/plugins.conf",
+        "source-file -q '~/plugins.conf'",
+        "source ~/plug*.conf",
+    ],
+)
+def test_sourced_paths_resolve_as_tpm_does(home, monkeypatch, line):
+    # TPM expands a leading ~ or $HOME and globs each word (its `cat $(…)` is
+    # unquoted). A literal Path() read nothing for these, so install declared
+    # continuum a second time and healthz, equally blind, still counted 1.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    (home / ".tmux.conf").write_text(f"{line}\n{tp.TPM_RUN_LINE}\n")
+    assert "tmux-continuum" in tp.plugins_declared_elsewhere()
+    assert tp.plugin_declarations()["tmux-continuum"] == 1
+    _install(home, monkeypatch)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+
+
+def test_sourced_glob_reads_every_match(home):
+    d = home / ".config/tmux/conf.d"
+    d.mkdir(parents=True)
+    (d / "a.conf").write_text("set -g @plugin 'tmux-plugins/tmux-resurrect'\n")
+    (d / "b.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    (home / ".tmux.conf").write_text("source-file ~/.config/tmux/conf.d/*.conf\n")
+    assert set(tp.plugins_declared_elsewhere()) == {"tmux-resurrect", "tmux-continuum"}
+    assert tp.plugin_declarations() == {"tpm": 0, "tmux-resurrect": 1, "tmux-continuum": 1}
+
+
+def test_user_conf_is_the_one_tpm_reads(home, monkeypatch):
+    # TPM's _get_user_tmux_conf: $XDG_CONFIG_HOME/tmux/tmux.conf INSTEAD of
+    # ~/.tmux.conf when it exists — a source line in the other is invisible to it.
+    assert tp.user_conf() == home / ".tmux.conf"
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
+    (home / ".tmux.conf").write_text("set -g mouse on\n")
+    assert tp.user_conf() == xdg
+    _install(home, monkeypatch)
+    assert tp.is_sourced(xdg)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\n"
+
+
+def test_user_conf_falls_back_to_dot_config_without_xdg_config_home(home, monkeypatch):
+    # The launchd job runs with no XDG_CONFIG_HOME, and TPM's
+    # ${XDG_CONFIG_HOME:-$HOME/.config} still picks ~/.config/tmux/tmux.conf: a
+    # source line put in ~/.tmux.conf instead is one TPM never reads.
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text(USER_PLUGINS)
+    assert tp.user_conf() == xdg
+    _install(home, monkeypatch)
+    assert tp.owned_conf() == home / ".config/periscope/tmux.conf"
+    assert tp.is_sourced(xdg) and not (home / ".tmux.conf").exists()
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.tpm_runs() == 1
+
+
+# Base's install appended exactly this pair to ~/.tmux.conf, XDG conf or not.
+LEGACY_HOME_CONF = "set -g mouse on\n{source}\n" + tp.TPM_RUN_LINE + "\nset -g status-left x\n"
+
+
+def _legacy_install(home, xdg_text):
+    """The state every install since 2026-08 left a user with an XDG conf in:
+    the owned file declaring all three, sourced (and TPM run) from ~/.tmux.conf."""
+    tp.owned_conf().parent.mkdir(parents=True, exist_ok=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {}))
+    (home / ".tmux.conf").write_text(LEGACY_HOME_CONF.format(source=tp.source_line()))
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True, exist_ok=True)
+    xdg.write_text(xdg_text.format(source=tp.source_line()))
+    return xdg
+
+
+def test_tpm_runs_counts_every_conf_tmux_loads(home, monkeypatch):
+    # tmux executes ~/.tmux.conf AND the XDG conf (TPM reads only the latter):
+    # a run line in each ran TPM — and continuum's racing restores — twice
+    # while the count, over TPM's one file, said 1.
+    (home / ".tmux.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text("run-shell ~/.tmux/plugins/tpm/tpm\n")
+    assert tp.tpm_runs() == 2
+    # The system conf tmux was built with (Homebrew's /opt/homebrew/etc, not
+    # TPM's /etc) comes from the live server's list.
+    sysconf = home / "brew/etc/tmux.conf"
+    sysconf.parent.mkdir(parents=True)
+    sysconf.write_text(tp.TPM_RUN_LINE + "\n")
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [sysconf, home / ".tmux.conf", xdg])
+    assert tp.tpm_runs() == 3
+    # The live list REPLACES tmux's default one: a server started with -f ran
+    # only that file, and a build that listed resolved paths would count twice.
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [home / ".tmux.conf"])
+    assert tp.tpm_runs() == 1
+
+
+@pytest.mark.parametrize(
+    ("line", "runs"),
+    [
+        ("source-file ~/.config/tmux/main.conf", 1),  # which sources conf.d/tpm.conf: two deep
+        ("source-file -F '#{d:current_file}/conf.d/tpm.conf'", 1),
+        ("source-file -q ~/.config/tmux/conf.d/*.conf", 1),
+        ('source-file -q "$HOME/.config/tmux/conf.d/tpm.conf"', 1),
+        ("source-file -n ~/.config/tmux/conf.d/tpm.conf", 0),  # parsed, never run
+        ("source-file '~/.config/tmux/conf.d/tpm.conf'", 0),  # tmux expands no ~ in single quotes
+    ],
+)
+def test_tpm_runs_follows_what_tmux_executes(home, monkeypatch, line, runs):
+    # The run count read sources one level deep, by TPM's rules: a run line two
+    # sources deep, or behind -F, went unseen, install appended a second one,
+    # and healthz counted that one alone — 1, while TPM ran twice.
+    xdg = home / ".config/tmux/tmux.conf"
+    (xdg.parent / "conf.d").mkdir(parents=True)
+    (xdg.parent / "conf.d/tpm.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    (xdg.parent / "main.conf").write_text("set -g status-left x\nsource-file ~/.config/tmux/conf.d/tpm.conf\n")
+    xdg.write_text(f"set -g mouse on\n{line}\n")
+    assert tp.tpm_runs() == runs
+    _install(home, monkeypatch)
+    after = (
+        ["set -g mouse on", tp.source_line(), line]
+        if runs
+        else ["set -g mouse on", line, tp.source_line(), tp.TPM_RUN_LINE]
+    )
+    assert xdg.read_text().splitlines() == after
+    assert tp.tpm_runs() == 1
+
+
+def _launchd_conf(home, monkeypatch):
+    """A dashboard update's view: launchd's environment has no
+    XDG_CONFIG_HOME, and the conf TPM reads, already sourcing the owned file,
+    runs TPM only from behind `source-file $XDG_CONFIG_HOME/…`."""
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    (xdg.parent / "plugins.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    text = f"{USER_PLUGINS}{tp.source_line()}\nsource-file $XDG_CONFIG_HOME/tmux/plugins.conf\n"
+    xdg.write_text(text)
+    tp.owned_conf().parent.mkdir(parents=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, tp.plugins_declared_elsewhere()))
+    return xdg, text
+
+
+def test_a_variable_periscope_lacks_is_read_from_the_tmux_server(home, monkeypatch):
+    # tmux expands $VAR from its server's environment; launchd's has no
+    # XDG_CONFIG_HOME. Expanded from periscope's own, the path named nothing,
+    # the run line behind it went uncounted, and every dashboard update
+    # appended a second one — exit 0, healthz tpm_runs 1, TPM run twice.
+    xdg, text = _launchd_conf(home, monkeypatch)
+    asked = []
+    monkeypatch.setattr(tp, "_live_env", lambda name: asked.append(name) or str(home / ".config"))
+    assert tp.tpm_runs() == 1
+    assert asked and set(asked) == {"XDG_CONFIG_HOME"}
+    assert not any(a.startswith(("removed", "added")) for a in _install(home, monkeypatch))
+    assert xdg.read_text() == text
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["tpm_runs"] == 1
+
+
+def test_a_variable_nobody_can_expand_leaves_tpm_runs_unknown(home, monkeypatch):
+    # No server to ask (or one without the variable): the target is unknown,
+    # so install appends no run line, writes nothing, and says which line.
+    xdg, text = _launchd_conf(home, monkeypatch)
+    assert tp.ensure_sourced(xdg) == []
+    assert any("$XDG_CONFIG_HOME" in p and f"{xdg}:5" in p for p in tp.conf_problems())
+    with pytest.raises(tp.InstallError, match=r"\$XDG_CONFIG_HOME") as e:
+        _install(home, monkeypatch)
+    assert e.value.actions == []
+    assert xdg.read_text() == text
+    _stub_live(monkeypatch, HEALTHY)
+    s = tp.status(REPO)
+    assert s["tpm_runs"] is None and s["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("rc", "stdout", "value"),
+    [(0, "XDG_CONFIG_HOME=/x/y\n", "/x/y"), (1, "", None), (0, "-XDG_CONFIG_HOME\n", None)],
+    ids=["set", "unset-or-no-server", "removed"],
+)
+def test_live_env_reads_the_servers_global_environment(monkeypatch, rc, stdout, value):
+    calls = []
+    monkeypatch.setattr(
+        tp.subprocess, "run", lambda args, **kw: calls.append(args) or subprocess.CompletedProcess(args, rc, stdout)
+    )
+    assert tp._live_env("XDG_CONFIG_HOME") == value
+    assert calls == [["tmux", "show-environment", "-g", "XDG_CONFIG_HOME"]]
+
+
+def test_tpm_runs_follows_a_self_sourcing_conf_as_far_as_tmux_does(home):
+    # tmux 3.6a follows a conf that sources itself to its nesting limit: the
+    # run line in it ran 51 times. Cutting the cycle would count 1 — healthy.
+    conf = home / ".tmux.conf"
+    conf.write_text(f"{tp.TPM_RUN_LINE}\nsource-file ~/.tmux.conf\n")
+    assert tp.tpm_runs() == 51
+    # Said once, with the line that sources it, not as 51 `file:1`s.
+    [problem] = tp._run_problems()
+    assert f"({conf}:1 ×51 (loaded at start; sourced by {conf}:2))" in problem
+
+
+def test_a_run_line_reached_twice_names_the_lines_that_reach_it(home, monkeypatch):
+    # The XDG conf sources ~/.tmux.conf, which tmux also loads on its own: the
+    # user's run line there ran twice. The message blamed "one file under two
+    # paths" — a symlink there wasn't — and named neither way in, so not the
+    # XDG conf's source line, the one that has to go.
+    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
+    dot.write_text(f"set -g mouse on\n{tp.TPM_RUN_LINE}\n")
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text("set -g status-left x\nsource-file ~/.tmux.conf\n")
+    assert tp.tpm_runs() == 2
+    [problem] = tp._run_problems()
+    assert f"({dot}:2 ×2 (loaded at start; sourced by {xdg}:2))" in problem
+    assert "two paths" not in problem and "symlink" not in problem
+    with pytest.raises(tp.InstallError, match="changed nothing") as e:
+        _install(home, monkeypatch)
+    assert xdg.read_text() == "set -g status-left x\nsource-file ~/.tmux.conf\n"
+    # The lines as they are on disk, not as install's planned source line shifted them.
+    assert f"sourced by {xdg}:2)" in str(e.value)
+
+
+def test_a_run_line_sourced_twice_names_where_each_chain_starts(home):
+    # Two lines of one conf source a file that sources TPM's: naming only the
+    # last link reads as one way in.
+    conf, mid, tpm = home / ".tmux.conf", home / "mid.conf", home / "tpm.conf"
+    tpm.write_text(tp.TPM_RUN_LINE + "\n")
+    mid.write_text("source-file ~/tpm.conf\n")
+    conf.write_text("source-file ~/mid.conf\nset -g mouse on\nsource-file ~/mid.conf\n")
+    [problem] = tp._run_problems()
+    assert f"({tpm}:1 ×2 (sourced by {mid}:1 via {conf}:1; sourced by {mid}:1 via {conf}:3))" in problem
+
+
+def _symlinked_pair(home, link, text):
+    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    target, link_path = (xdg, dot) if link == "home-to-xdg" else (dot, xdg)
+    target.write_text(text)
+    link_path.symlink_to(target)
+    return target
+
+
+@pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
+def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, link):
+    # tmux 3.6a drops a repeat of the same path STRING only, so ~/.tmux.conf
+    # and the XDG conf as one file through a symlink run twice. A realpath
+    # dedupe counted 1: healthz said ok while TPM, and continuum, ran twice.
+    target = _symlinked_pair(home, link, f"set -g mouse on\n{tp.TPM_RUN_LINE}\n")
+    assert tp.tpm_runs() == 2
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["ok"] is False
+    with pytest.raises(tp.InstallError, match="2 times"):
+        _install(home, monkeypatch)
+    assert target.read_text() == f"set -g mouse on\n{tp.TPM_RUN_LINE}\n"
+
+
+@pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
+def test_install_writes_nothing_where_tmux_would_run_tpm_twice(home, monkeypatch, link):
+    # install appended TPM's run line to the symlinked pair and only then
+    # checked the count: it exited 1 having left TPM, and continuum's racing
+    # restores, running twice at the next server start (0 before it ran).
+    # Checked on the planned text now, before anything is written.
+    target = _symlinked_pair(home, link, "set -g mouse on\n")
+    assert tp.tpm_runs() == 0
+    with pytest.raises(tp.InstallError) as e:
+        _install(home, monkeypatch)
+    assert e.value.actions == []
+    assert target.read_text() == "set -g mouse on\n"
+    assert not tp.owned_conf().exists()
+    assert tp.tpm_runs() == 0
+    message = str(e.value)
+    assert message.startswith("with the lines install would add, tmux would run TPM 2 times")
+    assert "changed nothing" in message
+    assert f"{home / '.tmux.conf'} and {home / '.config/tmux/tmux.conf'}" in message
+
+
+def test_install_never_switches_continuum_on_under_a_doubled_tpm_run(home, monkeypatch):
+    # The pair already runs TPM twice (`run -b`), but declares no plugin, so
+    # continuum never loaded. Adding just the source line took each
+    # declaration from 0 to 1: continuum loaded, and ran twice.
+    target = _symlinked_pair(home, "home-to-xdg", "set -g mouse on\nrun -b '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.tpm_runs() == 2
+    with pytest.raises(tp.InstallError, match="2 times"):
+        _install(home, monkeypatch)
+    assert target.read_text() == "set -g mouse on\nrun -b '~/.tmux/plugins/tpm/tpm'\n"
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
+
+
+def test_install_checks_its_planned_edits_with_a_glob_covering_the_owned_file(home, monkeypatch):
+    # The edits are planned before the owned file is written: a glob source
+    # covering it must still read as sourcing it, or install adds a second
+    # source line (every plugin declared twice).
+    line = "source-file ~/.config/periscope/*.conf"
+    (home / ".tmux.conf").write_text(f"{line}\n{tp.TPM_RUN_LINE}\n")
+    assert not tp.owned_conf().exists()
+    _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == f"{line}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+
+
+def test_a_dotfiles_symlink_runs_once(home, monkeypatch):
+    real = home / "dotfiles/tmux.conf"
+    real.parent.mkdir()
+    real.write_text("set -g mouse on\n")
+    (home / ".tmux.conf").symlink_to(real)
+    _install(home, monkeypatch)
+    assert real.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.tpm_runs() == 1
+
+
+@pytest.mark.parametrize(
+    "xdg_text",
+    [USER_PLUGINS + tp.TPM_RUN_LINE + "\n", USER_PLUGINS, "set -g mouse on\n"],
+    ids=["xdg-runs-tpm", "xdg-declares-only", "xdg-neither"],
+)
+def test_install_moves_its_lines_out_of_the_conf_tpm_ignores(home, monkeypatch, xdg_text):
+    # Upgrading such a user left base's source + run pair in ~/.tmux.conf and
+    # added another to the XDG conf: tmux ran TPM twice, healthz said 1.
+    xdg = _legacy_install(home, xdg_text)
+    _stub_live(monkeypatch, HEALTHY)
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).mkdir(parents=True, exist_ok=True)
+    assert tp.status(REPO)["ok"] is False  # 2 runs, or the owned file unseen by TPM
+    _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\nset -g status-left x\n"
+    assert tp.is_sourced(xdg)
+    assert tp.tpm_runs() == 1
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.status(REPO)["ok"] is True
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
+
+
+@pytest.mark.parametrize(
+    "xdg_text",
+    ["set -g status-left x\n{source}\n", USER_PLUGINS + "source-file ~/.config/periscope/*.conf\n"],
+    ids=["exact-line", "glob"],
+)
+def test_install_keeps_tpm_running_when_the_conf_tpm_reads_already_sources_it(home, monkeypatch, xdg_text):
+    # The hand fix for base's failed XDG install: source the owned file from
+    # the XDG conf, TPM still run by base's pair in ~/.tmux.conf. Moving that
+    # pair out while ensure_sourced returned early on the XDG conf's source
+    # line left no run line anywhere — no plugins and no restore at the next
+    # server start, and re-running install didn't repair it.
+    xdg = _legacy_install(home, xdg_text)
+    assert tp.tpm_runs() == 1
+    actions = _install(home, monkeypatch)
+    assert f"added to {xdg}: {tp.TPM_RUN_LINE}" in actions
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\nset -g status-left x\n"
+    assert xdg.read_text().endswith(f"\n{tp.TPM_RUN_LINE}\n")
+    assert tp.tpm_runs() == 1
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["ok"] is True
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
+
+
+def test_install_repairs_a_conf_that_runs_tpm_nowhere(home, monkeypatch):
+    # What the migration above left behind: the conf TPM reads sources the
+    # owned file, and nothing tmux executes runs TPM.
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text(f"set -g status-left x\n{tp.source_line()}\n")
+    (home / ".tmux.conf").write_text("set -g mouse on\n")
+    assert tp.tpm_runs() == 0
+    _install(home, monkeypatch)
+    assert xdg.read_text() == f"set -g status-left x\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.tpm_runs() == 1
+
+
+@pytest.mark.parametrize(
+    ("legacy", "kept"),
+    [
+        ("{source}\n" + tp.TPM_RUN_LINE + "\n", ""),
+        (
+            "{source}\nset -g status-left x\n" + tp.TPM_RUN_LINE + "\n",
+            "set -g status-left x\n" + tp.TPM_RUN_LINE + "\n",
+        ),
+        ("{source}\nrun -b '~/.tmux/plugins/tpm/tpm'\n", "run -b '~/.tmux/plugins/tpm/tpm'\n"),
+    ],
+    ids=["verbatim-run-under-it", "run-not-directly-under", "run-spelled-otherwise"],
+)
+def test_install_moves_exactly_the_source_line_and_a_verbatim_run_line_under_it(home, monkeypatch, legacy, kept):
+    # What the docs and the PR say install moves out of the conf TPM ignores:
+    # periscope's source line, and TPM_RUN_LINE directly under it — the
+    # user's own when an older install put the source line above it, moved to
+    # the conf TPM reads. Any other run line stays, and counts.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    (home / ".tmux.conf").write_text("set -g mouse on\n" + legacy.format(source=tp.source_line()))
+    actions = _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\n" + kept
+    assert (f"added to {xdg}: {tp.TPM_RUN_LINE}" in actions) is (kept == "")
+    assert tp.tpm_runs() == 1
+
+
+def test_install_never_adds_a_run_line_when_tmux_already_runs_tpm(home, monkeypatch):
+    # main put its source line above the user's own `run -b` in ~/.tmux.conf:
+    # one run. Only install's source line moves — the user's line, spelled
+    # unlike TPM_RUN_LINE, stays — and install, asking the XDG conf alone,
+    # appended a second run line there: TPM, and continuum, ran twice.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    legacy = home / ".tmux.conf"
+    legacy.write_text(f"{tp.source_line()}\nrun -b '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.tpm_runs() == 1
+    _install(home, monkeypatch)
+    assert legacy.read_text() == "run -b '~/.tmux/plugins/tpm/tpm'\n"
+    assert xdg.read_text() == USER_PLUGINS + tp.source_line() + "\n"
+    assert tp.tpm_runs() == 1
+
+
+def test_install_fails_loudly_when_tmux_never_runs_the_conf_tpm_reads(home, monkeypatch):
+    # A server started with -f executes only its file: the run line install
+    # appends to the conf TPM reads never runs. Say so — once: the count stays
+    # 0, so a run line that is already there must stop the next append.
+    custom = home / "custom.conf"
+    custom.write_text("set -g mouse on\n")
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [custom])
+    with pytest.raises(tp.InstallError, match="0 times"):
+        _install(home, monkeypatch)
+    with pytest.raises(tp.InstallError, match="0 times"):
+        _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == f"{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+
+
+def test_install_verb_prints_what_it_changed_then_fails(home, monkeypatch, capsys):
+    # bin/periscope update runs install-tmux unattended: a conf it rewrote and
+    # still can't make right must say both, and exit non-zero.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "source-file ~/plugins.conf\n")
+    _stub_install(home, monkeypatch)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert f"added to {conf}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert err.startswith("error: TPM sees tmux-continuum declared 2 times")
+
+
+def test_a_failed_clone_after_the_conf_edits_prints_them_and_why(home, monkeypatch, capsys):
+    # The clone, install_plugins and the re-source ran with check=True after
+    # the confs were rewritten: a failure was a bare traceback — no edits
+    # printed, git's own reason swallowed by capture_output.
+    conf = home / ".tmux.conf"
+    conf.write_text("set -g mouse on\n")
+    fatal = "fatal: unable to access 'https://github.com/tmux-plugins/tpm/': Could not resolve host: github.com"
+    _stub_install(
+        home, monkeypatch, lambda args: args[0] == "git" and subprocess.CompletedProcess(args, 128, "", fatal)
+    )
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).rmdir()
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert out.splitlines() == [
+        f"wrote {tp.owned_conf()}",
+        f"added to {conf}: {tp.source_line()}",
+        f"added to {conf}: {tp.TPM_RUN_LINE}",
+    ]
+    assert f"error: git clone --depth 1 {tp.TPM_REPO} {home / '.tmux/plugins/tpm'} failed (exit 128): {fatal}" in err
+    assert "error: tpm failed to install: tpm, tmux-resurrect, tmux-continuum" in err.splitlines()
+    assert "Traceback" not in err
+
+
+def test_a_failed_re_source_still_reports_the_counts(home, monkeypatch, capsys):
+    # The re-source only makes the hook path live now: its failure must not
+    # hide whether TPM runs once and sees each plugin once.
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "set -g @plugin 'tmux-plugins/tmux-continuum'\nset -g bogus on\n")
+    reason = f"{conf}:5: invalid option: bogus"
+
+    def tmux(args):
+        if args[:2] == ["tmux", "list-sessions"]:
+            return subprocess.CompletedProcess(args, 0, "x: 1 windows\n", "")
+        if args[:2] == ["tmux", "source-file"]:
+            return subprocess.CompletedProcess(args, 1, "", reason + "\n")
+        return None
+
+    _stub_install(home, monkeypatch, tmux)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert f"added to {conf}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert f"error: tmux source-file {conf} failed (exit 1): {reason}" in err.splitlines()
+    assert any(line.startswith("error: TPM sees tmux-continuum declared 2 times") for line in err.splitlines())
+
+
+def test_install_verb_says_when_it_changed_nothing(home, monkeypatch, capsys):
+    _symlinked_pair(home, "home-to-xdg", "set -g mouse on\n")
+    _stub_install(home, monkeypatch)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith("error: with the lines install would add, tmux would run TPM 2 times")
+    assert "changed nothing" in err
+
+
+def test_uninstall_removes_the_source_line_from_both_user_confs(home):
+    # tmux loads both: a source line left in ~/.tmux.conf named a deleted file.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    tp.ensure_sourced(xdg)
+    tp.uninstall()
+    assert not tp.is_sourced(home / ".tmux.conf") and not tp.is_sourced(xdg)
+    assert not tp.owned_conf().exists()
+
+
+def test_status_flags_a_plugin_declared_twice(home, monkeypatch):
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + conf.read_text())
+    s = tp.status(REPO)
+    assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 2)
+    assert s["ok"] is False
+
+
+def test_status_flags_tpm_run_twice(home, monkeypatch):
+    # Two run lines source every plugin twice — the same racing restores as a
+    # doubled @plugin, with every declaration still counting 1.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["tpm_runs"] == 1
+    conf = home / ".tmux.conf"
+    conf.write_text(conf.read_text() + "run-shell ~/.tmux/plugins/tpm/tpm\n")
+    s = tp.status(REPO)
+    assert s["tpm_runs"] == 2
+    assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert s["ok"] is False
+
+
+def test_status_flags_no_tpm_run(home, monkeypatch):
+    # No run line: TPM never runs, nothing restores after a reboot — yet every
+    # declaration counts 1 and the live options come from the owned file's own
+    # `set -g` lines. tpm_runs is the only term of `ok` that sees it.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    conf = home / ".tmux.conf"
+    conf.write_text(conf.read_text().replace(tp.TPM_RUN_LINE + "\n", ""))
+    s = tp.status(REPO)
+    assert s["tpm_runs"] == 0
+    assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert s["ok"] is False
+
+
+def test_status_flags_a_plugin_declared_nowhere(home, monkeypatch):
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {"tmux-continuum": home / "x.conf"}))
+    s = tp.status(REPO)
+    assert s["plugin_declarations"]["tmux-continuum"] == 0
+    assert s["ok"] is False
+    assert (
+        f"TPM sees tmux-continuum declared 0 times in what it reads ({tp.SYSTEM_CONF}, {home / '.tmux.conf'} and"
+        " the files they source); each must be declared once"
+    ) in tp.conf_problems()
+
+
+def test_a_doubled_declaration_names_the_lines_at_fault(home, monkeypatch):
+    # The problem said only "declared 2 times": which files count (the XDG
+    # conf or ~/.tmux.conf, one level of sources, globs) are the rules this
+    # code had to learn, and the user was left to apply them by hand.
+    plugins = home / "plugins.conf"
+    plugins.write_text("set -g mouse on\nset -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "source-file ~/plug*.conf\n")
+    with pytest.raises(tp.InstallError) as e:
+        _install(home, monkeypatch)
+    assert (
+        f"TPM sees tmux-continuum declared 2 times: {conf}:3, {plugins}:2 (sourced by {conf}:4);"
+        " each must be declared once"
+    ) in str(e.value).splitlines()
+
+
+def test_unreadable_or_non_utf8_conf_files_never_raise(home, monkeypatch):
+    # TPM's `cat … 2>/dev/null` shrugs these off. A raise here 500'd all of
+    # /api/healthz, which `bin/periscope update` polls for the new SHA.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    extra = home / "latin1.conf"
+    extra.write_bytes(b"# caf\xe9\nset -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(f"source-file {extra}\n" + conf.read_text())
+    assert tp.status(REPO)["plugin_declarations"]["tmux-continuum"] == 2  # still counted
+    conf.chmod(0)
+    try:
+        s = tp.status(REPO)
+    finally:
+        conf.chmod(0o644)
+    assert s["conf_sourced"] is False and s["ok"] is False
 
 
 # --- status ----------------------------------------------------------------
@@ -109,6 +901,8 @@ def _healthy_home(home):
     for p in tp.REQUIRED_PLUGINS:
         (home / ".tmux/plugins" / p).mkdir(parents=True)
     tp.ensure_sourced(home / ".tmux.conf")
+    tp.owned_conf().parent.mkdir(parents=True, exist_ok=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, ()))
 
 
 HEALTHY = {

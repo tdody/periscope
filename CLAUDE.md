@@ -119,7 +119,7 @@ would double-load every global.
 | `channels.py` | In-process MCP server + tool implementations |
 | `panes.py` / `window_view.py` | `parse_pane` + spinner smoothing + focus tracking / the per-window dict the dashboard renders |
 | `tracks.py` / `tabs.py` / `workspaces.py` / `projects.py` | Track registry (rail groups) / FILE-PREVIEW tabs on a pane card (not rail tabs) / legacy workspace rows / project registry |
-| `worktrees.py` / `worktree_spawn.py` / `repo_locks.py` / `gitutil.py` | Worktree cache + affiliation / spawn + two-window layout / per-repo git lock / shared git helpers |
+| `worktrees.py` / `worktree_spawn.py` / `repo_locks.py` / `gitutil.py` | Worktree cache + affiliation / spawn + two-window layout / per-repo git lock + per-dir open lock / shared git helpers |
 | `pids.py` | `@periscope_id` mint / stamp / rebind / resolve — pane identity |
 | `session_status.py` | Authoritative Claude-session state from `<config_dir>/sessions/<pid>.json` |
 | `turns.py` | Pane transcript view (`GET /api/pane/turns`) |

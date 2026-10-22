@@ -163,8 +163,9 @@ def test_ensure_project_idempotent_no_409(tmp_git_repo, clean_state):
 def test_ensure_session_spawns_when_dead(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
-    session, claude_pid = open_ops.ensure_session(proj, repo)
+    session, claude_pid, created = open_ops.ensure_session(proj, repo)
     assert session == config.MANAGED_SESSION and claude_pid
+    assert claude_pid in created and len(created) == 2  # agent + shell, for the caller to tag by pid
     assert _tmux_mutate("has-session", "-t", session)[0] is True
 
 
@@ -172,9 +173,10 @@ def test_ensure_session_spawns_when_dead(tmp_git_repo, clean_state, tmux_test_se
 def test_ensure_session_focuses_when_live_and_ours(tmp_git_repo, clean_state, tmux_test_server):
     repo = str(tmp_git_repo)
     proj = open_ops.ensure_project(repo, repo)
-    s1, pid1 = open_ops.ensure_session(proj, repo)
-    s2, pid2 = open_ops.ensure_session(proj, repo)  # must NOT spawn a 2nd window pair
+    s1, pid1, _ = open_ops.ensure_session(proj, repo)
+    s2, pid2, created = open_ops.ensure_session(proj, repo)  # must NOT spawn a 2nd window pair
     assert s1 == s2 and pid1 == pid2
+    assert created == ()  # a focus made nothing, so nothing gets tagged by pid
 
 
 @needs_tmux
@@ -201,8 +203,8 @@ def test_ensure_session_two_repos_share_session_distinct_panes(tmp_path, clean_s
     repo_a, repo_b = _repo("a"), _repo("b")
     proj_a = open_ops.ensure_project(repo_a, repo_a)
     proj_b = open_ops.ensure_project(repo_b, repo_b)
-    sess_a, pid_a = open_ops.ensure_session(proj_a, repo_a)
-    sess_b, pid_b = open_ops.ensure_session(proj_b, repo_b)
+    sess_a, pid_a, _ = open_ops.ensure_session(proj_a, repo_a)
+    sess_b, pid_b, _ = open_ops.ensure_session(proj_b, repo_b)
 
     assert sess_a == sess_b == config.MANAGED_SESSION
     assert pid_a and pid_b and pid_a != pid_b
@@ -251,6 +253,61 @@ def test_resolve_worktree_session_dedupes_foreign_name(tmp_git_repo, clean_state
     name, _ = open_ops.resolve_worktree_session(repo)
     assert name != proj["tmux_session"]  # deduped
     assert projects.get_project(repo)["tmux_session"] == name  # row updated
+
+
+@needs_tmux
+@pytest.mark.parametrize("racer", ["spawn", "open"])
+def test_concurrent_first_registrations_of_a_dir_both_succeed(
+    racer, tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """ensure_project is check-then-insert, and create_project raises on an
+    existing row. MCP spawn_claude (workspace="new", and every commander spawn)
+    registers through resolve_worktree_session on the event loop, which raced a
+    threadpool open (⌘K's POST /api/open, /api/workspaces/spawn) on a dir
+    neither had registered: both saw no project, and the loser died "project
+    already exists" (a 400 when it was the open). Here the second registration
+    starts while the first sits between its check and its insert. [open] is
+    that production pairing; [spawn] runs two resolve_worktree_session calls on
+    threads, which production can't (MCP handlers run one at a time on the
+    loop), so it tests that function's lock on its own."""
+    import threading
+
+    repo = str(tmp_git_repo)
+    real_branch = open_ops.resolve_repo_and_branch  # ensure_project's step between check and insert
+    first = threading.current_thread()
+    second_checked = threading.Event()
+    second: dict = {}
+
+    def second_registration():
+        try:
+            if racer == "spawn":
+                second["res"] = open_ops.resolve_worktree_session(repo)
+            else:
+                second["res"] = open_ops.open_target(open_ops.PathTarget(path=repo))
+        except Exception as e:  # noqa: BLE001 — surfaced by the assert below
+            second["err"] = e
+
+    t2 = threading.Thread(target=second_registration)
+
+    def branch(path):
+        if threading.current_thread() is first:
+            t2.start()
+            # Unserialised, the second passes its check now; serialised, it waits
+            # for this registration to return, and this times out.
+            second_checked.wait(timeout=1.0)
+        else:
+            second_checked.set()
+        return real_branch(path)
+
+    monkeypatch.setattr(open_ops, "resolve_repo_and_branch", branch)
+    try:
+        name, proj = open_ops.resolve_worktree_session(repo)
+    finally:
+        t2.join(timeout=10)
+    assert not t2.is_alive()
+    assert "err" not in second, second.get("err")
+    assert proj["repo"] == repo
+    assert projects.get_project(repo)["tmux_session"] == name
 
 
 def test_worktree_for_branch_matches_enumerated(tmp_git_repo, clean_state):
@@ -344,10 +401,14 @@ def test_open_path_tags_only_its_own_panes(tmp_path, clean_state, fresh_activity
     # A user goal-track move must also survive later opens. Tags key on the
     # stamped @periscope_id (pid_raw on raw rows), not the %N pane id.
     tk = tracks.create_track(name="my goal")
+    # The shell sibling, found by its tag — NOT its cwd, which reads wrong while
+    # the shell is still in its rc (see test_open_tags_new_panes_mid_rc).
     moved_pid = next(
         w["pid_raw"]
         for w in open_ops.list_windows()
-        if w.get("pid_raw") and w["pid_raw"] != r_a.claude_pid and os.path.realpath(w.get("cwd") or "") == repo_a
+        if w.get("pid_raw")
+        and w["pid_raw"] != r_a.claude_pid
+        and fresh_activity_db.get_pane_track(w["pid_raw"]) == repo_a
     )
     tracks.move_pane(moved_pid, tk["id"])
 
@@ -359,6 +420,183 @@ def test_open_path_tags_only_its_own_panes(tmp_path, clean_state, fresh_activity
     # Re-opening A (focus path) keeps the explicit goal-track tag too.
     open_ops.open_target(open_ops.PathTarget(path=repo_a))
     assert fresh_activity_db.get_pane_track(moved_pid) == tk["id"]
+
+
+@needs_tmux
+def test_open_tags_new_panes_mid_rc(tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch):
+    """Regression (flaky test_open_path_tags_only_its_own_panes): a fresh
+    pane's cwd is its foreground process's, and ~60ms into zsh's rc
+    oh-my-zsh's `cd $ZSH` subshell reads as ~/.oh-my-zsh. The tag loop runs
+    inside that window, so it must tag the panes it created by pid.
+
+    The @periscope_opened record is blanked too: it also sits the new pair at
+    the repo, so with it left in, dropping the pid path from the tag loop
+    passed."""
+    real = open_ops.list_windows
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh", "opened": ""} for w in real()]
+    )
+    repo = str(tmp_git_repo)
+    res = open_ops.open_target(open_ops.PathTarget(path=repo))
+    new = [w["pid_raw"] for w in real() if w.get("pid_raw")]
+    assert res.agent_pid in new and len(new) == 2  # agent + shell
+    assert {fresh_activity_db.get_pane_track(p) for p in new} == {repo}
+
+
+@needs_tmux
+def test_repeat_open_mid_rc_focuses_instead_of_duplicating(
+    tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """Create-or-focus read the same untrustworthy cwd the tag loop did: a
+    second open of the dir, a moment after the first returned, landing while
+    the first pair's shells were still in their rc saw nothing at the repo and
+    spawned another agent+shell pair. (Concurrent opens: next test.)"""
+    real = open_ops.list_windows
+    monkeypatch.setattr(open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh"} for w in real()])
+    repo = str(tmp_git_repo)
+    r1 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    r2 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    assert r2.agent_pid == r1.agent_pid
+    assert len([w for w in real() if w.get("pid_raw")]) == 2  # still one agent + one shell
+
+
+@needs_tmux
+def test_concurrent_repeat_open_focuses_instead_of_duplicating(
+    tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """A double submit is two POSTs on two threadpool threads (the MCP `open`
+    tool races ⌘K the same way), so the second open's check can land while
+    the first is still inside _layout_two_window: shell stamped, agent window
+    not yet. It saw no agent at the repo and built a second pair. Here the
+    second open starts right before the first stamps its agent window."""
+    import threading
+
+    from periscope import pids
+
+    repo = str(tmp_git_repo)
+    real_stamp, real_layout = pids.stamp_new_window, open_ops._layout_two_window
+    first = threading.current_thread()
+    first_stamps: list[str] = []
+    second_built = threading.Event()
+    second: dict = {}
+
+    def second_open():
+        try:
+            second["res"] = open_ops.open_target(open_ops.PathTarget(path=repo))
+        except Exception as e:  # noqa: BLE001 — surfaced by the assert below
+            second["err"] = e
+
+    t2 = threading.Thread(target=second_open)
+
+    def stamp(target, opened_dir=""):
+        if threading.current_thread() is first:
+            first_stamps.append(target)
+            if len(first_stamps) == 2:  # the agent window, after the shell
+                t2.start()
+                # Unserialised, the second open builds its pair now; serialised,
+                # it waits for this one to return, and this times out.
+                second_built.wait(timeout=1.0)
+        return real_stamp(target, opened_dir=opened_dir)
+
+    def layout(*a, **kw):
+        try:
+            return real_layout(*a, **kw)
+        finally:
+            if threading.current_thread() is not first:
+                second_built.set()
+
+    monkeypatch.setattr(pids, "stamp_new_window", stamp)
+    monkeypatch.setattr(open_ops, "_layout_two_window", layout)
+    r1 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    t2.join(timeout=10)
+    assert not t2.is_alive()
+    assert "err" not in second, second.get("err")
+    assert second["res"].agent_pid == r1.agent_pid
+    assert len([w for w in open_ops.list_windows() if w.get("pid_raw")]) == 2  # one agent + one shell
+
+
+def test_recorded_open_dir_counts_only_while_the_pane_is_fresh(monkeypatch):
+    """The agent window outlives its agent: quit claude, cd elsewhere, start
+    another, and a record trusted forever would focus that pane on every later
+    open of the dir it was first opened at."""
+    import time
+
+    row = {"session": "s", "name": "claude", "pid_raw": "aaaa1111", "cwd": "/elsewhere"}
+    monkeypatch.setattr(open_ops, "list_windows", lambda: [row])
+    row["opened"] = f"{int(time.time())} /repo"
+    assert open_ops._session_owns_dir("s", "/repo")
+    assert open_ops._agent_pid_for_dir("s", "/repo", "claude") == "aaaa1111"
+    row["opened"] = f"{int(time.time()) - open_ops._OPENED_TRUST_S - 5} /repo"
+    assert not open_ops._session_owns_dir("s", "/repo")
+    assert open_ops._agent_pid_for_dir("s", "/repo", "claude") == ""
+
+
+def test_empty_cwd_sits_nowhere(tmp_path, monkeypatch):
+    """Mid-rc a pane's cwd can read "", and realpath("") is the server's own
+    cwd: prod runs from the periscope checkout, so a fresh pane of any project
+    sat "at" it."""
+    monkeypatch.chdir(tmp_path)
+    here = os.path.realpath(tmp_path)
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{"session": "s", "name": "claude", "pid_raw": "aaaa1111", "cwd": ""}]
+    )
+    assert not open_ops._session_owns_dir("s", here)
+    assert open_ops._agent_pid_for_dir("s", here, "claude") == ""
+
+
+@needs_tmux
+def test_open_of_the_server_cwd_leaves_a_pane_reading_empty_cwd_alone(
+    tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """Both readers of an empty cwd: opening the dir the server runs from
+    focused another project's fresh agent window instead of creating, and its
+    tag loop claimed that pane into this repo's track."""
+    from periscope import pids
+
+    (tmp_path / "other").mkdir()
+    ok, there_win = _tmux_mutate(
+        "new-session", "-d", "-s", config.MANAGED_SESSION, "-n", "claude", "-c", str(tmp_path / "other"),
+        "-P", "-F", "#{window_id}", "sleep 600",
+    )  # fmt: skip
+    assert ok, there_win
+    there = pids.stamp_new_window(there_win)
+    real = open_ops.list_windows
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{**w, "cwd": ""} if w.get("pid_raw") == there else w for w in real()]
+    )
+    repo = str(tmp_git_repo)
+    monkeypatch.chdir(repo)
+
+    res = open_ops.open_target(open_ops.PathTarget(path=repo))
+
+    assert res.agent_pid != there
+    assert fresh_activity_db.get_pane_track(there) is None
+
+
+@needs_tmux
+def test_open_claims_untagged_panes_at_its_toplevel_only(
+    tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server
+):
+    """Panes the open did NOT create reach the tag loop only through its cwd
+    test: that is both the claim on this repo's untagged panes and the scope
+    that leaves other projects' alone (the sts2-seed-finder clobber). Neither
+    was tested once created panes went by pid. `sleep` keeps
+    pane_current_path steady, unlike a shell mid-rc."""
+    from periscope import pids
+
+    (tmp_path / "other").mkdir()
+    repo_s, other_s = str(tmp_git_repo), os.path.realpath(tmp_path / "other")
+    sess = config.MANAGED_SESSION
+    ok, here_win = _tmux_mutate("new-session", "-d", "-s", sess, "-c", repo_s, "-P", "-F", "#{window_id}", "sleep 600")
+    assert ok, here_win
+    ok, there_win = _tmux_mutate("new-window", "-t", f"{sess}:", "-c", other_s, "-P", "-F", "#{window_id}", "sleep 600")
+    assert ok, there_win
+    here, there = pids.stamp_new_window(here_win), pids.stamp_new_window(there_win)
+
+    open_ops.open_target(open_ops.PathTarget(path=repo_s))
+
+    assert fresh_activity_db.get_pane_track(here) == repo_s
+    assert fresh_activity_db.get_pane_track(there) is None
 
 
 @needs_tmux

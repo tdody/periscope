@@ -369,6 +369,62 @@ def test_live_session_id_for_pane_ignores_dead_pid(tmp_path, monkeypatch):
     assert ss.live_session_id_for_pane("%7") is None
 
 
+# ── pane_session_activity: which of several panes is using its session ──
+
+
+def test_pane_session_activity_takes_each_live_panes_newest_file(tmp_path, monkeypatch):
+    # resurrect's keeper among panes resuming one session: a dead pid (502, a
+    # leftover file) or a pane with no session file (503) must not compete.
+    import os
+
+    _seed(
+        tmp_path,
+        monkeypatch,
+        _sess(500, "sid-a", "busy"),
+        _sess(501, "sid-b", "idle"),
+        _sess(502, "sid-c", "idle"),
+        live_pids={500, 501},
+    )
+    os.utime(tmp_path / "500.json", (1000, 1000))
+    os.utime(tmp_path / "501.json", (2000, 2000))
+    monkeypatch.setattr(ss, "pane_claude_pids", lambda: {"%3": 500, "%4": 501, "%5": 502, "%6": 503})
+    assert ss.pane_session_activity() == {"%3": ("sid-a", 1000.0), "%4": ("sid-b", 2000.0)}
+
+
+def test_pane_session_activity_reads_the_file_live_session_id_reads(tmp_path, mocker):
+    """Newest-across-dirs picked a recycled pid's stale file in another
+    account's dir: its mtime and sid were not the pane's — and disagreed with
+    what live_session_id_for_pane (the rest of periscope) reports."""
+    import os
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    (a / "sessions").mkdir(parents=True)
+    (b / "sessions").mkdir(parents=True)
+    stale, live = a / "sessions" / "300.json", b / "sessions" / "300.json"
+    stale.write_text('{"sessionId": "stale-sid", "pid": 300}')
+    live.write_text('{"sessionId": "live-sid", "pid": 300}')
+    os.utime(stale, (2000, 2000))
+    os.utime(live, (1000, 1000))
+    mocker.patch.object(ss, "_SESSIONS_DIR", a / "sessions")
+    mocker.patch.object(ss, "pane_config_dirs", return_value={"%7": str(b)})
+    mocker.patch.object(ss, "pane_claude_pids", return_value={"%7": 300})
+    mocker.patch.object(ss, "_live_claude_pids", return_value={300})
+    assert ss.pane_session_activity() == {"%7": ("live-sid", 1000.0)}
+    assert ss.live_session_id_for_pane("%7") == "live-sid"
+
+
+def test_pane_session_activity_without_panes_scans_nothing(monkeypatch):
+    # rewrite_save_file always calls this; with no claude panes (conftest's tmux
+    # stub) it must not fork ps or index the real ~/.claude/sessions first.
+    def scanned():
+        raise AssertionError("scanned the host")
+
+    monkeypatch.setattr(ss, "pane_claude_pids", dict)
+    monkeypatch.setattr(ss, "_live_claude_pids", scanned)
+    monkeypatch.setattr(ss, "_indexes", scanned)
+    assert ss.pane_session_activity() == {}
+
+
 # ── multi-account sessions-dir scan ──────────────────────────────────────
 
 

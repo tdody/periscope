@@ -407,7 +407,7 @@ def _layout_two_window(
     # complete pane list synchronously (it would otherwise only learn the
     # shell pid on the next /api/state poll's resolve_pids). `set-option -w`
     # accepts a `@id` target, so the captured window id works directly.
-    shell_pid = stamp_new_window(shell_win) if shell_win else ""
+    shell_pid = stamp_new_window(shell_win, opened_dir=pinned_dir) if shell_win else ""
 
     # Park focus on the claude window.
     _tmux_mutate("select-window", "-t", claude_win)
@@ -423,5 +423,5 @@ def _layout_two_window(
     claude_si = f"{tmux_session}:{claude_idx}"
     note_focus(claude_si)
     note_action(claude_si)
-    claude_pid = stamp_new_window(claude_win)
+    claude_pid = stamp_new_window(claude_win, opened_dir=pinned_dir)
     return claude_pid, shell_pid
