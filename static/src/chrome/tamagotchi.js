@@ -85,7 +85,7 @@ const hours = (date) => date.getHours() + date.getMinutes() / 60;
 // to. FNV-1a, then murmur3's finaliser so the low bits are worth a modulo.
 function roll(date, salt) {
   let h = 2166136261;
-  for (const c of `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}|${salt}`) {
+  for (const c of `${dayKey(date)}|${salt}`) {
     h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   }
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
@@ -93,12 +93,14 @@ function roll(date, salt) {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-// The day's i-th pick from `list`, never the same as the pick before it:
-// ramen twice in a day would read as the same scene stuck.
-function pickAt(list, date, salt, i) {
-  let idx = roll(date, `${salt}0`) % list.length;
-  for (let k = 1; k <= i; k++) idx = (idx + 1 + (roll(date, `${salt}${k}`) % (list.length - 1))) % list.length;
-  return list[idx];
+// The day's pick from `list`, never one of `avoid` (the pick before it, a
+// forced neighbour): ramen twice in a day, or the same pastime twice running,
+// would read as the scene stuck. A clash steps to the next item rather than
+// re-rolling, so ruling one out leaves every other pick as it was.
+function rollFrom(list, date, salt, avoid = []) {
+  let k = roll(date, salt) % list.length;
+  while (avoid.includes(list[k].id)) k = (k + 1) % list.length;
+  return list[k];
 }
 
 // `day` is what happened today (dayFlags: the hour each verdict was noted, or
@@ -113,15 +115,17 @@ function windowsFor(date, day) {
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
 
 function mealAt(slot, date) {
-  if (slot.meal === "brunch") return served(slot, pickAt(BRUNCH, date, "brunch", 0), "brunch");
+  if (slot.meal === "brunch") return served(slot, rollFrom(BRUNCH, date, "brunch"), "brunch");
   const occasion = occasionShown(date)?.id;
   const dessert = slot.meal === "dinner" && (DESSERTS[occasion] || DESSERTS[seasonAt(date)]);
   const half = slot.from + HALF;
   if (dessert && hours(date) >= half) return { ...served(slot, dessert, "dessert"), from: half };
-  // Lunch and dinner roll from one menu as the day's first and second pick,
-  // so dinner never repeats lunch.
-  const main = slot.meal === "dinner" && occasion === "yearend" ? ROAST
-    : pickAt(MEALS.filter(inSeason(date)), date, "meal", slot.meal === "dinner" ? 1 : 0);
+  // Lunch and dinner roll from one menu, and dinner never repeats lunch.
+  const menu = MEALS.filter(inSeason(date));
+  const lunch = rollFrom(menu, date, "lunch");
+  const main = slot.meal === "lunch" ? lunch
+    : occasion === "yearend" ? ROAST
+    : rollFrom(menu, date, "dinner", [lunch.id]);
   return { ...served(slot, main, slot.meal), ...(dessert ? { to: half } : {}) };
 }
 
@@ -129,8 +133,8 @@ function mealAt(slot, date) {
 // trick-or-treat rounds, Friday's pint, then the day's verdicts (a furious
 // day is run off before a merge is toasted, and Friday's pint covers the
 // toast). The rest roll from the season's pastimes, never the same twice
-// running, forced neighbours included: a collision steps to the next pastime
-// rather than re-rolling, so forcing one half leaves the others as they were.
+// running, forced neighbours included (rollFrom), so forcing one half leaves
+// the others as they were.
 function pastimePlan(slot, date, day) {
   const byId = (id) => PASTIMES.find((p) => p.id === id);
   const n = (slot.to - slot.from) / HALF;
@@ -146,10 +150,7 @@ function pastimePlan(slot, date, day) {
         plan.push(forced[i]);
         continue;
       }
-      const avoid = [plan[i - 1]?.id, forced[i + 1]?.id];
-      let k = roll(date, `pastime${start(i)}`) % pool.length;
-      while (avoid.includes(pool[k].id)) k = (k + 1) % pool.length;
-      plan.push(pool[k]);
+      plan.push(rollFrom(pool, date, `pastime${start(i)}`, [plan[i - 1]?.id, forced[i + 1]?.id]));
     }
     return plan;
   };
