@@ -304,20 +304,54 @@ def test_no_faces_key_without_face_layers(tmp_path):
 @pytest.mark.parametrize(
     "layer,match",
     [
-        ('<g class="face-wink"><rect x="1" y="1" width="1" height="1"/></g>', "face-wink"),
+        ('<g class="face-wink"><rect x="1" y="1" width="1" height="1"/></g>', "unknown class 'face-wink'"),
         # A face layer nested inside another group would be drawn all the time instead.
         ('<g><g class="face-happy"><rect x="1" y="1" width="1" height="1"/></g></g>', "directly under"),
-        ('<rect class="face-happy" x="1" y="1" width="1" height="1"/>', "face-happy"),
+        ('<rect class="face-happy" x="1" y="1" width="1" height="1"/>', "must be a <g>"),
         (
             '<g class="face-x"><rect x="1" y="1" width="1" height="1"/></g>'
             '<g class="face-x"><rect x="2" y="2" width="1" height="1"/></g>',
             "twice",
         ),
+        # Face art is static — no SMIL, however it's spelled.
+        (
+            '<g class="face-happy"><animateTransform attributeName="transform" type="translate" '
+            'values="0 0;1 0" dur="1s" repeatCount="indefinite"/><rect x="1" y="1" width="1" height="1"/></g>',
+            "may only hold",
+        ),
+        ('<g class="face-happy"><circle r="1"/></g>', "may only hold"),
+        (
+            '<g class="face-happy"><rect x="1" y="1" width="1" height="1">'
+            '<animate attributeName="height" values="1;0.5" dur="1s" repeatCount="indefinite"/></rect></g>',
+            "may only hold",
+        ),
+        # A face always shows over the calm mood — it can't itself be conditioned on one.
+        (
+            '<g class="face-happy"><g class="mood-grumpy"><rect x="1" y="1" width="1" height="1"/></g></g>',
+            "can't hold a mood",
+        ),
+        ('<g class="face-happy"></g>', "draws nothing"),
     ],
 )
 def test_raises_on_a_bad_face_layer(tmp_path, layer, match):
     with pytest.raises(ValueError, match=match):
         build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def test_face_art_outside_the_body_never_grows_the_head_anchor(tmp_path):
+    # anchors_of walks `root`, which face layers never join — a face can reach past the sprite box.
+    base = build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
+    face = '<g class="face-happy"><rect x="18" y="0" width="1" height="1"/></g>'
+    with_face = build_critters.convert("t", _svg(tmp_path, BODY + EYE + face), build_critters.Sheet())
+    assert with_face["anchors"]["head"] == base["anchors"]["head"]
+
+
+def test_mood_plus_face_layer_alone_still_raises_always_drawn(tmp_path):
+    # The face layer never joins `root`, so it can't rescue an SVG that otherwise draws nothing.
+    body = '<g class="mood-calm"><rect x="1" y="1" width="1" height="1"/></g>'
+    face = '<g class="face-happy"><rect x="2" y="2" width="1" height="1"/></g>'
+    with pytest.raises(ValueError, match="always drawn"):
+        build_critters.convert("t", _svg(tmp_path, body + face), build_critters.Sheet())
 
 
 def test_nox_draws_its_own_worried_brows():

@@ -73,7 +73,7 @@ def mood_of(el: ET.Element) -> str | None:
     if cls is None or cls in FACES:  # face layers are kept out of the tree by _convert, not drawn by mood
         return None
     if cls not in MOODS:
-        raise ValueError(f"unknown class {cls!r}")
+        raise ValueError(f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES})!r})")
     return MOODS[cls]
 
 
@@ -199,10 +199,12 @@ def shutter_kind(heights: list[float]) -> str | None:
 
 
 def eye_rects(root: ET.Element) -> list[list[float]]:
-    """Blinking eyes: rects outside any mood layer whose height dips."""
+    """Blinking eyes: rects outside any mood layer whose height dips, skipping face-* override layers."""
     out = []
 
     def walk(el: ET.Element, in_mood: bool) -> None:
+        if tag(el) == "g" and el.get("class") in FACES:
+            return  # a critter's own face art is never an eye box, however it happens to be drawn
         in_mood = in_mood or mood_of(el) is not None
         if tag(el) == "rect" and not in_mood:
             heights = [Anim(a).values for a in el if tag(a) == "animate" and a.get("attributeName") == "height"]
@@ -398,6 +400,31 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             return out
         raise AssertionError(f"unreachable: callers only pass rect/g, got <{t}>")
 
+    def face_layer(c: ET.Element) -> dict:
+        """A face-* layer is static art: rects and groups only, never animated, never moody, never empty."""
+        face_cls = c.get("class")
+
+        def check(el: ET.Element) -> None:
+            t = tag(el)
+            if t not in ("rect", "g"):
+                raise ValueError(f"{svg.name}: {face_cls} may only hold <rect> and <g>, found <{t}>")
+            if el.get("class") in MOODS:
+                raise ValueError(
+                    f"{svg.name}: {face_cls} can't hold a mood layer — a face always shows over the calm mood"
+                )
+            for sub in el:
+                check(sub)
+
+        for k in c:
+            check(k)
+        if not any(tag(d) == "rect" for d in c.iter() if d is not c):
+            raise ValueError(f"{svg.name}: {face_cls} draws nothing")
+        check_attrs(c, set())
+        layer = {"g": [node(k, False) for k in c]}
+        if paint(c):
+            layer["a"] = paint(c)
+        return layer
+
     root = []
     faces: dict[str, list[dict]] = {}
     for c in kids[1:]:
@@ -410,11 +437,7 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             name = FACES[face_cls]
             if name in faces:
                 raise ValueError(f"{svg.name}: {face_cls} appears twice")
-            check_attrs(c, set())
-            layer = {"g": [node(k, False) for k in c]}
-            if paint(c):
-                layer["a"] = paint(c)
-            faces[name] = [layer]
+            faces[name] = [face_layer(c)]
             continue
         root.append(node(c, False))
     if not any(drawn(n) for n in root):
