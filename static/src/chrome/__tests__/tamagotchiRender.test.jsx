@@ -6,7 +6,7 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hueRotate, placement } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, spriteBox } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -583,7 +583,10 @@ describe("critters", () => {
     for (const id of scenes) {
       const html = scene(c, id);
       expect(html, id).toContain(`data-critter="${c.id}"`);
-      expect(html, id).toContain('class="critter"');
+      // Scoped to the mascot's own group: a beer/kids scene's friend and kids
+      // carry `class="critter"` too now, so a check anywhere in the markup
+      // would pass even for a mascot that drew nothing of its own.
+      expect(html.slice(html.indexOf('class="tama-creature')), id).toContain('class="critter"');
       expect(html, id).not.toContain("tama-body");
       expect(html, id).not.toContain("tama-legs-a");
     }
@@ -686,7 +689,9 @@ describe("critters", () => {
     const nox = critterById("nox");
     const away = scene(nox, "beer", duty("bell"));
     expect(count(away, "tama-startle")).toBe(1);
-    expect(away.slice(away.indexOf('class="critter"'))).toContain("tama-startle");
+    // Anchored on the mascot's own group: in a beer scene the first
+    // `class="critter"` in the markup belongs to the friend, not the mascot.
+    expect(away.slice(away.indexOf('class="tama-creature'))).toContain("tama-startle");
     expect(scene(nox, "code", duty("bell"))).not.toContain("tama-startle");
   });
 });
@@ -784,11 +789,28 @@ describe("critters at their pastimes", () => {
 
   const count = (html, needle) => html.split(needle).length - 1;
 
+  // Parses a wrapper's `translate(a b) scale(sx[ sy])` and maps the sprite's
+  // own box (spriteBox) through it: pins the geometry itself, not just the
+  // placement() call that produced it, so a wrong x0 or a dropped mirror
+  // term in TamaPastimes.jsx fails here even if placement() stays correct.
+  function mapBoxThrough(transform, box) {
+    const m = /translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)(?: ([-\d.]+))?\)/.exec(transform);
+    const tx = Number(m[1]);
+    const ty = Number(m[2]);
+    const sx = Number(m[3]);
+    const sy = m[4] !== undefined ? Number(m[4]) : sx;
+    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h) };
+  }
+
   it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
     const html = scene(nox, "beer");
     expect(count(html, 'class="critter"')).toBe(2);
     const friend = html.slice(html.indexOf('class="tama-friend"'));
-    expect(friend).toMatch(/<g class="tama-critter" style="transform-box: view-box" transform="translate\([^)]*\) scale\(-/);
+    const transform = friend.match(/<g class="tama-critter"[^>]*transform="([^"]+)"/)[1];
+    expect(transform).toMatch(/^translate\([^)]*\) scale\(-/); // mirrored: a negative x scale
+    const { centreX, feetY } = mapBoxThrough(transform, spriteBox(nox.sprite));
+    expect(centreX).toBeCloseTo(26.5, 2); // FRIEND_X0 (18) + 8.5
+    expect(feetY).toBeCloseTo(19, 2); // the scene's floor line
     expect(friend).toContain('data-face="happy"');
     expect(friend).toContain(`fill="${hueRotate("#c6e05a", FRIEND_HUE)}"`);
     expect(html).not.toContain('fill="#6f93d6"'); // no blue Clawd
@@ -798,8 +820,16 @@ describe("critters at their pastimes", () => {
   it("plays with two half-size kids of its own kind", () => {
     const html = scene(nox, "kids");
     expect(count(html, 'class="critter"')).toBe(3);
-    const kidScale = Math.round(placement(nox.sprite, { x0: 0, sitting: false, height: 5 }).scale * 1e4) / 1e4;
-    expect(count(html, `scale(${kidScale})`)).toBe(2);
+    const box = spriteBox(nox.sprite);
+    // Scoped to Behind's markup, ahead of the mascot's own group: the mascot
+    // wraps itself in `tama-critter` too, which would otherwise be a third match.
+    const behind = html.slice(0, html.indexOf('class="tama-creature'));
+    const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(transforms).toHaveLength(2);
+    const centres = transforms.map((t) => mapBoxThrough(t, box).centreX);
+    expect(centres[0]).toBeCloseTo(21.65, 2); // kid x 17.4 + 4.25
+    expect(centres[1]).toBeCloseTo(29.65, 2); // kid x 25.4 + 4.25
+    for (const t of transforms) expect(mapBoxThrough(t, box).feetY).toBeCloseTo(19, 2);
     expect(count(html, 'class="tama-kid')).toBe(2);
   });
 
