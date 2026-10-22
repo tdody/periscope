@@ -143,7 +143,9 @@ export function startNotifyFeed() {
   if (started || !inTauri()) return;
   started = true;
   const storage = typeof localStorage === "undefined" ? null : localStorage;
-  let ctx = { state: resumeState(storage, Date.now()), recent: [], held: [], heldSince: null, lastBadge: undefined };
+  const resumed = resumeState(storage, Date.now());
+  let ctx = { state: null, held: [], heldSince: null, ...resumed, recent: [], lastBadge: undefined };
+  const save = (nowMs) => saveState(storage, ctx.state, nowMs, ctx.held, ctx.heldSince);
   let timer = null;
   // The heldSince + BURST_MS the live `timer` targets, so a pass that flushes
   // the old batch and holds a new one in the same tick reschedules instead of
@@ -159,6 +161,7 @@ export function startNotifyFeed() {
     const batch = ctx.held;
     ctx = { ...ctx, held: [], heldSince: null };
     if (!batch.length) return;
+    if (ctx.state) save(Date.now());
     const bctx = { accounts: accounts.peek(), windows: windows.peek() || [] };
     notify({ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
   };
@@ -177,10 +180,10 @@ export function startNotifyFeed() {
         };
         const editing = !!(editingTarget.peek() || dragState.peek());
         const nowMs = Date.now();
-        const prevState = ctx.state;
+        const prev = ctx;
         const { sends, flush, badge, timerAt, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
         ctx = next;
-        if (ctx.state !== prevState) saveState(storage, ctx.state, nowMs);
+        if (ctx.state && (ctx.state !== prev.state || ctx.held !== prev.held)) save(nowMs);
         for (const p of [...flush, ...sends]) notify(p);
         // Reschedule whenever the target deadline moves, not just when a
         // timer is/isn't running — a pass that flushes the old batch and

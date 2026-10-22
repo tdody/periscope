@@ -10,7 +10,14 @@ describe("persist", () => {
   it("resumes a state saved within RESUME_MS", () => {
     const s = memory();
     saveState(s, { seen: { a: true } }, 1000);
-    expect(resumeState(s, 1000 + RESUME_MS)).toEqual({ seen: { a: true } });
+    expect(resumeState(s, 1000 + RESUME_MS)).toEqual({ state: { seen: { a: true } }, held: [], heldSince: null });
+  });
+
+  it("resumes a held burst with it, so a recycle doesn't drop its summary", () => {
+    const s = memory();
+    const held = [{ kind: "question", key: "k", w: { pid: "p1", name: "a" } }];
+    saveState(s, { seen: {} }, 1000, held, 900);
+    expect(resumeState(s, 2000)).toEqual({ state: { seen: {} }, held, heldSince: 900 });
   });
 
   it("drops a state that's too old, from the future, missing or garbled", () => {
