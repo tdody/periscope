@@ -9,7 +9,8 @@ rots when the checkout moves and a fresh machine silently never saves
 (`resurrect.save_now` degrades quietly when continuum is absent).
 
 Periscope owns a sourced file, `<config_dir>/tmux.conf`, regenerated wholesale
-on every install, and adds exactly one `source-file` line to `~/.tmux.conf`.
+on every install, and adds exactly one `source-file` line to the user conf
+(`~/.tmux.conf`, or `$XDG_CONFIG_HOME/tmux/tmux.conf` when TPM would read that).
 TPM scans sourced files for `@plugin` lines, so the plugin list lives in the
 owned file too. The source line must precede TPM's `run` line — TPM only
 installs plugins declared before it runs — so it is inserted directly above an
@@ -30,6 +31,7 @@ under plain `python3`, outside the uv environment.
 """
 
 import contextlib
+import glob
 import json
 import os
 import re
@@ -50,7 +52,9 @@ _DEFAULT_SAVE_INTERVAL_MIN = 15
 _TPM_RUN_RE = re.compile(r"^\s*run(-shell)?\b.*tpm/tpm")
 # TPM's own match (tpm_plugins_list_helper's awk): `set[-option] -g @plugin X`.
 _PLUGIN_RE = re.compile(r"""^\s*set(-option)?\s+-g\s+@plugin\s+['"]?([^'"\s]+)""")
-_SOURCE_RE = re.compile(r"^\s*source(-file)?\s+(-q+\s+)?['\"]?(?P<path>[^'\"\s]+)")
+# TPM's _sourced_files sed: everything after `source[-file] [-q]` up to a
+# quote, spaces included — the caller word-splits it, as TPM's `for` does.
+_SOURCE_RE = re.compile(r"""^\s*source(-file)?\s+(-q+\s+)?['"]?(?P<path>[^'"]+)['"]?""")
 
 
 def plugins_dir() -> Path:
@@ -58,7 +62,11 @@ def plugins_dir() -> Path:
 
 
 def user_conf() -> Path:
-    return Path.home() / ".tmux.conf"
+    """The user conf TPM reads (_get_user_tmux_conf): the XDG one when it
+    exists, else ~/.tmux.conf. TPM scans only this one for `@plugin`, so the
+    source line must live here or TPM never sees the owned file's plugins."""
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "tmux/tmux.conf"
+    return xdg if xdg.is_file() else Path.home() / ".tmux.conf"
 
 
 def owned_conf() -> Path:
@@ -84,23 +92,51 @@ def declared_plugins(text: str) -> list[str]:
     return [plugin_name(m.group(2)) for line in text.splitlines() if (m := _PLUGIN_RE.match(line))]
 
 
+def _source_words(line: str) -> list[str]:
+    """A `source-file` line's paths as TPM reads them (_sourced_files +
+    _manual_expansion): the rest of the line split on whitespace, with a
+    leading `~` or `$HOME` expanded and nothing else."""
+    m = _SOURCE_RE.match(line)
+    if not m:
+        return []
+    home = str(Path.home())
+    words = []
+    for w in (m.group("path") + line[m.end() :]).split():
+        if w.startswith("~"):
+            w = home + w[1:]
+        elif w.startswith("$HOME"):
+            w = home + w[5:]
+        words.append(w)
+    return words
+
+
+def _source_targets(line: str) -> list[Path]:
+    """The files a `source-file` line makes TPM read. Its `cat $(…)` is
+    unquoted, so each word is globbed; one matching nothing stays literal (and
+    then fails to read, silently)."""
+    return [Path(p) for w in _source_words(line) for p in (sorted(glob.glob(w)) or [w])]
+
+
 def _tpm_conf_files() -> list[Path]:
-    """The files TPM scans for `@plugin`, minus our owned file: /etc/tmux.conf,
-    the user conf, and every file either of those sources (one level, as TPM
-    does)."""
+    """Every file TPM reads for `@plugin` (_tmux_conf_contents "full"), repeats
+    included: /etc/tmux.conf, the user conf, and every file either of those
+    sources, one level deep as TPM does. The owned file is among them once
+    sourced. A path resolved differently from TPM is a declaration miscounted:
+    a `$HOME/…` or glob source read as a literal path hid the user's continuum,
+    and install declared it a second time."""
     roots = [Path("/etc/tmux.conf"), user_conf()]
     files = list(roots)
     for root in roots:
         for line in _read_lines(root):
-            m = _SOURCE_RE.match(line)
-            if m:
-                files.append(Path(os.path.expanduser(m.group("path"))))
-    return [f for f in files if f != owned_conf()]
+            files += _source_targets(line)
+    return files
 
 
 def plugins_declared_elsewhere() -> set[str]:
     out: set[str] = set()
     for f in _tpm_conf_files():
+        if f == owned_conf():
+            continue
         with contextlib.suppress(OSError):
             out.update(declared_plugins(f.read_text()))
     return out
@@ -110,7 +146,7 @@ def plugin_declarations() -> dict[str, int]:
     """How many times TPM will see each required plugin declared. Anything but
     1 is broken: 0 never loads it, 2 runs it twice (the racing restores)."""
     names: list[str] = []
-    for f in [*_tpm_conf_files(), owned_conf()]:
+    for f in _tpm_conf_files():
         with contextlib.suppress(OSError):
             names += declared_plugins(f.read_text())
     return {p: names.count(p) for p in REQUIRED_PLUGINS}
@@ -138,8 +174,8 @@ def owned_conf_text(repo: Path, declared_elsewhere: AbstractSet[str] = frozenset
 
 
 def _sources_owned(line: str) -> bool:
-    m = _SOURCE_RE.match(line)
-    return bool(m) and Path(os.path.expanduser(m.group("path"))) == owned_conf()
+    words = _source_words(line)
+    return bool(words) and Path(words[0]) == owned_conf()
 
 
 def _read_lines(path: Path) -> list[str]:
@@ -234,7 +270,7 @@ def install(repo: Path) -> list[str]:
             capture_output=True,
             text=True,
         )
-        actions.append("re-sourced ~/.tmux.conf on the running server")
+        actions.append(f"re-sourced {user_conf()} on the running server")
     return actions
 
 

@@ -39,7 +39,8 @@ non-interactive `bin/install_plugins` for resurrect + continuum, writes a
 periscope-owned `~/.config/periscope/tmux.conf` (the three `@plugin` lines,
 `@continuum-restore on`, `@resurrect-processes '~claude'`, and
 `@resurrect-hook-post-save-layout` pointing at THIS checkout), and adds one
-`source-file` line to `~/.tmux.conf` — inserted directly above an existing
+`source-file` line to the user conf (`~/.tmux.conf`, or the XDG one TPM
+prefers — see below) — inserted directly above an existing
 `run ... tpm/tpm` line, or appended together with one, because TPM only
 installs plugins declared before it runs. The owned file is regenerated
 wholesale on every `install`/`update` (never merged); `uninstall-tmux` removes
@@ -59,7 +60,14 @@ an extra shell pane. Resume a Claude in it and the next save records it, so
 the window gains a pane every restart (observed 2026-10: one window at three
 panes, all `--resume`-ing one session, two of them zombie Claudes). So
 `install` omits from the owned file any plugin declared elsewhere, and healthz
-reports `plugin_declarations` (each must be 1). Check by hand:
+reports `plugin_declarations` (each must be 1). "What TPM reads" is resolved
+exactly as TPM resolves it (`scripts/helpers/plugin_functions.sh`), because a
+file read differently is a declaration miscounted: the user conf is
+`$XDG_CONFIG_HOME/tmux/tmux.conf` when it exists, else `~/.tmux.conf` (TPM
+reads one, never both — so that is also where the source line goes); a
+`source-file` line's paths are word-split, a leading `~` or `$HOME` expanded,
+and each word globbed. A literal-path read missed `source-file $HOME/…` and
+`…/*.conf`, so install declared continuum a second time. Check by hand:
 `bash -c 'source ~/.tmux/plugins/tpm/scripts/helpers/plugin_functions.sh; tpm_plugins_list_helper' | sort | uniq -c`.
 
 `GET /api/healthz` carries a `resurrect` block built from the LIVE tmux
