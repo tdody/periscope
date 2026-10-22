@@ -140,9 +140,41 @@ def test_install_omits_declared_plugins_and_converges(home, monkeypatch):
     (home / ".tmux.conf").write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
     _install(home, monkeypatch)
     assert tp.declared_plugins(tp.owned_conf().read_text()) == []
+    assert f"tmux-continuum: declared in {home / '.tmux.conf'}" in tp.owned_conf().read_text()
     assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
     # Sourced now, the owned file must not count as "elsewhere" the second time.
     assert not any(a.startswith("wrote") for a in _install(home, monkeypatch))
+
+
+def test_heal_redeclares_a_plugin_the_user_conf_dropped(home, monkeypatch):
+    # The owned file's list is a snapshot of the user's conf at install: drop a
+    # line it deferred to and TPM saw continuum nowhere — no auto-restore after
+    # the next reboot, and only a healthz field nothing reads to say so.
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    assert tp.heal(REPO) is False  # nothing drifted
+    conf.write_text(conf.read_text().replace("set -g @plugin 'tmux-plugins/tmux-continuum'\n", ""))
+    assert tp.plugin_declarations()["tmux-continuum"] == 0
+    assert tp.heal(REPO) is True
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.heal(REPO) is False
+
+
+def test_heal_drops_a_plugin_the_user_conf_added(home, monkeypatch):
+    conf = home / ".tmux.conf"
+    conf.write_text(tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    conf.write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n" + conf.read_text())
+    assert tp.plugin_declarations()["tmux-continuum"] == 2
+    assert tp.heal(REPO) is True
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+
+
+def test_heal_never_creates_the_owned_file(home):
+    (home / ".tmux.conf").write_text(USER_PLUGINS)
+    assert tp.heal(REPO) is False
+    assert not tp.owned_conf().exists()
 
 
 def test_plugin_declarations_follow_sourced_files(home):
@@ -210,7 +242,7 @@ def test_status_flags_a_plugin_declared_twice(home, monkeypatch):
 def test_status_flags_a_plugin_declared_nowhere(home, monkeypatch):
     _healthy_home(home)
     _stub_live(monkeypatch, HEALTHY)
-    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {"tmux-continuum"}))
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {"tmux-continuum": home / "x.conf"}))
     s = tp.status(REPO)
     assert s["plugin_declarations"]["tmux-continuum"] == 0
     assert s["ok"] is False

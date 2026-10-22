@@ -135,6 +135,22 @@ def _isolate_activity_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_tmux_persistence_tick(monkeypatch, tmp_path):
+    """Keep the worker tick's tmux-persistence steps off the real machine.
+
+    config.is_prod() is True under pytest (prod port, no PERISCOPE_DEV), so a
+    test that runs activity._worker_tick would run the real continuum_save.sh
+    against the developer's tmux server, and let tmux_persist.heal rewrite
+    their ~/.config/periscope/tmux.conf with the hook pointed at whatever
+    checkout the tests run from. Stubbed at seams the unit tests of save_now
+    and heal don't go through."""
+    from periscope import activity, resurrect
+
+    monkeypatch.setattr(activity, "_heal_tmux_conf", lambda: None)
+    monkeypatch.setattr(resurrect, "_CONTINUUM_SAVE_SH", tmp_path / "no-continuum" / "continuum_save.sh")
+
+
+@pytest.fixture(autouse=True)
 def _no_track_maintenance(monkeypatch):
     """Keep resolve_pids' one-shot pane_tracks maintenance OFF by default.
 

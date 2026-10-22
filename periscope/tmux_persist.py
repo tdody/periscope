@@ -40,7 +40,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Collection, Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from periscope import config
@@ -143,8 +143,12 @@ def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
     return out
 
 
-def plugins_declared_elsewhere() -> set[str]:
-    return {name for name, _ in _declarations(f for f in _tpm_conf_files() if f != owned_conf())}
+def plugins_declared_elsewhere() -> dict[str, Path]:
+    """Each plugin declared outside the owned file -> the first file that does."""
+    out: dict[str, Path] = {}
+    for name, f in _declarations(f for f in _tpm_conf_files() if f != owned_conf()):
+        out.setdefault(name, f)
+    return out
 
 
 def plugin_declarations() -> dict[str, int]:
@@ -154,13 +158,13 @@ def plugin_declarations() -> dict[str, int]:
     return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
-def owned_conf_text(repo: Path, declared_elsewhere: Collection[str]) -> str:
+def owned_conf_text(repo: Path, declared_elsewhere: Mapping[str, Path]) -> str:
     # No default: "declared nowhere else" is the pre-fix text that put every
     # plugin in TPM's list twice — a caller must say what it found.
     plugins = "".join(
         f"set -g @plugin 'tmux-plugins/{p}'\n"
         if p not in declared_elsewhere
-        else f"# @plugin {p}: declared in ~/.tmux.conf — once only, see tmux_persist\n"
+        else f"# @plugin {p}: declared in {declared_elsewhere[p]}; TPM must see it once (re-declared here if that goes)\n"
         for p in REQUIRED_PLUGINS
     )
     return (
@@ -172,6 +176,24 @@ def owned_conf_text(repo: Path, declared_elsewhere: Collection[str]) -> str:
         "set -g @resurrect-processes '~claude'\n"
         f"set -g @resurrect-hook-post-save-layout {shlex.quote(hook_command(repo))}\n"
     )
+
+
+def heal(repo: Path) -> bool:
+    """Regenerate the owned file when TPM would no longer see each plugin
+    exactly once. Its plugin list is a snapshot of the other conf files taken
+    at install, so an edit there moves under it: drop a declaration this file
+    deferred to and the plugin is declared nowhere (no auto-restore after the
+    next reboot, silently); add one and it is declared twice. Never creates
+    the file — that is install's opt-in — and never re-sources: plugins load
+    at server start, the only time the list matters. True if written."""
+    conf = owned_conf()
+    if not conf.exists() or all(n == 1 for n in plugin_declarations().values()):
+        return False
+    text = owned_conf_text(repo, plugins_declared_elsewhere())
+    if conf.read_text() == text:
+        return False
+    conf.write_text(text)
+    return True
 
 
 # --- ~/.tmux.conf line management -----------------------------------------

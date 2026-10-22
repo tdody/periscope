@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from periscope import config, session_binding_db
+from periscope import config, session_binding_db, tmux_persist
 from periscope.git_pr import shared_activity_for
 from periscope.log import _bg, log
 from periscope.panes import _acted_at, list_windows, parse_pane
@@ -974,6 +974,19 @@ def _fd_count() -> int | None:
         return None
 
 
+_REPO = Path(__file__).resolve().parent.parent
+
+
+def _heal_tmux_conf() -> None:
+    """Re-derive the owned tmux conf's plugin list when the user's conf files
+    moved under it (tmux_persist.heal). Prod-only like save_now: it writes the
+    real ~/.config/periscope/tmux.conf with THIS checkout's hook path."""
+    if not config.is_prod():
+        return
+    if tmux_persist.heal(_REPO):
+        log.warning("tmux plugin declarations drifted; regenerated %s", tmux_persist.owned_conf())
+
+
 def _worker_tick(last_ctx: dict) -> None:
     """One worker pass. Blocking (tmux + git subprocesses) — run off-loop."""
     panes: list[tuple[dict, dict]] = []
@@ -1013,6 +1026,10 @@ def _worker_tick(last_ctx: dict) -> None:
         resurrect.save_now()
     except Exception:
         log.exception("continuum save failed")
+    try:
+        _heal_tmux_conf()
+    except Exception:
+        log.exception("tmux conf heal failed")
     # How far behind origin this checkout is, for the header's update pill.
     # Self-throttled to hourly; the tick is just a convenient heartbeat.
     try:

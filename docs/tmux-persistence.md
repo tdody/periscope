@@ -67,7 +67,14 @@ file read differently is a declaration miscounted: the user conf is
 reads one, never both — so that is also where the source line goes); a
 `source-file` line's paths are word-split, a leading `~` or `$HOME` expanded,
 and each word globbed. A literal-path read missed `source-file $HOME/…` and
-`…/*.conf`, so install declared continuum a second time. Check by hand:
+`…/*.conf`, so install declared continuum a second time. The omission is a
+snapshot of the other files at install, so it drifts when they are edited:
+drop a declaration the owned file deferred to and the plugin is declared
+nowhere (no auto-restore after the next reboot, silently); add one and it is
+declared twice. The prod worker therefore calls `tmux_persist.heal` each tick,
+which regenerates the owned file whenever a count is off 1 (never creating it,
+never re-sourcing — plugins load at server start). Each omitted plugin leaves a
+comment naming the file that declares it. Check by hand:
 `bash -c 'source ~/.tmux/plugins/tpm/scripts/helpers/plugin_functions.sh; tpm_plugins_list_helper' | sort | uniq -c`.
 
 `GET /api/healthz` carries a `resurrect` block built from the LIVE tmux
