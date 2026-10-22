@@ -246,8 +246,17 @@ def heal(repo: Path) -> bool:
 
 
 def _sources_owned(line: str) -> bool:
-    words = _source_words(line)
-    return bool(words) and Path(words[0]) == owned_conf()
+    """`line` makes tmux read the owned file, resolved as every count here is.
+    Matching its first word only read a glob or multi-path line as unsourced:
+    install added a second source line, every plugin declared twice."""
+    return owned_conf() in _source_targets(line)
+
+
+def _is_source_line(line: str) -> bool:
+    """Periscope's own line: the owned file, by path, and nothing else. Only
+    this is ever removed — a user's glob or multi-path line that covers the
+    owned file also sources their own."""
+    return [Path(w) for w in _source_words(line)] == [owned_conf()]
 
 
 def _scan_text(path: Path) -> str:
@@ -302,14 +311,14 @@ def ensure_sourced(path: Path) -> bool:
 
 
 def remove_sourced(path: Path, *, with_run: bool = False) -> bool:
-    """Drop the source line from `path` — with `with_run`, and the verbatim
-    TPM_RUN_LINE right under it: the pair ensure_sourced appends. True if
-    written."""
+    """Drop periscope's source line (_is_source_line) from `path` — with
+    `with_run`, and the verbatim TPM_RUN_LINE right under it: the pair
+    ensure_sourced appends. True if written."""
     lines = _read_lines(path)
     kept = [
         line
         for i, line in enumerate(lines)
-        if not _sources_owned(line) and not (with_run and line == TPM_RUN_LINE and i and _sources_owned(lines[i - 1]))
+        if not _is_source_line(line) and not (with_run and line == TPM_RUN_LINE and i and _is_source_line(lines[i - 1]))
     ]
     if len(kept) == len(lines):
         return False

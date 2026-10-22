@@ -77,6 +77,32 @@ def test_source_line_recognised_with_quotes_and_tilde(home):
     assert tp.ensure_sourced(conf) is False
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "source-file ~/.config/periscope/*.conf",
+        "source-file ~/a.conf ~/.config/periscope/tmux.conf",
+        "source-file ~/.config/periscope/tmux.conf ~/a.conf",
+    ],
+)
+def test_a_glob_or_multi_path_source_of_the_owned_file_counts(home, monkeypatch, line):
+    # The counts resolved these lines as TPM does, is_sourced by first word
+    # only: healthz said conf_sourced false and install added a second source
+    # line — every plugin declared twice, which heal can't undo.
+    (home / "a.conf").write_text("set -g mouse on\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(f"{line}\n{tp.TPM_RUN_LINE}\n")
+    tp.owned_conf().parent.mkdir(parents=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {}))
+    assert tp.is_sourced(conf)
+    assert tp.ensure_sourced(conf) is False
+    _install(home, monkeypatch)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    # The line sources more than periscope's file: uninstall leaves it.
+    tp.uninstall()
+    assert conf.read_text() == f"{line}\n{tp.TPM_RUN_LINE}\n"
+
+
 def test_remove_sourced_round_trips_and_leaves_tpm_run(home):
     conf = home / ".tmux.conf"
     original = "set -g mouse on\nrun '~/.tmux/plugins/tpm/tpm'\n"

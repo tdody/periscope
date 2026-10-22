@@ -78,7 +78,10 @@ file read differently is a declaration miscounted: the user conf is
 reads one, never both — so that is also where the source line goes); a
 `source-file` line's paths are word-split, a leading `~` or `$HOME` expanded,
 and each word globbed. A literal-path read missed `source-file $HOME/…` and
-`…/*.conf`, so install declared continuum a second time. tmux itself is not
+`…/*.conf`, so install declared continuum a second time; whether a conf
+already sources the owned file is resolved the same way (a first-word match
+missed a glob covering it, and install added a second source line), while
+uninstall removes only periscope's own single-path line. tmux itself is not
 TPM: it EXECUTES every user conf that exists (`~/.tmux.conf`, then the XDG
 ones; `#{config_files}` lists them). Every install before XDG support appended
 its source line plus `run '~/.tmux/plugins/tpm/tpm'` to `~/.tmux.conf`; for a
