@@ -51,6 +51,8 @@ def _patch_mirror(mocker):
 
     async def fake_subscribe(session, pane_id, size=None):
         sub.session, sub.pane_id, sub.size = session, pane_id, size
+        # Apart from `size`, which a route could still set after the call.
+        sub.subscribed_with = size
         sub.loop = asyncio.get_running_loop()
         return sub
 
@@ -196,7 +198,10 @@ def test_ws_pane_arms_size_announcements(client, mocker):
     a `size`, comparing it with the pane's (width, height) — so the route must
     arm it at subscribe with the dims it tells the client. Left unarmed, a
     split under an open terminal never reaches the xterm, and every test of the
-    mirror (which arms it itself) still passes."""
+    mirror (which arms it itself) still passes. AT subscribe, not after: the
+    connect-time reconcile is requested inside subscribe(), so an arm after
+    the route's first await lets it land unannounced — read from what
+    subscribe() was passed, which a late `sub.size = …` can't fake."""
     mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
     sub = _patch_mirror(mocker)
 
@@ -204,7 +209,7 @@ def test_ws_pane_arms_size_announcements(client, mocker):
         _ = ws.receive_text()  # size
         _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
-        assert sub.size == PaneSize(cols=80, rows=24)
+        assert sub.subscribed_with == PaneSize(cols=80, rows=24)
 
 
 def test_ws_sends_size_announcement_as_text_ahead_of_its_frame(client, mocker):
