@@ -85,6 +85,16 @@ describe("resizeAsk", () => {
     expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 62)).toEqual({ cols: 239, rows: 40 });
   });
 
+  it("sends a pane announced taller than the container back down to it", () => {
+    // The size handler's test. A 40-row window split to 20, the container
+    // then shrunk to 30 (the pane still fit: nothing sent). A sibling closed
+    // (or a zoom) and the pane is all 40: the xterm capped at 30, every row
+    // past it painted onto the last, the prompt hidden. Asked back to 30 —
+    // a shrink of ours below the 40 asked before, regrown if the container is.
+    expect(resizeAsk({ cols: 100, rows: 30 }, sent(100, 40), 40)).toEqual({ cols: 100, rows: 30 });
+    expect(afterSend(sent(100, 40), { cols: 100, rows: 30 }).shrunkFrom).toBe(40);
+  });
+
   it("drops a height-only shrink the pane still fits in", () => {
     // A top/bottom split: the pane is a 31-row slice, well inside 40 rows.
     expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 31)).toBe(null);

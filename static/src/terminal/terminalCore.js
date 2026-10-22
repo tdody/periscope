@@ -782,6 +782,14 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
           // Capped like any fit: the pane can outgrow this container without
           // our asking (another viewer's resize).
           syncXtermSize();
+          // A pane announced taller than the container (a sibling closed, a
+          // zoom, a taller viewer's resize) is asked back down exactly like a
+          // container shrink below it. Nothing else would ask — the container
+          // didn't change, so no fit runs — and capped, the pane's rows past
+          // the container's all paint onto its last, hiding the prompt behind
+          // the status line. A shared window so ends at the shorter viewer's
+          // height: the taller one regrows only shrinks of its own (resizeAsk).
+          if (fitRows > 0 && resizeAsk(hintDims({ pinnedCols, fitRows }), lastSent, paneRows)) scheduleFit();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
         }

@@ -73,12 +73,13 @@ These are the non-obvious behaviors worth preserving:
    those are the pane's, and `resize-window` applies them to the whole
    window: echoing them back shrank a split window on every reconnect.
    Height-only growth is still never sent (each SIGWINCH is a Claude redraw
-   that can mangle scrollback); a height-only shrink below the pane is
-   (`resizeAsk`), since nothing else lets the pane fit, and so is the
-   growth that undoes such a shrink of our own, back to the height asked
-   before it and no further: the window is `window-size manual`, so
-   nothing else regrows it, and a restored window kept a blank band under
-   the pane for every viewer.
+   that can mangle scrollback). Two height-only changes are (`resizeAsk`):
+   a shrink below the pane, whether the container shrank or a size message
+   announced the pane taller than it (a sibling closed, a zoom), since
+   nothing else lets the pane fit; and the growth that undoes such a shrink
+   of our own, back to the height asked before it and no further — the
+   window is `window-size manual`, so nothing else regrows it, and a
+   restored window kept a blank band under the pane for every viewer.
 
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
