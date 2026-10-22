@@ -351,7 +351,7 @@ def test_rewrite_save_file_missing_db_is_noop(tmp_path, monkeypatch):
     assert save.read_text() == original
 
 
-# --- _dedupe_resumes: one pane per session keeps --resume ----------------
+# --- _duplicate_resumes: one pane per session keeps --resume -------------
 
 
 def _active_line(session, window, pane, command, active):
@@ -367,21 +367,15 @@ def test_duplicate_resume_kept_only_on_the_pane_in_use():
     lines = [_active_line("p", "6", str(i), cmd, "0") for i in range(3)]
     pane_map = {"p:6.0": "%3", "p:6.1": "%4", "p:6.2": "%5"}
     activity = {"%3": (SID, 10.0), "%4": (SID, 11.0), "%5": (SID, 99.0)}
-    out, demoted = resurrect._dedupe_resumes(lines, pane_map, activity)
-    assert demoted == ["p:6.0", "p:6.1"]
-    assert out[2] == lines[2]
-    assert out[0].endswith(":claude --dangerously-load-development-channels server:periscope")
-    assert SID not in out[0] and SID not in out[1]
+    assert resurrect._duplicate_resumes(lines, pane_map, {}, activity) == {0, 1}
 
 
 def test_duplicate_resume_falls_back_to_active_then_first():
-    cmd = f"CLAUDE_CONFIG_DIR=/a claude --resume {SID}"
+    cmd = f"claude --resume {SID}"
     lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "1")]
-    out, demoted = resurrect._dedupe_resumes(lines, {}, {})
-    assert demoted == ["p:6.0"]
-    assert out[0].endswith(":CLAUDE_CONFIG_DIR=/a claude")  # env prefix kept
+    assert resurrect._duplicate_resumes(lines, {}, {}, {}) == {0}
     lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "0")]
-    assert resurrect._dedupe_resumes(lines, {}, {})[1] == ["p:6.1"]
+    assert resurrect._duplicate_resumes(lines, {}, {}, {}) == {1}
 
 
 def test_duplicate_resume_activity_beats_the_active_flag():
@@ -389,7 +383,7 @@ def test_duplicate_resume_activity_beats_the_active_flag():
     cmd = f"claude --resume {SID}"
     lines = [_active_line("p", "6", "0", cmd, "1"), _active_line("p", "6", "1", cmd, "0")]
     pane_map = {"p:6.0": "%3", "p:6.1": "%4"}
-    assert resurrect._dedupe_resumes(lines, pane_map, {"%3": (SID, 10.0), "%4": (SID, 99.0)})[1] == ["p:6.0"]
+    assert resurrect._duplicate_resumes(lines, pane_map, {}, {"%3": (SID, 10.0), "%4": (SID, 99.0)}) == {0}
 
 
 def test_duplicate_resume_goes_to_the_pane_live_on_that_session():
@@ -399,7 +393,35 @@ def test_duplicate_resume_goes_to_the_pane_live_on_that_session():
     lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "0")]
     pane_map = {"p:6.0": "%3", "p:6.1": "%4"}
     activity = {"%3": (SID, 10.0), "%4": (OLD_SID, 99.0)}
-    assert resurrect._dedupe_resumes(lines, pane_map, activity)[1] == ["p:6.1"]
+    assert resurrect._duplicate_resumes(lines, pane_map, {}, activity) == {1}
+
+
+def test_duplicate_resume_grouped_by_the_session_each_line_renders_with():
+    # The pane_sessions row wins over captured argv, as in _rewrite_line: both
+    # panes resume SID, though only one argv ever said so.
+    lines = [_pane_line("p", "1", "0", f"claude --resume {OLD_SID}"), _pane_line("p", "2", "0", "claude")]
+    pane_map = {"p:1.0": "%3", "p:2.0": "%4"}
+    assert resurrect._duplicate_resumes(lines, pane_map, {"%3": SID, "%4": SID}, {}) == {1}
+
+
+def test_demoted_line_takes_the_session_lost_shape():
+    # Prefixes incl. the spawn-time model, captured flags incl. --effort, and
+    # its own captured --resume gone — like any pane with no session to resume.
+    cmd = f"claude --resume {SID} --effort high --dangerously-load-development-channels server:periscope"
+    pane_map, sess_map = _maps()
+    out, changed = resurrect._rewrite_line(
+        _pane_line("s", "1", "1", cmd), pane_map, sess_map, {"%56": ALT}, {}, {"%56": "opus"}, demote=True
+    )
+    assert changed
+    assert out.split("\t")[10] == (
+        f":CLAUDE_CONFIG_DIR={ALT} ANTHROPIC_MODEL=opus claude --effort high"
+        " --dangerously-load-development-channels server:periscope"
+    )
+
+
+def test_demoted_line_with_nothing_to_change_is_untouched():
+    line = _pane_line("s", "1", "1", "claude --dangerously-load-development-channels server:periscope")
+    assert resurrect._rewrite_line(line, *_maps(), demote=True) == (line, False)
 
 
 def test_distinct_sessions_and_prompt_text_untouched():
@@ -409,7 +431,7 @@ def test_distinct_sessions_and_prompt_text_untouched():
         _pane_line("p", "3", "0", f"claude {SYS}"),  # "--resume not-a-flag" in text
         _pane_line("p", "4", "0", f"claude {SYS}"),
     ]
-    assert resurrect._dedupe_resumes(lines, {}, {}) == (lines, [])
+    assert resurrect._duplicate_resumes(lines, {}, {}, {}) == set()
 
 
 def test_rewrite_save_file_dedupes_captured_resumes(tmp_path, monkeypatch):
@@ -423,3 +445,42 @@ def test_rewrite_save_file_dedupes_captured_resumes(tmp_path, monkeypatch):
     )
     assert resurrect.rewrite_save_file(save) == 2
     assert [SID in line for line in save.read_text().splitlines()] == [False, True, False]
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "claude --effort high --dangerously-load-development-channels server:periscope",
+        # a restored zombie: its argv already says --resume
+        f"claude --resume {SID} --effort high --dangerously-load-development-channels server:periscope",
+    ],
+)
+def test_rewrite_save_file_demotes_db_resolved_duplicates_in_the_session_lost_shape(
+    tmp_path, seeded_db, monkeypatch, cmd
+):
+    # The incident's path: pane_sessions maps both panes to one session, so
+    # both lines came out of the resume branch (model and --effort dropped)
+    # before the duplicate lost its --resume — it restored fresh on the default
+    # model and effort, and was counted twice.
+    con = sqlite3.connect(seeded_db)
+    con.execute("INSERT INTO pane_sessions VALUES (?,?,?)", ("%57", SID, 1))
+    con.commit()
+    con.close()
+    monkeypatch.setattr(resurrect, "_live_pane_map", lambda: {"p:6.0": "%56", "p:6.1": "%57"})
+    monkeypatch.setattr(resurrect.session_status, "pane_config_dirs", lambda: {"%56": ALT, "%57": ALT})
+    monkeypatch.setattr(resurrect.session_status, "pane_models", lambda: {"%56": "opus", "%57": "opus"})
+    monkeypatch.setattr(
+        resurrect.session_status, "pane_session_activity", lambda: {"%56": (SID, 99.0), "%57": (SID, 10.0)}
+    )
+    save = tmp_path / "last"
+    save.write_text(_active_line("p", "6", "0", cmd, "0") + "\n" + _active_line("p", "6", "1", cmd, "1") + "\n")
+    assert resurrect.rewrite_save_file(save) == 2
+    keeper, loser = (line.split("\t")[10] for line in save.read_text().splitlines())
+    assert (
+        keeper
+        == f":CLAUDE_CONFIG_DIR={ALT} claude --resume {SID} --dangerously-load-development-channels server:periscope"
+    )
+    assert loser == (
+        f":CLAUDE_CONFIG_DIR={ALT} ANTHROPIC_MODEL=opus claude --effort high"
+        " --dangerously-load-development-channels server:periscope"
+    )

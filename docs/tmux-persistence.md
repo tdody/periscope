@@ -13,13 +13,16 @@ when the server restarts, so at restore time there is nothing left to map.
 Import discipline: stdlib + `periscope.config` only — it runs under plain
 `python3`, and `periscope.activity` would drag in the Anthropic SDK.
 
-**One `--resume` per session per save.** After the rewrite, if several pane
-lines resume the same session (captured argv included — a restored zombie's
-argv already says `--resume`), only one keeps it: the pane whose live claude
-reports that session now, then the one that touched its session file last
-(the same file `live_session_id_for_pane` reads), then the active pane, then
-the first line. The
-rest restore as a fresh `claude` with their env prefixes and channel flags.
+**One `--resume` per session per save.** If several pane lines would resume
+the same session (by `pane_sessions` row, or captured argv — a restored
+zombie's argv already says `--resume`), only one keeps it: the pane whose live
+claude reports that session now, then the one that touched its session file
+last (the same file `live_session_id_for_pane` reads), then the active pane,
+then the first line. Keepers are picked BEFORE rendering, and the rest render
+once in the session-lost shape — env prefixes including the spawn-time
+`ANTHROPIC_MODEL`, the captured command including `--effort`, its own
+`--resume` stripped. (Stripping `--resume` off an already-rendered resume line
+instead lost the model and effort, and counted the line twice.)
 Two Claudes on one session both write its transcript; this is the backstop
 that stops a duplicated layout (see the plugin rule below) from compounding.
 
