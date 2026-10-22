@@ -142,7 +142,9 @@ fn target_from_id(id: &str) -> Option<&str> {
 }
 
 /// Banner and sound, unless the banner asked to stay quiet while the dashboard
-/// is focused and it is. A quieted banner still lands in Notification Center.
+/// is focused and it is. Either way it's listed in Notification Center (the
+/// `List` option: with no options at all, macOS drops it there too, and what
+/// you looked past while focused is gone).
 fn should_present(quiet_when_focused: bool, focused: bool) -> bool {
     !(quiet_when_focused && focused)
 }
@@ -207,9 +209,11 @@ define_class!(
             let quiet =
                 info_of(&notification.request().content()).is_some_and(|i| i.quiet_when_focused);
             let options = if should_present(quiet, FOCUSED.load(Ordering::Relaxed)) {
-                UNNotificationPresentationOptions::Banner | UNNotificationPresentationOptions::Sound
+                UNNotificationPresentationOptions::Banner
+                    | UNNotificationPresentationOptions::List
+                    | UNNotificationPresentationOptions::Sound
             } else {
-                UNNotificationPresentationOptions::empty()
+                UNNotificationPresentationOptions::List
             };
             completion_handler.call((options,));
         }
