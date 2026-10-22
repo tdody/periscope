@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getTamaCritter, prefsSignal } from "../../prefs.js";
-import { CLAWD_HEIGHT, CRITTERS, critterById, placement, spriteBox } from "../critters.js";
+import { CLAWD_HEIGHT, CRITTERS, critterById, faceGlyphs, placement, spriteBox, startleGlyph } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite);
 
@@ -92,5 +92,79 @@ describe("getTamaCritter", () => {
   it("falls back to Clawd for an id it doesn't know", () => {
     withUI({ tama_critter: "dragon" });
     expect(getTamaCritter()).toBe("clawd");
+  });
+});
+
+describe("anchors", () => {
+  it.each(sprites.map((c) => [c.id, c.sprite]))("%s's head anchor is its sprite box's top-right", (_id, sprite) => {
+    const box = spriteBox(sprite);
+    expect(sprite.anchors.head.top).toBeCloseTo(box.y);
+    expect(sprite.anchors.head.right).toBeCloseTo(box.x + box.w);
+    expect(sprite.anchors.eyes.length).toBeGreaterThan(0);
+    expect(sprite.ink).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe("faceGlyphs", () => {
+  const scope = critterById("scope").sprite;
+  const moss = critterById("moss").sprite;
+  const nox = critterById("nox").sprite;
+
+  it("draws one glyph per eye, in the critter's ink", () => {
+    for (const face of ["happy", "x", "down"]) {
+      const [group] = faceGlyphs(scope, face);
+      expect(group.g, face).toHaveLength(2);
+      expect(Object.values(group.a), face).toContain(scope.ink);
+    }
+    expect(faceGlyphs(moss, "happy")[0].g).toHaveLength(1);
+  });
+
+  it("keeps each glyph on its eye", () => {
+    const [down] = faceGlyphs(scope, "down");
+    down.g.forEach(({ r: [x, y, w, h] }, i) => {
+      const e = scope.anchors.eyes[i];
+      expect(x).toBe(e.x);
+      expect(w).toBe(e.w);
+      expect(y).toBeGreaterThan(e.y);
+      expect(y + h).toBeCloseTo(e.y + e.h);
+    });
+    const [happy] = faceGlyphs(scope, "happy");
+    happy.g.forEach(({ p }, i) => { expect(p.startsWith(`M${scope.anchors.eyes[i].x} `)).toBe(true); });
+  });
+
+  it("moves the happy face like Clawd's", () => {
+    expect(faceGlyphs(scope, "happy")[0].cls).toBe("tama-happy-eyes");
+  });
+
+  it("adds a brow per eye and one sweat drop when worried", () => {
+    const worried = faceGlyphs(scope, "worried");
+    expect(worried[0].g).toHaveLength(2);
+    expect(worried.at(-1).cls).toBe("tama-sweat");
+    expect(faceGlyphs(moss, "worried")[0].g).toHaveLength(1);
+  });
+
+  it("uses a critter's own face layer over the generated glyph", () => {
+    const own = [{ g: [{ r: [1, 1, 1, 1] }] }];
+    expect(faceGlyphs({ ...scope, faces: { happy: own } }, "happy")).toEqual(own);
+  });
+
+  it("keeps the sweat drop under a critter's own worried brows", () => {
+    const worried = faceGlyphs(nox, "worried");
+    expect(worried[0]).toBe(nox.faces.worried[0]);
+    expect(worried.at(-1).cls).toBe("tama-sweat");
+  });
+
+  it("draws nothing for a face it doesn't know", () => {
+    expect(faceGlyphs(scope, "wink")).toEqual([]);
+  });
+});
+
+describe("startleGlyph", () => {
+  it("puts the bell's \"!\" just past the head's right edge", () => {
+    const scope = critterById("scope").sprite;
+    const [bang] = startleGlyph(scope);
+    expect(bang.cls).toBe("tama-startle");
+    expect(bang.g[0].r[0]).toBeCloseTo(scope.anchors.head.right + 0.4);
+    expect(bang.g[0].r[1]).toBeCloseTo(scope.anchors.head.top + 0.5);
   });
 });

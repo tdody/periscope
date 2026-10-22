@@ -54,3 +54,68 @@ export function placement(sprite, { x0, sitting }) {
     top: bottom - CLAWD_HEIGHT,
   };
 }
+
+// The duty faces Critter.jsx draws over a critter's eyes (TamaScene picks one
+// with Clawd's rules), as nodes in the sprite tree's own format, in sprite
+// units: generated from the eye boxes build_critters.py found
+// (`sprite.anchors`), in the critter's `ink`, unless its SVG drew its own
+// (`sprite.faces`). The worried face's sweat drop is always generated: it's
+// the head's, not the eyes'.
+const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
+
+// Inner ends raised, as Clawd's Worried. One eye (Moss) gets a single tent-shaped brow.
+function brows(eyes) {
+  if (eyes.length === 1) {
+    const { x, y, w } = eyes[0];
+    return [{ p: `M${r4(x - 0.3)} ${r4(y - 0.7)} l${r4(w / 2 + 0.3)} -0.8 l${r4(w / 2 + 0.3)} 0.8` }];
+  }
+  const mid = eyes.reduce((s, e) => s + e.x + e.w / 2, 0) / eyes.length;
+  return eyes.map(({ x, y, w }) => (x + w / 2 < mid
+    ? { p: `M${r4(x - 0.3)} ${r4(y - 1.1)} l${r4(w + 0.4)} -0.8` }
+    : { p: `M${r4(x - 0.1)} ${r4(y - 1.9)} l${r4(w + 0.4)} 0.8` }));
+}
+
+export function faceGlyphs(sprite, face) {
+  const { eyes, head } = sprite.anchors;
+  const ink = sprite.ink;
+  const own = sprite.faces?.[face];
+  if (face === "worried") {
+    const sweat = {
+      p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
+      cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
+    };
+    return [...(own || [{ g: brows(eyes), a: stroked(ink, 0.6) }]), sweat];
+  }
+  if (own) return own;
+  if (face === "happy") {
+    return [{
+      cls: "tama-happy-eyes", a: stroked(ink),
+      g: eyes.map(({ x, y, w, h }) => ({ p: `M${x} ${r4(y + 0.75 * h)} l${r4(w / 2)} ${r4(-h / 2)} l${r4(w / 2)} ${r4(h / 2)}` })),
+    }];
+  }
+  if (face === "x") {
+    return [{
+      a: stroked(ink),
+      g: eyes.map(({ x, y, w, h }) => ({
+        p: `M${r4(x + 0.1)} ${r4(y + 0.1)} L${r4(x + w - 0.1)} ${r4(y + h - 0.1)} M${r4(x + w - 0.1)} ${r4(y + 0.1)} L${r4(x + 0.1)} ${r4(y + h - 0.1)}`,
+      })),
+    }];
+  }
+  if (face === "down") {
+    return [{ a: { fill: ink }, g: eyes.map(({ x, y, w, h }) => ({ r: [x, r4(y + 0.45 * h), w, r4(0.55 * h)] })) }];
+  }
+  return [];
+}
+
+// The bell's "!" away from the desk, beside the critter's own head: Clawd's
+// Startle sits at his right edge, which floats off any narrower critter.
+export function startleGlyph(sprite) {
+  const { head } = sprite.anchors;
+  const x = r4(head.right + 0.4);
+  return [{
+    cls: "tama-startle", a: { fill: "#f2c14e" },
+    g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],
+  }];
+}

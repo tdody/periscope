@@ -46,7 +46,7 @@ No other SVG changes.
 
 ## Geometry: `faceGlyphs(sprite, face)` in `critters.js`
 
-`faceGlyphs` is pure, with no DOM, and works in sprite units. It returns a list of shapes for one face (`{d}` paths or `{x, y, w, h}` rects, each with a `cls`) drawn in `sprite.ink`. If `sprite.faces[face]` exists, those nodes are returned instead of the generated shapes.
+`faceGlyphs` is pure, with no DOM, and works in sprite units. It returns a list of shapes for one face (`{d}` paths or `{x, y, w, h}` rects, each with a `cls`) drawn in `sprite.ink`. If `sprite.faces[face]` exists, those nodes are returned instead of the generated eye shapes. The worried face's sweat drop is still generated, because it belongs to the head, not the eyes. Override layers are rects only, like the rest of the generated art.
 
 | Face | Generated shapes, per eye box `(x, y, w, h)` |
 |---|---|
