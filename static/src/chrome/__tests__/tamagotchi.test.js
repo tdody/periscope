@@ -469,10 +469,31 @@ describe("the walls lifting", () => {
   it("ends the nap at the reset time, and the day goes on as usual", () => {
     expect(activityAt(at(15, 0), until(15, 30)).id).toBe("nap");
     expect(msUntilNextChange(at(15, 0), until(15, 30))).toBe(30 * 60 * 1000);
-    expect(activityAt(at(15, 30), until(15, 30))).toEqual(activityAt(at(15, 30)));
+    expect(activityAt(at(15, 30), until(15, 30))).toEqual({ ...activityAt(at(15, 30)), from: 15.5 });
     // Back at the desk until 5, not knocked off at 4.
     expect(activityAt(at(16, 0), until(15, 30)).id).toBe("code");
     expect(msUntilNextChange(at(12, 10), until(18, 0))).toBe(50 * 60 * 1000);
+  });
+
+  it("ends the nap's window at the reset time, and starts the coding after it there", () => {
+    expect(activityAt(at(13, 5), until(14, 30))).toMatchObject({ id: "nap", from: 13, to: 14.5 });
+    expect(activityAt(at(9, 10), until(9, 20))).toMatchObject({ id: "nap", coffee: true, from: 9, to: 9 + 20 / 60 });
+    expect(activityAt(at(14, 40), until(14, 30))).toMatchObject({ id: "code", from: 14.5, to: 17 });
+    // After a knock-off half the reset fell in, at that half's end.
+    expect(activityAt(at(16, 40), until(16, 15))).toMatchObject({ id: "code", from: 16.5, to: 17 });
+    // Only the windows the walls change: lunch is lunch either way.
+    expect(activityAt(at(12, 10), until(12, 30))).toMatchObject({ id: "eat", from: 12, to: 13 });
+    expect(activityAt(at(13, 10), until(12, 30))).toMatchObject({ id: "code", from: 13, to: 17 });
+    expect(activityAt(at(13, 10), until(18, 0))).toMatchObject({ id: "nap", from: 13, to: 16 });
+  });
+
+  it("lifts the walls on the minute the hover names, so a reset a second before it never wakes Clawd early", () => {
+    // The server's resets land a second or so before a minute (resets_at
+    // 14:29:59): "until 2:29pm", and the nap ends at 2:29pm.
+    const late = { walledUntil: at(14, 29).getTime() + 59_000 };
+    expect(activityAt(at(13, 5), late).to).toBe(14 + 29 / 60);
+    expect(msUntilNextChange(at(14, 28), late)).toBe(60_000);
+    expect(activityAt(new Date(at(14, 29).getTime() + 50), late).id).toBe("code");
   });
 
   it("lets a knock-off pastime under way at the reset run to the half hour, then goes back to the desk", () => {

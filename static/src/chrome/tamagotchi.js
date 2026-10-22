@@ -121,8 +121,12 @@ function rollFrom(list, date, salt, avoid = []) {
 // `day` is what happened today (dayFlags: the hour each verdict was noted, or
 // null) plus `walledUntil`, when the server's walls lift (epoch ms; Infinity
 // with no reset reported, absent with no walls). A moment is walled only
-// before then, so the forecast past the reset is the plain day's.
-const walledAt = (date, day) => date.getTime() < (day.walledUntil ?? -Infinity);
+// before then, so the forecast past the reset is the plain day's. The reset
+// counts from its minute, the one the hover names (wallLabel): resets land a
+// second or so before a minute, and a nap cut at 2:29pm under walls held to
+// 2:29:59 would re-arm its wake, already due, for that whole minute.
+const liftAt = (day) => Math.floor((day.walledUntil ?? -Infinity) / 60_000) * 60_000;
+export const walledAt = (date, day) => date.getTime() < liftAt(day);
 
 // `date`'s day at hour `h` (17.5 → 5:30pm, 24 → the next midnight).
 function dateAt(date, h) {
@@ -140,6 +144,15 @@ function windowsFor(date, day) {
   const h = hours(date);
   const asOf = windowAt(WALLED, h).pastime ? dateAt(date, Math.floor(h / HALF) * HALF) : date;
   return walledAt(asOf, day) ? WALLED : SCHEDULE;
+}
+
+// When the plain day takes over from the walled one: at the reset, or at the
+// end of the knock-off half it falls in.
+function plainFrom(day) {
+  const lift = liftAt(day);
+  if (!Number.isFinite(lift)) return lift;
+  const h = hours(new Date(lift));
+  return windowAt(WALLED, h).pastime ? dateAt(new Date(lift), Math.ceil(h / HALF) * HALF).getTime() : lift;
 }
 
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
@@ -224,15 +237,23 @@ export function activityAt(date, day = {}) {
     const from = span.from + i * HALF;
     return { ...span, ...pastimePlan(span, date, day)[i], from, to: from + HALF };
   }
+  // The desk's hours follow the walls to the minute, so the hover's range
+  // agrees with its up-next: the nap ends at their reset, and the coding
+  // after it starts when the plain day took over.
+  if (slot.id === "nap" && liftAt(day) < dateAt(date, slot.to).getTime()) {
+    return { ...slot, to: hours(new Date(liftAt(day))) };
+  }
+  const back = slot.id === "code" ? plainFrom(day) : -Infinity;
+  if (back > dateAt(date, slot.from).getTime() && back <= date.getTime()) return { ...slot, from: hours(new Date(back)) };
   return slot;
 }
 
 // Milliseconds until the current window ends, so the sprite changes on the
-// hour (or the half hour) rather than up to a minute late; the walls lifting
-// ends a walled nap early (back to coding).
+// hour (or the half hour) rather than up to a minute late. The walls lifting
+// wakes any scene, not only the nap they end, so the hover stops naming them.
 export function msUntilNextChange(date, day = {}) {
   const { to } = activityAt(date, day);
-  return Math.min(dateAt(date, to).getTime(), walledAt(date, day) ? day.walledUntil : Infinity) - date.getTime();
+  return Math.min(dateAt(date, to).getTime(), walledAt(date, day) ? liftAt(day) : Infinity) - date.getTime();
 }
 
 // The hover's "up next": the first window after this one with another scene

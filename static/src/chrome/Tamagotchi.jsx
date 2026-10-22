@@ -40,7 +40,7 @@ import { Dish } from "./TamaDishes.jsx";
 import { PASTIME_SCENES, Sprite } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
-  hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, Y0,
+  hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, walledAt, Y0,
 } from "./tamagotchi.js";
 
 // Where the mascot stands per activity: centred on its feet by default; the
@@ -657,10 +657,13 @@ export function TamaScene({
 // Keyed on the window start as well as the activity: two adjacent windows can
 // share an id and differ in a prop (9–10am codes with the coffee mug), and a
 // laptop asleep from one lunch to the next wakes on the same window with
-// another dish.
+// another dish; and on the walls holding, which the hover names only until
+// their reset.
 const sceneKey = (d) => {
-  const a = activityAt(d, dayAt(d));
-  return `${a.from}|${a.id}|${a.dish || ""}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`;
+  const day = dayAt(d);
+  const a = activityAt(d, day);
+  return `${a.from}|${a.id}|${a.dish || ""}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`
+    + `|${walledAt(d, day)}`;
 };
 
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
@@ -779,7 +782,9 @@ export function Tamagotchi() {
   const view = deskView(a.id, top?.kind);
   const doing = activityLabel(a, view.moodShown ? mood : "calm");
   const parts = [
-    ...(d.wall ? [wallPhrase(d.wall)] : []),
+    // Not past the reset (the server republishes the walls only with the
+    // next usage refresh): the scene is the plain day's by then.
+    ...(d.wall && walledAt(now, day) ? [wallPhrase(d.wall)] : []),
     ...d.items.map((i) => i.phrase),
     ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
     ...(view.moodShown && reason ? [reason] : []),

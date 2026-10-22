@@ -365,15 +365,26 @@ describe("<Tamagotchi>", () => {
     expect(html).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until 6pm · up next at 4pm: ');
   });
 
-  it("forecasts the plain afternoon when the walls lift before it, and wakes at the reset time", () => {
+  it("forecasts the plain afternoon when the walls lift before it, and stops naming them past the reset time", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(12, 10));
     walls.value = { until: at(12, 30).getTime() / 1000 };
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · every account is at its limit until 12:30pm · up next at 1pm: coding"/);
-    // Past the reset, before the next usage refresh clears the walls.
+    // Past the reset, before the next usage refresh clears the walls: back at
+    // the desk since the reset, and the walls not named.
     vi.setSystemTime(at(14, 40));
     walls.value = { until: at(14, 30).getTime() / 1000 };
-    expect(render(<Tamagotchi />)).toContain('data-activity="code"');
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-activity="code"');
+    expect(html).toContain('title="Claude is coding (2:30pm–5pm) · up next at 5pm: ');
+    expect(html).not.toContain("at its limit");
+  });
+
+  it("ends the nap's range at the reset time its up-next names", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(13, 5));
+    walls.value = { until: at(14, 30).getTime() / 1000 };
+    expect(render(<Tamagotchi />)).toContain('title="Claude is napping at the desk (1pm–2:30pm) · every account is at its limit until 2:30pm · up next at 2:30pm: coding"');
   });
 
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
