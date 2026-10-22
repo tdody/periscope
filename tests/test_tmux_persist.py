@@ -383,6 +383,44 @@ def test_tpm_runs_counts_every_conf_tmux_loads(home, monkeypatch):
     assert tp.tpm_runs() == 1
 
 
+@pytest.mark.parametrize(
+    ("line", "runs"),
+    [
+        ("source-file ~/.config/tmux/main.conf", 1),  # which sources conf.d/tpm.conf: two deep
+        ("source-file -F '#{d:current_file}/conf.d/tpm.conf'", 1),
+        ("source-file -q ~/.config/tmux/conf.d/*.conf", 1),
+        ('source-file -q "$HOME/.config/tmux/conf.d/tpm.conf"', 1),
+        ("source-file -n ~/.config/tmux/conf.d/tpm.conf", 0),  # parsed, never run
+        ("source-file '~/.config/tmux/conf.d/tpm.conf'", 0),  # tmux expands no ~ in single quotes
+    ],
+)
+def test_tpm_runs_follows_what_tmux_executes(home, monkeypatch, line, runs):
+    # The run count read sources one level deep, by TPM's rules: a run line two
+    # sources deep, or behind -F, went unseen, install appended a second one,
+    # and healthz counted that one alone — 1, while TPM ran twice.
+    xdg = home / ".config/tmux/tmux.conf"
+    (xdg.parent / "conf.d").mkdir(parents=True)
+    (xdg.parent / "conf.d/tpm.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    (xdg.parent / "main.conf").write_text("set -g status-left x\nsource-file ~/.config/tmux/conf.d/tpm.conf\n")
+    xdg.write_text(f"set -g mouse on\n{line}\n")
+    assert tp.tpm_runs() == runs
+    _install(home, monkeypatch)
+    after = (
+        ["set -g mouse on", tp.source_line(), line]
+        if runs
+        else ["set -g mouse on", line, tp.source_line(), tp.TPM_RUN_LINE]
+    )
+    assert xdg.read_text().splitlines() == after
+    assert tp.tpm_runs() == 1
+
+
+def test_tpm_runs_follows_a_self_sourcing_conf_as_far_as_tmux_does(home):
+    # tmux 3.6a follows a conf that sources itself to its nesting limit: the
+    # run line in it ran 51 times. Cutting the cycle would count 1 — healthy.
+    (home / ".tmux.conf").write_text(f"{tp.TPM_RUN_LINE}\nsource-file ~/.tmux.conf\n")
+    assert tp.tpm_runs() == 51
+
+
 @pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
 def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, link):
     # tmux 3.6a drops a repeat of the same path STRING only, so ~/.tmux.conf

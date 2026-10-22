@@ -43,7 +43,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
 from periscope import config
@@ -167,9 +167,82 @@ def _tmux_roots() -> list[Path]:
     return _live_config_files() or [SYSTEM_CONF, *_user_confs()]
 
 
-def _tmux_conf_files() -> list[Path]:
-    """Every file tmux EXECUTES at server start."""
-    return _with_sources(_tmux_roots())
+# What tmux EXECUTES, which is not what TPM reads: tmux follows `source-file`
+# to any depth and takes its flags, where TPM's sed reads one level and treats
+# `-F` as a path. Counting runs with TPM's resolver missed a run line two
+# sources deep, or behind `-F '#{d:current_file}/…'`: install appended a
+# second one, and healthz counted that one alone.
+
+
+def _tmux_words(text: str) -> list[str]:
+    """`text`'s words as tmux's parser yields them, as far as a path needs:
+    quotes removed, a leading `~` and `$VAR` expanded — except inside single
+    quotes, where tmux expands neither (`source-file '~/x'` names a file `~`
+    in the cwd; TPM's sed expands it). A word starting with `#` begins a
+    comment; an unclosed quote is a line tmux rejects."""
+    lex = shlex.shlex(text, posix=False)
+    lex.whitespace_split, lex.commenters = True, "#"
+    try:
+        raw = list(lex)
+    except ValueError:
+        return []
+    words = []
+    for w in raw:
+        if len(w) > 1 and w[0] == w[-1] == "'":
+            words.append(w[1:-1])
+        else:
+            w = w[1:-1] if len(w) > 1 and w[0] == w[-1] == '"' else w
+            words.append(os.path.expandvars(os.path.expanduser(w)))
+    return words
+
+
+_TMUX_SOURCE_RE = re.compile(r"\s*source(-file)?\s")
+
+
+def _tmux_sources(line: str, current: Path) -> list[Path]:
+    """The files a `source-file [-Fnqv] [-t pane] path …` line makes tmux
+    execute (cmd-source-file.c): none with `-n` (parse only); with `-F`,
+    `#{current_file}` / `#{d:current_file}` expanded against the file being
+    read (any other format needs a live server, and is skipped); each path
+    globbed, one matching nothing an error rather than a file."""
+    if not _TMUX_SOURCE_RE.match(line):
+        return []
+    words, flags = _tmux_words(line)[1:], ""
+    while words and words[0].startswith("-") and words[0] != "-":
+        opts = words.pop(0)[1:]
+        if opts == "-":
+            break
+        if "t" in opts:  # -t's target pane is the rest of the word, or the next one
+            if opts.endswith("t") and words:
+                words.pop(0)
+            opts = opts[: opts.index("t")]
+        flags += opts
+    if "n" in flags:
+        return []
+    paths = []
+    for w in words:
+        if "F" in flags:
+            w = w.replace("#{current_file}", str(current)).replace("#{d:current_file}", str(current.parent))
+            if "#{" in w:
+                continue
+        paths += [Path(p) for p in sorted(glob.glob(w))]
+    return paths
+
+
+# tmux's CMD_SOURCE_FILE_DEPTH_LIMIT: a conf that sources itself runs 51 times
+# (probed on 3.6a). Followed as far, so a run line in one reads as 51, not 1.
+_SOURCE_DEPTH_LIMIT = 50
+
+
+def _executed(files: Iterable[Path], depth: int = 0) -> Iterator[tuple[Path, int, str]]:
+    """(file, line number, line) for each line tmux executes from `files`, in
+    its order: a `source-file` line's targets run at that line. A file is
+    counted once per path it runs under, repeats included."""
+    for f in files:
+        for n, line in enumerate(_scan_text(f).splitlines(), 1):
+            yield f, n, line
+            if depth < _SOURCE_DEPTH_LIMIT:
+                yield from _executed(_tmux_sources(line, f), depth + 1)
 
 
 def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
@@ -197,7 +270,7 @@ def tpm_runs() -> int:
     """How many `run … tpm/tpm` lines tmux will execute at server start.
     Anything but 1 is broken: each run sources every plugin, so two run
     continuum twice — the racing restores, with every declaration at 1."""
-    return sum(bool(_TPM_RUN_RE.match(line)) for f in _tmux_conf_files() for line in _scan_text(f).splitlines())
+    return sum(bool(_TPM_RUN_RE.match(line)) for _, _, line in _executed(_tmux_roots()))
 
 
 def owned_conf_text(repo: Path, declared_elsewhere: Mapping[str, Path]) -> str:
@@ -289,14 +362,13 @@ def is_sourced(path: Path) -> bool:
     return any(_sources_owned(line) for line in _scan_text(path).splitlines())
 
 
-def _runs_tpm(line: str) -> bool:
-    """TPM's run line, or a source of a file holding one (one level, as far as
-    TPM scans). Matching the conf's own lines only appended a second run line
-    for a user whose TPM setup lives in a sourced file: TPM ran twice."""
-    if _TPM_RUN_RE.match(line):
-        return True
-    return any(
-        _TPM_RUN_RE.match(sub) for f in _source_targets(line) if f != owned_conf() for sub in _scan_text(f).splitlines()
+def _runs_tpm(line: str, current: Path) -> bool:
+    """`line`, read from `current`, runs TPM: it is TPM's run line, or a source
+    of a file holding one, at any depth (_executed). Matching the conf's own
+    lines only appended a second run line for a user whose TPM setup lives in
+    a sourced file: TPM ran twice."""
+    return bool(_TPM_RUN_RE.match(line)) or any(
+        _TPM_RUN_RE.match(sub) for _, _, sub in _executed(_tmux_sources(line, current), 1)
     )
 
 
@@ -305,7 +377,7 @@ def ensure_sourced(path: Path) -> bool:
     lines = _read_lines(path)
     if any(_sources_owned(line) for line in lines):
         return False
-    tpm_at = next((i for i, line in enumerate(lines) if _runs_tpm(line)), None)
+    tpm_at = next((i for i, line in enumerate(lines) if _runs_tpm(line, path)), None)
     if tpm_at is None:
         lines += [source_line(), TPM_RUN_LINE]
     else:
