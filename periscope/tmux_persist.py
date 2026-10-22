@@ -266,11 +266,41 @@ def plugin_declarations() -> dict[str, int]:
     return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
+def _tpm_run_lines() -> list[tuple[Path, int, str]]:
+    """The `run … tpm/tpm` lines tmux executes at server start, in its order."""
+    return [(f, n, line) for f, n, line in _executed(_tmux_roots()) if _TPM_RUN_RE.match(line)]
+
+
 def tpm_runs() -> int:
     """How many `run … tpm/tpm` lines tmux will execute at server start.
     Anything but 1 is broken: each run sources every plugin, so two run
     continuum twice — the racing restores, with every declaration at 1."""
-    return sum(bool(_TPM_RUN_RE.match(line)) for _, _, line in _executed(_tmux_roots()))
+    return len(_tpm_run_lines())
+
+
+def conf_problems() -> list[str]:
+    """What the next tmux server start gets wrong, worded for the user to fix:
+    TPM must run exactly once and see each plugin declared once. install's
+    postcondition, checked after it writes — every conf shape it misjudged so
+    far (a run line two sources deep, a symlinked conf pair, a `run -b` of the
+    user's own) ended at 0 or 2 runs while it printed success."""
+    problems = []
+    runs = _tpm_run_lines()
+    where = ", ".join(f"{f}:{n}" for f, n, _ in runs)
+    # A symlinked conf pair: the user sees one line, tmux runs it per path.
+    aliased = len({(os.path.realpath(f), n) for f, n, _ in runs}) < len(runs)
+    if len(runs) != 1:
+        problems.append(
+            f"tmux would run TPM {len(runs)} times at server start"
+            + (f" ({where})" if runs else "")
+            + ("; one file under two paths runs once per path" if aliased else "")
+            + f"; it must run once, from the end of {user_conf()}"
+        )
+    if bad := {p: n for p, n in plugin_declarations().items() if n != 1}:
+        problems.append(
+            "TPM sees " + ", ".join(f"{p} declared {n} times" for p, n in bad.items()) + "; each must be declared once"
+        )
+    return problems
 
 
 def owned_conf_text(repo: Path, declared_elsewhere: Mapping[str, Path]) -> str:
@@ -415,6 +445,15 @@ def remove_sourced(path: Path, *, with_run: bool = False) -> list[str]:
 # --- install / uninstall ----------------------------------------------------
 
 
+class InstallError(RuntimeError):
+    """A failure that leaves continuation broken. Carries what install already
+    changed, for the verb to print ahead of it: the confs are rewritten by then."""
+
+    def __init__(self, message: str, actions: list[str]):
+        super().__init__(message)
+        self.actions = actions
+
+
 def _tmux_server_running() -> bool:
     try:
         return (
@@ -431,7 +470,7 @@ def _tmux_server_running() -> bool:
 
 def install(repo: Path) -> list[str]:
     """Provision everything; returns the actions taken, for the verb to print.
-    Raises on a failure that leaves continuation broken."""
+    Raises InstallError on a failure that leaves continuation broken."""
     actions: list[str] = []
     owned_conf().parent.mkdir(parents=True, exist_ok=True)
     if _write_owned(repo):
@@ -464,7 +503,7 @@ def install(repo: Path) -> list[str]:
     subprocess.run([str(tpm / "bin/install_plugins")], check=True, capture_output=True)
     missing = [p for p in REQUIRED_PLUGINS if not (plugins_dir() / p).is_dir()]
     if missing:
-        raise RuntimeError(f"tpm failed to install: {', '.join(missing)}")
+        raise InstallError(f"tpm failed to install: {', '.join(missing)}", actions)
     actions.append("tmux plugins present: " + ", ".join(REQUIRED_PLUGINS))
 
     if _tmux_server_running():
@@ -475,6 +514,11 @@ def install(repo: Path) -> list[str]:
             text=True,
         )
         actions.append(f"re-sourced {user_conf()} on the running server")
+    # Verified, not assumed: the user's confs are theirs to shape, and a shape
+    # the steps above misjudge must fail here rather than at the next reboot.
+    # Nothing of the user's is removed to make it pass.
+    if problems := conf_problems():
+        raise InstallError("\n".join(problems), actions)
     return actions
 
 
@@ -588,8 +632,15 @@ def status(repo: Path) -> dict:
 def main(argv: list[str]) -> int:
     verb = argv[0] if argv else ""
     if verb == "install" and len(argv) == 2:
-        for a in install(Path(argv[1]).resolve()):
-            print(a)
+        try:
+            for a in install(Path(argv[1]).resolve()):
+                print(a)
+        except InstallError as e:
+            for a in e.actions:
+                print(a)
+            for problem in str(e).splitlines():
+                print(f"error: {problem}", file=sys.stderr)
+            return 1
         return 0
     if verb == "uninstall":
         for a in uninstall():

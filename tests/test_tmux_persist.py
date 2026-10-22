@@ -228,7 +228,8 @@ def test_heal_leaves_a_drift_it_cannot_fix(home, monkeypatch):
     # changes nothing, so writing it would repeat forever.
     (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
     (home / ".tmux.conf").write_text(USER_PLUGINS + "source-file ~/plugins.conf\n" + tp.TPM_RUN_LINE + "\n")
-    _install(home, monkeypatch)
+    with pytest.raises(tp.InstallError, match="tmux-continuum declared 2 times"):
+        _install(home, monkeypatch)
     before = tp.owned_conf().read_text()
     assert tp.plugin_declarations()["tmux-continuum"] == 2
     assert tp.heal(REPO) is False
@@ -431,13 +432,16 @@ def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, lin
     target, link_path = (xdg, dot) if link == "home-to-xdg" else (dot, xdg)
     target.write_text("set -g mouse on\n")
     link_path.symlink_to(target)
-    _install(home, monkeypatch)
+    with pytest.raises(tp.InstallError, match="2 times .* one file under two paths"):
+        _install(home, monkeypatch)
     assert link_path.is_symlink() and tp.is_sourced(target)
     assert tp.tpm_runs() == 2
     _stub_live(monkeypatch, HEALTHY)
     assert tp.status(REPO)["ok"] is False
     # One file, not two: install never moves its lines out of it as the other.
-    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
+    with pytest.raises(tp.InstallError) as again:
+        _install(home, monkeypatch)
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in again.value.actions)
 
 
 def test_a_dotfiles_symlink_runs_once(home, monkeypatch):
@@ -522,6 +526,36 @@ def test_install_never_adds_a_run_line_when_tmux_already_runs_tpm(home, monkeypa
     assert legacy.read_text() == "run -b '~/.tmux/plugins/tpm/tpm'\n"
     assert xdg.read_text() == USER_PLUGINS + tp.source_line() + "\n"
     assert tp.tpm_runs() == 1
+
+
+def test_install_fails_loudly_when_tmux_never_runs_the_conf_tpm_reads(home, monkeypatch):
+    # A server started with -f executes only its file: the run line install
+    # appends to the conf TPM reads never runs. Say so — once: the count stays
+    # 0, so a run line that is already there must stop the next append.
+    custom = home / "custom.conf"
+    custom.write_text("set -g mouse on\n")
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [custom])
+    with pytest.raises(tp.InstallError, match="0 times"):
+        _install(home, monkeypatch)
+    with pytest.raises(tp.InstallError, match="0 times"):
+        _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == f"{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+
+
+def test_install_verb_prints_what_it_changed_then_fails(home, monkeypatch, capsys):
+    # bin/periscope update runs install-tmux unattended: a conf it rewrote and
+    # still can't make right must say both, and exit non-zero.
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text("set -g mouse on\n")
+    (home / ".tmux.conf").symlink_to(xdg)
+    monkeypatch.setattr(tp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).mkdir(parents=True)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert f"added to {xdg}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert err.startswith("error: tmux would run TPM 2 times")
 
 
 def test_uninstall_removes_the_source_line_from_both_user_confs(home):
