@@ -491,8 +491,43 @@ def test_live_env_reads_the_servers_global_environment(monkeypatch, rc, stdout, 
 def test_tpm_runs_follows_a_self_sourcing_conf_as_far_as_tmux_does(home):
     # tmux 3.6a follows a conf that sources itself to its nesting limit: the
     # run line in it ran 51 times. Cutting the cycle would count 1 — healthy.
-    (home / ".tmux.conf").write_text(f"{tp.TPM_RUN_LINE}\nsource-file ~/.tmux.conf\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(f"{tp.TPM_RUN_LINE}\nsource-file ~/.tmux.conf\n")
     assert tp.tpm_runs() == 51
+    # Said once, with the line that sources it, not as 51 `file:1`s.
+    [problem] = tp._run_problems()
+    assert f"({conf}:1 ×51 (loaded at start; sourced by {conf}:2))" in problem
+
+
+def test_a_run_line_reached_twice_names_the_lines_that_reach_it(home, monkeypatch):
+    # The XDG conf sources ~/.tmux.conf, which tmux also loads on its own: the
+    # user's run line there ran twice. The message blamed "one file under two
+    # paths" — a symlink there wasn't — and named neither way in, so not the
+    # XDG conf's source line, the one that has to go.
+    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
+    dot.write_text(f"set -g mouse on\n{tp.TPM_RUN_LINE}\n")
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text("set -g status-left x\nsource-file ~/.tmux.conf\n")
+    assert tp.tpm_runs() == 2
+    [problem] = tp._run_problems()
+    assert f"({dot}:2 ×2 (loaded at start; sourced by {xdg}:2))" in problem
+    assert "two paths" not in problem and "symlink" not in problem
+    with pytest.raises(tp.InstallError, match="changed nothing") as e:
+        _install(home, monkeypatch)
+    assert xdg.read_text() == "set -g status-left x\nsource-file ~/.tmux.conf\n"
+    # The lines as they are on disk, not as install's planned source line shifted them.
+    assert f"sourced by {xdg}:2)" in str(e.value)
+
+
+def test_a_run_line_sourced_twice_names_where_each_chain_starts(home):
+    # Two lines of one conf source a file that sources TPM's: naming only the
+    # last link reads as one way in.
+    conf, mid, tpm = home / ".tmux.conf", home / "mid.conf", home / "tpm.conf"
+    tpm.write_text(tp.TPM_RUN_LINE + "\n")
+    mid.write_text("source-file ~/tpm.conf\n")
+    conf.write_text("source-file ~/mid.conf\nset -g mouse on\nsource-file ~/mid.conf\n")
+    [problem] = tp._run_problems()
+    assert f"({tpm}:1 ×2 (sourced by {mid}:1 via {conf}:1; sourced by {mid}:1 via {conf}:3))" in problem
 
 
 def _symlinked_pair(home, link, text):
@@ -533,7 +568,8 @@ def test_install_writes_nothing_where_tmux_would_run_tpm_twice(home, monkeypatch
     assert not tp.owned_conf().exists()
     assert tp.tpm_runs() == 0
     message = str(e.value)
-    assert "tmux would run TPM 2 times" in message and "changed nothing" in message
+    assert message.startswith("with the lines install would add, tmux would run TPM 2 times")
+    assert "changed nothing" in message
     assert f"{home / '.tmux.conf'} and {home / '.config/tmux/tmux.conf'}" in message
 
 
@@ -724,7 +760,7 @@ def test_install_verb_says_when_it_changed_nothing(home, monkeypatch, capsys):
     assert tp.main(["install", str(REPO)]) == 1
     out, err = capsys.readouterr()
     assert out == ""
-    assert err.startswith("error: tmux would run TPM 2 times")
+    assert err.startswith("error: with the lines install would add, tmux would run TPM 2 times")
     assert "changed nothing" in err
 
 

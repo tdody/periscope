@@ -166,6 +166,12 @@ the option after tmux has carried on through the conf. One file under two
 paths (a symlinked pair) is the conf TPM reads, never moved out of itself;
 tmux runs any run line in it twice, so install writes nothing there and fails
 naming both paths (delete the link: tmux ≥ 3.1 reads the XDG path itself).
+Every run-count message names each run line once with each way tmux reached
+it — `~/.tmux.conf:2 ×2 (loaded at start; sourced by
+~/.config/tmux/tmux.conf:2)` — so the source line that reaches a file a second
+time is named, and the symlink clause is said only of one file run under two
+path strings (said of any line run twice, it sent a user whose XDG conf
+sources `~/.tmux.conf` hunting for a link that wasn't there).
 
 `GET /api/healthz` carries a `resurrect` block built from the LIVE tmux
 server's options (not the conf file — the file being right and the server

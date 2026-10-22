@@ -286,18 +286,27 @@ class _Executed(NamedTuple):
     n: int
     text: str
     unknown: list[str]  # a source-file line's variables periscope can't expand (_conf_env)
+    via: tuple[tuple[Path, int], ...]  # the source-file lines that led here, outermost first; () at a root
+
+    def reached(self) -> str:
+        """How tmux got here, for a message: the file loaded at start, or the
+        line that sourced it (and where that chain began)."""
+        if not self.via:
+            return "loaded at start"
+        (f, n), (f0, n0) = self.via[-1], self.via[0]
+        return f"sourced by {f}:{n}" + (f" via {f0}:{n0}" if len(self.via) > 1 and (f0, n0) != (f, n) else "")
 
 
-def _executed(files: Iterable[Path], env: Env, depth: int = 0) -> Iterator[_Executed]:
+def _executed(files: Iterable[Path], env: Env, depth: int = 0, via: tuple = ()) -> Iterator[_Executed]:
     """Each line tmux executes from `files`, in its order: a `source-file`
     line's targets run at that line. A file is counted once per path it runs
     under, repeats included."""
     for f in files:
         for n, text in enumerate(_scan_text(f).splitlines(), 1):
             targets, unknown = _tmux_sources(text, f, env)
-            yield _Executed(f, n, text, unknown)
+            yield _Executed(f, n, text, unknown, via)
             if depth < _SOURCE_DEPTH_LIMIT:
-                yield from _executed(targets, env, depth + 1)
+                yield from _executed(targets, env, depth + 1, (*via, (f, n)))
 
 
 def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
@@ -352,8 +361,19 @@ def _run_problems() -> list[str]:
     ]
     if len(runs) == 1 or (unresolved and not runs):
         return problems
-    where = ", ".join(f"{x.file}:{x.n}" for x in runs)
-    # A symlinked conf pair: the user sees one file, tmux runs it per path.
+    # Each run line once, with every way tmux reached it: a run line said as
+    # `file:n, file:n` named neither the source line that reached it again
+    # (the line to remove) nor the 51 of a self-sourcing conf compactly.
+    reached: dict[tuple[str, int], list[_Executed]] = {}
+    for x in runs:
+        reached.setdefault((str(x.file), x.n), []).append(x)
+    where = ", ".join(
+        f"{f}:{n}" + (f" ×{len(xs)}" if len(xs) > 1 else "") + f" ({'; '.join(dict.fromkeys(x.reached() for x in xs))})"
+        for (f, n), xs in reached.items()
+    )
+    # A symlinked conf pair: the user sees one file, tmux runs it per path —
+    # said only of one file under two path STRINGS. Said of any line run
+    # twice, it sent a user whose conf sources another to hunt for a symlink.
     paths: dict[str, list[str]] = {}
     for x in runs:
         if str(x.file) not in (seen := paths.setdefault(os.path.realpath(x.file), [])):
@@ -645,10 +665,17 @@ def install(repo: Path, report: Callable[[str], None] = lambda _: None) -> list[
     # better: the file behind it may run TPM too.
     with _planning({path: lines for path, lines, _ in edits}):
         runs, unresolved = _run_scan()
-        doubled = _run_problems() if len(runs) > 1 or unresolved else []
-    if doubled:
+        refused = _run_problems() if len(runs) > 1 or unresolved else []
+    if refused:
+        # Lines the user can find: the confs as they are, when they already
+        # fail so — the planned source line shifts the numbers under it.
+        runs, unresolved = _run_scan()
+        if len(runs) > 1 or unresolved:
+            refused = _run_problems()
+        else:
+            refused = [f"with the lines install would add, {problem}" for problem in refused]
         planned = "; ".join(a for _, _, done in edits for a in done)
-        raise InstallError("\n".join([*doubled, "changed nothing" + (f" (planned: {planned})" if planned else "")]), [])
+        raise InstallError("\n".join([*refused, "changed nothing" + (f" (planned: {planned})" if planned else "")]), [])
 
     actions: list[str] = []
 
@@ -729,8 +756,10 @@ def _live_option(name: str) -> str | None:
 
 
 def _live_config_files() -> list[Path]:
-    """The config files the running server loaded at start (`#{config_files}`):
-    its built-in system conf, or `-f`'s. [] when there is no server."""
+    """The top-level config files the running server tried at start
+    (`#{config_files}`): its built-in system conf and the user confs of its
+    default list — missing ones included, by the path strings it used — or
+    `-f`'s file alone; never what they source. [] when there is no server."""
     return [Path(p) for p in (_tmux("display-message", "-p", "#{config_files}") or "").strip().split(",") if p]
 
 
