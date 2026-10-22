@@ -46,17 +46,17 @@ No other SVG changes.
 
 ## Geometry: `faceGlyphs(sprite, face)` in `critters.js`
 
-`faceGlyphs` is pure, with no DOM, and works in sprite units. It returns a list of shapes for one face (`{d}` paths or `{x, y, w, h}` rects, each with a `cls`) drawn in `sprite.ink`. If `sprite.faces[face]` exists, those nodes are returned instead of the generated eye shapes. The worried face's sweat drop is still generated, because it belongs to the head, not the eyes. Override layers are rects only, like the rest of the generated art.
+`faceGlyphs` is pure, with no DOM, and works in sprite units. It returns a list of shapes for one face as nodes in the sprite tree's own format: `{p}` paths, `{r: [x, y, w, h]}` rects and `{g, a}` groups, with `cls` on the happy group, the sweat drop and the "!". If `sprite.faces[face]` exists, those nodes are returned instead of the generated eye shapes. The worried face's sweat drop is still generated, because it belongs to the head, not the eyes. Override layers are static rects and groups — no animation, no mood layers, never empty, as `build_critters.py`'s generator enforces.
 
 | Face | Generated shapes, per eye box `(x, y, w, h)` |
 |---|---|
 | `happy` | a `^` stroke: from `(x, y + 0.75h)` up to `(x + w/2, y + 0.25h)`, down to `(x + w, y + 0.75h)`. Class `tama-happy-eyes`. |
 | `x` | two strokes corner to corner, inset 0.1 |
 | `down` | a rect `(x, y + 0.45h, w, 0.55h)`: the eye looking down |
-| `worried` | a brow 1.1 above the box, inner end raised (the left eye rises towards the centre, the right falls away from it). Plus one sweat drop at `(head.right, head.top + 1)`, class `tama-sweat`. The eyes stay. |
+| `worried` | two-eyed: a brow 1.1 above each box, inner end raised (the left eye rises towards the centre, the right falls away from it). One-eyed (Moss): a single tent-shaped brow 0.7 above its eye instead. Plus one sweat drop starting at `(head.right - 0.4, head.top + 1)`, class `tama-sweat`. The eyes stay. |
 | `startle` | the "!": a 1×3 bar and a 1×1 dot at `(head.right + 0.4, head.top + 0.5)`, class `tama-startle`, fill `#f2c14e`. Not a face; it's drawn alongside one. |
 
-Stroke widths are tuned during implementation against the hand-check grid. The design mock used 0.75 sprite units, about Clawd's 0.45 at the critter's scale.
+Final strokes: the eye glyphs (`happy`, `x`) are 0.75 sprite units, about Clawd's 0.45 at the critter's scale; the worried brows are 0.6, a touch thinner — Clawd's 0.4-unit brows at that scale come to ~0.67, and the eye glyphs' weight reads wrong on them.
 
 ## Rendering
 
@@ -64,6 +64,7 @@ Stroke widths are tuned during implementation against the hand-check grid. The d
 - **`happy`, `x` and `down`:** eye nodes and glints are skipped, and lids are drawn as their `shut` frame. That's the asleep mechanism, so the lid covers the sclera and pupil beneath it. The face shapes are then drawn on top.
 - **`worried`:** the eyes stay, and the brows and sweat drop are drawn on top.
 - **`startle`:** the "!" is drawn.
+- `EYE_FACES` (`critters.js`) names the faces that replace the eyes — `happy`, `x`, `down`; `worried` keeps them.
 
 Everything is drawn inside the critter's own group, so it scales with `placement` and bobs with `.tama-creature` without new transform maths. Mood layers render as today; with a face, the mood is calm, so the critter's calm mouth stays.
 
@@ -99,7 +100,7 @@ It passes `critterFace` and `startle = pose === "bell" && !deskBell` to `<Critte
   - no face renders the sprite exactly as today.
 - **vitest `tamagotchiRender`:**
   - each critter × {done at the desk, merged, api, ctx, update, bell away, a smiling pastime, moody, asleep} gets the right `critterFace` and `startle`;
-  - **Clawd's 6,528-combination render matrix stays byte-identical.**
+  - **the pinned 3,264-render matrix (activity × duty kind × mood × occasion × season) stays byte-identical.**
 
 ## Hand check
 
