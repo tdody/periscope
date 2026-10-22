@@ -5,6 +5,7 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accounts, usage } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
+import { PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
@@ -33,6 +34,18 @@ describe("<TamaScene>", () => {
     for (const id of ["sleep", "coffee", "eat", "run", "cycle", "music", "beer", "kids", "garden", "cook", "dog"]) {
       expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
     }
+  });
+
+  it("draws every pastime from its own record, the tempo and the stride on the scene for the CSS", () => {
+    expect(Object.keys(PASTIME_SCENES).sort()).toEqual(PASTIMES.map((p) => p.id).sort());
+    for (const [id, p] of Object.entries(PASTIME_SCENES)) {
+      expect(p.tempo, id).toBeGreaterThan(0);
+      const svg = render(<TamaScene activity={id} />).match(/^<svg[^>]*>/)[0];
+      expect(svg, id).toContain(`data-tempo="${p.tempo}"`);
+      expect(svg, id).toContain(`--tama-tempo: ${p.tempo}s`);
+      expect(/ data-stride[ >]/.test(svg), id).toBe(!!p.stride);
+    }
+    expect(render(<TamaScene activity="code" />)).not.toContain("data-tempo");
   });
 
   it("only dresses the outdoor pastimes in the season", () => {

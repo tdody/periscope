@@ -36,30 +36,18 @@ import {
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
-import {
-  Bass, BassAmp, Bike, ClawdPint, Controller, Couch, Dog, Friend, GardenBed, Goggles, Helmet, Kids, Pool, Scarf, Sled,
-  Spoon, Stove, Toque, Water, WateringCan,
-} from "./TamaPastimes.jsx";
+import { PASTIME_SCENES } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS,
   MOODS, moodReason, msUntilNextChange, occasionShown, SKIN, seasonAt, upNext, Y0,
 } from "./tamagotchi.js";
 
 // Where the mascot stands per activity: centred on its feet by default; the
-// two sitting scenes shift it left to make room for the desk / fireplace, and
-// tuck its legs out of sight. The friend and the kids need the right half,
-// the bass amp a little of it; the ride lifts Clawd onto the saddle.
-const POSES = {
-  code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true },
-  music: { x0: 6 }, beer: { x0: 1 }, kids: { x0: 1 }, cycle: { x0: 7, lift: 2 },
-  game: { x0: 3, sitting: true }, garden: { x0: 2 }, cook: { x0: 2 }, dog: { x0: 1 },
-  swim: { x0: 6, sitting: true }, sled: { x0: 5, sitting: true },
-};
+// sitting scenes shift it left to make room for the desk / fireplace, and
+// tuck its legs out of sight. The pastimes' poses are in their own records
+// (TamaPastimes.PASTIME_SCENES).
+const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8 };
-// The two stride frames alternate: running, pedalling, walking the dog.
-const STRIDING = new Set(["run", "cycle", "dog"]);
-// Nothing on duty, Clawd smiles in company and on the sled.
-const SMILING = new Set(["beer", "kids", "dog", "sled"]);
 const BODY_CELLS = gridCells(BODY);
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
@@ -184,14 +172,12 @@ function JackOLantern({ x, y }) {
   );
 }
 
-// Where the jack-o'-lantern sits in each non-run scene: on the floor, under
-// the desk, on the mantel. The friend and the kids leave no floor for one.
+// Where the jack-o'-lantern sits outside the pastimes (theirs are in
+// PASTIME_SCENES): on the floor, under the desk, on the mantel.
 const JACK_SPOTS = {
   sleep: { x: 1.5, y: 16.4 },
   coffee: { x: 1.5, y: 16.4 },
   eat: { x: 1.5, y: 16.4 },
-  music: { x: 1.5, y: 16.4 },
-  cycle: { x: 0.6, y: 16.4 },
   code: { x: 25.5, y: 16.4 },
   read: { x: 24.6, y: 3.4 },
 };
@@ -340,9 +326,7 @@ function CodeScreen({ mood }) {
   );
 }
 
-function Behind({
-  activity, season, occasion, ghost, coffee, ringing, keyboard = true, mood = "calm", screen = null, dish, trick,
-}) {
+function Behind({ activity, occasion, coffee, ringing, keyboard = true, mood = "calm", screen = null, dish }) {
   switch (activity) {
     case "sleep":
       if (ringing) return null;
@@ -434,51 +418,20 @@ function Behind({
       );
     case "eat":
       return <Dish dish={dish} />;
-    case "cycle":
-      return (
-        <g>
-          <Scenery season={season} night={false} />
-          <Bike />
-        </g>
-      );
-    case "music":
-      return <BassAmp />;
-    case "beer":
-      return <Friend />;
-    case "kids":
-      // The Halloween evening's round goes out at night, the kids in sheets.
-      return trick ? <g><Scenery season={season} night /><Kids costume /></g> : <Kids />;
-    case "game":
-      return <Couch />;
-    case "garden":
-      return <g><Scenery season={season} night={false} /><GardenBed /></g>;
-    case "cook":
-      return <Stove />;
-    case "dog":
-      return <g><Scenery season={season} night={false} /><Dog /></g>;
-    case "swim":
-      return <Pool />;
-    case "sled":
-      return <g><Scenery season={season} night={false} /><Sled /></g>;
-    case "run":
-      return (
-        <g>
-          <Scenery season={season} night={trick} />
-          <g class="tama-motion" fill="var(--fg-3)">
-            <rect x="1" y="10.6" width="4" height="0.5" />
-            <rect x="2.4" y="13.6" width="3.6" height="0.5" />
-            <rect x="0.6" y="16.6" width="4.6" height="0.5" />
-          </g>
-          {season !== "winter" && !ghost && <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
-        </g>
-      );
     default:
       return null;
   }
 }
 
+// A pastime's backdrop (PASTIME_SCENES): the outdoor ones in the season's
+// scenery, at night on a Halloween round. Scenery is drawn here, not in
+// TamaPastimes.jsx: importing it back from there would make an import cycle.
+function PastimeBehind({ p, season, trick }) {
+  const drawn = <p.Behind season={season} trick={trick} />;
+  return p.outdoors ? <g><Scenery season={season} night={trick} />{drawn}</g> : drawn;
+}
+
 function InFront({ activity }) {
-  if (activity === "swim") return <Water />;
   if (activity !== "read") return null;
   return (
     <g>
@@ -612,10 +565,14 @@ export function TamaScene({
   const kind = duty?.kind || null;
   const view = deskView(activity, kind, !!walled);
   const { scene, atDesk } = view;
-  const { x0, sitting = false, lift = 0 } = POSES[scene] || STANDING;
   // Only the Halloween evening's rounds (tamagotchi.activityAt's `trick`) go
   // out in sheets: a Halloween-weekend afternoon run is an ordinary run.
-  const ghost = trick && (activity === "run" || activity === "kids");
+  const ghost = trick;
+  // A pastime's record, with what changes on a Halloween round.
+  const base = PASTIME_SCENES[scene];
+  const p = base && trick ? { ...base, ...base.trick } : base;
+  const { x0, sitting = false, lift = 0 } = p?.pose || POSES[scene] || STANDING;
+  const jack = p ? p.jack : JACK_SPOTS[activity];
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
   // nap.
@@ -641,33 +598,29 @@ export function TamaScene({
     : celebrating ? <HappyEyes x0={x0} />
     : pose === "api" ? <XEyes x0={x0} />
     : pose === "update" ? <LookDown x0={x0} />
-    : !pose && SMILING.has(scene) ? <HappyEyes x0={x0} />
+    : !pose && p?.smile ? <HappyEyes x0={x0} />
     : <Eyes x0={x0} />;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={scene} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
          data-duty={kind || undefined} data-pose={pose || undefined} data-urgent={duty?.urgent ? "" : undefined}
-         data-working={mirroring ? Math.min(working, 4) : undefined}>
+         data-working={mirroring ? Math.min(working, 4) : undefined}
+         data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
-      <Behind activity={scene === "nap" ? "code" : scene} season={season} occasion={occasion} ghost={ghost} coffee={coffee}
-              ringing={ringing} keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"}
-              screen={screen} dish={dish} trick={trick} />
-      {occasion === "halloween" && JACK_SPOTS[activity] && <JackOLantern {...JACK_SPOTS[activity]} />}
+      {p ? <PastimeBehind p={p} season={season} trick={trick} /> : (
+        <Behind activity={scene === "nap" ? "code" : scene} occasion={occasion} coffee={coffee} ringing={ringing}
+                keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"} screen={screen}
+                dish={dish} />
+      )}
+      {occasion === "halloween" && jack && <JackOLantern {...jack} />}
       {/* The lift sits on a wrapper: the creature's CSS bob sets `transform`. */}
       <g transform={lift ? `translate(0 ${-lift})` : undefined}>
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
         <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
         {face}
-        {scene === "music" && <Bass x0={x0} />}
-        {scene === "beer" && <ClawdPint x0={x0} />}
-        {scene === "cycle" && !hat && <Helmet x0={x0} />}
-        {scene === "game" && <Controller x0={x0} />}
-        {scene === "garden" && <WateringCan x0={x0} />}
-        {scene === "cook" && <Spoon x0={x0} />}
-        {scene === "cook" && !hat && <Toque x0={x0} />}
-        {scene === "swim" && !ghost && <Goggles x0={x0} />}
-        {scene === "sled" && <Scarf x0={x0} />}
+        {p?.Held && <p.Held x0={x0} />}
+        {p?.Headwear && !hat && <p.Headwear x0={x0} />}
         {pose === "api" && <Stars x0={x0} />}
         {pose === "ctx" && <Worried x0={x0} />}
         {atDesk && celebrating && <ArmsUp x0={x0} />}
@@ -675,15 +628,16 @@ export function TamaScene({
         {deskBell && <SlapHand />}
         {pose === "bell" && !deskBell && <Startle x0={x0} />}
         {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
-        {STRIDING.has(activity) && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
-        {ghost && activity === "run" && <Pail x0={x0} />}
-        {(activity === "run" || activity === "sled") && season === "winter" && !hat && !ghost && (
+        {p?.stride && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
+        {ghost && p?.pail && <Pail x0={x0} />}
+        {p?.snowcap && season === "winter" && !hat && !ghost && (
           <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
         )}
         {hat === "santa" && <SantaHat x0={x0} />}
         {hat === "party" && <PartyHat x0={x0} />}
       </g>
       </g>
+      {p?.Front && <p.Front />}
       <InFront activity={activity} />
       {(atDesk || deskBell) && <DeskProps kind={kind} />}
       {scene === "nap" && !ringing && <DeskZs />}

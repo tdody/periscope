@@ -1,8 +1,9 @@
 // The pastimes (tamagotchi.PASTIMES): the props around Clawd for each, on the
-// scene's 34×24 grid with the floor at y 19. The dishes are TamaDishes.jsx's.
-// Behind-the-mascot pieces take fixed positions, set against the pose's x0 in
-// Tamagotchi.POSES; the pieces Clawd holds take x0 and sit inside its group,
-// so they bob with it. Motion is CSS (styles.css, `.tama`).
+// scene's 34×24 grid with the floor at y 19, and PASTIME_SCENES (at the end),
+// the one record per pastime TamaScene draws from. The dishes are
+// TamaDishes.jsx's. Behind-the-mascot pieces take fixed positions, set against
+// the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
+// inside its group, so they bob with it. Motion is CSS (styles.css, `.tama`).
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -17,6 +18,21 @@ function Sprite({ rows, x0, y0, w = 1, h = 2, fill }) {
         <rect key={`${x},${y}`} x={x0 + x * w} y={y0 + y * h} width={w + 0.02} height={h + 0.02} fill={fill} />
       ))}
     </g>
+  );
+}
+
+// ---- the run: motion lines streaming off Clawd, sweat unless it's cold -----
+// A Halloween round (the ghost run) goes out in a sheet, so no sweat shows.
+export function RunTrail({ season, trick }) {
+  return (
+    <>
+      <g class="tama-motion" fill="var(--fg-3)">
+        <rect x="1" y="10.6" width="4" height="0.5" />
+        <rect x="2.4" y="13.6" width="3.6" height="0.5" />
+        <rect x="0.6" y="16.6" width="4.6" height="0.5" />
+      </g>
+      {season !== "winter" && !trick && <path class="tama-sweat" d="M25 7.6 q1.1 1.7 0 2.5 q-1.1 -0.8 0 -2.5z" fill="#7fb6e6" />}
+    </>
   );
 }
 
@@ -221,11 +237,11 @@ function Kid({ x, cls, costume }) {
   );
 }
 
-export function Kids({ costume = false }) {
+export function Kids({ trick = false }) {
   return (
     <g>
-      <Kid x={17.4} cls="tama-kid" costume={costume} />
-      <Kid x={25.4} cls="tama-kid tama-kid2" costume={costume} />
+      <Kid x={17.4} cls="tama-kid" costume={trick} />
+      <Kid x={25.4} cls="tama-kid tama-kid2" costume={trick} />
     </g>
   );
 }
@@ -472,3 +488,39 @@ export function Scarf({ x0 }) {
     </g>
   );
 }
+
+// ---- one record per pastime -----------------------------------------------
+// Everything TamaScene needs to draw a pastime, so adding one is one entry
+// here (plus its drawing above and its line in tamagotchi.PASTIMES):
+//   pose      where Clawd is: x0, `sitting` tucks the legs away, `lift` raises
+//             it (onto the saddle); standing centred (x0 8) when absent
+//   tempo     the bob, in seconds (styles.css: --tama-tempo)
+//   stride    the legs alternate their two frames, at the tempo
+//   smile     happy eyes, while nothing on duty takes the face
+//   outdoors  set in the season's Scenery (at night on a Halloween round)
+//   snowcap   snow on Clawd's head in winter, under no hat
+//   jack      the Halloween week's jack-o'-lantern spot; none if no floor for one
+//   Behind    behind Clawd, given { season, trick }
+//   Held      held or worn, in Clawd's group so it bobs along, given { x0 }
+//   Headwear  on Clawd's head unless any hat outranks it, given { x0 }
+//   Front     drawn over Clawd
+//   trick     what changes on a Halloween round (tamagotchi.activityAt's
+//             `trick`): Clawd goes as a ghost; `pail` hands it a pail
+export const PASTIME_SCENES = {
+  run: { tempo: 0.3, stride: true, outdoors: true, snowcap: true, Behind: RunTrail, trick: { pail: true } },
+  cycle: {
+    pose: { x0: 7, lift: 2 }, tempo: 0.4, stride: true, outdoors: true, jack: { x: 0.6, y: 16.4 },
+    Behind: Bike, Headwear: Helmet,
+  },
+  music: { pose: { x0: 6 }, tempo: 0.5, jack: { x: 1.5, y: 16.4 }, Behind: BassAmp, Held: Bass },
+  beer: { pose: { x0: 1 }, tempo: 0.9, smile: true, Behind: Friend, Held: ClawdPint },
+  kids: { pose: { x0: 1 }, tempo: 0.7, smile: true, Behind: Kids, trick: { outdoors: true } },
+  game: { pose: { x0: 3, sitting: true }, tempo: 1.2, Behind: Couch, Held: Controller },
+  garden: { pose: { x0: 2 }, tempo: 0.8, outdoors: true, Behind: GardenBed, Held: WateringCan },
+  cook: { pose: { x0: 2 }, tempo: 0.6, Behind: Stove, Held: Spoon, Headwear: Toque },
+  dog: { pose: { x0: 1 }, tempo: 0.5, stride: true, smile: true, outdoors: true, Behind: Dog },
+  swim: { pose: { x0: 6, sitting: true }, tempo: 1, Behind: Pool, Held: Goggles, Front: Water },
+  sled: {
+    pose: { x0: 5, sitting: true }, tempo: 0.35, smile: true, outdoors: true, snowcap: true, Behind: Sled, Held: Scarf,
+  },
+};
