@@ -37,9 +37,11 @@ describe("payloadFor", () => {
     expect(payloadFor({ kind: "question", w: null, alert })).toMatchObject({ title: "old asks", subtitle: "s", target: "gone:2" });
   });
 
-  it("names the PR a finished pane opened, and its last sentence", () => {
-    const p = payloadFor({ kind: "done", w: w({ pr: 29, recap: "Opened the PR. Tests pass." }) });
-    expect(p).toMatchObject({ title: "dual-moas is done", subtitle: "periscope · PR #29 opened", body: "Opened the PR." });
+  it("names a finished pane's linked PR, and its last sentence", () => {
+    const p = payloadFor({ kind: "done", w: w({ pr: 29, pr_linked: true, recap: "Opened the PR. Tests pass." }) });
+    expect(p).toMatchObject({ title: "dual-moas is done", subtitle: "periscope · PR #29", body: "Opened the PR." });
+    // An auto-detected PR is just the branch's: the subtitle stays session · branch.
+    expect(payloadFor({ kind: "done", w: w({ pr: 29 }) }).subtitle).toBe(payloadFor({ kind: "done", w: w() }).subtitle);
     expect(payloadFor({ kind: "done", w: w() }).body).toBe("Finished.");
   });
 

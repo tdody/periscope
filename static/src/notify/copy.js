@@ -57,7 +57,9 @@ export function payloadFor(ev, ctx = {}) {
     case "done":
       return {
         ...base, title: `${pane(w)} is done`,
-        subtitle: w.pr ? `${w.session} · PR #${w.pr} opened` : where(w),
+        // The linked PR only: an auto-detected one is just the branch's, often
+        // days old, and would ride every finished turn.
+        subtitle: w.pr && w.pr_linked ? `${w.session} · PR #${w.pr}` : where(w),
         body: firstSentence(w.recap || w.last_line) || "Finished.", data: { open: "pane", pid: w.pid },
       };
     case "ci_failed": {
