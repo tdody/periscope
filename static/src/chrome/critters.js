@@ -39,19 +39,20 @@ export function spriteBox(sprite) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// Where a critter stands in Clawd's spot: as tall as standing Clawd, centred
-// on Clawd's centre, on the floor line standing and on the seat sitting (on
-// the floor line it would sink through the chair). `top` is its head, for the
-// props that sit on one (hats, stars, the "!").
-export function placement(sprite, { x0, sitting }) {
+// Where a critter stands in Clawd's spot: as tall as standing Clawd (or
+// `height`: the kids are half that), centred on Clawd's centre, on the floor
+// line standing and on the seat sitting (on the floor line it would sink
+// through the chair). `top` is its head, for the props that sit on one
+// (hats, stars, the "!").
+export function placement(sprite, { x0, sitting, height = CLAWD_HEIGHT }) {
   const box = spriteBox(sprite);
-  const scale = CLAWD_HEIGHT / box.h;
+  const scale = height / box.h;
   const bottom = sitting ? SEAT : FEET;
   return {
     scale,
     tx: x0 + 8.5 - scale * (box.x + box.w / 2),
     ty: bottom - scale * (box.y + box.h),
-    top: bottom - CLAWD_HEIGHT,
+    top: bottom - height,
   };
 }
 
@@ -131,4 +132,29 @@ export function startleGlyph(sprite) {
     cls: "tama-startle", a: { fill: "#f2c14e" },
     g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],
   }];
+}
+
+// A colour's hue turned by `deg` (HSL), for a critter's friend (TamaPastimes.jsx):
+// the same creature, another individual, as Clawd's friend is Clawd in blue.
+// Computed rather than a CSS filter, which WebKit applies unreliably to SVG
+// children. Anything but #rrggbb (none, var(--…)) passes through; greys have
+// no hue to turn.
+export function hueRotate(color, deg) {
+  const m = /^#([0-9a-f]{6})$/i.exec(color || "");
+  if (!m) return color;
+  const n = Number.parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return color.toLowerCase();
+  const l = (max + min) / 2;
+  const c = (1 - Math.abs(2 * l - 1)) * (d / (1 - Math.abs(2 * l - 1)));
+  const h0 = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const h = (((h0 * 60 + deg) % 360) + 360) % 360;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const [r1, g1, b1] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
+    : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  const lift = l - c / 2;
+  return `#${[r1, g1, b1].map((v) => Math.round((v + lift) * 255).toString(16).padStart(2, "0")).join("")}`;
 }

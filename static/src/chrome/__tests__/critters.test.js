@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getTamaCritter, prefsSignal } from "../../prefs.js";
-import { CLAWD_HEIGHT, CRITTERS, EYE_FACES, critterById, faceGlyphs, placement, spriteBox, startleGlyph } from "../critters.js";
+import { CLAWD_HEIGHT, CRITTERS, EYE_FACES, critterById, faceGlyphs, hueRotate, placement, spriteBox, startleGlyph } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite);
 
@@ -212,5 +212,42 @@ describe("startleGlyph", () => {
     expect(bang.cls).toBe("tama-startle");
     expect(bang.g[0].r[0]).toBeCloseTo(scope.anchors.head.right + 0.4);
     expect(bang.g[0].r[1]).toBeCloseTo(scope.anchors.head.top + 0.5);
+  });
+});
+
+describe("hueRotate", () => {
+  it("turns a colour's hue by the given degrees", () => {
+    expect(hueRotate("#ff0000", 120)).toBe("#00ff00");
+    expect(hueRotate("#ff0000", 240)).toBe("#0000ff");
+    expect(hueRotate("#00FF00", -120)).toBe("#ff0000");
+  });
+
+  it("leaves a colour as it is at 0 and 360 degrees", () => {
+    expect(hueRotate("#40b8ee", 0)).toBe("#40b8ee");
+    expect(hueRotate("#40b8ee", 360)).toBe("#40b8ee");
+  });
+
+  it("leaves greys alone: they have no hue to turn", () => {
+    expect(hueRotate("#808080", 90)).toBe("#808080");
+    // A near-black with a faint hue still turns, and comes back lower-case.
+    expect(hueRotate("#1A1C20", 150)).toMatch(/^#[0-9a-f]{6}$/);
+    expect(hueRotate("#1A1C20", 150)).not.toBe("#1a1c20");
+  });
+
+  it("passes through anything that isn't #rrggbb", () => {
+    expect(hueRotate("none", 90)).toBe("none");
+    expect(hueRotate("var(--line)", 90)).toBe("var(--line)");
+    expect(hueRotate(undefined, 90)).toBeUndefined();
+  });
+});
+
+describe("placement with a height", () => {
+  it("stands a critter that tall, feet on the floor", () => {
+    const sprite = critterById("jelly").sprite;
+    const box = spriteBox(sprite);
+    const p = placement(sprite, { x0: 8, sitting: false, height: 5 });
+    expect(p.scale * box.h).toBeCloseTo(5);
+    expect(p.ty + p.scale * (box.y + box.h)).toBeCloseTo(19);
+    expect(p.top).toBe(14);
   });
 });
