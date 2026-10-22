@@ -175,10 +175,17 @@ def test_owned_conf_declares_plugins_nobody_else_does(home):
     assert tp.declared_plugins(text) == ["tpm", "tmux-resurrect"]
 
 
-def _stub_install(home, monkeypatch):
+def _stub_install(home, monkeypatch, run=None):
     """TPM's clone and plugins present, its install_plugins a no-op, and no
-    tmux server (rc 1) to re-source."""
-    monkeypatch.setattr(tp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
+    tmux server (rc 1) to re-source — unless `run` answers first."""
+
+    def fake(args, check=False, **kw):
+        r = (run and run(args)) or subprocess.CompletedProcess(args, 1 if args[0] == "tmux" else 0, "", "")
+        if check and r.returncode:
+            raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
+        return r
+
+    monkeypatch.setattr(tp.subprocess, "run", fake)
     for p in tp.REQUIRED_PLUGINS:
         (home / ".tmux/plugins" / p).mkdir(parents=True, exist_ok=True)
 
@@ -663,6 +670,52 @@ def test_install_verb_prints_what_it_changed_then_fails(home, monkeypatch, capsy
     out, err = capsys.readouterr()
     assert f"added to {conf}: {tp.TPM_RUN_LINE}" in out.splitlines()
     assert err.startswith("error: TPM sees tmux-continuum declared 2 times")
+
+
+def test_a_failed_clone_after_the_conf_edits_prints_them_and_why(home, monkeypatch, capsys):
+    # The clone, install_plugins and the re-source ran with check=True after
+    # the confs were rewritten: a failure was a bare traceback — no edits
+    # printed, git's own reason swallowed by capture_output.
+    conf = home / ".tmux.conf"
+    conf.write_text("set -g mouse on\n")
+    fatal = "fatal: unable to access 'https://github.com/tmux-plugins/tpm/': Could not resolve host: github.com"
+    _stub_install(
+        home, monkeypatch, lambda args: args[0] == "git" and subprocess.CompletedProcess(args, 128, "", fatal)
+    )
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).rmdir()
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert out.splitlines() == [
+        f"wrote {tp.owned_conf()}",
+        f"added to {conf}: {tp.source_line()}",
+        f"added to {conf}: {tp.TPM_RUN_LINE}",
+    ]
+    assert f"error: git clone --depth 1 {tp.TPM_REPO} {home / '.tmux/plugins/tpm'} failed (exit 128): {fatal}" in err
+    assert "error: tpm failed to install: tpm, tmux-resurrect, tmux-continuum" in err.splitlines()
+    assert "Traceback" not in err
+
+
+def test_a_failed_re_source_still_reports_the_counts(home, monkeypatch, capsys):
+    # The re-source only makes the hook path live now: its failure must not
+    # hide whether TPM runs once and sees each plugin once.
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "set -g @plugin 'tmux-plugins/tmux-continuum'\nset -g bogus on\n")
+    reason = f"{conf}:5: invalid option: bogus"
+
+    def tmux(args):
+        if args[:2] == ["tmux", "list-sessions"]:
+            return subprocess.CompletedProcess(args, 0, "x: 1 windows\n", "")
+        if args[:2] == ["tmux", "source-file"]:
+            return subprocess.CompletedProcess(args, 1, "", reason + "\n")
+        return None
+
+    _stub_install(home, monkeypatch, tmux)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert f"added to {conf}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert f"error: tmux source-file {conf} failed (exit 1): {reason}" in err.splitlines()
+    assert any(line.startswith("error: TPM sees tmux-continuum declared 2 times") for line in err.splitlines())
 
 
 def test_install_verb_says_when_it_changed_nothing(home, monkeypatch, capsys):

@@ -588,8 +588,9 @@ def remove_sourced(path: Path, *, with_run: bool = False) -> list[str]:
 
 
 class InstallError(RuntimeError):
-    """A failure that leaves continuation broken. Carries what install already
-    changed, for the verb to print ahead of it: the confs are rewritten by then."""
+    """A failure that leaves continuation broken, one line per fault. Carries
+    what install already changed (each reported as it landed): the confs may
+    be rewritten by then."""
 
     def __init__(self, message: str, actions: list[str]):
         super().__init__(message)
@@ -600,9 +601,26 @@ def _tmux_server_running() -> bool:
     return _tmux("list-sessions") is not None
 
 
-def install(repo: Path) -> list[str]:
-    """Provision everything; returns the actions taken, for the verb to print.
-    Raises InstallError on a failure that leaves continuation broken."""
+def _fault(argv: list[str], **kwargs) -> str | None:
+    """Run one provisioning step; why it failed, for the user, or None. Raised
+    after the confs were rewritten, a failed clone, install_plugins or
+    re-source was a bare traceback: no edits printed, and the tool's own
+    reason swallowed by capture_output."""
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, check=False, **kwargs)
+    except OSError as e:
+        return f"{shlex.join(argv)} failed: {e}"
+    if r.returncode == 0:
+        return None
+    why = "; ".join(line.strip() for line in (r.stderr or r.stdout or "").splitlines() if line.strip())
+    return f"{shlex.join(argv)} failed (exit {r.returncode})" + (f": {why}" if why else "")
+
+
+def install(repo: Path, report: Callable[[str], None] = lambda _: None) -> list[str]:
+    """Provision everything; returns the actions taken, each also passed to
+    `report` as it lands — so a failure after the confs were rewritten has
+    already said what changed. Raises InstallError on a failure that leaves
+    continuation broken."""
     conf = user_conf()
     edits: list[tuple[Path, list[str], list[str]]] = []  # (conf, its new lines, the actions they are)
     # Every install before XDG support appended source + run to ~/.tmux.conf.
@@ -633,45 +651,49 @@ def install(repo: Path) -> list[str]:
         raise InstallError("\n".join([*doubled, "changed nothing" + (f" (planned: {planned})" if planned else "")]), [])
 
     actions: list[str] = []
+
+    def done(*landed: str) -> None:
+        actions.extend(landed)
+        for action in landed:
+            report(action)
+
     owned_conf().parent.mkdir(parents=True, exist_ok=True)
     if _write_owned(repo):
-        actions.append(f"wrote {owned_conf()}")
-    for path, lines, done in edits:
+        done(f"wrote {owned_conf()}")
+    for path, lines, edited in edits:
         _write_lines(path, lines)
-        actions += done
+        done(*edited)
 
+    # From here a failing step is a fault on the list, not a raise: the confs
+    # are rewritten, and the counts below are still the user's to see.
+    faults = []
     tpm = plugins_dir() / "tpm"
     if not tpm.is_dir():
         tpm.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["git", "clone", "--depth", "1", TPM_REPO, str(tpm)],
-            check=True,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-        )
-        actions.append(f"cloned tpm into {tpm}")
+        clone = ["git", "clone", "--depth", "1", TPM_REPO, str(tpm)]
+        if fault := _fault(clone, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}):
+            faults.append(fault)
+        else:
+            done(f"cloned tpm into {tpm}")
+    if tpm.is_dir() and (fault := _fault([str(tpm / "bin/install_plugins")])):
+        faults.append(fault)
     # TPM reports a failed clone only as text, never via exit code — verify the
     # directories ourselves.
-    subprocess.run([str(tpm / "bin/install_plugins")], check=True, capture_output=True)
-    missing = [p for p in REQUIRED_PLUGINS if not (plugins_dir() / p).is_dir()]
-    if missing:
-        raise InstallError(f"tpm failed to install: {', '.join(missing)}", actions)
-    actions.append("tmux plugins present: " + ", ".join(REQUIRED_PLUGINS))
+    if missing := [p for p in REQUIRED_PLUGINS if not (plugins_dir() / p).is_dir()]:
+        faults.append(f"tpm failed to install: {', '.join(missing)}")
+    else:
+        done("tmux plugins present: " + ", ".join(REQUIRED_PLUGINS))
 
     if _tmux_server_running():
-        subprocess.run(
-            ["tmux", "source-file", str(user_conf())],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        actions.append(f"re-sourced {user_conf()} on the running server")
+        if fault := _fault(["tmux", "source-file", str(user_conf())]):
+            faults.append(fault)
+        else:
+            done(f"re-sourced {user_conf()} on the running server")
     # Verified, not assumed: the user's confs are theirs to shape, and a shape
     # the steps above misjudge must fail here rather than at the next reboot.
     # Nothing of the user's is removed to make it pass.
-    if problems := conf_problems():
-        raise InstallError("\n".join(problems), actions)
+    if faults := faults + conf_problems():
+        raise InstallError("\n".join(faults), actions)
     return actions
 
 
@@ -782,11 +804,10 @@ def main(argv: list[str]) -> int:
     verb = argv[0] if argv else ""
     if verb == "install" and len(argv) == 2:
         try:
-            for a in install(Path(argv[1]).resolve()):
-                print(a)
-        except InstallError as e:
-            for a in e.actions:
-                print(a)
+            # Flushed per line: update.log takes both streams, and a
+            # block-buffered stdout lands the edits after the errors they explain.
+            install(Path(argv[1]).resolve(), report=lambda a: print(a, flush=True))
+        except (InstallError, OSError) as e:
             for problem in str(e).splitlines():
                 print(f"error: {problem}", file=sys.stderr)
             return 1

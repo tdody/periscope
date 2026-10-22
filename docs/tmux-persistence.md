@@ -55,21 +55,28 @@ directly above the line that runs TPM (its `run ... tpm/tpm`, or a
 only when nothing tmux executes runs TPM (see the run rule below). The owned
 file is regenerated wholesale on every `install`/`update` (never merged);
 `uninstall-tmux` removes the line (from every user conf, see below) and the
-file and leaves the plugins. The verb fails loudly — exit 1, after printing
-each line it removed or added. It plans its conf edits in memory and counts
-their result before writing any: when tmux would still run TPM more than once,
-it writes nothing (no file, no line) and says what it would have changed —
-nothing it adds brings a doubled run back to one, and its source line would
-switch continuum on, to run twice. (Checked only after writing, a symlinked
-pair got the run line, TPM ran 0 → 2 times, and install exited 1 having done
-it.) TPM reports a failed clone only as text, so it checks the three plugin
-directories itself (a silently missing plugin is a silently missing save), and
-after writing it re-counts: tmux must run TPM exactly once and TPM must see
+file and leaves the plugins.
+
+The verb plans its conf edits in memory and counts their result before writing
+any: when tmux would still run TPM more than once, or the count can't be
+finished (a `$VAR` nothing here can expand, below), it writes nothing (no
+file, no line), says what it would have changed, and exits 1 — nothing it adds
+brings a doubled run back to one, and its source line would switch continuum
+on, to run twice. (Checked only after writing, a symlinked pair got the run
+line, TPM went from 0 to 2 runs, and install exited 1 having done it.) Past
+that check it prints each change as it lands — every line it removed or added
+— and fails loudly, exit 1, on any fault: TPM reports a failed clone only as
+text, so it checks the three plugin directories itself (a silently missing
+plugin is a silently missing save); a step that fails once the confs are
+rewritten (the TPM clone, `install_plugins`, the re-source) is reported with
+the tool's own stderr, where it used to be a bare traceback with the edits
+unprinted; and it re-counts: tmux must run TPM exactly once and TPM must see
 each plugin declared once. Every conf shape install misjudged before that
 check ended at 0 or 2 runs while it exited 0; it never removes a line of the
 user's to pass. A running server is re-sourced so the hook path is live
-immediately; continuum's auto-restore is gated on server start time, so that
-never restores over it.
+immediately (a failed re-source still gets the counts reported);
+continuum's auto-restore is gated on server start time, so that never restores
+over it.
 
 **Every plugin is declared exactly once across what TPM reads.** TPM does not
 dedupe `@plugin` lines: a user who already declares tpm/resurrect/continuum in
