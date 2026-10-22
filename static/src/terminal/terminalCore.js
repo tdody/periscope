@@ -72,7 +72,7 @@ let searchAddon = null;
 let termResizeObserver = null;
 let fitDebounce = null;
 let fitHeld = false;              // a splitter drag is in progress — see holdTerminalFit
-let lastSent = NOTHING_SENT;      // what this socket last asked tmux for (resizeAsk) — suppresses redundant resizes
+let lastSent = NOTHING_SENT;      // what this mount last asked tmux for (afterSend) — kept across reconnects, reset by stopLiveTerminal
 
 const CODEX_PANEL_BG = "\x1b[48;2;30;30;30m";
 const PERISCOPE_TERM_BG = "\x1b[48;2;40;44;52m";
@@ -128,7 +128,7 @@ let containerDims = { cols: 0, rows: 0 };
 // screen, so they held a frozen older copy of the pane under the live one. A
 // pane is shorter than the container both when its window is split (periscope
 // sizes the window, the pane gets a slice) and after the container grows in
-// height only, which is deliberately not sent (scheduleFit).
+// height only, which is deliberately not sent (resizeAsk).
 // Cols follow the pane the same way, so a left/right split shows the pane's
 // width instead of flipping between it and the container's on every fit — but
 // uncapped (xtermDims).
@@ -727,16 +727,10 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
           // Through the fit's rule (xtermDims): the pane can outgrow this
           // container without our asking (another viewer's resize).
           syncXtermSize();
-          // And through the fit's ask (resizeAsk): a pane announced taller
-          // than the container (a sibling closed, a zoom, a taller viewer's
-          // resize) is asked back down exactly like a container shrink below
-          // it. Nothing else would ask — the container didn't change, so no
-          // fit runs — and capped, the pane's rows past the container's all
-          // paint onto its last, hiding the prompt behind the status line. A
-          // shared window so ends at the shorter viewer's height and the width
-          // last asked for: the shrink is rows only, and the taller viewer
-          // regrows only shrinks of its own. Size messages come only when the
-          // pane's dims change, so the extra measure costs nothing.
+          // And through the fit's ask (resizeAsk), which asks a pane announced
+          // taller than the container back down. Nothing else would: the
+          // container didn't change, so no fit runs. Size messages come only
+          // when the pane's dims change, so the extra measure costs nothing.
           scheduleFit();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
@@ -793,40 +787,9 @@ function scheduleFit() {
     // The xterm takes the pane's dims, rows capped at the container (xtermDims).
     if (!measureContainer()) return;
     syncXtermSize();
-    // Only send a resize message when the width changed since the last one
-    // we sent. Height-only changes are dropped, for two reasons; resizeAsk
-    // makes two exceptions, described after them.
-    //   1. The ResizeObserver's initial observation fires shortly after
-    //      mount and produces a no-op resize (cols/rows unchanged from the
-    //      WS-connect hint), which tmux silently honors but the cycle of
-    //      "fit → send → tmux resizes → output reflows" can produce visible
-    //      width churn in scrollback.
-    //   2. Height-only resizes (modal drag, sidebar splitter, browser window
-    //      vertical resize) don't reflow content — but tmux resize-window
-    //      still raises SIGWINCH and Claude's TUI re-renders its frame on
-    //      every SIGWINCH. That re-render mangles scrollback (characters
-    //      from earlier frames overlapping the latest content — the same
-    //      failure class as the width-reflow corruption noted in
-    //      `routes/ws.py::set_pane_size`). Suppressing row-only growth costs
-    //      empty rows at the bottom until the next real width change
-    //      re-syncs height — empty only because the xterm stays at the
-    //      pane's height (paneRows); grown to the container, those rows
-    //      showed a stale copy of the screen.
-    // A height-only SHRINK below the pane is sent (resizeAsk): the pane no
-    // longer fits, and the xterm can't show it whole until tmux shrinks it —
-    // capped at the container, every pane row past its last paints onto that
-    // row; uncapped, it clipped the prompt and cursor out of view. One
-    // SIGWINCH redraw is the lesser cost. (A splitter drag still sends once,
-    // on release — holdTerminalFit.)
-    // The height-only GROWTH that undoes such a shrink of ours is sent too —
-    // only that growth, and only up to the height asked before the shrink.
-    // The window is window-size manual, so nothing else ever regrew it: the
-    // pane stayed short, a blank band under Claude's TUI for every viewer,
-    // until the next width change. One redraw per shrink undone; and as only
-    // our own shrink is undone, a shorter viewer's is never regrown into a
-    // fight.
-    // Compared and sent as the container's dims (containerDims): term.cols is
-    // the pane's, which on a left/right split never equals what we last sent.
+    // What to ask tmux for — a width change, rarely a height — and why:
+    // resizeAsk. From the container's dims (containerDims): term.cols is the
+    // pane's, which on a left/right split never equals what we last sent.
     const ask = resizeAsk(containerDims, lastSent, paneRows);
     if (!ask) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
@@ -899,7 +862,7 @@ export function refitTerminal() {
 // Held while a splitter is dragged (split/ResizeHandle.jsx). The container
 // changes width on every pointermove, and each fit that landed would resize
 // the tmux pane mid-drag — a burst of SIGWINCHes, each one a Claude redraw:
-// the scrollback-mangling reflow scheduleFit's comment describes. The xterm
+// the scrollback-mangling redraw resizeAsk's comment describes. The xterm
 // keeps its size (clipped, or short of the edge) until release, then fits once.
 export function holdTerminalFit() {
   fitHeld = true;

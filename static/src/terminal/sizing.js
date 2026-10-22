@@ -1,7 +1,7 @@
 // The terminal's sizing rules: the xterm's dims, and what tmux is asked for.
 // Pure — no xterm, socket, DOM or module state. terminalCore holds the
-// measurements and the per-socket memo, and applies these (docs/invariants.md
-// #3 has the incidents behind them).
+// measurements and the memo of what the mount last asked, and applies these
+// (docs/invariants.md #3 has the incidents behind them).
 
 export const NOTHING_SENT = { cols: 0, rows: 0, shrunkFrom: 0 };
 
@@ -33,17 +33,36 @@ export function xtermDims(knownPaneCols, knownPaneRows, containerCols, container
 }
 
 // Pure: what a fit must ask tmux for, or null. `container` is the measured
-// container (the pinned width, the fitted rows — never the xterm's dims, the
-// pane's); `sent` the socket's memo of its last ask (afterSend). A width
-// change always; a height-only change when the container is now shorter than
-// the pane, or to undo a height-only shrink of our own — back up to the
-// height asked before it, never past. See scheduleFit for why height-only
-// growth is otherwise never sent.
+// container (the pinned width, the fitted rows); `sent` the memo of what this
+// mount last asked (afterSend: kept across reconnects, reset by
+// stopLiveTerminal); `knownPaneRows` the pane's height from the last size
+// message, 0 before one.
+// A width change is always asked. A height-only change is not: it reflows
+// nothing, but resize-window still raises SIGWINCH, and Claude's TUI redraws
+// its frame on each one, which mangles scrollback (the failure class of the
+// width reflows routes/ws.py avoids). A dropped growth costs blank rows under
+// the pane until the next width change — blank because the xterm keeps the
+// pane's height (xtermDims); grown to the container, they showed a stale copy
+// of the screen. Comparing with the memo also drops the no-op ask the
+// ResizeObserver's first fire would make after the connect hint. Two
+// height-only changes are asked:
+//   - A shrink below the pane, whether the container shrank or a size message
+//     announced the pane taller than it (a sibling closed, a zoom, a taller
+//     viewer's resize): the pane no longer fits. Capped at the container, its
+//     rows past the last all paint onto it, hiding the prompt; uncapped, the
+//     box clipped the prompt and cursor away. One redraw is the lesser cost.
+//     (A splitter drag asks once, on release: holdTerminalFit.)
+//   - The growth that undoes such a shrink of ours, back to the height asked
+//     before it and no further: the window is `window-size manual`, so nothing
+//     else regrows it, and it kept a blank band under the pane for every
+//     viewer. As only our own shrink is undone, a shorter viewer's is never
+//     regrown into a fight.
 // A height-only ask is `{ rows }` alone, and the server keeps the window's
 // width for it (`resize-window -y`). With our pin in it, a shorter viewer's
 // shrink also set a shared window's width, reverting a wider or narrower
-// viewer's on every change it made. Nor the pane's cols: on a left/right
-// split that is a slice of the window, and each ask halved it.
+// viewer's on every change it made. Never the xterm's dims either: they are
+// the pane's, and on a left/right split the pane is a slice of the window, so
+// each ask halved it.
 export function resizeAsk(container, sent, knownPaneRows) {
   if (container.cols !== sent.cols) return container;
   if (knownPaneRows > 0 && container.rows < knownPaneRows) return { rows: container.rows };
