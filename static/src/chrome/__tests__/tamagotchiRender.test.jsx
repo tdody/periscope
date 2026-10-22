@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { accounts, usage, walls } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { PASTIME_SCENES } from "../TamaPastimes.jsx";
-import { BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
@@ -305,7 +305,8 @@ describe("<Tamagotchi>", () => {
     furiousB();
     const html = render(<Tamagotchi />);
     expect(html).toContain('data-mood="furious"');
-    expect(html).toMatch(/title="Claude is coding furiously \(1pm–5pm\) · week usage on account B is burning 🔥 · up next at 5pm: [^"]+"/);
+    const next = activityLabel(activityAt(at(17, 0)));
+    expect(html).toContain(`title="Claude is coding furiously (1pm–5pm) · week usage on account B is burning 🔥 · up next at 5pm: ${next}"`);
   });
 
   it("leaves the account out with a single subscription", () => {
@@ -313,7 +314,8 @@ describe("<Tamagotchi>", () => {
     vi.setSystemTime(at(14, 30));
     accounts.value = [{ id: "b", label: "B" }];
     furiousB();
-    expect(render(<Tamagotchi />)).toMatch(/title="Claude is coding furiously \(1pm–5pm\) · week usage is burning 🔥 · up next/);
+    const next = activityLabel(activityAt(at(17, 0)));
+    expect(render(<Tamagotchi />)).toContain(`title="Claude is coding furiously (1pm–5pm) · week usage is burning 🔥 · up next at 5pm: ${next}"`);
   });
 
   it("names the half hour and the dish in the hover line", () => {
@@ -322,6 +324,35 @@ describe("<Tamagotchi>", () => {
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is [^"(]+ \(5:30pm–6pm\)/);
     vi.setSystemTime(at(12, 10));
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · up next at 1pm: coding"/);
+  });
+
+  it("draws the dish the hover names", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    const lunch = activityAt(at(12, 10));
+    expect(lunch.dish).not.toBe("ramen"); // the fallback: a dish left unpassed would still draw it
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-dish="${lunch.dish}"`);
+    expect(html).toContain(`title="Claude is ${lunch.label} (noon–1pm)`);
+  });
+
+  it("sends Clawd out in a sheet on a Halloween evening's round", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 28, 17, 10));
+    const html = render(<Tamagotchi />);
+    expect(html).toContain("tama-ghost");
+    expect(html).toContain('title="Claude is trick-or-treating');
+  });
+
+  it("knocks off at 4pm under the walls, the scene and the hover alike", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(16, 10));
+    walls.value = { until: at(18, 0).getTime() / 1000 };
+    const html = render(<Tamagotchi />);
+    const pastime = activityAt(at(16, 10), { walled: true });
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm)`);
+    expect(html).not.toContain("napping at the desk");
   });
 
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
