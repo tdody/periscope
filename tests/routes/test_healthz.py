@@ -28,6 +28,7 @@ def test_healthz_returns_ok_with_metadata():
         "plugins",
         "conf_sourced",
         "plugin_declarations",
+        "tpm_runs",
         "restore_on",
         "processes_ok",
         "hook_current",

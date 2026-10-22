@@ -40,6 +40,17 @@ def test_source_line_appended_with_tpm_run_when_absent(home):
     assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
 
 
+def test_source_line_goes_above_a_sourced_tpm_run(home):
+    # TPM's run line in a sourced file went unseen and a second one was
+    # appended: TPM, and every plugin with it, ran twice.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tpm'\n" + tp.TPM_RUN_LINE + "\n")
+    conf = home / ".tmux.conf"
+    conf.write_text("set -g mouse on\nsource-file ~/plugins.conf\n")
+    assert tp.ensure_sourced(conf) is True
+    assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\nsource-file ~/plugins.conf\n"
+    assert tp.tpm_runs() == 1
+
+
 def test_ensure_sourced_creates_missing_conf(home):
     conf = home / ".tmux.conf"
     assert tp.ensure_sourced(conf) is True
@@ -243,6 +254,20 @@ def test_status_flags_a_plugin_declared_twice(home, monkeypatch):
     conf.write_text(USER_PLUGINS + conf.read_text())
     s = tp.status(REPO)
     assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 2)
+    assert s["ok"] is False
+
+
+def test_status_flags_tpm_run_twice(home, monkeypatch):
+    # Two run lines source every plugin twice — the same racing restores as a
+    # doubled @plugin, with every declaration still counting 1.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["tpm_runs"] == 1
+    conf = home / ".tmux.conf"
+    conf.write_text(conf.read_text() + "run-shell ~/.tmux/plugins/tpm/tpm\n")
+    s = tp.status(REPO)
+    assert s["tpm_runs"] == 2
+    assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
     assert s["ok"] is False
 
 

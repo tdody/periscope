@@ -13,8 +13,9 @@ on every install, and adds exactly one `source-file` line to the user conf
 (`~/.tmux.conf`, or `$XDG_CONFIG_HOME/tmux/tmux.conf` when TPM would read that).
 TPM scans sourced files for `@plugin` lines, so the plugin list lives in the
 owned file too. The source line must precede TPM's `run` line — TPM only
-installs plugins declared before it runs — so it is inserted directly above an
-existing `run ... tpm/tpm`, or appended together with one.
+installs plugins declared before it runs — so it is inserted directly above the
+line that runs TPM (directly, or by sourcing a file that does), or appended
+together with one.
 
 Each plugin must be declared EXACTLY ONCE across everything TPM reads. TPM
 does not dedupe: a plugin the user already declares in ~/.tmux.conf, declared
@@ -153,6 +154,13 @@ def plugin_declarations() -> dict[str, int]:
     return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
+def tpm_runs() -> int:
+    """How many `run … tpm/tpm` lines tmux will execute across what TPM reads.
+    Anything but 1 is broken: each run sources every plugin, so two run
+    continuum twice — the racing restores, with every declaration at 1."""
+    return sum(bool(_TPM_RUN_RE.match(line)) for f in _tpm_conf_files() for line in _scan_text(f).splitlines())
+
+
 def owned_conf_text(repo: Path, declared_elsewhere: Mapping[str, Path]) -> str:
     # No default: "declared nowhere else" is the pre-fix text that put every
     # plugin in TPM's list twice — a caller must say what it found.
@@ -225,12 +233,23 @@ def is_sourced(path: Path) -> bool:
     return any(_sources_owned(line) for line in _scan_text(path).splitlines())
 
 
+def _runs_tpm(line: str) -> bool:
+    """TPM's run line, or a source of a file holding one (one level, as far as
+    TPM scans). Matching the conf's own lines only appended a second run line
+    for a user whose TPM setup lives in a sourced file: TPM ran twice."""
+    if _TPM_RUN_RE.match(line):
+        return True
+    return any(
+        _TPM_RUN_RE.match(sub) for f in _source_targets(line) if f != owned_conf() for sub in _scan_text(f).splitlines()
+    )
+
+
 def ensure_sourced(path: Path) -> bool:
     """Add the source line to `path` per the ordering rule. True if written."""
     lines = _read_lines(path)
     if any(_sources_owned(line) for line in lines):
         return False
-    tpm_at = next((i for i, line in enumerate(lines) if _TPM_RUN_RE.match(line)), None)
+    tpm_at = next((i for i, line in enumerate(lines) if _runs_tpm(line)), None)
     if tpm_at is None:
         lines += [source_line(), TPM_RUN_LINE]
     else:
@@ -356,6 +375,7 @@ def status(repo: Path) -> dict:
     plugins = {p: (plugins_dir() / p).is_dir() for p in REQUIRED_PLUGINS}
     conf_sourced = is_sourced(user_conf())
     declarations = plugin_declarations()
+    runs = tpm_runs()
 
     restore = _live_option("@continuum-restore")
     live = restore is not None
@@ -385,10 +405,12 @@ def status(repo: Path) -> dict:
             and all(checks.values())
             and not stale
             and all(n == 1 for n in declarations.values())
+            and runs == 1
         ),
         "plugins": plugins,
         "conf_sourced": conf_sourced,
         "plugin_declarations": declarations,
+        "tpm_runs": runs,
         **checks,
         "last_save_at": last_save_at,
         "last_save_stale": stale,

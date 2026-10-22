@@ -40,8 +40,9 @@ periscope-owned `~/.config/periscope/tmux.conf` (the three `@plugin` lines,
 `@continuum-restore on`, `@resurrect-processes '~claude'`, and
 `@resurrect-hook-post-save-layout` pointing at THIS checkout), and adds one
 `source-file` line to the user conf (`~/.tmux.conf`, or the XDG one TPM
-prefers — see below) — inserted directly above an existing
-`run ... tpm/tpm` line, or appended together with one, because TPM only
+prefers — see below) — inserted directly above the line that runs TPM (its
+`run ... tpm/tpm`, or the `source-file` of a file holding it), or appended
+together with one, because TPM only
 installs plugins declared before it runs. The owned file is regenerated
 wholesale on every `install`/`update` (never merged); `uninstall-tmux` removes
 the line and the file and leaves the plugins. TPM reports a failed clone only
@@ -83,7 +84,10 @@ having sourced it are different facts): plugin dirs, `conf_sourced`,
 `restore_on`, `processes_ok`, `hook_current` (live hook == this checkout), and
 `last_save_at` / `last_save_stale` (older than 2× the live save interval; a
 missing save is not stale, a fresh install hasn't had one yet), and
-`plugin_declarations` (see above). `ok` is the conjunction. `python3 -m periscope.tmux_persist status <repo>` prints the same
+`plugin_declarations` (see above), and `tpm_runs`: each `run ... tpm/tpm`
+sources every plugin, so two run continuum twice exactly as a doubled
+`@plugin` does — while every declaration still counts 1. Install used to
+append a second run line when the user's lived in a sourced file. `ok` is the conjunction. `python3 -m periscope.tmux_persist status <repo>` prints the same
 without a server round-trip.
 
 Diagnosing a stale restore: `ls -lt ~/.local/share/tmux/resurrect/` — gaps in
