@@ -370,15 +370,18 @@ export function setDetailMode(pid, mode) {
 }
 
 // Clawd's day log (chrome/Tamagotchi.jsx): { merged, furious } → the local
-// "YYYY-MM-DD" it last happened, so the evening still knows after a reload.
+// "YYYY-MM-DDTHH:MM" it was last noted (tamagotchi.noteKey), so the evening
+// still knows after a reload.
 export function getClawdDay() {
   return P().ui?.clawd_day || {};
 }
 
-// Once per kind per day. Loads first, so a write before the first /api/prefs
-// can't drop the other kind's date.
-export async function noteClawdDay(kind, day) {
+// Once per kind per day: the first note's time is the one that counts, so a
+// later one can't move the evening it already booked. Loads first, so a write
+// before the first /api/prefs can't drop the other kind's note or rewrite
+// today's.
+export async function noteClawdDay(kind, stamp) {
   if (!P().loaded) await loadPrefs();
-  if (!P().loaded || getClawdDay()[kind] === day) return false;
-  return patchUI({ clawd_day: { ...getClawdDay(), [kind]: day } });
+  if (!P().loaded || getClawdDay()[kind]?.slice(0, 10) === stamp.slice(0, 10)) return false;
+  return patchUI({ clawd_day: { ...getClawdDay(), [kind]: stamp } });
 }

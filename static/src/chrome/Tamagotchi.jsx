@@ -39,7 +39,7 @@ import { Dish } from "./TamaDishes.jsx";
 import { PASTIME_SCENES } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS,
-  MOODS, moodReason, msUntilNextChange, occasionShown, SKIN, seasonAt, upNext, Y0,
+  MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, Y0,
 } from "./tamagotchi.js";
 
 // Where the mascot stands per activity: centred on its feet by default; the
@@ -725,10 +725,11 @@ export function Tamagotchi() {
     return JSON.stringify([r.mood, moodReason(r, name)]);
   });
   const [mood, reason] = JSON.parse(moodKey.value);
-  // A furious day ends in a run (tamagotchi.activityAt). Keyed on the date as
-  // well, so a mood still furious past midnight counts for the new day too.
+  // A furious day ends in a run (tamagotchi.activityAt), booked from the time
+  // it's noted. Keyed on the date as well, so a mood still furious past
+  // midnight counts for the new day too.
   useEffect(() => {
-    if (mood === "furious") noteClawdDay("furious", dayKey(now));
+    if (mood === "furious") noteClawdDay("furious", noteKey(new Date()));
   }, [mood, dayKey(now)]);
 
   // What Clawd is on duty for, also as a string key: every poll replaces

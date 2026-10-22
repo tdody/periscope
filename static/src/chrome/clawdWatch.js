@@ -7,7 +7,7 @@ import { effect, signal } from "@preact/signals";
 import { noteClawdDay } from "../prefs.js";
 import { windows } from "../store.js";
 import { nextMergeWatch } from "./clawdDuty.js";
-import { dayKey } from "./tamagotchi.js";
+import { noteKey } from "./tamagotchi.js";
 
 export const mergeParties = signal([]);  // [{ key, pid, pr, at }]
 
@@ -27,6 +27,6 @@ export function startClawdWatch() {
     mergeStates = m.states;
     if (m.parties.length !== prev.length || m.parties.some((p, i) => p.key !== prev[i].key)) mergeParties.value = m.parties;
     // A merge also books the evening's pint (tamagotchi.activityAt).
-    if (m.parties.some((p) => !prev.some((q) => q.key === p.key))) noteClawdDay("merged", dayKey(new Date()));
+    if (m.parties.some((p) => !prev.some((q) => q.key === p.key))) noteClawdDay("merged", noteKey(new Date()));
   });
 }

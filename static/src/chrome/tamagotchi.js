@@ -101,7 +101,8 @@ function pickAt(list, date, salt, i) {
   return list[idx];
 }
 
-// `day` is what happened today (dayFlags) plus `walled`, the server's walls.
+// `day` is what happened today (dayFlags: the hour each verdict was noted, or
+// null) plus `walled`, the server's walls.
 function windowsFor(date, day) {
   if (date.getDay() === 0 || date.getDay() === 6) return WEEKEND;
   if (!day.walled) return SCHEDULE;
@@ -134,8 +135,24 @@ function pastimePlan(slot, date, day) {
   const byId = (id) => PASTIMES.find((p) => p.id === id);
   const n = (slot.to - slot.from) / HALF;
   const at = (t) => (t - slot.from) / HALF;
+  const start = (i) => slot.from + i * HALF;
   const evening = [EVENING, EVENING + HALF].map(at).filter((i) => i >= 0 && i < n);
   const forced = [];
+  const pool = PASTIMES.filter(inSeason(date));
+  const rolled = () => {
+    const plan = [];
+    for (let i = 0; i < n; i++) {
+      if (forced[i]) {
+        plan.push(forced[i]);
+        continue;
+      }
+      const avoid = [plan[i - 1]?.id, forced[i + 1]?.id];
+      let k = roll(date, `pastime${start(i)}`) % pool.length;
+      while (avoid.includes(pool[k].id)) k = (k + 1) % pool.length;
+      plan.push(pool[k]);
+    }
+    return plan;
+  };
   if (occasionShown(date)?.id === "halloween") {
     const first = roll(date, "trick") % 2;
     evening.forEach((i, k) => {
@@ -144,25 +161,20 @@ function pastimePlan(slot, date, day) {
     });
   } else {
     if (date.getDay() === 5) forced[at(EVENING + HALF)] = byId("beer");
+    // A verdict books a half hour still running or to come when it's noted,
+    // never one already over, and the stored time keeps every caller on the
+    // same plan whenever it's read. A pastime already under way then can't
+    // step aside for the half after it: being the verdict, it covers it.
     for (const [flag, id] of [["furious", "run"], ["merged", "beer"]]) {
-      if (!day[flag] || evening.some((i) => forced[i]?.id === id)) continue;
-      const free = evening.find((i) => !forced[i]);
-      if (free !== undefined) forced[free] = byId(id);
+      const noted = day[flag];
+      if (noted == null || evening.some((i) => forced[i]?.id === id)) continue;
+      const free = evening.find((i) => !forced[i] && start(i + 1) > noted);
+      if (free === undefined) continue;
+      if (free > 0 && start(free - 1) <= noted && noted < start(free) && rolled()[free - 1].id === id) continue;
+      forced[free] = byId(id);
     }
   }
-  const pool = PASTIMES.filter(inSeason(date));
-  const plan = [];
-  for (let i = 0; i < n; i++) {
-    if (forced[i]) {
-      plan.push(forced[i]);
-      continue;
-    }
-    const avoid = [plan[i - 1]?.id, forced[i + 1]?.id];
-    let k = roll(date, `pastime${slot.from + i * HALF}`) % pool.length;
-    while (avoid.includes(pool[k].id)) k = (k + 1) % pool.length;
-    plan.push(pool[k]);
-  }
-  return plan;
+  return rolled();
 }
 
 export function activityAt(date, day = {}) {
@@ -200,16 +212,29 @@ export function upNext(date, day = {}) {
   return null;
 }
 
-// The local date, as the clawd_day pref stores it (prefs.noteClawdDay).
+const pad = (n) => String(n).padStart(2, "0");
+
+// The local date.
 export function dayKey(date) {
-  const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// What happened today, from the clawd_day pref: older dates don't count.
+// The local date and minute, as the clawd_day pref stores a verdict
+// (prefs.noteClawdDay): the time it was noted decides which half hours it
+// can still book.
+export function noteKey(date) {
+  return `${dayKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// What happened today, from the clawd_day pref: the hour each verdict was
+// noted, or null; other days' don't count.
 export function dayFlags(log, date) {
   const today = dayKey(date);
-  return { merged: log?.merged === today, furious: log?.furious === today };
+  const noted = (stamp) => {
+    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(stamp || "");
+    return m?.[1] === today ? Number(m[2]) + Number(m[3]) / 60 : null;
+  };
+  return { merged: noted(log?.merged), furious: noted(log?.furious) };
 }
 
 // Seasons and occasions follow Faraday's slack-standup-bot (seasons.js), so the

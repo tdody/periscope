@@ -191,13 +191,15 @@ def test_ui_patch_accepts_rail_state_keys(client, clean_state):
 def test_patch_prefs_ui_clawd_day_round_trips(client, clean_state):
     # Clawd's evening reads what happened today (a merged PR, a furious usage
     # day); kept server-side so a reload at 5pm, or a second window, agrees.
-    r = client.patch("/api/prefs/ui", json={"clawd_day": {"merged": "2026-10-21", "furious": "2026-10-20"}})
+    # The minute it was noted decides which evening half hours it can book.
+    day = {"merged": "2026-10-21T17:40", "furious": "2026-10-20T11:05"}
+    r = client.patch("/api/prefs/ui", json={"clawd_day": day})
     assert r.status_code == 200
-    assert r.json()["ui"]["clawd_day"] == {"merged": "2026-10-21", "furious": "2026-10-20"}
+    assert r.json()["ui"]["clawd_day"] == day
 
 
 def test_patch_prefs_ui_rejects_bogus_clawd_day(client, clean_state):
-    for bad in ({"merged": "yesterday"}, {"lunch": "2026-10-21"}):
+    for bad in ({"merged": "yesterday"}, {"lunch": "2026-10-21T12:00"}, {"merged": "2026-10-21"}):
         r = client.patch("/api/prefs/ui", json={"clawd_day": bad})
         assert r.status_code == 400, bad
         assert "clawd_day" in r.json()["detail"]

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   activityAt, activityLabel, BODY, BRUNCH, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
-  isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, occasionAt, occasionShown, PASTIMES, SCHEDULE,
-  seasonAt, seasonStart, upNext, WEEKEND,
+  isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, noteKey, occasionAt, occasionShown, PASTIMES,
+  SCHEDULE, seasonAt, seasonStart, upNext, WEEKEND,
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0); // a Wednesday
@@ -110,6 +110,8 @@ describe("the evening's rules", () => {
   const evening = (d, day) => [17, 17.5].map((t) => activityAt(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 17, (t % 1) * 60), day));
   // Weekdays in January: no occasion, and every day of the week.
   const weekdays = Array.from({ length: 40 }, (_, n) => new Date(2026, 0, 5 + n)).filter((d) => d.getDay() % 6);
+  // A verdict is the hour it was noted (dayFlags): a morning one is known all evening.
+  const MORNING = 11;
 
   it("trick-or-treats every Halloween evening, alternating the ghost run with the kids", () => {
     for (let date = 24; date <= 31; date++) {
@@ -136,18 +138,53 @@ describe("the evening's rules", () => {
 
   it("toasts a merged PR, and runs off a furious day first", () => {
     for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
-      expect(evening(d, { merged: true }).map((x) => x.id), d.toDateString()).toContain("beer");
-      expect(evening(d, { furious: true })[0].id, d.toDateString()).toBe("run");
-      expect(evening(d, { merged: true, furious: true }).map((x) => x.id), d.toDateString()).toEqual(["run", "beer"]);
+      expect(evening(d, { merged: MORNING }).map((x) => x.id), d.toDateString()).toContain("beer");
+      expect(evening(d, { furious: MORNING })[0].id, d.toDateString()).toBe("run");
+      expect(evening(d, { merged: MORNING, furious: MORNING }).map((x) => x.id), d.toDateString()).toEqual(["run", "beer"]);
     }
     const friday = weekdays.find((x) => x.getDay() === 5);
-    expect(evening(friday, { merged: true, furious: true }).map((x) => x.id)).toEqual(["run", "beer"]);
+    expect(evening(friday, { merged: MORNING, furious: MORNING }).map((x) => x.id)).toEqual(["run", "beer"]);
+  });
+
+  it("books a verdict only into a half hour still running or to come, so the scene now never steps aside for it", () => {
+    const late = 17 + 40 / 60; // 5:40pm
+    let rolledBeer = 0;
+    for (const d of Array.from({ length: 120 }, (_, n) => new Date(2026, 0, 5 + n)).filter((x) => x.getDay() % 6 && x.getDay() !== 5)) {
+      const plain = evening(d);
+      if (plain[1].id === "beer") rolledBeer += 1;
+      // 5:00 is over: the pint goes to 5:30, and a 5:30 already at the pub stays there.
+      expect(evening(d, { merged: late })[1].id, d.toDateString()).toBe("beer");
+      expect(evening(d, { furious: late })[1].id, d.toDateString()).toBe("run");
+      // Past 6pm the evening is over: nothing left to book.
+      expect(evening(d, { merged: 18.2, furious: 18.2 }), d.toDateString()).toEqual(plain);
+    }
+    expect(rolledBeer).toBeGreaterThan(0);
+  });
+
+  it("lets a pastime already under way cover the verdict rather than step aside for it", () => {
+    // Weekends (and walled weekdays) have halves before 5pm: the 4:30 one is
+    // running when a 4:40 merge lands, so it can't be the one that moves.
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    let covered = 0;
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => !(x.getDay() % 6))) {
+      if (occasionShown(d)?.id === "halloween") continue;
+      const running = activityAt(at(d, 16, 40));
+      const day = { merged: 16 + 40 / 60 };
+      expect(activityAt(at(d, 16, 40), day), d.toDateString()).toEqual(running);
+      if (running.id === "beer") {
+        covered += 1;
+        expect(activityAt(at(d, 17, 0), day).id, d.toDateString()).not.toBe("beer");
+      } else {
+        expect(activityAt(at(d, 17, 0), day).id, d.toDateString()).toBe("beer");
+      }
+    }
+    expect(covered).toBeGreaterThan(0);
   });
 
   it("moves the unforced half only for a collision", () => {
     for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
       const [early, late] = evening(d);
-      const [first, forcedLate] = evening(d, { merged: true });
+      const [first, forcedLate] = evening(d, { merged: MORNING });
       if (first.id !== "beer" || late.id === "beer") continue;
       // Either it kept its pick, or the plain evening's 5:00 had taken its roll.
       if (forcedLate.id !== late.id) expect(early.id, d.toDateString()).toBe(forcedLate.id);
@@ -255,11 +292,12 @@ describe("upNext", () => {
 });
 
 describe("the day log", () => {
-  it("keys on the local date, and only counts today", () => {
+  it("keys on the local date and minute, and only counts today", () => {
     expect(dayKey(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
-    const log = { merged: "2026-10-21", furious: "2026-10-20" };
-    expect(dayFlags(log, at(17))).toEqual({ merged: true, furious: false });
-    expect(dayFlags({}, at(17))).toEqual({ merged: false, furious: false });
+    expect(noteKey(new Date(2026, 0, 5, 9, 7))).toBe("2026-01-05T09:07");
+    const log = { merged: "2026-10-21T17:45", furious: "2026-10-20T11:00" };
+    expect(dayFlags(log, at(17))).toEqual({ merged: 17.75, furious: null });
+    expect(dayFlags({}, at(17))).toEqual({ merged: null, furious: null });
   });
 });
 
