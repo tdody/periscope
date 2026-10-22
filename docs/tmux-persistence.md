@@ -189,13 +189,21 @@ having sourced it are different facts): plugin dirs, `conf_sourced`,
 `last_save_at` / `last_save_stale` (older than 2× the live save interval; a
 missing save is not stale, a fresh install hasn't had one yet), and
 `plugin_declarations` and `tpm_runs` (both above: declarations over what TPM
-reads, runs over what tmux executes). `ok` is the conjunction.
+reads, runs over what tmux executes). `ok` is the conjunction. `last_save_at`
+is the newer of `last`'s target and the resurrect directory's mtime: a save
+that matches `last` is deleted (`save.sh` `files_differ`), so `last` alone
+dates the last layout CHANGE, and an idle night read as a stalled save while
+continuum saved every interval. Kept or deleted, the save changed the
+directory.
 `python3 -m periscope.tmux_persist status <repo>` prints the same without a
 server round-trip.
 
 Diagnosing a stale restore: `ls -lt ~/.local/share/tmux/resurrect/` — gaps in
-that timeline are the story. `tmux list-clients -F "#{client_flags}"` tells you
-whether anything is drawing a status line.
+that timeline are the story, unless the layout didn't change (resurrect keeps
+no copy of a save identical to `last`; `ls -ld` on the directory and
+`tmux show -gv @continuum-save-last-timestamp` date the last save that ran).
+`tmux list-clients -F "#{client_flags}"` tells you whether anything is drawing
+a status line.
 
 Reproducing a conf shape against real tmux: a temp `HOME`, a fake
 `~/.tmux/plugins/tpm/tpm` that logs each run, and the server on its own `-L`

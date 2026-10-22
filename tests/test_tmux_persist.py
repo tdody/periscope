@@ -961,6 +961,7 @@ def test_status_stale_save_flips_ok(home, monkeypatch):
     import os
 
     os.utime(target, (stale_at, stale_at))
+    os.utime(d, (stale_at, stale_at))
     s = tp.status(REPO)
     assert s["last_save_stale"] is True
     assert s["ok"] is False
@@ -969,3 +970,29 @@ def test_status_stale_save_flips_ok(home, monkeypatch):
     s = tp.status(REPO)
     assert s["last_save_stale"] is False
     assert s["ok"] is True
+
+
+def test_status_a_save_identical_to_last_is_not_stale(home, monkeypatch):
+    # resurrect deletes a save that matches `last` (save.sh files_differ), so
+    # `last` keeps the time the layout last changed: an idle night read as a
+    # stalled save, healthz ok false, with continuum saving every interval.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    d = home / ".local/share/tmux/resurrect"
+    d.mkdir(parents=True)
+    target = d / "tmux_resurrect_old.txt"
+    target.write_text("")
+    (d / "last").symlink_to(target.name)
+    stale_at = time.time() - 3 * 10 * 60
+    import os
+
+    os.utime(target, (stale_at, stale_at))
+    os.utime(d, (stale_at, stale_at))
+    # A save runs: writes its file, finds it identical to `last`, removes it.
+    discarded = d / "tmux_resurrect_new.txt"
+    discarded.write_text("")
+    discarded.unlink()
+    s = tp.status(REPO)
+    assert s["last_save_stale"] is False
+    assert s["ok"] is True
+    assert s["last_save_at"] >= int(time.time()) - 5
