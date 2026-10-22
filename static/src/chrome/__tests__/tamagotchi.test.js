@@ -147,6 +147,13 @@ describe("the evening's rules", () => {
     }
     const friday = weekdays.find((x) => x.getDay() === 5);
     expect(evening(friday, { merged: MORNING, furious: MORNING }).map((x) => x.id)).toEqual(["run", "beer"]);
+    // Friday's pint covers the toast: no second pint, and 5:00 keeps its roll.
+    for (const d of weekdays.filter((x) => x.getDay() === 5)) {
+      const [a, b] = evening(d, { merged: MORNING });
+      expect(b.id, d.toDateString()).toBe("beer");
+      expect(a.id, d.toDateString()).toBe(evening(d)[0].id);
+      expect(a.id, d.toDateString()).not.toBe("beer");
+    }
   });
 
   it("books a verdict only into a half hour still running or to come, so the scene now never steps aside for it", () => {
