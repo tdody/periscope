@@ -372,9 +372,15 @@ def test_open_tags_new_panes_mid_rc(tmp_git_repo, clean_state, fresh_activity_db
     """Regression (flaky test_open_path_tags_only_its_own_panes): a fresh
     pane's cwd is its foreground process's, and ~60ms into zsh's rc
     oh-my-zsh's `cd $ZSH` subshell reads as ~/.oh-my-zsh. The tag loop runs
-    inside that window, so it must tag the panes it created by pid."""
+    inside that window, so it must tag the panes it created by pid.
+
+    The @periscope_opened record is blanked too: it also sits the new pair at
+    the repo, so with it left in, dropping the pid path from the tag loop
+    passed."""
     real = open_ops.list_windows
-    monkeypatch.setattr(open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh"} for w in real()])
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh", "opened": ""} for w in real()]
+    )
     repo = str(tmp_git_repo)
     res = open_ops.open_target(open_ops.PathTarget(path=repo))
     new = [w["pid_raw"] for w in real() if w.get("pid_raw")]
