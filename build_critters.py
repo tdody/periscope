@@ -26,6 +26,7 @@ else, so a new SVG fails loudly instead of drawing wrong):
     on the <svg> (the colour under a lid isn't in the drawing).
   - a critter's own art for a duty face is a <g class="face-happy|face-x|face-worried|face-down">
     directly under the outer <g>; it's drawn instead of the generated face, never as the critter.
+    Static art: rects and groups only, no animation, no mood layers.
 """
 
 from __future__ import annotations
