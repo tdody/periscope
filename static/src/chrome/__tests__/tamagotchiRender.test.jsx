@@ -4,6 +4,7 @@
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
+import { CRITTERS, critterById } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -565,5 +566,73 @@ describe("Clawd on duty", () => {
   it("moves the new-year fireworks clear of the bubble", () => {
     expect(count(render(<TamaScene activity="eat" occasion="newyear" />), "tama-firework")).toBe(2);
     expect(count(scene("eat", { kind: "update" }, { occasion: "newyear" }), "tama-firework")).toBe(3);
+  });
+});
+
+describe("critters", () => {
+  const critters = CRITTERS.filter((c) => c.sprite);
+  const scenes = [...ids, "nap"];
+  const scene = (critter, activity, extra = {}) =>
+    render(<TamaScene activity={activity} walled={activity === "nap" ? { day: null, time: "3pm" } : null}
+                      critter={critter} {...extra} />);
+
+  it.each(critters.map((c) => [c.id, c]))("%s takes Clawd's place in every scene", (_id, c) => {
+    for (const id of scenes) {
+      const html = scene(c, id);
+      expect(html, id).toContain(`data-critter="${c.id}"`);
+      expect(html, id).toContain('class="critter"');
+      expect(html, id).not.toContain("tama-body");
+      expect(html, id).not.toContain("tama-legs-a");
+    }
+  });
+
+  it("keeps drawing Clawd by default", () => {
+    const html = render(<TamaScene activity="code" />);
+    expect(html).toContain("tama-body");
+    expect(html).not.toContain("data-critter");
+  });
+
+  it("keeps the scene's props", () => {
+    const jelly = critterById("jelly");
+    expect(scene(jelly, "code")).toContain("tama-desk");
+    expect(scene(jelly, "read")).toContain("tama-fire");
+    expect(scene(jelly, "run", { season: "winter" })).toContain("tama-scenery");
+    expect(scene(jelly, "eat", { duty: { kind: "ci", label: "1", more: 0 } })).toContain("tama-bubble");
+  });
+
+  it("shows the coding mood in the critter's own layers, not Clawd's face", () => {
+    const html = scene(critterById("ember"), "code", { mood: "furious" });
+    expect(html).toContain('data-mood="furious"');
+    expect(html).toContain("tama-smoke");
+    expect(html).not.toContain("tama-brows");
+    expect(html).not.toContain("tama-hand");
+  });
+
+  it("stays calm in the critter while on duty, as Clawd does", () => {
+    const html = scene(critterById("ember"), "code", { mood: "furious", duty: { kind: "ci", label: "1", more: 0 } });
+    expect(html).toContain('data-mood="calm"');
+    expect(html).not.toContain('data-mood="furious"');
+  });
+
+  it("shuts the critter's eyes asleep, not while the bell rings", () => {
+    const volt = critterById("volt");
+    expect(scene(volt, "sleep")).toContain('data-role="shut"');
+    expect(scene(volt, "nap")).toContain('data-role="shut"');
+    expect(scene(volt, "code")).not.toContain('data-role="shut"');
+    expect(scene(volt, "sleep", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain('data-role="shut"');
+  });
+
+  it("drops the overlays drawn for Clawd's body", () => {
+    const moss = critterById("moss");
+    const done = scene(moss, "code", { duty: { kind: "done", label: "1", more: 0 } });
+    expect(done).toContain("tama-sparkle");
+    expect(done).not.toContain("tama-cheer");
+    expect(scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain("tama-slap");
+  });
+
+  it("lifts the hats onto a seated critter's head, and leaves a standing one's alone", () => {
+    const nox = critterById("nox");
+    expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+    expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
   });
 });

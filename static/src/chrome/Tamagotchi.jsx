@@ -30,6 +30,8 @@ import {
 } from "../store.js";
 import { plural } from "../util.js";
 import { clickHandlers } from "./clawdClick.js";
+import { Critter } from "./Critter.jsx";
+import { CRITTERS, placement } from "./critters.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
@@ -38,7 +40,7 @@ import {
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
-import { PASTIME_SCENES, Sprite } from "./TamaPastimes.jsx";
+import { Goggles, PASTIME_SCENES, Scarf, Sprite } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
   hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, sceneKey, seasonAt, upNext,
@@ -54,6 +56,28 @@ const STANDING = { x0: 8 };
 const BODY_CELLS = gridCells(BODY);
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
+
+// Clawd on its own, standing, for the Settings picker (overlays/TamaPicker.jsx).
+export function ClawdSprite() {
+  return (
+    <g>
+      <Sprite cells={BODY_CELLS} cls="tama-body" x0={0} />
+      <Eyes x0={0} />
+      <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={0} y0={LEGS_Y0} />
+    </g>
+  );
+}
+
+// A pastime's held prop is a scene prop, except the ones Clawd wears on his own
+// face and neck: on a critter they'd float across its body.
+const WORN_ON_CLAWD = new Set([Goggles, Scarf]);
+
+// Props drawn on Clawd's head (top at Y0) move with a critter's head instead:
+// a seated critter's head is higher than seated Clawd's. A wrapper, not a
+// transform on the prop, which may animate its own.
+function Head({ dy, children }) {
+  return dy ? <g transform={`translate(0 ${dy})`}>{children}</g> : children;
+}
 
 function Eyes({ closed, x0 }) {
   return (
@@ -557,7 +581,7 @@ function DeskProps({ kind }) {
 // included; `walled` only gives the nap's monitor its reset time.
 export function TamaScene({
   activity, season = "summer", occasion = null, coffee = false, mood = "calm", petted = false, petKey = 0,
-  duty = null, working, walled = null, party = false, dish, trick = false,
+  duty = null, working, walled = null, party = false, dish, trick = false, critter = CRITTERS[0],
 }) {
   const kind = duty?.kind || null;
   const view = deskView(activity, kind);
@@ -570,6 +594,12 @@ export function TamaScene({
   const p = base && trick ? { ...base, ...base.trick } : base;
   const { x0, sitting = false, lift = 0 } = p?.pose || POSES[activity] || STANDING;
   const jack = p ? p.jack : JACK_SPOTS[activity];
+  // Any creature but Clawd is a sprite (critters.js) standing in Clawd's spot,
+  // showing its own moods and shutting its own eyes; the overlays drawn for
+  // Clawd's body (its face kinds, brows, hands) stay Clawd's.
+  const sprite = critter.sprite;
+  const place = sprite && placement(sprite, { x0, sitting });
+  const headDy = place ? place.top - Y0 : 0;
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
   // nap.
@@ -590,6 +620,7 @@ export function TamaScene({
   const mirroring = view.showsPanes && working != null && !moody;
   const screen = deskScreen({ activity, view, kind, duty, working, walled, mirroring });
   const face = ghost ? <GhostSheet x0={x0} />
+    : sprite ? null
     : moody ? <MoodFace x0={x0} mood={mood} />
     : asleep ? <Eyes closed x0={x0} />
     : celebrating ? <HappyEyes x0={x0} />
@@ -601,7 +632,7 @@ export function TamaScene({
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
          data-duty={kind || undefined} data-pose={pose || undefined} data-urgent={duty?.urgent ? "" : undefined}
-         data-working={mirroring ? Math.min(working, 4) : undefined}
+         data-working={mirroring ? Math.min(working, 4) : undefined} data-critter={sprite ? critter.id : undefined}
          data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
@@ -614,24 +645,32 @@ export function TamaScene({
       {/* The lift sits on a wrapper: the creature's CSS bob sets `transform`. */}
       <g transform={lift ? `translate(0 ${-lift})` : undefined}>
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
-        <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />
+        {sprite ? (
+          // Placement is an attribute on a wrapper no animation targets: a CSS
+          // transform (the creature's bob, shake, hop) would override it.
+          <g class="tama-critter" transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
+            <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} />
+          </g>
+        ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
-        {p?.Held && <p.Held x0={x0} />}
-        {p?.Headwear && !hat && <p.Headwear x0={x0} />}
-        {pose === "api" && <Stars x0={x0} />}
-        {pose === "ctx" && <Worried x0={x0} />}
-        {atDesk && celebrating && <ArmsUp x0={x0} />}
+        {p?.Held && !(sprite && WORN_ON_CLAWD.has(p.Held)) && <p.Held x0={x0} />}
+        <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>
+        <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
+        {!sprite && pose === "ctx" && <Worried x0={x0} />}
+        {!sprite && atDesk && celebrating && <ArmsUp x0={x0} />}
         {atDesk && pose === "ci" && <Extinguisher />}
-        {deskBell && <SlapHand />}
-        {pose === "bell" && !deskBell && <Startle x0={x0} />}
-        {!sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
-        {p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
+        {!sprite && deskBell && <SlapHand />}
+        <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>
+        {!sprite && !sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
+        {!sprite && p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && p?.pail && <Pail x0={x0} />}
-        {p?.snowcap && season === "winter" && !hat && !ghost && (
-          <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
-        )}
-        {hat === "santa" && <SantaHat x0={x0} />}
-        {hat === "party" && <PartyHat x0={x0} />}
+        <Head dy={headDy}>
+          {p?.snowcap && season === "winter" && !hat && !ghost && (
+            <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
+          )}
+          {hat === "santa" && <SantaHat x0={x0} />}
+          {hat === "party" && <PartyHat x0={x0} />}
+        </Head>
       </g>
       </g>
       {p?.Front && <p.Front />}
