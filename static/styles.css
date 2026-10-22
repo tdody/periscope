@@ -2054,6 +2054,11 @@ body.modal-open { overflow: hidden; }
 .critter-preview { display: block; }
 /* Clawd's blink in the preview needs the fill-box that `.tama g` gives it in the header. */
 .critter-preview g, .critter-preview rect { transform-box: fill-box; }
+/* Settings → Notifications (overlays/NotifySettings.jsx): a checkbox per
+   banner, inline with its label. ID-qualified to outrank #settings-form
+   label / input, which would make every checkbox a full-width block. */
+#settings-form .notify-option { display: flex; align-items: center; gap: 6px; margin-bottom: 0.35em; }
+#settings-form .notify-option input { display: inline-block; width: auto; margin: 0; }
 
 .settings-overrides-empty {
   font-size: 0.85em;
