@@ -15,6 +15,15 @@ describe("styles.css", () => {
     expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
   });
 
+  it("shares no keyframes name with the generated critters.css", () => {
+    // Both sheets load on one page, so a clash would restyle across them.
+    const read = (f) => keyframeNames(readFileSync(new URL(`../../${f}`, import.meta.url), "utf8"));
+    const critters = read("critters.css");
+    expect(critters.length).toBeGreaterThan(0);
+    expect(critters.filter((n) => read("styles.css").includes(n))).toEqual([]);
+    expect(critters.filter((n, i) => critters.indexOf(n) !== i)).toEqual([]);
+  });
+
   it("doesn't count a commented-out block", () => {
     expect(keyframeNames("/* @keyframes spin { } */ @keyframes spin { }")).toEqual(["spin"]);
   });

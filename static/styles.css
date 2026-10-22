@@ -1464,7 +1464,7 @@ body.modal-open { overflow: hidden; }
   /* Row-enter animations too — the transition clamp above doesn't cover
      keyframes, and enter motion is the one thing that would still move. */
   .attn-row, .rail-row { animation: none !important; }
-  .tama * { animation: none !important; }
+  .tama *, .critter-preview * { animation: none !important; }
 }
 
 /* ─── Motion on data-driven change ───────────────────────────────
