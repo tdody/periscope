@@ -1,6 +1,7 @@
 // Render-path tests for the tamagotchi scene: the decisions the drawing
 // encodes (which pose shows what), not the inventory of props.
 
+import { createHash } from "node:crypto";
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
@@ -695,5 +696,35 @@ describe("<Tamagotchi> with a critter", () => {
     const html = render(<Tamagotchi />);
     expect(html).not.toContain("data-critter");
     expect(html).toContain('title="Claude is coding (1pm–5pm)');
+  });
+});
+
+describe("Clawd's drawing, pinned", () => {
+  // Every activity × duty kind × mood × occasion × season, hashed. Critter work
+  // must never move a pixel of Clawd: a failure here means a change reached his
+  // drawing. Update the hash only for a change to Clawd that's meant.
+  it("renders every combination exactly as before", () => {
+    const KINDS = [null, "bell", "done", "merged", "ci", "api", "ctx", "update"];
+    const hash = createHash("sha256");
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of KINDS) {
+        for (const mood of ["calm", "grumpy", "furious"]) {
+          for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+            for (const season of ["summer", "winter"]) {
+              hash.update(render(
+                <TamaScene activity={activity} season={season} occasion={occasion} mood={mood} working={2}
+                           duty={kind && { kind, label: "1", more: 0 }} party={kind === "merged"}
+                           walled={activity === "nap" ? { day: null, time: "3pm" } : null} />,
+              ));
+              hash.update("\n");
+              n += 1;
+            }
+          }
+        }
+      }
+    }
+    expect(n).toBe(3264);
+    expect(hash.digest("hex")).toBe("355da01dc9d061fcadcececf89882f0b92f8aa96e78944ec91680969f22be094");
   });
 });
