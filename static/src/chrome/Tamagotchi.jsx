@@ -680,10 +680,19 @@ export function Tamagotchi() {
   const [pets, setPets] = useState(0);
   const [petted, setPetted] = useState(false);
 
+  // The day log and the walls, as a string key: /api/state replaces `walls`
+  // every poll and any prefs write replaces the prefs signal, so reading them
+  // in render rebuilt the scene each time, for nothing new.
+  const dayLog = useComputed(() => {
+    const log = getClawdDay();
+    return JSON.stringify([log.merged ?? null, log.furious ?? null, !!walls.value]);
+  });
+  const dayDeps = dayLog.value;
+  const [merged, furious, walled] = JSON.parse(dayDeps);
+  const day = { ...dayFlags({ merged, furious }, now), walled };
+
   // Wake when the current window ends; a wall or a verdict landing moves the
   // end (a walled weekday knocks off at 4pm).
-  const day = dayAt(now);
-  const dayDeps = `${day.walled}|${day.merged}|${day.furious}`;
   useEffect(() => {
     const t = setTimeout(() => setNow(new Date()), msUntilNextChange(now, day) + 50);
     return () => clearTimeout(t);
