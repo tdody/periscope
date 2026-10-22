@@ -141,9 +141,17 @@ describe("<Critter>", () => {
   });
 
   it("tints a lid drawn shut, and strokes, the same way", () => {
-    const sprite = critterById("nox").sprite;
-    const html = draw({ sprite, tint: 150, face: "x" });
-    expect(html).toContain('data-role="shut"');
-    expect(html).not.toContain('stroke="#4a4f57"');
+    // The shut rect itself: Moss's lid carries its own fill (#47cf79), drawn
+    // from `n.g[0].a` once the happy face shuts it over the eye — Nox's lid
+    // paints no colour of its own (its `g[0].a` is empty), so asserting on it
+    // would stay green even if `painted(n.g[0].a, tint)` were reverted.
+    const moss = critterById("moss").sprite;
+    const shutHtml = draw({ sprite: moss, tint: 150, face: "happy" });
+    expect(shutHtml).toMatch(new RegExp(`data-role="shut"[^>]*fill="${hueRotate("#47cf79", 150)}"`));
+    // A stroke tints the same way: Nox's body outline (#4a4f57) is gone, and
+    // its tinted form shows up instead.
+    const strokeHtml = draw({ sprite: critterById("nox").sprite, tint: 150, face: "x" });
+    expect(strokeHtml).not.toContain('stroke="#4a4f57"');
+    expect(strokeHtml).toContain(`stroke="${hueRotate("#4a4f57", 150)}"`);
   });
 });
