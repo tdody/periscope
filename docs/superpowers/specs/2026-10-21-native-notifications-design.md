@@ -19,6 +19,58 @@ Read before touching the area: `docs/invariants.md` (pane identity,
 `routes/send.py`), `docs/channels.md` (pane→session mapping, `need_human`),
 `docs/tauri-shell.md` (webview recycling).
 
+## Revisions made while planning 2a
+
+These were found while prototyping 2a, and they supersede the sections below
+where those disagree. The plan is `docs/superpowers/plans/2026-10-22-native-notifications-2a.md`.
+
+- **Version skew between the webview and the shell.** The webview's JS comes
+  from the server; the Rust shell is an installed `.app` that updates
+  separately. So either side can be older:
+  - Every new payload field defaults when missing, so an old webview's
+    `{title, body, target}` still parses.
+  - A banner that carries a `kind` keeps `{target, kind, data,
+    quiet_when_focused}` as JSON in `userInfo`. Its default click goes out on a
+    **new** event, `periscope:notification-opened`, with `{target, kind, data}`.
+  - A banner without a kind keeps today's `periscope:notification-clicked` with
+    the plain target.
+
+  So an old webview never receives a payload shape it can't read, and a new
+  webview still reveals the pane from an old shell's click.
+- **Focus.** `will_present` reads an atomic that `main.rs`'s
+  `on_window_event(Focused)` keeps; it doesn't call `is_focused()`. That
+  callback runs on the main thread, where a synchronous window query can
+  deadlock.
+- **Modules.** The JS lives in `static/src/notify/`:
+  - `detect.js`: the pure what's-news rules (`detect(prev, snapshot, nowSec)`);
+  - `copy.js`: the banner text;
+  - `burst.js`: the grouping;
+  - `persist.js`: the `localStorage` resume;
+  - `feed.js`: the effects, the badge and click routing.
+
+  `alertFeed.js` keeps the row behaviours and only the legacy click listener.
+- **Click routing.** `data.open` is `"pane"` (select by pid, else reveal the
+  target), `"url"` (`openExternal`) or `"usage"`.
+- **The usage pill opener.** The pill's expanded state becomes a module
+  signal, `usageExpanded`, with `openUsageDetails()`.
+- **The dock badge** counts every waiting pane, as the rail does, including the
+  one open in the detail view. The badge is for when you're away from the
+  dashboard.
+- **`ci_failed`** fires for any session's open PR (auto-detected or linked), as
+  Clawd's red-CI duty does. The setting reads "CI fails on a session's PR".
+  `pr_merged` stays linked-only, because an auto-detected PR disappears from
+  `/api/state` once it merges.
+- **The 2a `needs_input` body** is worded by `waitKind(waiting_for)`: "Waiting
+  for your approval / answer / input." 2b replaces it with "Allow {tool}:
+  {summary}?".
+- **The grouping summary** is titled "{n} more sessions need you", because the
+  first two already went out.
+- **`?paths=` on `/api/cleanup/candidates`** moves to 2b. Only the "Clean up
+  worktree" button needs it.
+- **Settings.** The fieldset is `overlays/NotifySettings.jsx`, mounted under the
+  Tamagotchi picker. Outside the app it shows "Notifications appear in the
+  Periscope macOS app only."
+
 ## What the code does today, and where the handout's assumptions don't hold
 
 - A `need_human` **alert** is an agent's own `notify(need_human)` MCP call
