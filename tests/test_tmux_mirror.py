@@ -248,11 +248,16 @@ def test_request_fires_immediately():
 
 # --- _SessionMirror dispatch (no subprocess: feed events into _dispatch) ---
 
+# The pane the faked display replies below describe (`1|…|80`: height 1, width
+# 80). Subscribing with its real size keeps announcements out of the byte
+# assertions; announcing is test_reconcile_announces_pane_resize_before_the_frame's.
+FAKE_PANE = PaneSize(cols=80, rows=1)
+
 
 def test_dispatch_output_routes_decoded_bytes_to_subscribers():
     async def drive():
         m = _SessionMirror("sess")
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._dispatch(Output(pane_id="%7", raw=rb"hi\033[m"))
         m._dispatch(Output(pane_id="%99", raw=b"other-pane"))  # cheap skip
         assert sub._q.get_nowait() == b"hi\x1b[m"
@@ -278,7 +283,7 @@ def test_reconcile_frame_enqueued_synchronously_on_second_reply():
         m._proc = object()  # _fire_reconcile guards on a live client
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         m._dispatch(Reply(body=(b"1|0|0|0|1|80",)))  # display reply
         m._dispatch(Reply(body=(b"row",)))  # capture reply
@@ -320,19 +325,6 @@ def test_reconcile_announces_pane_resize_before_the_frame():
     asyncio.run(drive())
 
 
-def test_reconcile_never_announces_size_to_an_unarmed_subscriber():
-    # The byte-stream consumers (the pyte oracle tests) never pass `size`, and
-    # must keep receiving bytes only.
-    async def drive():
-        m = _mirror_with_fake_commands()
-        sub = m.subscribe("%7")
-        _reconcile_once(m, b"32|0|0|0|1|80")
-        assert isinstance(sub._q.get_nowait(), bytes)
-        assert sub._q.empty()
-
-    asyncio.run(drive())
-
-
 def test_cursor_is_sampled_before_the_body():
     # Regression guard for "cursor renders one ahead of where typing lands".
     # The two samples are separate tmux commands; a cursor sampled AFTER the
@@ -343,7 +335,7 @@ def test_cursor_is_sampled_before_the_body():
         m._proc = object()
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         assert sent[0].startswith("display-message -p -t %7"), "cursor must be sampled BEFORE the body, never after"
         assert sent[1].startswith("capture-pane -p -e -N -t %7")
@@ -356,7 +348,7 @@ def test_reply_error_ends_pane_subscriptions():
         m = _SessionMirror("sess")
         m._proc = object()  # _fire_reconcile guards on a live client
         m._send_command = lambda cmd, cb: m._reply_callbacks.append(cb)
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         m._dispatch(ReplyError(body=(b"can't find pane",)))
         m._dispatch(ReplyError(body=(b"can't find pane",)))
@@ -368,7 +360,7 @@ def test_reply_error_ends_pane_subscriptions():
 def test_layout_change_requests_reconcile_for_subscribed_panes():
     async def drive():
         m = _SessionMirror("sess")
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         fired = []
         m._timers["%7"].request = lambda: fired.append(True)
         m._dispatch(LayoutChange(window_id="@1"))
@@ -415,7 +407,7 @@ def test_unsubscribe_last_viewer_arms_linger():
     async def drive():
         m = _SessionMirror("sess")
         m._proc = object()  # pretend a client is running (linger guard)
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         async with sub:
             pass
         assert m._linger is not None
@@ -444,6 +436,11 @@ def _t(*args):
         text=True,
         check=False,
     ).stdout
+
+
+# _mk_session's -x/-y: subscribed at its real size, a pane no test resizes
+# announces nothing into the byte stream pyte is fed.
+SESSION_PANE = PaneSize(cols=80, rows=24)
 
 
 def _mk_session(cmd="/bin/sh"):
@@ -493,7 +490,7 @@ def test_oracle_mirror_matches_tmux_grid(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        sub = await tmux_mirror.subscribe(name, pane_id)
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         async with sub:
             _t("send-keys", "-t", pane_id, "printf '\\033[31mRED\\033[0m line\\n'; seq 1 30", "Enter")
             chunks = await _drain(sub, 2.0)  # includes ≥1 reconcile frame
@@ -519,7 +516,7 @@ def test_thesis_byte_drops_converge_after_reconcile(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        sub = await tmux_mirror.subscribe(name, pane_id)
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         async with sub:
             _t("send-keys", "-t", pane_id, "seq 100 140", "Enter")
             burst = await _drain(sub, 1.0)
@@ -557,8 +554,8 @@ def test_two_subscribers_multiplex(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        a = await tmux_mirror.subscribe(name, pane_id)
-        b = await tmux_mirror.subscribe(name, pane_id)
+        a = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
+        b = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         assert len(tmux_mirror._MIRRORS) == 1  # one client, two subs
         _t("send-keys", "-t", pane_id, "echo multiplexed", "Enter")
         ca = b"".join(await _drain(a, 1.0))
@@ -588,7 +585,7 @@ def test_split_under_an_open_pane_announces_its_size_before_the_frame(monkeypatc
     name, pane_id = _mk_session("sleep 600")
 
     async def drive():
-        sub = await tmux_mirror.subscribe(name, pane_id, size=PaneSize(cols=80, rows=24))
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         async with sub:
             settled = await _drain(sub, 0.5)  # connect-time frame, dims unchanged
             assert not any(isinstance(c, PaneSize) for c in settled)
@@ -624,7 +621,7 @@ def test_capture_preserves_trailing_spaces():
         m._proc = object()
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         capture = next(c for c in sent if c.startswith("capture-pane"))
         assert " -N " in f" {capture} ", f"capture-pane missing -N: {capture!r}"

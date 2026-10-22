@@ -49,7 +49,7 @@ class FakeSubscription:
 def _patch_mirror(mocker):
     sub = FakeSubscription()
 
-    async def fake_subscribe(session, pane_id, size=None):
+    async def fake_subscribe(session, pane_id, *, size):
         sub.session, sub.pane_id, sub.size = session, pane_id, size
         # Apart from `size`, which a route could still set after the call.
         sub.subscribed_with = size

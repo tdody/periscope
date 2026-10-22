@@ -248,11 +248,12 @@ class Subscription:
     unsubscribes.
 
     A `PaneSize` item announces a pane resize, ahead of the frame painted
-    at the new size. Only a subscription armed with a `size` (the pane dims
-    its client holds, passed to subscribe()) gets them; an unarmed one is a
-    pure byte stream."""
+    at the new size. `size` is the pane dims last announced to its client
+    (the handshake's, passed to subscribe()): a reconcile that finds others
+    announces them. Required, never defaulted — an optional `size` meant a
+    caller that forgot it silently lost every announcement."""
 
-    def __init__(self, mirror: "_SessionMirror", pane_id: str, size: PaneSize | None = None) -> None:
+    def __init__(self, mirror: "_SessionMirror", pane_id: str, *, size: PaneSize) -> None:
         self._mirror = mirror
         self.pane_id = pane_id
         self.size = size
@@ -319,11 +320,11 @@ class _SessionMirror:
 
     # -- subscriptions --
 
-    def subscribe(self, pane_id: str, size: PaneSize | None = None) -> Subscription:
+    def subscribe(self, pane_id: str, *, size: PaneSize) -> Subscription:
         if self._linger is not None:
             self._linger.cancel()
             self._linger = None
-        sub = Subscription(self, pane_id, size)
+        sub = Subscription(self, pane_id, size=size)
         self._subs.setdefault(pane_id, []).append(sub)
         if pane_id not in self._timers:
             self._timers[pane_id] = ReconcileTimer(fire=lambda p=pane_id: self._fire_reconcile(p))
@@ -437,7 +438,7 @@ class _SessionMirror:
                 # without periscope asking: a split or a killed sibling pane
                 # resizes it under an open terminal. Size first, so the
                 # frame paints into a grid of the height it was captured at.
-                if s.size is not None and s.size != dims:
+                if s.size != dims:
                     s.size = dims
                     s._q.put_nowait(dims)
                 s._q.put_nowait(frame)
@@ -503,7 +504,7 @@ _MIRRORS: dict[str, _SessionMirror] = {}
 _lock = asyncio.Lock()
 
 
-async def subscribe(session: str, pane_id: str, size: PaneSize | None = None) -> Subscription:
+async def subscribe(session: str, pane_id: str, *, size: PaneSize) -> Subscription:
     """Subscribe to a pane's mirrored byte stream, spawning or reusing the
     session's control client. No fork-path fallback by design: byte relay
     without reconciliation is exactly the bug this module removes
@@ -521,7 +522,7 @@ async def subscribe(session: str, pane_id: str, size: PaneSize | None = None) ->
             except Exception:
                 _MIRRORS.pop(session, None)
                 raise
-        return mirror.subscribe(pane_id, size)
+        return mirror.subscribe(pane_id, size=size)
 
 
 async def shutdown() -> None:
