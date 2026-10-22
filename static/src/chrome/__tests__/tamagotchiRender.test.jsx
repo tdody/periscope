@@ -349,7 +349,7 @@ describe("<Tamagotchi>", () => {
     vi.setSystemTime(at(16, 10));
     walls.value = { until: at(18, 0).getTime() / 1000 };
     const html = render(<Tamagotchi />);
-    const pastime = activityAt(at(16, 10), { walled: true });
+    const pastime = activityAt(at(16, 10), { walledUntil: at(18, 0).getTime() });
     expect(html).toContain(`data-activity="${pastime.id}"`);
     expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm)`);
     expect(html).not.toContain("napping at the desk");
@@ -363,6 +363,17 @@ describe("<Tamagotchi>", () => {
     expect(html).toContain('data-activity="nap"');
     expect(html).toContain(">6pm<");
     expect(html).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until 6pm · up next at 4pm: ');
+  });
+
+  it("forecasts the plain afternoon when the walls lift before it, and wakes at the reset time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    walls.value = { until: at(12, 30).getTime() / 1000 };
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · every account is at its limit until 12:30pm · up next at 1pm: coding"/);
+    // Past the reset, before the next usage refresh clears the walls.
+    vi.setSystemTime(at(14, 40));
+    walls.value = { until: at(14, 30).getTime() / 1000 };
+    expect(render(<Tamagotchi />)).toContain('data-activity="code"');
   });
 
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {

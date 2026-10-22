@@ -6,6 +6,8 @@ import {
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0); // a Wednesday
+// Every account walled, and no reset reported: walled all day.
+const WALLED = { walledUntil: Infinity };
 
 describe("activityAt", () => {
   it("follows the day's schedule at every boundary", () => {
@@ -216,7 +218,7 @@ describe("the evening's rules", () => {
     // is over: only a pint under way covers it.
     let pints = 0;
     for (const d of year) {
-      const days = d.getDay() % 6 ? (d.getDay() === 5 ? [] : [{ walled: true }]) : [{}];
+      const days = d.getDay() % 6 ? (d.getDay() === 5 ? [] : [WALLED]) : [{}];
       for (const day of days) {
         if (activityAt(at(d, 16, 30), day).id !== "beer") continue;
         pints += 1;
@@ -264,8 +266,9 @@ describe("the evening's rules", () => {
         for (const [k1, k2] of [["merged", "furious"], ["furious", "merged"]]) {
           for (const t1 of [9, ...times]) {
             for (const t2 of times.filter((t) => t > t1)) {
-              const first = { walled, [k1]: t1 };
-              const plain = activityAt(at(d, t2), { walled }).id;
+              const wall = walled ? WALLED : {};
+              const first = { ...wall, [k1]: t1 };
+              const plain = activityAt(at(d, t2), wall).id;
               const before = activityAt(at(d, t2), first).id;
               const after = activityAt(at(d, t2), { ...first, [k2]: t2 }).id;
               const what = `${d.toDateString()} walled=${walled} ${k1}@${t1.toFixed(2)} ${k2}@${t2.toFixed(2)}: ${before} -> ${after}`;
@@ -291,7 +294,7 @@ describe("the evening's rules", () => {
   });
 
   it("naps at the desk through a walled weekday's coding hours, the 9am mug included", () => {
-    const walled = { walled: true };
+    const walled = WALLED;
     expect(activityAt(at(9, 30), walled)).toMatchObject({ id: "nap", label: "napping at the desk", coffee: true, from: 9, to: 10 });
     expect(activityAt(at(10, 0), walled)).toMatchObject({ id: "nap", label: "napping at the desk", from: 10, to: 12 });
     expect(activityAt(at(10, 0), walled).coffee).toBeFalsy();
@@ -302,7 +305,7 @@ describe("the evening's rules", () => {
   });
 
   it("knocks off at 4pm when every account is walled, instead of napping until 5", () => {
-    const walled = { walled: true };
+    const walled = WALLED;
     expect(activityAt(at(15, 59), walled).id).toBe("nap");
     const early = activityAt(at(16, 0), walled);
     expect(PASTIMES.map((p) => p.id)).toContain(early.id);
@@ -387,6 +390,26 @@ describe("meals", () => {
   });
 });
 
+describe("the walls lifting", () => {
+  const until = (h, m) => ({ walledUntil: at(h, m).getTime() });
+
+  it("ends the nap at the reset time, and the day goes on as usual", () => {
+    expect(activityAt(at(15, 0), until(15, 30)).id).toBe("nap");
+    expect(msUntilNextChange(at(15, 0), until(15, 30))).toBe(30 * 60 * 1000);
+    expect(activityAt(at(15, 30), until(15, 30))).toEqual(activityAt(at(15, 30)));
+    // Back at the desk until 5, not knocked off at 4.
+    expect(activityAt(at(16, 0), until(15, 30)).id).toBe("code");
+    expect(msUntilNextChange(at(12, 10), until(18, 0))).toBe(50 * 60 * 1000);
+  });
+
+  it("forecasts the plain day past the reset time", () => {
+    expect(upNext(at(12, 10), until(12, 30))).toMatchObject({ at: at(13, 0), activity: { id: "code", label: "coding" } });
+    expect(upNext(at(7, 30), until(8, 40))).toMatchObject({ at: at(9, 0), activity: { id: "code", label: "coding with a coffee" } });
+    expect(upNext(at(15, 0), until(15, 30))).toMatchObject({ at: at(15, 30), activity: { id: "code" } });
+    expect(upNext(at(12, 10), until(13, 30))).toMatchObject({ at: at(13, 0), activity: { id: "nap" } });
+  });
+});
+
 describe("upNext", () => {
   it("names the next change for the hover", () => {
     const next = upNext(at(12, 10));
@@ -404,7 +427,7 @@ describe("upNext", () => {
     expect(upNext(at(9, 10))).toMatchObject({ at: at(12, 0), activity: { label: activityAt(at(12, 0)).label } });
   });
   it("announces a walled coding window as the nap, and nap to nap is no change", () => {
-    const walled = { walled: true };
+    const walled = WALLED;
     expect(upNext(at(12, 10), walled)).toMatchObject({ at: at(13, 0), activity: { id: "nap", label: "napping at the desk" } });
     expect(upNext(at(7, 30), walled)).toMatchObject({ at: at(9, 0), activity: { id: "nap" } });
     expect(upNext(at(9, 10), walled).at).toEqual(at(12, 0));

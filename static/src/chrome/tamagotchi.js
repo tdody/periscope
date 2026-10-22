@@ -111,10 +111,14 @@ function rollFrom(list, date, salt, avoid = []) {
 }
 
 // `day` is what happened today (dayFlags: the hour each verdict was noted, or
-// null) plus `walled`, the server's walls.
+// null) plus `walledUntil`, when the server's walls lift (epoch ms; Infinity
+// with no reset reported, absent with no walls). A moment is walled only
+// before then, so the forecast past the reset is the plain day's.
+const walledAt = (date, day) => date.getTime() < (day.walledUntil ?? -Infinity);
+
 function windowsFor(date, day) {
   if (date.getDay() === 0 || date.getDay() === 6) return WEEKEND;
-  return day.walled ? WALLED : SCHEDULE;
+  return walledAt(date, day) ? WALLED : SCHEDULE;
 }
 
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
@@ -203,13 +207,14 @@ export function activityAt(date, day = {}) {
 }
 
 // Milliseconds until the current window ends, so the sprite changes on the
-// hour (or the half hour) rather than up to a minute late. setHours(24)
-// rolls to next midnight.
+// hour (or the half hour) rather than up to a minute late; the walls lifting
+// ends a walled one early (the nap goes back to coding). setHours(24) rolls to
+// next midnight.
 export function msUntilNextChange(date, day = {}) {
   const { to } = activityAt(date, day);
   const end = new Date(date);
   end.setHours(Math.floor(to), (to % 1) * 60, 0, 0);
-  return end - date;
+  return Math.min(end.getTime(), walledAt(date, day) ? day.walledUntil : Infinity) - date.getTime();
 }
 
 // The hover's "up next": the first window after this one with another scene

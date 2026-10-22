@@ -664,31 +664,35 @@ const sceneKey = (d) => {
 };
 
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
-// day log (prefs.getClawdDay) and the server's walls. Read from signals, not
+// day log (prefs.getClawdDay) and when the server's walls lift (their reset
+// time; never, while no walling meter reports one). Read from signals, not
 // render state, so the minute backstop's closure sees today's, not the first
 // render's.
-const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walled: !!walls.value });
+const wallEnd = (w) => (!w ? null : w.until ? w.until * 1000 : Infinity);
+const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walledUntil: wallEnd(walls.value) });
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
   const [pets, setPets] = useState(0);
   const [petted, setPetted] = useState(false);
 
-  // The day log and the walls, as a string key: /api/state replaces `walls`
-  // every poll and any prefs write replaces the prefs signal, so reading them
-  // in render rebuilt the scene each time, for nothing new.
+  // The day log and the walls' reset time, as a string key: /api/state
+  // replaces `walls` every poll and any prefs write replaces the prefs signal,
+  // so reading them in render rebuilt the scene each time, for nothing new.
   const dayLog = useComputed(() => {
     const log = getClawdDay();
-    return JSON.stringify([log.merged ?? null, log.furious ?? null, !!walls.value]);
+    const w = walls.value;
+    return JSON.stringify([log.merged ?? null, log.furious ?? null, w && { until: w.until ?? null }]);
   });
   const dayDeps = dayLog.value;
-  const [merged, furious, walled] = JSON.parse(dayDeps);
-  const day = { ...dayFlags({ merged, furious }, now), walled };
+  const [merged, furious, wall] = JSON.parse(dayDeps);
+  const day = { ...dayFlags({ merged, furious }, now), walledUntil: wallEnd(wall) };
 
-  // Wake when the current window ends. A wall or a verdict landing moves the
-  // end (a walled weekday knocks off at 4pm), and `now` is when the current
-  // window began, so it re-anchors on the clock first: from `now`, the scene
-  // and the wake were both the old window's until the minute backstop caught up.
+  // Wake when the current window ends, or the walls lift. A wall or a verdict
+  // landing moves the end (a walled weekday knocks off at 4pm), and `now` is
+  // when the current window began, so it re-anchors on the clock first: from
+  // `now`, the scene and the wake were both the old window's until the minute
+  // backstop caught up.
   const anchored = useRef(dayDeps);
   useEffect(() => {
     if (anchored.current !== dayDeps) {
