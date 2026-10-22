@@ -656,6 +656,24 @@ describe("critters", () => {
   });
 });
 
+describe("critters at their pastimes", () => {
+  const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
+  const nox = critterById("nox");
+
+  it("keeps a pastime's props but drops what Clawd wears on his face and neck", () => {
+    expect(render(<TamaScene activity="swim" />)).toContain("tama-goggles");
+    expect(scene(nox, "swim")).not.toContain("tama-goggles");
+    expect(render(<TamaScene activity="sled" season="winter" />)).toContain("tama-scarf");
+    expect(scene(nox, "sled", { season: "winter" })).not.toContain("tama-scarf");
+    expect(scene(nox, "cycle")).toContain("tama-helmet");
+  });
+
+  it("lifts the head props onto a seated critter's head at a pastime too", () => {
+    expect(scene(nox, "sled", { season: "winter" })).toMatch(/<g transform="translate\(0 -2\)"><rect class="tama-snowcap"/);
+    expect(scene(nox, "game", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+  });
+});
+
 describe("<Tamagotchi> with a critter", () => {
   afterEach(() => {
     vi.useRealTimers();
