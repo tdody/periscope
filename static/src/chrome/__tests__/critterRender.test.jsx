@@ -50,4 +50,42 @@ describe("<Critter>", () => {
   it("keeps each animation's class on its group", () => {
     expect(draw({ sprite: critterById("jelly").sprite })).toMatch(/<g class="crit-jelly-\d+"/);
   });
+
+  const shutters = (html) => count(html, 'data-role="eye"') + count(html, 'data-role="lid"');
+
+  it.each(sprites)("%s swaps its eyes for the happy, x and look-down glyphs", (_id, sprite) => {
+    const lids = count(draw({ sprite }), 'data-role="lid"');
+    for (const face of ["happy", "x", "down"]) {
+      const html = draw({ sprite, face });
+      expect(html, face).toContain(`data-face="${face}"`);
+      for (const role of ["eye", "lid", "glint"]) expect(html, `${face} ${role}`).not.toContain(`data-role="${role}"`);
+      // A lid is drawn shut over the eye it covers; an open eye just goes.
+      expect(count(html, 'data-role="shut"'), face).toBe(lids);
+    }
+  });
+
+  it.each(sprites)("%s keeps its eyes when worried, under brows and a sweat drop", (_id, sprite) => {
+    const html = draw({ sprite, face: "worried" });
+    expect(shutters(html)).toBe(shutters(draw({ sprite })));
+    expect(html).toContain('class="tama-sweat"');
+  });
+
+  it("draws the happy glyphs with Clawd's class and in the critter's ink", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, face: "happy" });
+    expect(html).toContain('class="tama-happy-eyes"');
+    expect(html).toContain(`stroke="${sprite.ink}"`);
+  });
+
+  it("draws the bell's \"!\" only when startled", () => {
+    const sprite = critterById("volt").sprite;
+    expect(draw({ sprite, startle: true })).toContain('class="tama-startle"');
+    expect(draw({ sprite })).not.toContain("tama-startle");
+  });
+
+  it.each(sprites)("%s draws exactly as before without a face", (_id, sprite) => {
+    const html = draw({ sprite });
+    expect(html).not.toContain("data-face");
+    expect(html).not.toContain("<path");
+  });
 });
