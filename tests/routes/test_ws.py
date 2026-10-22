@@ -7,11 +7,26 @@ fake_tmux for the fork-path display-message/capture-pane calls.
 """
 
 import asyncio
+import contextlib
 import json
+import time
 
 import pytest
 
+from periscope.routes import ws as ws_route
 from periscope.tmux_mirror import PaneSize
+
+
+@pytest.fixture(autouse=True)
+def _no_viewers_left_over(mocker):
+    """The window-height owner is process-wide: a viewer one test left
+    registered would floor the next test's window. And a leaving viewer's
+    restore runs inline, not on a `_bg` thread: one that outlived its test
+    would run the real `tmux`, against the developer's own server."""
+    ws_route._HEIGHTS._asks.clear()
+    mocker.patch("periscope.routes.ws._bg", side_effect=lambda _name, fn, *args: fn(*args))
+    yield
+    ws_route._HEIGHTS._asks.clear()
 
 
 class FakeSubscription:
@@ -68,8 +83,8 @@ def _fake_tmux(calls=None):
         # invocation; real tmux returns the final display-message output for
         # the whole chain, so match the command anywhere in the argv.
         if "display-message" in args:
-            # fields: width|height|cx|cy|alt|pane_id|session|window|mouse_any
-            return "80|24|0|0|0|%7|main|0|0"
+            # fields: width|height|cx|cy|alt|pane_id|session|window|mouse_any|window_id
+            return "80|24|0|0|0|%7|main|0|0|@3"
         if "capture-pane" in args:
             return "hello\n"
         return ""
@@ -162,7 +177,7 @@ def test_ws_pane_handshake_survives_resize_failure(client, mocker):
         if "resize-window" in args:
             return ""
         if "display-message" in args:
-            return "80|24|0|0|0|%7|main|0|0"
+            return "80|24|0|0|0|%7|main|0|0|@3"
         if "capture-pane" in args:
             return "hello\n"
         return ""
@@ -339,3 +354,117 @@ def test_ws_reconcile_message_is_not_forwarded_as_keystrokes(client, mocker):
             time.sleep(0.02)
     assert sub.reconciles == 1
     assert not any("reconcile" in s for s in sent)
+
+
+# -- one window, several viewers --
+
+
+def _patch_mirror_per_viewer(mocker):
+    subs = []
+
+    async def fake_subscribe(session, pane_id, *, size):
+        sub = FakeSubscription()
+        sub.session, sub.pane_id, sub.size = session, pane_id, size
+        sub.loop = asyncio.get_running_loop()
+        subs.append(sub)
+        return sub
+
+    mocker.patch("periscope.routes.ws.tmux_mirror.subscribe", side_effect=fake_subscribe)
+    return subs
+
+
+def _viewer(scope, client, pane, cols, rows):
+    """Connect a viewer that leaves when `scope` closes (the test's choice of order)."""
+    ws = scope.enter_context(client.websocket_connect(f"/ws/pane?pane_id={pane}&cols={cols}&rows={rows}"))
+    _ = ws.receive_text()  # size
+    _ = ws.receive_text()  # mouse
+    _ = ws.receive_bytes()
+    return ws
+
+
+def _resizes(calls, since=0):
+    """(target, cols or None, rows) for each resize-window, in order."""
+    out = []
+    for c in calls[since:]:
+        if "resize-window" in c:
+            i = c.index("resize-window")
+            target = c[c.index("-t", i) + 1]
+            cols = c[c.index("-x", i) + 1] if "-x" in c[i:] else None
+            out.append((target, cols, c[c.index("-y", i) + 1]))
+    return out
+
+
+def _ask(ws, sub, msg):
+    before = sub.reconciles
+    ws.send_text(json.dumps(msg))
+    for _i in range(100):  # handled async: wait for its reconcile
+        if sub.reconciles > before:
+            return
+        time.sleep(0.01)
+
+
+@pytest.mark.parametrize("taller_first", [False, True])
+def test_ws_window_regrows_when_its_shorter_viewer_leaves(client, mocker, taller_first):
+    """Two viewers of one pane, A's box 62 rows and B's 22: the window takes
+    B's height, whichever connected first, and takes A's back when B leaves.
+    Each client can only undo its own shrinks and none sees another leave, so
+    left to them A kept B's 22 rows — 40 blank under Claude's TUI — until A
+    changed width, switched panes or reconnected."""
+    calls = []
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
+    _patch_mirror_per_viewer(mocker)
+
+    with contextlib.ExitStack() as a, contextlib.ExitStack() as b:
+        if taller_first:
+            _viewer(a, client, "%7", 143, 62)
+            _viewer(b, client, "%7", 230, 22)
+            assert _resizes(calls) == [("%7", "143", "62"), ("%7", "230", "22")]
+        else:
+            _viewer(b, client, "%7", 230, 22)
+            _viewer(a, client, "%7", 143, 62)
+            # Floored at the handshake: not A's 62 and then B's 22 again, two
+            # Claude redraws for every viewer.
+            assert _resizes(calls) == [("%7", "230", "22"), ("%7", "143", "22")]
+        n = len(calls)
+        b.close()  # returns once B's handler is done
+        assert _resizes(calls, n) == [("@3", None, "62")]
+
+        # The last viewer leaving keeps the window as it is (no restore churn).
+        n = len(calls)
+        a.close()
+        assert _resizes(calls, n) == []
+
+
+def test_ws_taller_viewers_ask_never_grows_past_a_shorter_viewer(client, mocker):
+    """A's regrow of its own shrink asks for A's height; B's 22 rows hold the
+    window down. Left to the clients, the regrow grew the window past B's
+    height and B asked it back down: two more Claude redraws per regrow."""
+    calls = []
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
+    subs = _patch_mirror_per_viewer(mocker)
+    with contextlib.ExitStack() as scope:
+        a = _viewer(scope, client, "%7", 142, 36)
+        _viewer(scope, client, "%7", 229, 22)
+        n = len(calls)
+        _ask(a, subs[0], {"type": "resize", "rows": 20})
+        _ask(a, subs[0], {"type": "resize", "rows": 36})
+        _ask(a, subs[0], {"type": "resize", "cols": 200, "rows": 36})
+        # A's shrink below B goes through; its regrow and its width change keep B's height.
+        assert _resizes(calls, n) == [("%7", None, "20"), ("%7", None, "22"), ("%7", "200", "22")]
+
+
+def test_ws_viewers_of_sibling_panes_share_their_window_height(client, mocker):
+    """A top/bottom split, each half viewed by a different client: one window,
+    one height. The floor is per window (@id), not per pane."""
+    calls = []
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
+    subs = _patch_mirror_per_viewer(mocker)
+    with contextlib.ExitStack() as a_scope, contextlib.ExitStack() as b_scope:
+        a = _viewer(a_scope, client, "%7", 143, 62)
+        _viewer(b_scope, client, "%8", 143, 40)
+        n = len(calls)
+        _ask(a, subs[0], {"type": "resize", "rows": 62})
+        assert _resizes(calls, n) == [("%7", None, "40")]
+        n = len(calls)
+        b_scope.close()
+        assert _resizes(calls, n) == [("@3", None, "62")]

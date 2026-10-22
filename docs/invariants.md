@@ -92,6 +92,20 @@ These are the non-obvious behaviors worth preserving:
    left the band for good); a mount starts afresh, so a pane switched to
    while the container is short is the one case left unregrown.
 
+   A window its viewers share has one height, and the server owns it
+   (`ws.py` `_WindowHeights`): it records each live viewer's last ask (the
+   connect hint, then every resize message) by window id, sizes the window
+   to the smallest, and re-applies that when a viewer asks again or leaves.
+   Left to the clients the last ask won and nothing gave a height back: when
+   the shorter of two viewers left, the other kept a blank band under the
+   pane (a client undoes only its own shrinks, and sees no other viewer
+   leave), and a taller viewer's regrow grew the window past a shorter
+   viewer's height, which asked it back down. A connect is floored when a
+   live viewer of the same pane already names the window; a sibling pane's
+   viewer, unknown until the connect's own meta, asks the window back down
+   through its size message if its pane no longer fits. The width is still
+   the last ask's, and a window's last viewer leaving restores nothing.
+
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
    previous line's length.

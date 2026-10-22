@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { afterSend, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
 
 describe("xtermDims", () => {
@@ -126,43 +126,78 @@ describe("resizeAsk", () => {
   });
 
   it("never regrows a pane another viewer shrank", () => {
-    // Two viewers: ours 62 rows, theirs 40. Their shrink isn't ours to undo
-    // — regrowing it would make them shrink it again, and on.
+    // Two viewers: ours 62 rows, theirs 40. No shrink of ours to undo, and
+    // the server holds a shared window at its shortest viewer's ask anyway.
     expect(resizeAsk({ cols: 239, rows: 62 }, sent(239, 62), 40)).toBe(null);
   });
 
-  it("never sets a shared window's width with a height-only ask", () => {
-    // Regression: one pane, two viewers — A's box 143x36, B's 230x22 (the
-    // Tauri app and a browser tab). B's shrink to its height carried B's
-    // pinned width, so each time A widened its box B shrank the window back
-    // AND reset it to 230 cols: A right-clipped, two resize-windows (one a
-    // width reflow) per change, and A never got its width. Height-only asks
-    // are rows only, and the server keeps the window's width for them.
-    const win = { cols: 0, rows: 0 };
-    const A = { box: { cols: 143, rows: 36 }, memo: NOTHING_SENT };
-    const B = { box: { cols: 230, rows: 22 }, memo: NOTHING_SENT };
+  describe("two viewers of one unsplit window", () => {
+    // A's box 143x36, B's 230x22 (the Tauri app and a browser tab), against
+    // the server's rules (routes/ws.py): the window's height is the smallest
+    // live viewer's ask, its width the last ask's, and every resize is
+    // announced to both, each then running its fit.
+    let win, A, B, live, sends;
     const send = (v, ask) => {
+      sends++;
       v.memo = afterSend(v.memo, ask);
+      v.ask = ask.rows;
       win.cols = ask.cols ?? win.cols; // resize-window -y alone keeps it
-      win.rows = ask.rows;
+      win.rows = Math.min(...live.map((u) => u.ask));
     };
-    // Every resize is announced to both, and each runs its fit (unsplit: the
-    // pane is the window).
     const settle = () => {
       for (let i = 0; i < 4; i++) {
-        for (const v of [A, B]) {
+        for (const v of live) {
           const ask = resizeAsk(v.box, v.memo, win.rows);
           if (ask) send(v, ask);
         }
       }
     };
-    send(A, A.box); // the connect hints: the last to connect sets the width
-    send(B, B.box);
-    settle();
-    expect(win).toEqual({ cols: 230, rows: 22 });
-    A.box = { cols: 200, rows: 36 };
-    settle();
-    expect(win).toEqual({ cols: 200, rows: 22 });
+    const connect = (v) => { live.push(v); send(v, v.box); settle(); };
+    beforeEach(() => {
+      win = { cols: 0, rows: 0 };
+      A = { box: { cols: 143, rows: 36 }, memo: NOTHING_SENT };
+      B = { box: { cols: 230, rows: 22 }, memo: NOTHING_SENT };
+      live = [];
+      connect(A);
+      connect(B); // the last to connect sets the width
+      sends = 0;
+    });
+
+    it("never sets the window's width with a height-only ask", () => {
+      // Regression: B's shrink to its height carried B's pinned width, so
+      // each time A widened its box B shrank the window back AND reset it to
+      // 230 cols: A right-clipped, two resize-windows (one a width reflow) per
+      // change, and A never got its width.
+      expect(win).toEqual({ cols: 230, rows: 22 });
+      A.box = { cols: 200, rows: 36 };
+      settle();
+      expect(win).toEqual({ cols: 200, rows: 22 });
+      expect(sends).toBe(1);
+    });
+
+    it("gives A the window's height back when B leaves", () => {
+      // Regression: neither client sees the other leave, and A undoes only its
+      // own shrinks, so A kept B's 22 rows: 14 blank under Claude's TUI. The
+      // server re-applies the floor; nothing is asked.
+      live = [A];
+      win.rows = A.ask;
+      settle();
+      expect(win).toEqual({ cols: 230, rows: 36 });
+      expect(sends).toBe(0);
+    });
+
+    it("regrows A's own shrink without a fight over B's height", () => {
+      // Regression: A's box went below B's, then back. A's regrow asked for
+      // its 36 rows; applied as is it grew the window past B's 22 and B asked
+      // it back down, two more redraws for both. Floored, B never asks.
+      A.box = { cols: 143, rows: 20 };
+      settle();
+      expect(win.rows).toBe(20);
+      A.box = { cols: 143, rows: 36 };
+      settle();
+      expect(win.rows).toBe(22);
+      expect(sends).toBe(2); // A's shrink and A's regrow, nothing from B
+    });
   });
 
   it("forgets the shrink once a width change resizes to the container", () => {

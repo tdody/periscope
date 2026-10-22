@@ -55,8 +55,9 @@ export function xtermDims(knownPaneCols, knownPaneRows, containerCols, container
 //   - The growth that undoes such a shrink of ours, back to the height asked
 //     before it and no further: the window is `window-size manual`, so nothing
 //     else regrows it, and it kept a blank band under the pane for every
-//     viewer. As only our own shrink is undone, a shorter viewer's is never
-//     regrown into a fight.
+//     viewer. It asks for our height, not the window's: the server sizes a
+//     shared window to its shortest viewer's ask (routes/ws.py
+//     _WindowHeights), so it never undoes a shorter viewer's shrink.
 // A height-only ask is `{ rows }` alone, and the server keeps the window's
 // width for it (`resize-window -y`). With our pin in it, a shorter viewer's
 // shrink also set a shared window's width, reverting a wider or narrower
