@@ -6,6 +6,7 @@ import pytest
 
 from periscope.git_pr import (
     _GIT_TTL,
+    _ci_checks,
     _ci_glyph,
     _gh_run_state,
     _git_cache,
@@ -16,6 +17,7 @@ from periscope.git_pr import (
     git_signal_for,
     git_state_for,
     linked_pr_state_for,
+    pr_state_for,
 )
 
 
@@ -175,6 +177,66 @@ def test_ci_glyph_rollup():
     assert _ci_glyph(None) is None
 
 
+def test_ci_checks_names_each_check_failing_first():
+    rollup = [
+        {"name": "lint", "conclusion": "SUCCESS"},
+        {"name": "build", "status": "IN_PROGRESS"},
+        {"context": "ci/legacy", "state": "PENDING"},
+        {"name": "test", "conclusion": "FAILURE"},
+        {"name": "unnamed-skip", "conclusion": ""},
+    ]
+    assert _ci_checks(rollup) == [
+        {"name": "test", "state": "failure"},
+        {"name": "build", "state": "pending"},
+        {"name": "ci/legacy", "state": "pending"},
+        {"name": "lint", "state": "success"},
+    ]
+
+
+def test_ci_checks_caps_the_list():
+    rollup = [{"name": f"c{i}", "conclusion": "SUCCESS"} for i in range(10)]
+    assert len(_ci_checks(rollup)) == 6
+    assert _ci_checks(None) == []
+
+
+def test_linked_pr_state_carries_base_and_checks(tmp_path, mocker):
+    import json as _json
+
+    payload = _json.dumps(
+        {"state": "OPEN", "baseRefName": "main", "statusCheckRollup": [{"name": "test", "conclusion": "FAILURE"}]}
+    )
+    mocker.patch("periscope.git_pr._run", return_value=(0, payload))
+    mocker.patch("periscope.git_pr._GH_AVAILABLE", True)
+    out = linked_pr_state_for(str(tmp_path), 42)
+    assert out["pr_base"] == "main"
+    assert out["ci_checks"] == [{"name": "test", "state": "failure"}]
+
+
+def test_pr_state_for_carries_base_and_checks(tmp_path, mocker):
+    import json as _json
+
+    payload = _json.dumps(
+        [
+            {
+                "number": 7,
+                "title": "t",
+                "isDraft": False,
+                "additions": 1,
+                "deletions": 2,
+                "reviewRequests": [],
+                "baseRefName": "main",
+                "statusCheckRollup": [{"name": "test", "conclusion": "FAILURE"}],
+            }
+        ]
+    )
+    mocker.patch("periscope.git_pr._run", return_value=(0, payload))
+    mocker.patch("periscope.git_pr._GH_AVAILABLE", True)
+    out = pr_state_for(str(tmp_path), "feature")
+    assert out["pr_base"] == "main"
+    assert out["ci"] == "✗"
+    assert out["ci_checks"] == [{"name": "test", "state": "failure"}]
+
+
 def _fake_gh(mocker, *, state, rollup=None):
     """Patch _run so linked_pr_state_for sees `gh pr view` returning one PR."""
     import json as _json
@@ -191,13 +253,13 @@ def _fake_gh(mocker, *, state, rollup=None):
 def test_linked_pr_state_merged(tmp_path, mocker):
     _fake_gh(mocker, state="MERGED")
     out = linked_pr_state_for(str(tmp_path), 1234)
-    assert out == {"pr_state": "merged", "ci": None}
+    assert out == {"pr_state": "merged", "ci": None, "ci_checks": [], "pr_base": None}
 
 
 def test_linked_pr_state_open_with_ci(tmp_path, mocker):
-    _fake_gh(mocker, state="OPEN", rollup=[{"conclusion": "SUCCESS"}])
+    _fake_gh(mocker, state="OPEN", rollup=[{"name": "test", "conclusion": "SUCCESS"}])
     out = linked_pr_state_for(str(tmp_path), 1234)
-    assert out == {"pr_state": "open", "ci": "✓"}
+    assert out == {"pr_state": "open", "ci": "✓", "ci_checks": [{"name": "test", "state": "success"}], "pr_base": None}
 
 
 def test_linked_pr_state_closed(tmp_path, mocker):

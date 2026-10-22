@@ -462,6 +462,54 @@ def test_view_linked_pr_merged_carries_state(mocker, clean_state):
     assert view["ci"] is None
 
 
+def test_view_linked_pr_carries_its_own_checks_and_base(mocker, clean_state):
+    """The linked PR's checks and base replace the branch PR's, as `ci` does:
+    the CI-failed banner must name this PR's checks, not another query's."""
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    clean_state["windows"][pid] = {"linked_pr": 1234}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(
+        mocker,
+        pane_content="x",
+        pr={"pr": "999", "ci": "✓", "ci_checks": [{"name": "other", "state": "success"}], "pr_base": "dev"},
+        linked_pr={
+            "pr_state": "open",
+            "ci": "✗",
+            "ci_checks": [{"name": "test", "state": "failure"}],
+            "pr_base": "main",
+        },
+    )
+
+    view, _ = build_window_view(_window(pid=pid), now_ts=1000)
+    assert view["ci_checks"] == [{"name": "test", "state": "failure"}]
+    assert view["pr_base"] == "main"
+
+
+def test_view_linked_pr_cold_drops_the_branch_prs_checks(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    clean_state["windows"][pid] = {"linked_pr": 1234}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(
+        mocker,
+        pane_content="x",
+        pr={"pr": "999", "ci": "✓", "ci_checks": [{"name": "x", "state": "success"}], "pr_base": "dev"},
+    )
+
+    view, _ = build_window_view(_window(pid=pid), now_ts=1000)
+    assert "ci_checks" not in view
+    assert "pr_base" not in view
+
+
 def test_view_surfaces_linked_linear(mocker, clean_state):
     from periscope.window_view import build_window_view
 

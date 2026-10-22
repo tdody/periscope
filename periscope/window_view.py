@@ -384,8 +384,12 @@ def build_window_view(
         if linked_state:
             pr["pr_state"] = linked_state.get("pr_state")
             pr["ci"] = linked_state.get("ci")
+            pr["ci_checks"] = linked_state.get("ci_checks") or []
+            pr["pr_base"] = linked_state.get("pr_base")
         else:
             pr.pop("ci", None)
+            pr.pop("ci_checks", None)
+            pr.pop("pr_base", None)
 
     # The track is the grouping authority. A repo-default track has id == repo
     # (the anchor / pinned dir); a goal track carries its repo on the row (or

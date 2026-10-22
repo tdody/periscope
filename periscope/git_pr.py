@@ -54,6 +54,8 @@ _GH_AVAILABLE = shutil.which("gh") is not None
 # failure conclusion is added in one place. The "running" and "success/neutral"
 # buckets intentionally differ between those two callers and are NOT shared.
 _CI_FAILED_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"})
+_CI_PENDING_STATES = frozenset({"PENDING", "QUEUED", "IN_PROGRESS", "WAITING"})
+_CI_PASSED_STATES = frozenset({"SUCCESS", "NEUTRAL", "SKIPPED"})
 
 
 def git_state_for(path: str) -> dict | None:
@@ -185,11 +187,35 @@ def _ci_glyph(rollup: list | None) -> str | None:
     states.discard("")
     if states & _CI_FAILED_CONCLUSIONS:
         return "✗"
-    if states & {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING"}:
+    if states & _CI_PENDING_STATES:
         return "⟳"
-    if states and states <= {"SUCCESS", "NEUTRAL", "SKIPPED"}:
+    if states and states <= _CI_PASSED_STATES:
         return "✓"
     return None
+
+
+def _ci_checks(rollup: list | None, limit: int = 6) -> list[dict]:
+    """Each check's name and outcome ("failure" / "pending" / "success"), failing
+    first, at most `limit`: the CI-failed notification names what broke, which
+    the rolled-up glyph can't. Check runs carry `name` + `conclusion`/`status`;
+    commit statuses carry `context` + `state`."""
+    rank = {"failure": 0, "pending": 1, "success": 2}
+    out = []
+    for c in rollup or []:
+        name = c.get("name") or c.get("context") or ""
+        s = (c.get("conclusion") or c.get("status") or c.get("state") or "").upper()
+        outcome = (
+            "failure"
+            if s in _CI_FAILED_CONCLUSIONS
+            else "pending"
+            if s in _CI_PENDING_STATES
+            else "success"
+            if s in _CI_PASSED_STATES
+            else None
+        )
+        if name and outcome:
+            out.append({"name": name, "state": outcome})
+    return sorted(out, key=lambda c: rank[c["state"]])[:limit]
 
 
 def pr_state_for(path: str, branch: str) -> dict | None:
@@ -208,7 +234,7 @@ def pr_state_for(path: str, branch: str) -> dict | None:
             "--state",
             "open",
             "--json",
-            "number,title,isDraft,additions,deletions,reviewRequests,statusCheckRollup",
+            "number,title,isDraft,additions,deletions,reviewRequests,statusCheckRollup,baseRefName",
             "--limit",
             "1",
         ],
@@ -224,7 +250,8 @@ def pr_state_for(path: str, branch: str) -> dict | None:
     if not prs:
         return None
     pr = prs[0]
-    ci = _ci_glyph(pr.get("statusCheckRollup"))
+    rollup = pr.get("statusCheckRollup")
+    ci = _ci_glyph(rollup)
     # gh exposes requested reviewers as either users (with `login`) or teams
     # (with `name`) — take the login for users, name for teams, and trim to
     # the leading letters as the avatar text (2 chars max).
@@ -236,6 +263,8 @@ def pr_state_for(path: str, branch: str) -> dict | None:
     return {
         "pr": pr.get("number"),
         "ci": ci,
+        "ci_checks": _ci_checks(rollup),
+        "pr_base": pr.get("baseRefName") or None,
         "pr_title": pr.get("title") or "",
         "pr_draft": bool(pr.get("isDraft")),
         "pr_additions": int(pr.get("additions") or 0),
@@ -377,7 +406,7 @@ def linked_pr_state_for(path: str, number: int) -> dict | None:
     if not _GH_AVAILABLE or not path or not number:
         return None
     code, out = _run(
-        ["gh", "pr", "view", str(number), "--json", "state,statusCheckRollup"],
+        ["gh", "pr", "view", str(number), "--json", "state,statusCheckRollup,baseRefName"],
         cwd=path,
         timeout=8.0,
     )
@@ -390,6 +419,8 @@ def linked_pr_state_for(path: str, number: int) -> dict | None:
     return {
         "pr_state": (pr.get("state") or "").lower() or None,  # open/merged/closed
         "ci": _ci_glyph(pr.get("statusCheckRollup")),
+        "ci_checks": _ci_checks(pr.get("statusCheckRollup")),
+        "pr_base": pr.get("baseRefName") or None,
     }
 
 
