@@ -151,6 +151,7 @@ def build_state() -> dict:
     # Reuses `windows` above rather than re-running the tmux fan-out.
     from periscope.channels import recent_alerts
 
+    walls = usage.walls()
     return {
         "windows": result,
         "projects": projects_view,
@@ -170,8 +171,12 @@ def build_state() -> dict:
         # header chip and the launcher's preselect track the meters.
         "launch_default": dataclasses.asdict(usage.choose_launch()),
         # Whether no account can take an unnamed launch, and until when
-        # (launch_policy.walls) — the header tamagotchi naps on it.
-        "walls": usage.walls(),
+        # (launch_policy.walls) — the hover's wall phrase names it.
+        "walls": walls,
+        # The stretches it was so, dated (usage.wall_spans): the header
+        # tamagotchi naps and knocks off on these, which outlive the refresh
+        # that drops `walls`.
+        "wall_spans": usage.wall_spans(walls),
         # The registry minus config dirs. Every account-naming surface reads
         # this, and hides itself when it holds a single account.
         "accounts": [{"id": a["id"], "label": a.get("label") or a["id"]} for a in store.get_accounts() if a.get("id")],

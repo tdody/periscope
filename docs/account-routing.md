@@ -118,10 +118,25 @@ any account. An account without data is not room (as in `choose`), but no data
 on every account is not a wall either. When every candidate is walled it
 returns `{"until": …}`: the soonest moment some account works again, i.e. the
 latest reset among the meters walling it, minimized over accounts and models.
-The header tamagotchi naps at its desk on this, showing that time, so its
-answer and the launch chip's can't diverge. Rule 6's hover says the same
+The header tamagotchi naps at its desk on this through a weekday's coding
+hours (it knocks off for its pastimes at 4pm rather than 5, and a weekend has
+no desk), showing that time, so its answer and the launch chip's can't diverge;
+it wakes at that time (a pastime half hour under way finishes first), and its
+hover forecasts the plain day past it. Rule 6's hover says the same
 time ("every meter walled; back Thu 15:00") rather than the session reset,
 which a weekly wall outlasts by days.
+
+`walls` says only whether they hold now: the first usage refresh past the
+reset (up to `PLAN_USAGE_REFRESH_S` later) drops them, a pin change can drop
+them early, and walls that just landed read like walls held all day. The
+tamagotchi fixes each half hour's scene when it starts, so it plans on
+`/api/state.wall_spans` instead (`usage.next_wall_spans`, kept in
+`state.json`): each stretch every account was walled, from the minute after
+the poll that found the walls up, until their reset while they hold, then no
+later than the minute after the poll that found them gone. Lifted stretches
+are kept a day. A half hour begun out stays out when the walls lift, one begun
+at the desk stays there when they land, and the evening's plan doesn't move
+with them.
 
 ## 💤 — Fable budget on pace to go unused
 

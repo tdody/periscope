@@ -480,6 +480,23 @@ def test_poke_log_tolerates_a_state_file_that_predates_it(clean_state):
     assert store.get_poke_log()["default"]["verified"] is False
 
 
+def test_wall_spans_persist_only_a_change(clean_state, mocker):
+    # Stepped on every /api/state poll: a poll that changes nothing mustn't
+    # rewrite state.json.
+    from periscope import store
+
+    assert store.get_wall_spans() == []
+    span = {"since": 60, "until": 3600, "holding": True}
+    write = mocker.patch("periscope.store._write_state")
+    assert store.update_wall_spans(lambda spans: [*spans, span]) == [span]
+    assert write.call_count == 1
+    assert store.update_wall_spans(lambda spans: spans) == [span]
+    assert write.call_count == 1
+    # A copy out, not a reference in.
+    store.get_wall_spans()[0]["holding"] = False
+    assert store.get_wall_spans() == [span]
+
+
 def test_repo_roots_defaults_to_dev_and_expands_tilde(clean_state, monkeypatch, tmp_path):
     from periscope import store
 

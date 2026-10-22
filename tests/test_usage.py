@@ -637,6 +637,75 @@ def test_choose_launch_falls_back_to_default_when_nothing_is_known(monkeypatch, 
     assert usage.choose_launch().account == "default"
 
 
+# --- the walls' stretches: when every account was walled, dated -----------
+
+T0 = 1_792_598_400  # on a minute
+DAY = 24 * 3600
+
+
+def test_wall_spans_date_a_landing_to_the_minute_after_the_poll_that_saw_it():
+    assert usage.next_wall_spans([], None, now=T0) == []
+    held = {"since": T0 + 60, "until": T0 + 3600, "holding": True}
+    assert usage.next_wall_spans([], {"until": T0 + 3600}, now=T0 + 10) == [held]
+    # Strictly after: a poll on the minute itself may come after a scene drawn on it.
+    assert usage.next_wall_spans([], {"until": T0 + 3600}, now=T0) == [held]
+
+
+def test_wall_spans_keep_the_landing_and_follow_the_reset_while_the_walls_hold():
+    held = [{"since": T0, "until": T0 + 3600, "holding": True}]
+    assert usage.next_wall_spans(held, {"until": T0 + 7200}, now=T0 + 600) == [
+        {"since": T0, "until": T0 + 7200, "holding": True}
+    ]
+    assert usage.next_wall_spans(held, {"until": None}, now=T0 + 600) == [{"since": T0, "until": None, "holding": True}]
+
+
+def test_wall_spans_keep_the_reset_once_the_next_refresh_drops_the_walls():
+    # launch_policy.walls holds them until a usage refresh past the reset (up to
+    # PLAN_USAGE_REFRESH_S later); the stretch ends at the reset all the same.
+    held = [{"since": T0, "until": T0 + 3599, "holding": True}]
+    assert usage.next_wall_spans(held, None, now=T0 + 3600 + 200) == [
+        {"since": T0, "until": T0 + 3599, "holding": False}
+    ]
+
+
+def test_wall_spans_end_walls_dropped_before_their_reset_at_the_minute_after_the_poll():
+    # A model pin changed, an account added: the walls go long before the reset.
+    held = [{"since": T0, "until": T0 + 3600, "holding": True}]
+    assert usage.next_wall_spans(held, None, now=T0 + 130) == [{"since": T0, "until": T0 + 180, "holding": False}]
+    # No walling meter reported a reset: they held until that poll.
+    held = [{"since": T0, "until": None, "holding": True}]
+    assert usage.next_wall_spans(held, None, now=T0 + 130) == [{"since": T0, "until": T0 + 180, "holding": False}]
+
+
+def test_wall_spans_open_a_new_stretch_when_the_walls_land_again():
+    lifted = [{"since": T0, "until": T0 + 600, "holding": False}]
+    assert usage.next_wall_spans(lifted, None, now=T0 + 900) == lifted
+    assert usage.next_wall_spans(lifted, {"until": T0 + 7200}, now=T0 + 900) == [
+        *lifted,
+        {"since": T0 + 960, "until": T0 + 7200, "holding": True},
+    ]
+
+
+def test_wall_spans_keep_a_lifted_stretch_for_a_day_and_a_held_one_for_good():
+    old = {"since": T0 - 2 * DAY, "until": T0 - DAY - 60, "holding": False}
+    recent = {"since": T0 - 3600, "until": T0 - 600, "holding": False}
+    assert usage.next_wall_spans([old, recent], None, now=T0) == [recent]
+    held = {"since": T0 - 9 * DAY, "until": T0 + DAY, "holding": True}
+    assert usage.next_wall_spans([held], {"until": T0 + DAY}, now=T0) == [held]
+
+
+def test_wall_spans_record_each_poll_and_publish_the_stretches(monkeypatch, clean_state):
+    clock = [T0 + 10]
+    monkeypatch.setattr(usage.time, "time", lambda: clock[0])
+    assert usage.wall_spans({"until": T0 + 3599}) == [{"since": T0 + 60, "until": T0 + 3599}]
+    clock[0] = T0 + 300
+    assert usage.wall_spans({"until": T0 + 3599}) == [{"since": T0 + 60, "until": T0 + 3599}]
+    # Past the reset the walls are gone; their stretch isn't.
+    clock[0] = T0 + 3700
+    assert usage.wall_spans(None) == [{"since": T0 + 60, "until": T0 + 3599}]
+    assert store.get_wall_spans() == [{"since": T0 + 60, "until": T0 + 3599, "holding": False}]
+
+
 # --- per-pane cost pressure: transcript readers and the refresh cache -----
 
 import time

@@ -3,11 +3,12 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { accounts, usage } from "../../store.js";
+import { accounts, usage, wallSpans, walls } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { SCHEDULE } from "../tamagotchi.js";
+import { PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
-const ids = [...new Set(SCHEDULE.map((s) => s.id))];
+const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
 describe("<TamaScene>", () => {
   it.each(ids)("draws the mascot for %s", (id) => {
@@ -27,13 +28,138 @@ describe("<TamaScene>", () => {
   });
 
   it("tucks the legs away in the seated scenes and keeps the standing poses on their feet", () => {
-    for (const id of ["code", "read"]) expect(render(<TamaScene activity={id} />), id).not.toContain("tama-legs-a");
-    for (const id of ["sleep", "coffee", "eat", "run"]) expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
+    for (const id of ["code", "read", "game", "swim", "sled"]) {
+      expect(render(<TamaScene activity={id} />), id).not.toContain("tama-legs-a");
+    }
+    for (const id of ["sleep", "coffee", "eat", "run", "cycle", "music", "beer", "kids", "garden", "cook", "dog"]) {
+      expect(render(<TamaScene activity={id} />), id).toContain("tama-legs-a");
+    }
   });
 
-  it("only dresses the run in the season", () => {
-    expect(render(<TamaScene activity="run" season="winter" />)).toContain("tama-scenery");
-    expect(render(<TamaScene activity="code" season="winter" />)).not.toContain("tama-scenery");
+  it("draws every pastime from its own record, the tempo and the stride on the scene for the CSS", () => {
+    expect(Object.keys(PASTIME_SCENES).sort()).toEqual(PASTIMES.map((p) => p.id).sort());
+    for (const [id, p] of Object.entries(PASTIME_SCENES)) {
+      expect(p.tempo, id).toBeGreaterThan(0);
+      const svg = render(<TamaScene activity={id} />).match(/^<svg[^>]*>/)[0];
+      expect(svg, id).toContain(`data-tempo="${p.tempo}"`);
+      expect(svg, id).toContain(`--tama-tempo: ${p.tempo}s`);
+      expect(/ data-stride[ >]/.test(svg), id).toBe(!!p.stride);
+    }
+    expect(render(<TamaScene activity="code" />)).not.toContain("data-tempo");
+  });
+
+  it("only dresses the outdoor pastimes in the season", () => {
+    for (const id of ["run", "cycle", "garden", "dog", "sled"]) {
+      expect(render(<TamaScene activity={id} season="winter" />), id).toContain("tama-scenery");
+    }
+    for (const id of ["code", "music", "beer", "kids", "game", "cook", "swim"]) {
+      expect(render(<TamaScene activity={id} season="winter" />), id).not.toContain("tama-scenery");
+    }
+  });
+});
+
+describe("pastimes and meals", () => {
+  // Clawd's group, tag-balanced, so "inside Clawd's group" (it bobs with
+  // Clawd) is checkable in the seated scenes too.
+  const creature = (html) => {
+    const open = html.lastIndexOf("<g", html.indexOf('class="tama-creature'));
+    let depth = 0;
+    for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+      depth += m[0] === "</g>" ? -1 : 1;
+      if (depth === 0) return html.slice(open, open + m.index + 4);
+    }
+    return "";
+  };
+  const inCreature = (html, cls) => creature(html).includes(cls);
+
+  it.each([...MEALS, ...BRUNCH].map((m) => m.id).concat(["roast", "icecream", "pie"]))("serves %s", (dish) => {
+    expect(render(<TamaScene activity="eat" dish={dish} />)).toContain(`data-dish="${dish}"`);
+  });
+
+  it("serves ramen when no dish is named", () => {
+    expect(render(<TamaScene activity="eat" />)).toContain('data-dish="ramen"');
+  });
+
+  it("games on the couch with the controller in hand", () => {
+    const html = render(<TamaScene activity="game" />);
+    expect(html).toContain("tama-tv");
+    expect(inCreature(html, "tama-controller")).toBe(true);
+  });
+
+  it("waters the garden from a can in Clawd's hands", () => {
+    const html = render(<TamaScene activity="garden" season="spring" />);
+    expect(inCreature(html, "tama-can")).toBe(true);
+    expect(html).toContain("tama-drop");
+    expect(html).toContain("tama-flowers");
+  });
+
+  it("cooks at the stove in a chef's hat, under any other hat instead", () => {
+    const html = render(<TamaScene activity="cook" />);
+    expect(html).toContain("tama-stove");
+    expect(inCreature(html, "tama-toque")).toBe(true);
+    expect(render(<TamaScene activity="cook" occasion="yearend" />)).not.toContain("tama-toque");
+  });
+
+  it("keeps the oven's and the fire's glow faint with the motion off", () => {
+    // Under prefers-reduced-motion the keyframes that fade the glow stop, so
+    // the attribute is all that keeps it from a solid bright bar.
+    for (const id of ["cook", "read"]) {
+      const glows = [...render(<TamaScene activity={id} />).matchAll(/<[^>]*class="tama-glow"[^>]*>/g)];
+      expect(glows.length, id).toBeGreaterThan(0);
+      for (const [tag] of glows) expect(tag, id).toMatch(/ opacity="0\.\d+"/);
+    }
+  });
+
+  it("walks the dog on a leash, both of them striding", () => {
+    const html = render(<TamaScene activity="dog" />);
+    expect(html).toContain("tama-dog");
+    expect(html).toContain("tama-leash");
+    expect(html).toContain("tama-legs-b");
+  });
+
+  it("swims in goggles, the water drawn over Clawd", () => {
+    const html = render(<TamaScene activity="swim" season="summer" />);
+    expect(inCreature(html, "tama-goggles")).toBe(true);
+    const body = creature(html);
+    expect(html.indexOf("tama-water")).toBeGreaterThan(html.indexOf(body) + body.length - 1);
+  });
+
+  it("sleds in a scarf", () => {
+    const html = render(<TamaScene activity="sled" season="winter" />);
+    expect(html).toContain("tama-sled");
+    expect(inCreature(html, "tama-scarf")).toBe(true);
+  });
+
+  it("pedals the bike in a helmet, under any hat instead", () => {
+    const html = render(<TamaScene activity="cycle" />);
+    expect(html).toContain("tama-bike");
+    expect(html).toContain("tama-legs-b");
+    expect(inCreature(html, "tama-helmet")).toBe(true);
+    expect(render(<TamaScene activity="cycle" occasion="yearend" />)).not.toContain("tama-helmet");
+    expect(render(<TamaScene activity="cycle" season="winter" />)).not.toContain("tama-snowcap");
+  });
+
+  it("holds the bass in Clawd's group, so it bobs with the groove, plugged into an amp", () => {
+    const html = render(<TamaScene activity="music" />);
+    expect(inCreature(html, "tama-bass")).toBe(true);
+    expect(html).toContain("tama-amp");
+  });
+
+  it("clinks a pint with a friend, and the kids come in twos", () => {
+    const beer = render(<TamaScene activity="beer" />);
+    expect(beer).toContain("tama-friend");
+    expect(beer.split("tama-pint").length - 1).toBe(2);
+    expect(render(<TamaScene activity="kids" />).split('class="tama-kid').length - 1).toBe(2);
+  });
+
+  it("smiles with friends and the kids, unless something on duty takes the face", () => {
+    for (const id of ["beer", "kids"]) {
+      expect(render(<TamaScene activity={id} />), id).toContain("tama-happy-eyes");
+      const bell = render(<TamaScene activity={id} duty={{ kind: "bell", label: "1", more: 0 }} />);
+      expect(bell, id).not.toContain("tama-happy-eyes");
+      expect(bell, id).toContain("tama-startle");
+    }
+    expect(render(<TamaScene activity="music" />)).not.toContain("tama-happy-eyes");
   });
 });
 
@@ -42,10 +168,23 @@ describe("occasions", () => {
     render(<TamaScene activity={activity} season={season} occasion={occasion} />);
 
   it("the Halloween ghost sheet replaces the eyes and the sun", () => {
-    const html = scene("run", "halloween");
+    const html = render(<TamaScene activity="run" trick season="autumn" occasion="halloween" />);
     expect(html).toContain("tama-ghost");
     expect(html).not.toContain("tama-eyes");
     expect(html).not.toContain("tama-sun");
+  });
+
+  it("trick-or-treats with the kids in sheets, at night", () => {
+    const html = render(<TamaScene activity="kids" trick season="autumn" occasion="halloween" />);
+    expect(html.split('class="tama-kid-sheet').length - 1).toBe(2);
+    expect(html).toContain("tama-ghost");
+    expect(html).toContain("tama-moon");
+  });
+
+  it("keeps a Halloween-week afternoon run an ordinary run: only the evening trick-or-treats", () => {
+    const html = scene("run", "halloween");
+    expect(html).not.toContain("tama-ghost");
+    expect(html).not.toContain("tama-moon");
   });
 
   it("stays plain outside an occasion", () => {
@@ -152,10 +291,18 @@ describe("<Tamagotchi>", () => {
     const now = at(14, 30).getTime() / 1000;
     usage.value = { plan: { b: { available: true, fetched_at: now - 60, meters: { week_all: { percent: 50, hot: true } } } } };
   };
+  // Every account walled until `until` (epoch s), as /api/state serves it:
+  // the walls, and their stretch dated from `since`.
+  const walled = (until, since = 0) => {
+    walls.value = { until };
+    wallSpans.value = [{ since, until }];
+  };
   afterEach(() => {
     vi.useRealTimers();
     usage.value = null;
     accounts.value = [];
+    walls.value = null;
+    wallSpans.value = [];
   });
 
   it("codes furiously, naming the account, when one of several burns", () => {
@@ -165,7 +312,8 @@ describe("<Tamagotchi>", () => {
     furiousB();
     const html = render(<Tamagotchi />);
     expect(html).toContain('data-mood="furious"');
-    expect(html).toContain('title="Claude is coding furiously (1pm–5pm) · week usage on account B is burning 🔥"');
+    const next = activityLabel(activityAt(at(17, 0)));
+    expect(html).toContain(`title="Claude is coding furiously (1pm–5pm) · week usage on account B is burning 🔥 · up next at 5pm: ${next}"`);
   });
 
   it("leaves the account out with a single subscription", () => {
@@ -173,7 +321,113 @@ describe("<Tamagotchi>", () => {
     vi.setSystemTime(at(14, 30));
     accounts.value = [{ id: "b", label: "B" }];
     furiousB();
-    expect(render(<Tamagotchi />)).toContain('title="Claude is coding furiously (1pm–5pm) · week usage is burning 🔥"');
+    const next = activityLabel(activityAt(at(17, 0)));
+    expect(render(<Tamagotchi />)).toContain(`title="Claude is coding furiously (1pm–5pm) · week usage is burning 🔥 · up next at 5pm: ${next}"`);
+  });
+
+  it("names the half hour and the dish in the hover line", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(17, 40));
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is [^"(]+ \(5:30pm–6pm\)/);
+    vi.setSystemTime(at(12, 10));
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · up next at 1pm: coding"/);
+  });
+
+  it("draws the dish the hover names", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    const lunch = activityAt(at(12, 10));
+    expect(lunch.dish).not.toBe("ramen"); // the fallback: a dish left unpassed would still draw it
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-dish="${lunch.dish}"`);
+    expect(html).toContain(`title="Claude is ${lunch.label} (noon–1pm)`);
+  });
+
+  it("sends Clawd out in a sheet on a Halloween evening's round", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 28, 17, 10));
+    const html = render(<Tamagotchi />);
+    expect(html).toContain("tama-ghost");
+    expect(html).toContain('title="Claude is trick-or-treating');
+  });
+
+  it("knocks off at 4pm under the walls, the scene and the hover alike", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(16, 10));
+    walled(at(18, 0).getTime() / 1000);
+    const html = render(<Tamagotchi />);
+    const pastime = activityAt(at(16, 10), { walls: [[-Infinity, at(18, 0).getTime()]] });
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm)`);
+    expect(html).not.toContain("napping at the desk");
+  });
+
+  it("naps at the desk under the walls, the scene and the hover alike", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    walled(at(18, 0).getTime() / 1000);
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-activity="nap"');
+    expect(html).toContain(">6pm<");
+    expect(html).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until 6pm · up next at 4pm: ');
+  });
+
+  it("forecasts the plain afternoon when the walls lift before it, and stops naming them past the reset time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    walled(at(12, 30).getTime() / 1000);
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · every account is at its limit until 12:30pm · up next at 1pm: coding"/);
+    // Past the reset, before the next usage refresh clears the walls: back at
+    // the desk since the reset, and the walls not named.
+    vi.setSystemTime(at(14, 40));
+    walled(at(14, 30).getTime() / 1000);
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-activity="code"');
+    expect(html).toContain('title="Claude is coding (2:30pm–5pm) · up next at 5pm: ');
+    expect(html).not.toContain("at its limit");
+  });
+
+  it("keeps the knock-off half under way once the next usage refresh drops the walls", () => {
+    // Walled until 4:10pm, and at 4:13 the refresh clears them: the half
+    // Clawd began out runs to 4:30 on the stretch the server dated.
+    vi.useFakeTimers();
+    vi.setSystemTime(at(16, 14));
+    const until = at(16, 10).getTime() / 1000;
+    walled(until);
+    walls.value = null;
+    const pastime = activityAt(at(16, 5), { walls: [[-Infinity, until * 1000]] });
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm) · up next at 4:30pm: coding"`);
+  });
+
+  it("ends the nap's range at the reset time its up-next names", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(13, 5));
+    walled(at(14, 30).getTime() / 1000);
+    expect(render(<Tamagotchi />)).toContain('title="Claude is napping at the desk (1pm–2:30pm) · every account is at its limit until 2:30pm · up next at 2:30pm: coding"');
+  });
+
+  it("naps, and knocks off at 4pm, under walls with no reset time reported", () => {
+    // launch_policy.walls' {until: null}: no walling meter says when it resets.
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    walled(null);
+    const nap = render(<Tamagotchi />);
+    expect(nap).toContain('data-activity="nap"');
+    expect(nap).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until later · up next at 4pm: ');
+    vi.setSystemTime(at(16, 10));
+    const pastime = activityAt(at(16, 10), { walls: [[-Infinity, Infinity]] });
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm) · every account is at its limit until later`);
+  });
+
+  it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    walled(at(18, 0).getTime() / 1000);
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · [^"]+ · up next at 1pm: napping at the desk"/);
   });
 
   it("drops the mood and its reason outside the coding hours", () => {
@@ -230,25 +484,29 @@ describe("Clawd on duty", () => {
     expect(scene("eat", { kind: "ci" })).not.toContain("tama-spray");
     expect(scene("eat", { kind: "api" })).toContain("tama-orbit");
     expect(scene("read", { kind: "bell" })).toContain("tama-startle");
-    expect(scene("run", { kind: "api" }, { occasion: "halloween" })).not.toContain("tama-orbit");
+    expect(scene("run", { kind: "api" }, { occasion: "halloween", trick: true })).not.toContain("tama-orbit");
   });
 
   it("naps at the desk while every account is walled", () => {
-    const html = scene("code", null, { walled: { day: null, time: "3pm" } });
+    const html = scene("nap", null, { walled: { day: null, time: "3pm" } });
     expect(html).toContain('data-activity="nap"');
-    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z"]) expect(html).toContain(piece);
+    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z", "tama-desk"]) expect(html).toContain(piece);
     expect(scene("read", null, { walled: { day: "Thu", time: "3pm" } })).toContain('data-activity="read"');
   });
 
+  it("lights the jack-o'-lantern under the desk through the nap in Halloween week", () => {
+    expect(scene("nap", null, { occasion: "halloween", walled: { day: null, time: "3pm" } })).toContain("tama-jack");
+  });
+
   it("wakes from the nap for the bell, as it does at night", () => {
-    const html = scene("code", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
+    const html = scene("nap", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
     expect(html).toContain('data-pose="bell"');
     for (const piece of ["tama-slap", "tama-ding", ">3pm<", "tama-bubble"]) expect(html, piece).toContain(piece);
     expect(html).not.toContain("tama-eyes-closed");
     expect(html).not.toContain("tama-z");
     expect(html).not.toContain("tama-alarm");
     // Anything else leaves Clawd asleep under its bubble.
-    expect(scene("code", { kind: "done" }, { walled: { day: null, time: "3pm" } })).toContain("tama-eyes-closed");
+    expect(scene("nap", { kind: "done" }, { walled: { day: null, time: "3pm" } })).toContain("tama-eyes-closed");
   });
 
   it("lights one split per working agent, up to four", () => {

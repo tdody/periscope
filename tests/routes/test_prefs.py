@@ -186,3 +186,54 @@ def test_ui_patch_accepts_rail_state_keys(client, clean_state):
     ui = r.json()["ui"]
     for key in body:
         assert ui[key] == body[key]
+
+
+def test_patch_prefs_ui_clawd_notes_round_trip(client, clean_state):
+    # Clawd's evening reads what happened today (a merged PR, a furious usage
+    # day); kept server-side so a reload at 5pm, or a second window, agrees.
+    # The minute it was noted decides which evening half hours it can book.
+    r = client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T17:40", "clawd_furious": "2026-10-20T11:05"})
+    assert r.status_code == 200
+    ui = r.json()["ui"]
+    assert (ui["clawd_merged"], ui["clawd_furious"]) == ("2026-10-21T17:40", "2026-10-20T11:05")
+
+
+def test_patch_prefs_ui_clawd_notes_are_independent(client, clean_state):
+    # One key per kind, so a window noting a furious day can't drop the merge
+    # another window noted: update_ui merges only at the top level.
+    client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T11:00"})
+    r = client.patch("/api/prefs/ui", json={"clawd_furious": "2026-10-21T14:30"})
+    assert r.status_code == 200
+    ui = r.json()["ui"]
+    assert (ui["clawd_merged"], ui["clawd_furious"]) == ("2026-10-21T11:00", "2026-10-21T14:30")
+
+
+def test_patch_prefs_ui_rejects_bogus_clawd_notes(client, clean_state):
+    for key, bad in (
+        ("clawd_merged", "yesterday"),
+        ("clawd_furious", "2026-10-21"),
+        ("clawd_merged", "2026-10-21 12:00"),
+    ):
+        r = client.patch("/api/prefs/ui", json={key: bad})
+        assert r.status_code == 400, (key, bad)
+        assert key in r.json()["detail"]
+
+
+def test_patch_prefs_ui_clawd_notes_keep_the_days_first(client, clean_state):
+    # Every window notes merges and furious moods from its own prefs cache,
+    # loaded at boot: a second window that missed the first note mustn't move
+    # the minute the evening is booked from. The reply carries the kept note,
+    # which that window's cache adopts.
+    client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T17:29"})
+    r = client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T17:31", "clawd_furious": "2026-10-21T17:31"})
+    assert r.status_code == 200
+    ui = r.json()["ui"]
+    assert (ui["clawd_merged"], ui["clawd_furious"]) == ("2026-10-21T17:29", "2026-10-21T17:31")
+    # An earlier minute from the same day (a write that arrived late) wins;
+    # a new day's note replaces yesterday's.
+    assert client.patch("/api/prefs/ui", json={"clawd_furious": "2026-10-21T14:05"}).json()["ui"]["clawd_furious"] == (
+        "2026-10-21T14:05"
+    )
+    assert client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-22T09:10"}).json()["ui"]["clawd_merged"] == (
+        "2026-10-22T09:10"
+    )

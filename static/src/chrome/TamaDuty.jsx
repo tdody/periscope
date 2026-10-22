@@ -81,7 +81,7 @@ export function Bubble({ kind, label, urgent, more, x0 }) {
 // ---- faces (inside Clawd's group, so they move with it) -------------------
 export function HappyEyes({ x0 }) {
   return (
-    <g fill="none" stroke={EYE} stroke-width="0.45" stroke-linecap="square">
+    <g class="tama-happy-eyes" fill="none" stroke={EYE} stroke-width="0.45" stroke-linecap="square">
       <path d={`M${x0 + 4.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
       <path d={`M${x0 + 11.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
     </g>
