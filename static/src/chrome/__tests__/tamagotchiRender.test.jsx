@@ -3,7 +3,7 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { accounts, usage, walls } from "../../store.js";
+import { accounts, usage, wallSpans, walls } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -291,11 +291,18 @@ describe("<Tamagotchi>", () => {
     const now = at(14, 30).getTime() / 1000;
     usage.value = { plan: { b: { available: true, fetched_at: now - 60, meters: { week_all: { percent: 50, hot: true } } } } };
   };
+  // Every account walled until `until` (epoch s), as /api/state serves it:
+  // the walls, and their stretch dated from `since`.
+  const walled = (until, since = 0) => {
+    walls.value = { until };
+    wallSpans.value = [{ since, until }];
+  };
   afterEach(() => {
     vi.useRealTimers();
     usage.value = null;
     accounts.value = [];
     walls.value = null;
+    wallSpans.value = [];
   });
 
   it("codes furiously, naming the account, when one of several burns", () => {
@@ -347,9 +354,9 @@ describe("<Tamagotchi>", () => {
   it("knocks off at 4pm under the walls, the scene and the hover alike", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(16, 10));
-    walls.value = { until: at(18, 0).getTime() / 1000 };
+    walled(at(18, 0).getTime() / 1000);
     const html = render(<Tamagotchi />);
-    const pastime = activityAt(at(16, 10), { walledUntil: at(18, 0).getTime() });
+    const pastime = activityAt(at(16, 10), { walls: [[-Infinity, at(18, 0).getTime()]] });
     expect(html).toContain(`data-activity="${pastime.id}"`);
     expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm)`);
     expect(html).not.toContain("napping at the desk");
@@ -358,7 +365,7 @@ describe("<Tamagotchi>", () => {
   it("naps at the desk under the walls, the scene and the hover alike", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(14, 30));
-    walls.value = { until: at(18, 0).getTime() / 1000 };
+    walled(at(18, 0).getTime() / 1000);
     const html = render(<Tamagotchi />);
     expect(html).toContain('data-activity="nap"');
     expect(html).toContain(">6pm<");
@@ -368,22 +375,36 @@ describe("<Tamagotchi>", () => {
   it("forecasts the plain afternoon when the walls lift before it, and stops naming them past the reset time", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(12, 10));
-    walls.value = { until: at(12, 30).getTime() / 1000 };
+    walled(at(12, 30).getTime() / 1000);
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · every account is at its limit until 12:30pm · up next at 1pm: coding"/);
     // Past the reset, before the next usage refresh clears the walls: back at
     // the desk since the reset, and the walls not named.
     vi.setSystemTime(at(14, 40));
-    walls.value = { until: at(14, 30).getTime() / 1000 };
+    walled(at(14, 30).getTime() / 1000);
     const html = render(<Tamagotchi />);
     expect(html).toContain('data-activity="code"');
     expect(html).toContain('title="Claude is coding (2:30pm–5pm) · up next at 5pm: ');
     expect(html).not.toContain("at its limit");
   });
 
+  it("keeps the knock-off half under way once the next usage refresh drops the walls", () => {
+    // Walled until 4:10pm, and at 4:13 the refresh clears them: the half
+    // Clawd began out runs to 4:30 on the stretch the server dated.
+    vi.useFakeTimers();
+    vi.setSystemTime(at(16, 14));
+    const until = at(16, 10).getTime() / 1000;
+    walled(until);
+    walls.value = null;
+    const pastime = activityAt(at(16, 5), { walls: [[-Infinity, until * 1000]] });
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm) · up next at 4:30pm: coding"`);
+  });
+
   it("ends the nap's range at the reset time its up-next names", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(13, 5));
-    walls.value = { until: at(14, 30).getTime() / 1000 };
+    walled(at(14, 30).getTime() / 1000);
     expect(render(<Tamagotchi />)).toContain('title="Claude is napping at the desk (1pm–2:30pm) · every account is at its limit until 2:30pm · up next at 2:30pm: coding"');
   });
 
@@ -391,12 +412,12 @@ describe("<Tamagotchi>", () => {
     // launch_policy.walls' {until: null}: no walling meter says when it resets.
     vi.useFakeTimers();
     vi.setSystemTime(at(14, 30));
-    walls.value = { until: null };
+    walled(null);
     const nap = render(<Tamagotchi />);
     expect(nap).toContain('data-activity="nap"');
     expect(nap).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until later · up next at 4pm: ');
     vi.setSystemTime(at(16, 10));
-    const pastime = activityAt(at(16, 10), { walledUntil: Infinity });
+    const pastime = activityAt(at(16, 10), { walls: [[-Infinity, Infinity]] });
     const html = render(<Tamagotchi />);
     expect(html).toContain(`data-activity="${pastime.id}"`);
     expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm) · every account is at its limit until later`);
@@ -405,7 +426,7 @@ describe("<Tamagotchi>", () => {
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(12, 10));
-    walls.value = { until: at(18, 0).getTime() / 1000 };
+    walled(at(18, 0).getTime() / 1000);
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · [^"]+ · up next at 1pm: napping at the desk"/);
   });
 

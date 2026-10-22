@@ -25,7 +25,8 @@ import { selectedPid } from "../keys.js";
 import { getClawdDay, noteClawdDay } from "../prefs.js";
 import { buildRunning } from "../split/attention.js";
 import {
-  alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, walls, windows,
+  alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, wallSpans, walls,
+  windows,
 } from "../store.js";
 import { plural } from "../util.js";
 import { clickHandlers } from "./clawdClick.js";
@@ -667,35 +668,37 @@ const sceneKey = (d) => {
 };
 
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
-// day log (prefs.getClawdDay) and when the server's walls lift (their reset
-// time; never, while no walling meter reports one). Read from signals, not
-// render state, so the minute backstop's closure sees today's, not the first
-// render's.
-const wallEnd = (w) => (!w ? null : w.until ? w.until * 1000 : Infinity);
-const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walledUntil: wallEnd(walls.value) });
+// day log (prefs.getClawdDay) and the stretches every account was walled, as
+// the server dated them (`wall_spans`, not `walls`: the first usage refresh
+// past the reset drops those, and the knock-off half under way went back to
+// the desk with them). A stretch with no reset reported holds for good. Read
+// from signals, not render state, so the minute backstop's closure sees
+// today's, not the first render's.
+const wallsOf = (spans) => spans.map((s) => [s.since * 1000, s.until == null ? Infinity : s.until * 1000]);
+const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walls: wallsOf(wallSpans.value) });
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
   const [pets, setPets] = useState(0);
   const [petted, setPetted] = useState(false);
 
-  // The day log and the walls' reset time, as a string key: /api/state
-  // replaces `walls` every poll and any prefs write replaces the prefs signal,
-  // so reading them in render rebuilt the scene each time, for nothing new.
+  // The day log and the walls' stretches, as a string key: /api/state
+  // replaces `wall_spans` every poll and any prefs write replaces the prefs
+  // signal, so reading them in render rebuilt the scene each time, for
+  // nothing new.
   const dayLog = useComputed(() => {
     const log = getClawdDay();
-    const w = walls.value;
-    return JSON.stringify([log.merged ?? null, log.furious ?? null, w && { until: w.until ?? null }]);
+    return JSON.stringify([log.merged ?? null, log.furious ?? null, wallSpans.value]);
   });
   const dayDeps = dayLog.value;
-  const [merged, furious, wall] = JSON.parse(dayDeps);
-  const day = { ...dayFlags({ merged, furious }, now), walledUntil: wallEnd(wall) };
+  const [merged, furious, spans] = JSON.parse(dayDeps);
+  const day = { ...dayFlags({ merged, furious }, now), walls: wallsOf(spans) };
 
-  // Wake when the current window ends, or the walls lift. A wall or a verdict
-  // landing moves the end (a walled weekday knocks off at 4pm), and `now` is
-  // when the current window began, so it re-anchors on the clock first: from
-  // `now`, the scene and the wake were both the old window's until the minute
-  // backstop caught up.
+  // Wake when the current window ends, or the walls start or stop holding. A
+  // wall or a verdict landing moves the end (a walled weekday knocks off at
+  // 4pm), and `now` is when the current window began, so it re-anchors on
+  // the clock first: from `now`, the scene and the wake were both the old
+  // window's until the minute backstop caught up.
   const anchored = useRef(dayDeps);
   useEffect(() => {
     if (anchored.current !== dayDeps) {

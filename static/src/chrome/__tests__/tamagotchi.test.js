@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   activityAt, activityLabel, BODY, BRUNCH, clockLabel, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
   isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, noteKey, occasionAt, occasionShown, PASTIMES,
-  SCHEDULE, seasonAt, seasonStart, upNext, WEEKEND,
+  SCHEDULE, seasonAt, seasonStart, upNext, walledAt, WEEKEND,
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0); // a Wednesday
 // Every account walled, and no reset reported: walled all day.
-const WALLED = { walledUntil: Infinity };
+const WALLED = { walls: [[-Infinity, Infinity]] };
+// Walled all day until a reset at h:m.
+const until = (h, m) => ({ walls: [[-Infinity, at(h, m).getTime()]] });
 
 describe("activityAt", () => {
   it("follows the day's schedule at every boundary", () => {
@@ -302,31 +304,51 @@ describe("the evening's rules", () => {
     }
   });
 
-  it("never changes a half hour's pastime once it has started: not for a verdict noted in it, nor for the walls lifting in it", () => {
+  it("never changes a half hour's pastime once it has started: not for a verdict noted in it, nor for the walls landing or lifting in it", () => {
     const at = (d, t) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(t), Math.round((t % 1) * 60));
     // Every kind of evening: weekdays, Friday, weekends, in two seasons; on
-    // weekdays, walls holding all day or lifting in and around the pastimes.
+    // weekdays, walls holding all day, landing, lifting at their reset or
+    // dropped before it, in and around the pastimes.
     const sample = [0, 4].flatMap((month) => Array.from({ length: 7 }, (_, n) => new Date(2026, month, 5 + n)));
     const noted = [9, 16 + 10 / 60, 16 + 40 / 60, 17, 17 + 10 / 60, 17 + 40 / 60];
     const logs = [{}, ...noted.flatMap((t) => [{ merged: t }, { furious: t }]),
       ...noted.flatMap((a) => noted.map((b) => ({ merged: a, furious: b })))];
     const times = Array.from({ length: 18 }, (_, k) => 15 + k / 6); // 3pm to 5:50pm, every ten minutes
+    // Each stretch as [landed, reset, gone] in hours: landed null when up
+    // since before the day, gone when a poll found them gone before the
+    // reset. Served as the server dates them (usage.next_wall_spans), from
+    // the poll that saw each land: from the minute after it, and once gone,
+    // until the minute after that poll at the latest.
+    const stretches = [
+      [], [[null, Infinity]], [[null, 14 + 20 / 60]], [[null, 16.25]], [[null, 16.75]], [[null, 17.25]], [[null, 17.75]],
+      [[null, Infinity, 16 + 10 / 60]], [[null, 18, 16 + 40 / 60]], [[null, 18, 17 + 20 / 60]],
+      [[14 + 20 / 60, Infinity]], [[16 + 10 / 60, Infinity]], [[16 + 40 / 60, 18]], [[17.25, Infinity]], [[17 + 40 / 60, 17.75]],
+      [[null, 16 + 5 / 60], [16 + 20 / 60, Infinity]], [[null, 16.75], [16 + 50 / 60, 17.25]],
+    ];
+    const minuteAfter = (ms) => (Math.floor(ms / 60_000) + 1) * 60_000;
+    const served = (d, walls, t) => walls.filter(([landed]) => landed == null || landed <= t).map(([landed, reset, gone]) => {
+      const until = reset === Infinity ? Infinity : at(d, reset).getTime();
+      return [landed == null ? -Infinity : minuteAfter(at(d, landed).getTime()),
+        gone != null && gone <= t ? Math.min(until, minuteAfter(at(d, gone).getTime())) : until];
+    });
     let moved = 0;
     for (const d of sample) {
-      const lifts = d.getDay() % 6 ? [14 + 20 / 60, 16.25, 16.75, 17.25, 17.75].map((t) => at(d, t).getTime()) : [];
-      for (const walledUntil of [undefined, ...(lifts.length ? [Infinity] : []), ...lifts]) {
+      for (const walls of d.getDay() % 6 ? stretches : [[]]) {
         for (const log of logs) {
-          // What's drawn at `t`, from the day log as it stood then.
-          const asOf = (t) => ({ walledUntil, ...Object.fromEntries(Object.entries(log).filter(([, v]) => v <= t)) });
+          // What's drawn at `t`, from the day log and the walls as they stood then.
+          const asOf = (t) => ({ walls: served(d, walls, t), ...Object.fromEntries(Object.entries(log).filter(([, v]) => v <= t)) });
           const scene = (t) => activityAt(at(d, t), asOf(t));
           for (const t of times) {
             const start = Math.floor(t / 0.5) * 0.5;
             const first = scene(start);
-            if (!first.pastime) continue;
-            const what = `${d.toDateString()} until=${walledUntil && new Date(walledUntil).toTimeString().slice(0, 5)} ${JSON.stringify(log)} at ${t.toFixed(2)}`;
+            const what = `${d.toDateString()} walls=${JSON.stringify(walls)} ${JSON.stringify(log)} at ${t.toFixed(2)}`;
+            // Out or at the desk for the whole half, and out on one pastime.
+            if (!first.pastime) {
+              expect(scene(t).pastime, what).toBeFalsy();
+              continue;
+            }
             expect(scene(t), what).toEqual(first);
-            const lifted = walledUntil > at(d, start).getTime() && walledUntil <= at(d, t).getTime();
-            if (lifted || JSON.stringify(asOf(t)) !== JSON.stringify(asOf(start))) moved += 1;
+            if (JSON.stringify(asOf(t)) !== JSON.stringify(asOf(start))) moved += 1;
           }
         }
       }
@@ -340,10 +362,31 @@ describe("the evening's rules", () => {
     const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
     for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => x.getDay() % 6)) {
       for (const log of [{}, { furious: 16 + 40 / 60 }, { merged: 16 + 40 / 60 }]) {
-        const day = { ...log, walledUntil: at(d, 17, 15).getTime() };
+        const day = { ...log, walls: [[-Infinity, at(d, 17, 15).getTime()]] };
         expect(activityAt(at(d, 17, 20), day), d.toDateString()).toEqual(activityAt(at(d, 17, 10), day));
       }
     }
+  });
+
+  it("leaves a verdict booked while Clawd coded through 4:30 where it is when the walls land later", () => {
+    // A furious mood at 4:40, on a day whose walled 4:30 would have been a
+    // run: at the desk then, the run books 5:00, and walls landing at 5:15
+    // (or 5:45) don't take it back as if 4:30 had been out on a run.
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    let count = 0;
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => x.getDay() % 6)) {
+      if (occasionShown(d)?.id === "halloween") continue;
+      for (const [flag, id] of [["furious", "run"], ["merged", "beer"]]) {
+        if (activityAt(at(d, 16, 30), WALLED).id !== id) continue;
+        count += 1;
+        const log = { [flag]: 16 + 40 / 60 };
+        for (const m of [10, 40]) {
+          const landed = { ...log, walls: [[at(d, 17, m + 5).getTime(), Infinity]] };
+          expect(activityAt(at(d, 17, m + 10), landed), `${d.toDateString()} ${flag}`).toEqual(activityAt(at(d, 17, m), log));
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(0);
   });
 
   it("plans the evening the same with or without the walls, so they can't re-plan it as they come and go", () => {
@@ -464,8 +507,6 @@ describe("meals", () => {
 });
 
 describe("the walls lifting", () => {
-  const until = (h, m) => ({ walledUntil: at(h, m).getTime() });
-
   it("ends the nap at the reset time, and the day goes on as usual", () => {
     expect(activityAt(at(15, 0), until(15, 30)).id).toBe("nap");
     expect(msUntilNextChange(at(15, 0), until(15, 30))).toBe(30 * 60 * 1000);
@@ -490,7 +531,7 @@ describe("the walls lifting", () => {
   it("lifts the walls on the minute the hover names, so a reset a second before it never wakes Clawd early", () => {
     // The server's resets land a second or so before a minute (resets_at
     // 14:29:59): "until 2:29pm", and the nap ends at 2:29pm.
-    const late = { walledUntil: at(14, 29).getTime() + 59_000 };
+    const late = { walls: [[-Infinity, at(14, 29).getTime() + 59_000]] };
     expect(activityAt(at(13, 5), late).to).toBe(14 + 29 / 60);
     expect(msUntilNextChange(at(14, 28), late)).toBe(60_000);
     expect(activityAt(new Date(at(14, 29).getTime() + 50), late).id).toBe("code");
@@ -511,6 +552,43 @@ describe("the walls lifting", () => {
     expect(upNext(at(7, 30), until(8, 40))).toMatchObject({ at: at(9, 0), activity: { id: "code", label: "coding with a coffee" } });
     expect(upNext(at(15, 0), until(15, 30))).toMatchObject({ at: at(15, 30), activity: { id: "code" } });
     expect(upNext(at(12, 10), until(13, 30))).toMatchObject({ at: at(13, 0), activity: { id: "nap" } });
+  });
+});
+
+describe("the walls landing", () => {
+  const landed = (h, m) => ({ walls: [[at(h, m).getTime(), Infinity]] });
+
+  it("naps from the minute the walls land, coding until then", () => {
+    expect(activityAt(at(14, 5), landed(14, 10))).toMatchObject({ id: "code", from: 13, to: 14 + 10 / 60 });
+    expect(msUntilNextChange(at(14, 5), landed(14, 10))).toBe(5 * 60 * 1000);
+    expect(upNext(at(14, 5), landed(14, 10))).toMatchObject({ at: at(14, 10), activity: { id: "nap" } });
+    expect(activityAt(at(14, 20), landed(14, 10))).toMatchObject({ id: "nap", from: 14 + 10 / 60, to: 16 });
+  });
+
+  it("leaves a half hour begun at the desk there, and knocks off at the next", () => {
+    expect(activityAt(at(16, 20), landed(16, 10))).toMatchObject({ id: "code", from: 13, to: 16.5 });
+    const out = activityAt(at(16, 30), landed(16, 10));
+    expect(PASTIMES.map((p) => p.id)).toContain(out.id);
+    expect(out).toEqual(activityAt(at(16, 30), WALLED));
+    expect(upNext(at(16, 20), landed(16, 10))).toMatchObject({ at: at(16, 30), activity: { id: out.id } });
+  });
+
+  it("switches nothing for walls that land and lift inside one half, or that were first seen past their reset", () => {
+    const brief = { walls: [[at(16, 10).getTime(), at(16, 20).getTime()]] };
+    expect(walledAt(at(16, 15), brief)).toBe(true);
+    expect(msUntilNextChange(at(16, 15), brief)).toBe(5 * 60 * 1000);
+    for (const m of [15, 25, 35]) expect(activityAt(at(16, m), brief), `16:${m}`).toEqual(activityAt(at(16, m)));
+    const stale = { walls: [[at(16, 14).getTime(), at(16, 10).getTime()]] };
+    expect(walledAt(at(16, 12), stale)).toBe(false);
+    expect(msUntilNextChange(at(16, 12), stale)).toBe(48 * 60 * 1000);
+    expect(activityAt(at(16, 15), stale)).toEqual(activityAt(at(16, 15)));
+  });
+
+  it("keeps a knock-off half under way when the walls lift and land again in it", () => {
+    const pastime = activityAt(at(16, 10), until(16, 15));
+    const again = { walls: [[-Infinity, at(16, 15).getTime()], [at(16, 20).getTime(), Infinity]] };
+    expect(activityAt(at(16, 25), again)).toEqual(pastime);
+    expect(activityAt(at(16, 30), again)).toEqual(activityAt(at(16, 30), WALLED));
   });
 });
 
