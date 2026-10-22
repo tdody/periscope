@@ -530,6 +530,10 @@ describe("upNext", () => {
     expect(upNext(at(7, 30))).toMatchObject({ at: at(9, 0), activity: { label: "coding with a coffee" } });
     expect(upNext(at(9, 10))).toMatchObject({ at: at(12, 0), activity: { label: activityAt(at(12, 0)).label } });
   });
+  it("announces dinner's dessert: the same meal, another dish", () => {
+    expect(upNext(new Date(2026, 6, 15, 18, 10))).toMatchObject({ at: new Date(2026, 6, 15, 18, 30), activity: { dish: "icecream" } });
+    expect(upNext(new Date(2026, 9, 28, 18, 10))).toMatchObject({ at: new Date(2026, 9, 28, 18, 30), activity: { dish: "pie" } });
+  });
   it("announces a walled coding window as the nap, and nap to nap is no change", () => {
     const walled = WALLED;
     expect(upNext(at(12, 10), walled)).toMatchObject({ at: at(13, 0), activity: { id: "nap", label: "napping at the desk" } });
