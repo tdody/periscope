@@ -457,13 +457,15 @@ def pane_session_activity() -> dict[str, float]:
     """tmux pane id -> mtime of its live claude's session file. A running
     claude rewrites that file on every status change, so among panes running
     the same session the newest mtime is the one actually being used."""
+    # Panes first: rewrite_save_file calls this on every save, and with no
+    # claude panes (or under conftest's tmux stub) there is nothing to fork ps
+    # or index ~/.claude/sessions for.
+    pane_pids = pane_claude_pids()
+    if not pane_pids:
+        return {}
     live = _live_claude_pids()
     by_pid = _indexes()[1]
-    return {
-        pane_id: by_pid[pid][0]["_mtime"]
-        for pane_id, pid in pane_claude_pids().items()
-        if pid in live and by_pid.get(pid)
-    }
+    return {pane_id: by_pid[pid][0]["_mtime"] for pane_id, pid in pane_pids.items() if pid in live and by_pid.get(pid)}
 
 
 def live_session_id_for_pane(pane_id: str) -> str | None:

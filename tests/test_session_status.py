@@ -391,6 +391,18 @@ def test_pane_session_activity_takes_each_live_panes_newest_file(tmp_path, monke
     assert ss.pane_session_activity() == {"%3": 1000.0, "%4": 2000.0}
 
 
+def test_pane_session_activity_without_panes_scans_nothing(monkeypatch):
+    # rewrite_save_file always calls this; with no claude panes (conftest's tmux
+    # stub) it must not fork ps or index the real ~/.claude/sessions first.
+    def scanned():
+        raise AssertionError("scanned the host")
+
+    monkeypatch.setattr(ss, "pane_claude_pids", dict)
+    monkeypatch.setattr(ss, "_live_claude_pids", scanned)
+    monkeypatch.setattr(ss, "_indexes", scanned)
+    assert ss.pane_session_activity() == {}
+
+
 # ── multi-account sessions-dir scan ──────────────────────────────────────
 
 

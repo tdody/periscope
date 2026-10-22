@@ -11,7 +11,14 @@ from periscope.app import app
 from periscope.routes import healthz
 
 
-def test_healthz_returns_ok_with_metadata():
+def test_healthz_returns_ok_with_metadata(tmp_path, monkeypatch):
+    # The resurrect block reads tmux confs and the live server: keep it off the host's.
+    from periscope import tmux_persist
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    monkeypatch.setattr(tmux_persist, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
+    monkeypatch.setattr(tmux_persist, "_live_option", lambda name: None)
     client = TestClient(app)
     res = client.get("/api/healthz")
     assert res.status_code == 200

@@ -48,6 +48,10 @@ from periscope import config
 TPM_REPO = "https://github.com/tmux-plugins/tpm"
 REQUIRED_PLUGINS = ("tpm", "tmux-resurrect", "tmux-continuum")
 TPM_RUN_LINE = "run '~/.tmux/plugins/tpm/tpm'"
+# TPM's, not tmux's: TPM cats /etc/tmux.conf whatever SYSCONFDIR tmux was
+# built with (Homebrew's reads /opt/homebrew/etc). A constant so tests can
+# keep the host's out of their counts.
+SYSTEM_CONF = Path("/etc/tmux.conf")
 _DEFAULT_SAVE_INTERVAL_MIN = 15
 
 _TPM_RUN_RE = re.compile(r"^\s*run(-shell)?\b.*tpm/tpm")
@@ -125,7 +129,7 @@ def _tpm_conf_files() -> list[Path]:
     sourced. A path resolved differently from TPM is a declaration miscounted:
     a `$HOME/…` or glob source read as a literal path hid the user's continuum,
     and install declared it a second time."""
-    roots = [Path("/etc/tmux.conf"), user_conf()]
+    roots = [SYSTEM_CONF, user_conf()]
     files = list(roots)
     for root in roots:
         for line in _scan_text(root).splitlines():

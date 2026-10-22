@@ -17,6 +17,8 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local/share"))
+    # The host's /etc/tmux.conf would land in every exact count below.
+    monkeypatch.setattr(tp, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
     return tmp_path
 
 
@@ -193,6 +195,13 @@ def test_heal_never_creates_the_owned_file(home):
     (home / ".tmux.conf").write_text(USER_PLUGINS)
     assert tp.heal(REPO) is False
     assert not tp.owned_conf().exists()
+
+
+def test_system_conf_is_read_like_the_user_conf(home):
+    tp.SYSTEM_CONF.parent.mkdir()
+    tp.SYSTEM_CONF.write_text("set -g @plugin 'tmux-plugins/tpm'\n")
+    assert tp.plugins_declared_elsewhere() == {"tpm": tp.SYSTEM_CONF}
+    assert tp.plugin_declarations()["tpm"] == 1
 
 
 def test_plugin_declarations_follow_sourced_files(home):
