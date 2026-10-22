@@ -104,6 +104,12 @@ describe("detect", () => {
     expect(detect(gone, { windows: [win({ pr: 7, repo_slug: "o/r", pr_state: "merged" })] }, NOW).events).toEqual([]);
   });
 
+  it("records a stale account's meters when seeding, so its first fresh fetch isn't news", () => {
+    const hot = meter({ hot: true });
+    const seeded = detect(null, { plan: plan({ s: hot }, { fetched_at: NOW - 9999 }) }, NOW).state;
+    expect(detect(seeded, { plan: plan({ s: hot }) }, NOW).events).toEqual([]);
+  });
+
   it("announces a meter getting worse once per mood step per reset window", () => {
     const at = (m) => ({ plan: plan({ week_all: m }) });
     const grumpy = meter({ projected_percent: 120 });

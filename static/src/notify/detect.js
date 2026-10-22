@@ -151,7 +151,9 @@ export function detect(prev, snap, nowSec) {
     if (Number(k.slice(k.lastIndexOf("/") + 1)) * 60 > nowSec) meters[k] = rank;
   }
   for (const [account, entry] of Object.entries(plan || {})) {
-    if (!entry?.available || !entry.meters || isStale(entry, nowSec)) continue;
+    // A stale fetch says nothing new, but seeding records it all the same: left
+    // out, a mood already there would announce on the first fresh fetch.
+    if (!entry?.available || !entry.meters || (!seeding && isStale(entry, nowSec))) continue;
     let worst = null;
     for (const [meter, m] of Object.entries(entry.meters)) {
       // No reset time, no window to dedupe within.
