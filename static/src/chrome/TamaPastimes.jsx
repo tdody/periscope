@@ -10,16 +10,21 @@ import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 const GEO = "geometricPrecision";
 const flip = (row) => [...row].reverse().join("");
 
-// A sprite grid at any cell size: the friend at full size, the kids at half.
-function Sprite({ rows, x0, y0, w = 1, h = 2, fill }) {
+// A sprite's grid cells (tamagotchi.gridCells, computed once) at any cell
+// size: Clawd and the friend at full size (1×2, a terminal quadrant), the kids
+// at half. Here rather than in Tamagotchi.jsx, which imports this file.
+export function Sprite({ cells, cls, x0, y0 = Y0, w = 1, h = 2, fill = SKIN }) {
   return (
-    <g>
-      {gridCells(rows).map(({ x, y }) => (
+    <g class={cls}>
+      {cells.map(({ x, y }) => (
         <rect key={`${x},${y}`} x={x0 + x * w} y={y0 + y * h} width={w + 0.02} height={h + 0.02} fill={fill} />
       ))}
     </g>
   );
 }
+const STANCE = [LEGS[0]];
+const KID_CELLS = { body: gridCells(BODY), legs: gridCells(STANCE) };
+const FRIEND_CELLS = { body: gridCells(BODY.map(flip)), legs: gridCells(STANCE.map(flip)) };
 
 // ---- the run: motion lines streaming off Clawd, sweat unless it's cold -----
 // A Halloween round (the ghost run) goes out in a sheet, so no sweat shows.
@@ -188,8 +193,8 @@ export function Friend() {
               width="0.7" height="0.9" rx="0.3" fill={color} />
       ))}
       <g class="tama-friend">
-        <Sprite rows={BODY.map(flip)} x0={FRIEND_X0} y0={Y0} fill={FRIEND} />
-        <Sprite rows={[flip(LEGS[0])]} x0={FRIEND_X0} y0={Y0 + 2 * BODY.length} fill={FRIEND} />
+        <Sprite cells={FRIEND_CELLS.body} x0={FRIEND_X0} fill={FRIEND} />
+        <Sprite cells={FRIEND_CELLS.legs} x0={FRIEND_X0} y0={Y0 + 2 * BODY.length} fill={FRIEND} />
         <g fill="none" stroke={EYE} stroke-width="0.45" stroke-linecap="square">
           <path d={`M${FRIEND_X0 + 3.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
           <path d={`M${FRIEND_X0 + 10.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
@@ -225,8 +230,8 @@ function KidSheet({ x }) {
 function Kid({ x, cls, costume }) {
   return (
     <g class={cls}>
-      <Sprite rows={BODY} x0={x} y0={14} w={0.5} h={1} fill={SKIN} />
-      <Sprite rows={[LEGS[0]]} x0={x} y0={18} w={0.5} h={1} fill={SKIN} />
+      <Sprite cells={KID_CELLS.body} x0={x} y0={14} w={0.5} h={1} />
+      <Sprite cells={KID_CELLS.legs} x0={x} y0={18} w={0.5} h={1} />
       {costume ? <KidSheet x={x} /> : (
         <g fill={EYE}>
           <rect x={x + 2.5} y="15" width="0.5" height="1" />

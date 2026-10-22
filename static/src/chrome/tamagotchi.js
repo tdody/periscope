@@ -375,6 +375,11 @@ export function hourLabel(h) {
   return `${Math.floor(h) % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
 }
 
+// A moment's local time, the same way: 17:30 → "5:30pm".
+export function clockLabel(date) {
+  return hourLabel(hours(date));
+}
+
 // Clawd, the Claude Code banner mascot, transcribed from its quadrant-block
 // art: ▐▛███▜▌ / ▝▜█████▛▘ / ▘▘ ▝▝. One cell per terminal quadrant, which is
 // twice as tall as it is wide, so the scene draws each cell 1×2. The eyes

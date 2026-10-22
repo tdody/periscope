@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityAt, activityLabel, BODY, BRUNCH, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
+  activityAt, activityLabel, BODY, BRUNCH, clockLabel, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
   isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, noteKey, occasionAt, occasionShown, PASTIMES,
   SCHEDULE, seasonAt, seasonStart, upNext, WEEKEND,
 } from "../tamagotchi.js";
@@ -64,6 +64,9 @@ describe("hourLabel", () => {
   });
   it("reads a half hour too", () => {
     expect([0.5, 12.5, 17.5].map(hourLabel)).toEqual(["12:30am", "12:30pm", "5:30pm"]);
+  });
+  it("reads a moment's local time the same way", () => {
+    expect([at(0, 0), at(12, 0), at(17, 30), at(9, 15)].map(clockLabel)).toEqual(["midnight", "noon", "5:30pm", "9:15am"]);
   });
 });
 

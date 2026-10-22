@@ -36,10 +36,10 @@ import {
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
-import { PASTIME_SCENES } from "./TamaPastimes.jsx";
+import { PASTIME_SCENES, Sprite } from "./TamaPastimes.jsx";
 import {
-  activityAt, activityLabel, BODY, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt, hourLabel, LEGS,
-  MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, Y0,
+  activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
+  hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, Y0,
 } from "./tamagotchi.js";
 
 // Where the mascot stands per activity: centred on its feet by default; the
@@ -51,16 +51,6 @@ const STANDING = { x0: 8 };
 const BODY_CELLS = gridCells(BODY);
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
-
-function Cells({ cells, cls, x0, y0 = Y0 }) {
-  return (
-    <g class={cls}>
-      {cells.map(({ x, y }) => (
-        <rect key={`${x},${y}`} x={x0 + x} y={y0 + 2 * y} width="1.02" height="2.02" fill={SKIN} />
-      ))}
-    </g>
-  );
-}
 
 function Eyes({ closed, x0 }) {
   return (
@@ -617,7 +607,7 @@ export function TamaScene({
       {/* The lift sits on a wrapper: the creature's CSS bob sets `transform`. */}
       <g transform={lift ? `translate(0 ${-lift})` : undefined}>
       <g key={petKey} class={`tama-creature${petted ? " tama-hop" : ""}`}>
-        <Cells cells={BODY_CELLS} cls="tama-body" x0={x0} />
+        <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />
         {face}
         {p?.Held && <p.Held x0={x0} />}
         {p?.Headwear && !hat && <p.Headwear x0={x0} />}
@@ -627,8 +617,8 @@ export function TamaScene({
         {atDesk && pose === "ci" && <Extinguisher />}
         {deskBell && <SlapHand />}
         {pose === "bell" && !deskBell && <Startle x0={x0} />}
-        {!sitting && <Cells cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
-        {p?.stride && <Cells cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
+        {!sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
+        {p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && p?.pail && <Pail x0={x0} />}
         {p?.snowcap && season === "winter" && !hat && !ghost && (
           <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
@@ -673,7 +663,6 @@ const sceneKey = (d) => {
 // render state, so the minute backstop's closure sees today's, not the first
 // render's.
 const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walled: !!walls.value });
-const clock = (d) => hourLabel(d.getHours() + d.getMinutes() / 60);
 // The hover's words for an activity in the scene deskView makes of it.
 const doingLabel = (a, view, mood = "calm") =>
   view.scene === "nap" ? "napping at the desk" : activityLabel(a, view.moodShown ? mood : "calm");
@@ -790,7 +779,7 @@ export function Tamagotchi() {
     ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
     ...(view.moodShown && reason ? [reason] : []),
     ...(headline ? [headline] : []),
-    ...(next ? [`up next at ${clock(next.at)}: ${next.label}`] : []),
+    ...(next ? [`up next at ${clockLabel(next.at)}: ${next.label}`] : []),
   ];
   const label = `Claude is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
     + (top?.target ? ` · click to ${top.target.says}` : "");
