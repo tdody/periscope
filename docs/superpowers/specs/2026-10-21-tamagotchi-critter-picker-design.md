@@ -258,6 +258,8 @@ SVG's name.
 
 ### Critters as expressive as Clawd
 
+**Status:** duty poses are done as THI-415 part 1 (`docs/superpowers/specs/2026-10-22-critter-duty-faces-design.md`): faces generated from each critter's eye boxes, with optional per-critter face layers, and the bell's "!" on the critter's own head. Hands, strides, worn and held props, and hats remain. They're parts 2 and 3, and both build on the `anchors` those sprites now carry.
+
 Today a critter stands in Clawd's spot with its own three mood layers and shut
 eyes, and every *scene* prop stays. But everything drawn on Clawd's *body* is
 either dropped or still positioned for Clawd. Clawd has far more range than a
