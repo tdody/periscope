@@ -3,6 +3,7 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
 import { CRITTERS, critterById } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
@@ -652,5 +653,29 @@ describe("critters", () => {
     const nox = critterById("nox");
     expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
     expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
+  });
+});
+
+describe("<Tamagotchi> with a critter", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    prefsSignal.value = { ...prefsSignal.value, ui: {} };
+  });
+
+  it("draws the picked critter and names it in the hover", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 21, 14, 30));
+    prefsSignal.value = { ...prefsSignal.value, loaded: true, ui: { tama_critter: "nox" } };
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-critter="nox"');
+    expect(html).toContain('title="Nox is coding (1pm–5pm)');
+  });
+
+  it("stays Clawd, called Claude, with nothing picked", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 21, 14, 30));
+    const html = render(<Tamagotchi />);
+    expect(html).not.toContain("data-critter");
+    expect(html).toContain('title="Claude is coding (1pm–5pm)');
   });
 });

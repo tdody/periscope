@@ -22,7 +22,7 @@ import { useComputed, useSignal } from "@preact/signals";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
 import { selectedPid } from "../keys.js";
-import { getClawdDay, noteClawdDay } from "../prefs.js";
+import { getClawdDay, getTamaCritter, noteClawdDay } from "../prefs.js";
 import { buildRunning } from "../split/attention.js";
 import {
   alerts, dismissedAlertIds, dismissedNeedsPids, dismissedReadyPids, railSelection, updateInfo, usage, wallSpans, walls,
@@ -31,7 +31,7 @@ import {
 import { plural } from "../util.js";
 import { clickHandlers } from "./clawdClick.js";
 import { Critter } from "./Critter.jsx";
-import { CRITTERS, placement } from "./critters.js";
+import { CRITTERS, critterById, placement } from "./critters.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
@@ -716,6 +716,7 @@ const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walls: wallsOf(wallSpans.
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
   const [pets, setPets] = useState(0);
+  const critter = critterById(getTamaCritter());
   const [petted, setPetted] = useState(false);
 
   // The day log and the walls' stretches, as a string key: /api/state
@@ -830,7 +831,8 @@ export function Tamagotchi() {
     ...(headline ? [headline] : []),
     ...(next ? [`up next at ${clockLabel(next.at)}: ${activityLabel(next.activity)}`] : []),
   ];
-  const label = `Claude is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
+  // Clawd keeps its banner name; any other critter goes by its own.
+  const label = `${critter.sprite ? critter.name : "Claude"} is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
     + (top?.target ? ` · click to ${top.target.says}` : "");
 
   function pet() { setPets((n) => n + 1); setPetted(true); }
@@ -853,7 +855,8 @@ export function Tamagotchi() {
       <TamaScene activity={a.id} dish={a.dish} trick={!!a.trick} season={seasonAt(now)} occasion={occasion?.id} coffee={!!a.coffee}
                  mood={mood} petted={petted} petKey={pets}
                  duty={top && { kind: top.kind, label: top.label, urgent: !!top.urgent, more: d.more, pct: top.pct, cost: top.cost }}
-                 working={d.working} walled={d.wall} party={d.items.some((i) => i.kind === "merged")} />
+                 working={d.working} walled={d.wall} party={d.items.some((i) => i.kind === "merged")}
+                 critter={critter} />
     </button>
   );
 }
