@@ -70,6 +70,15 @@ describe("<Critter>", () => {
     expect(html).toContain('class="tama-sweat"');
   });
 
+  // scope has no own worried face (critters.js falls back to generated brows)
+  // and keeps two eyes with a glint: the eyes never left, brows just sit over them.
+  it("draws the generated brows over scope's eyes, keeping the glint", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, face: "worried" });
+    expect(html).toContain('stroke-width="0.6"');
+    expect(html).toContain('data-role="glint"');
+  });
+
   it("draws the happy glyphs with Clawd's class and in the critter's ink", () => {
     const sprite = critterById("scope").sprite;
     const html = draw({ sprite, face: "happy" });
@@ -83,9 +92,43 @@ describe("<Critter>", () => {
     expect(draw({ sprite })).not.toContain("tama-startle");
   });
 
-  it.each(sprites)("%s draws exactly as before without a face", (_id, sprite) => {
-    const html = draw({ sprite });
-    expect(html).not.toContain("data-face");
-    expect(html).not.toContain("<path");
+  // One of every node kind Node handles, pre-Task-5: a plain rect, a painted
+  // group, an anim group, a calm-only mood layer (furious sits beside it and
+  // must not show), an eye and a lid that can shut, and a glint. Expected
+  // strings came from rendering this same sprite through the pre-Task-5
+  // Critter (git show 1011413:static/src/chrome/Critter.jsx) — no face/cls/p
+  // existed then, so an unfaced render today must match byte for byte.
+  it("draws a sprite exactly as before without a face", () => {
+    const sprite = {
+      root: [
+        { r: [0, 0, 1, 1], a: { fill: "#111" } },
+        { g: [{ r: [1, 1, 1, 1] }], a: { fill: "#222" } },
+        { g: [{ r: [2, 2, 1, 1] }], anim: "crit-x-1" },
+        { g: [{ r: [3, 3, 1, 1] }], mood: "calm" },
+        { g: [{ r: [4, 4, 1, 1] }], mood: "furious" },
+        { g: [{ r: [5, 5, 2, 2], a: { fill: "#333" } }], role: "eye", shut: [5, 6, 2, 0.4] },
+        { g: [{ r: [6, 6, 2, 2], a: { fill: "#444" } }], role: "lid", shut: [6, 7, 2, 0.4] },
+        { g: [{ r: [7, 7, 0.7, 0.7] }], role: "glint", mood: "calm" },
+      ],
+    };
+    const awake =
+      '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
+      '<g fill="#222"><rect x="1" y="1" width="1" height="1"></rect></g>' +
+      '<g class="crit-x-1"><rect x="2" y="2" width="1" height="1"></rect></g>' +
+      '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
+      '<g data-role="eye"><rect x="5" y="5" width="2" height="2" fill="#333"></rect></g>' +
+      '<g data-role="lid"><rect x="6" y="6" width="2" height="2" fill="#444"></rect></g>' +
+      '<g data-mood="calm" data-role="glint"><rect x="7" y="7" width="0.7" height="0.7"></rect></g>' +
+      "</g></svg>";
+    const asleep =
+      '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
+      '<g fill="#222"><rect x="1" y="1" width="1" height="1"></rect></g>' +
+      '<g class="crit-x-1"><rect x="2" y="2" width="1" height="1"></rect></g>' +
+      '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
+      '<rect data-role="shut" x="5" y="6" width="2" height="0.4" fill="#333"></rect>' +
+      '<rect data-role="shut" x="6" y="7" width="2" height="0.4" fill="#444"></rect>' +
+      "</g></svg>";
+    expect(draw({ sprite })).toBe(awake);
+    expect(draw({ sprite, asleep: true })).toBe(asleep);
   });
 });

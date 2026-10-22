@@ -67,6 +67,10 @@ const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scal
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
 
+// The faces Critter.jsx draws in place of the eyes (lids shut over them).
+// Worried is the one duty face that keeps the eyes, drawing brows over them.
+export const EYE_FACES = new Set(["happy", "x", "down"]);
+
 // Inner ends raised, as Clawd's Worried. One eye (Moss) gets a single tent-shaped brow.
 function brows(eyes) {
   if (eyes.length === 1) {

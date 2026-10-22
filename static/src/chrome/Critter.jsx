@@ -2,12 +2,13 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { faceGlyphs, startleGlyph } from "./critters.js";
+import { EYE_FACES, faceGlyphs, startleGlyph } from "./critters.js";
 
 // A mood layer shows only in its mood. Asleep, an eye or a lid is drawn as its
 // `shut` frame, held, and the glint riding on a blinking eye goes away. Under a
 // face (`hide`), the face's glyph replaces the eye: the eye and its glint go,
-// and a lid shuts over the eye it covers.
+// and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
+// fields (faceGlyphs/startleGlyph): an SVG path's `d` and a CSS class.
 function Node({ n, mood, asleep, hide }) {
   if (n.mood && n.mood !== mood) return null;
   if ((asleep || hide) && n.role === "glint") return null;
@@ -21,6 +22,8 @@ function Node({ n, mood, asleep, hide }) {
     const [x, y, w, h] = n.shut;
     return <rect data-role="shut" x={x} y={y} width={w} height={h} {...n.g[0].a} />;
   }
+  // n.anim and n.cls never both land here: `cls` is a face glyph's own field,
+  // and a face glyph is static art (critters.js), never animated.
   return (
     <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...n.a}>
       {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} />)}
@@ -30,9 +33,10 @@ function Node({ n, mood, asleep, hide }) {
 
 // `face` is one of the duty faces (critters.js faceGlyphs) and `startle` the
 // bell's "!": both drawn inside the critter's own group, so they scale and bob
-// with it.
+// with it. A face wins over `asleep` if both were ever set (TamaScene never
+// sets both).
 export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false }) {
-  const hide = face === "happy" || face === "x" || face === "down";
+  const hide = EYE_FACES.has(face);
   return (
     <g class="critter" data-face={face || undefined}>
       {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} />)}

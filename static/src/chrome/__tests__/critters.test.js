@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getTamaCritter, prefsSignal } from "../../prefs.js";
-import { CLAWD_HEIGHT, CRITTERS, critterById, faceGlyphs, placement, spriteBox, startleGlyph } from "../critters.js";
+import { CLAWD_HEIGHT, CRITTERS, EYE_FACES, critterById, faceGlyphs, placement, spriteBox, startleGlyph } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite);
 
@@ -197,6 +197,11 @@ describe("faceGlyphs", () => {
 
   it("draws nothing for a face it doesn't know", () => {
     expect(faceGlyphs(scope, "wink")).toEqual([]);
+  });
+
+  it("gets glyphs for every EYE_FACES member, and worried (eyes kept) isn't one", () => {
+    for (const face of EYE_FACES) expect(faceGlyphs(scope, face).length, face).toBeGreaterThan(0);
+    expect(EYE_FACES.has("worried")).toBe(false);
   });
 });
 
