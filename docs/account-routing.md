@@ -118,8 +118,9 @@ any account. An account without data is not room (as in `choose`), but no data
 on every account is not a wall either. When every candidate is walled it
 returns `{"until": …}`: the soonest moment some account works again, i.e. the
 latest reset among the meters walling it, minimized over accounts and models.
-The header tamagotchi naps at its desk on this, showing that time, so its
-answer and the launch chip's can't diverge. Rule 6's hover says the same
+The header tamagotchi naps at its desk on this through a weekday's coding
+hours (it knocks off for its pastimes at 4pm rather than 5, and a weekend has
+no desk), showing that time, so its answer and the launch chip's can't diverge. Rule 6's hover says the same
 time ("every meter walled; back Thu 15:00") rather than the session reset,
 which a weekly wall outlasts by days.
 

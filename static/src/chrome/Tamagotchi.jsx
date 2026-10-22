@@ -1,17 +1,18 @@
 // Easter egg in the header's top-right corner: Clawd, the Claude Code banner
-// mascot, living its day on the local clock: asleep, coffee, coding, lunch,
-// an evening pastime per half hour (a run, a ride, bass, a beer with friends,
-// the kids), dinner, a book (tamagotchi.js has the schedule; TamaPastimes.jsx
-// draws the pastimes and the dishes). Double-click to pet it.
+// mascot, living its day on the local clock: asleep, coffee, coding, lunch, a
+// pastime per half hour from 5pm (a run, a ride, bass, a beer with friends,
+// the kids, …), dinner, a book; weekends sleep in, have brunch and take
+// pastimes from 11am (tamagotchi.js has the schedule; TamaPastimes.jsx draws
+// the pastimes, TamaDishes.jsx the dishes). Double-click to pet it.
 //
 // It's also on duty (clawdDuty.js decides what, TamaDuty.jsx draws it): one
 // thing at a time, highest priority first, with a bubble counting what's
 // waiting — and a click goes straight to it. Petting stays a single click
 // when nothing is pending.
 //
-// Coding happens at a desk, reading in an armchair by the fireplace, the run
-// and the ride outdoors in the current season; the rest are standing poses
-// with a prop.
+// Coding happens at a desk, reading in an armchair by the fireplace; each
+// pastime's pose, props and setting (the outdoor ones in the current season)
+// are its record in TamaPastimes.PASTIME_SCENES.
 //
 // Pure pixel art: a 34×24 scene where each sprite cell is 1×2 (the banner's
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
@@ -145,10 +146,11 @@ function Scenery({ season, night }) {
   );
 }
 
-// Occasions (tamagotchi.OCCASIONS), from Faraday's standup bot: Halloween week
-// turns the run into a ghostly trick-or-treat round and lights a
-// jack-o'-lantern everywhere else; the year-end wind-down brings a Santa hat,
-// a tree and stockings; the new year a party hat, fireworks and confetti.
+// Occasions (tamagotchi.OCCASIONS), from Faraday's standup bot: Halloween
+// evenings (activityAt's `trick`) send the run and the kids out in sheets, and
+// the week lights a jack-o'-lantern everywhere else; the year-end wind-down
+// brings a Santa hat, a tree and stockings; the new year a party hat,
+// fireworks and confetti.
 function JackOLantern({ x, y }) {
   return (
     <g class="tama-jack" shape-rendering="geometricPrecision">
