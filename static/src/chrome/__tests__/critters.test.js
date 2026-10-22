@@ -215,6 +215,30 @@ describe("startleGlyph", () => {
   });
 });
 
+describe("sprite paint", () => {
+  // Every node's own `a.fill`/`a.stroke` (root and faces, depth first).
+  function paints(nodes, out = []) {
+    for (const n of nodes) {
+      if (n.a) out.push(n.a);
+      if (n.g) paints(n.g, out);
+    }
+    return out;
+  }
+  const HEX = /^#[0-9a-f]{6}$/i;
+
+  // hueRotate (critters.js) passes anything but #rrggbb straight through
+  // untinted, so a sprite that painted with `none`, a CSS var, or a 3-digit
+  // hex would leave an untinted patch on a critter's friend (tint reaches
+  // every paint only if every paint is a 6-digit hex).
+  it.each(sprites.map((c) => [c.id, c]))("%s paints every fill and stroke as #rrggbb", (_id, c) => {
+    const layers = [...c.sprite.root, ...Object.values(c.sprite.faces || {}).flat()];
+    for (const a of paints(layers)) {
+      if (a.fill !== undefined) expect(a.fill === "none" || HEX.test(a.fill), a.fill).toBe(true);
+      if (a.stroke !== undefined) expect(HEX.test(a.stroke), a.stroke).toBe(true);
+    }
+  });
+});
+
 describe("hueRotate", () => {
   it("turns a colour's hue by the given degrees", () => {
     expect(hueRotate("#ff0000", 120)).toBe("#00ff00");

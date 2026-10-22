@@ -148,13 +148,12 @@ export function hueRotate(color, deg) {
   const min = Math.min(r, g, b);
   const d = max - min;
   if (d === 0) return color.toLowerCase();
-  const l = (max + min) / 2;
-  const c = (1 - Math.abs(2 * l - 1)) * (d / (1 - Math.abs(2 * l - 1)));
+  // HSL's chroma is max-min (`d`) and its lift (`l - c/2`) is just `min` —
+  // both fall out of l = (max+min)/2 and c = d algebraically, so skip l.
   const h0 = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   const h = (((h0 * 60 + deg) % 360) + 360) % 360;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const [r1, g1, b1] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
-    : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
-  const lift = l - c / 2;
-  return `#${[r1, g1, b1].map((v) => Math.round((v + lift) * 255).toString(16).padStart(2, "0")).join("")}`;
+  const x = d * (1 - Math.abs(((h / 60) % 2) - 1));
+  const [r1, g1, b1] = h < 60 ? [d, x, 0] : h < 120 ? [x, d, 0] : h < 180 ? [0, d, x]
+    : h < 240 ? [0, x, d] : h < 300 ? [x, 0, d] : [d, 0, x];
+  return `#${[r1, g1, b1].map((v) => Math.round((v + min) * 255).toString(16).padStart(2, "0")).join("")}`;
 }
