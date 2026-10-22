@@ -170,11 +170,10 @@ async function handleDetailPaste(e) {
 }
 
 // Header for the pane detail — branch · PR · CI · Linear · git · model · ctx% ·
-// API error · ✨ auto-rename. PR/Linear anchors are real links; they sit
-// inside a non-clickable header so no stopPropagation is needed here (unlike
-// the rail rows).
+// API error. PR/Linear anchors are real links; they sit inside a
+// non-clickable header so no stopPropagation is needed here (unlike the rail
+// rows).
 export function PaneHeader({ w }) {
-  const [renaming, setRenaming] = useState(false);
   // Delegation lineage — which pane spawned this one. Lives here (its own
   // line above the status summary), not on the rail card: it's orientation
   // about a relationship, not a live signal. A dead lead still shows,
@@ -183,37 +182,7 @@ export function PaneHeader({ w }) {
   const spawnerLive = !!w.spawned_by
     && (windows.value || []).some((x) => x.pid === w.spawned_by);
 
-  async function autoRename() {
-    if (renaming) return;
-    setRenaming(true);
-    try {
-      // The endpoint mutates the tmux window's title via Claude; the next
-      // /api/state poll surfaces the new name in the rail row. No need to
-      // touch local state — refresh is implicit via the poll loop.
-      await apiCall("auto-rename window", `/api/auto-rename-window?${targetQuery(w.target)}`, {
-        method: "POST",
-      });
-    } finally {
-      setRenaming(false);
-    }
-  }
-
   const parts = [];
-  // Auto-rename spends Claude capacity and relies on Claude-only context.
-  // Codex v1 deliberately has no equivalent provider integration.
-  if (w.agent === "claude") {
-    parts.push(
-      <button
-        type="button"
-        class={`header-rename${renaming ? " busy" : ""}`}
-        title="ask Claude to rename this window"
-        disabled={renaming}
-        onClick={autoRename}
-      >
-        ✨
-      </button>
-    );
-  }
   // Session: shown only when it isn't just the branch repeated (the
   // worktree-pane case — session and branch are literally the same string
   // there, which produced a triple-printed line per the screenshot). For
@@ -240,7 +209,7 @@ export function PaneHeader({ w }) {
     if (tail) {
       parts.push(
         <>
-          {parts.length > 1 && <span class="hsep">·</span>}
+          {parts.length > 0 && <span class="hsep">·</span>}
           <span
             class="header-cwd-reveal"
             title={`Reveal ${w.cwd} in Finder`}
@@ -467,7 +436,10 @@ function PaneDetail({ w }) {
   const paneTabActive = activeTab === "pane";
   // Label the pane tab with the window name (auto-rename target). Same
   // fallback the rail rows use (RailRows.jsx).
-  const label = paneLabel(w);
+  // The pane tab says WHERE the pane is (its track: the repo, or the goal),
+  // not what the window is called — the rail row already shows the name,
+  // and a strip of AI-minted titles reads as noise next to the file tabs.
+  const label = w.track_name || paneLabel(w);
 
   return (
     <div id="detail-pane" class="detail-pane">
