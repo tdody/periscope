@@ -119,10 +119,6 @@ function MeterBar({ label, m, resets, pace }) {
   );
 }
 
-// Every meter of one account, as the tooltip text for that account's row.
-// Collapsing to the binding meter hides the rest from sight, not from reach.
-// Carried on the row rather than the pill because each MeterBar's own title
-// wins on hover — the row's only reliably-hoverable area is its letter.
 // Every meter shown, or each account's headline only. A module signal so a
 // usage notification's click can open it (notify/feed.js).
 export const usageExpanded = signal(false);
@@ -131,6 +127,10 @@ export function openUsageDetails() {
   usageExpanded.value = true;
 }
 
+// Every meter of one account, as the tooltip text for that account's row.
+// Collapsing to the binding meter hides the rest from sight, not from reach.
+// Carried on the row rather than the pill because each MeterBar's own title
+// wins on hover — the row's only reliably-hoverable area is its letter.
 function acctTitle(a, expanded, poke, waste) {
   const lines = a.meters.map(({ m }) =>
     [`${m.label}: ${m.percent}% used`, fmtReset(m.resets_at), ...paceLines(m)]

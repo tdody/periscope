@@ -10,8 +10,6 @@
 import { isStale, meterMood } from "../chrome/usageRules.js";
 import { buildNeedsYou } from "../split/attention.js";
 
-export const KINDS = ["needs_input", "question", "done", "ci_failed", "pr_merged", "usage"];
-
 // A key missing from a pass is kept this many passes. A pass is one applied
 // /api/state (feed.js), so about 1 s on the WS push (state_hub's tick), 3 s on
 // the REST fallback: about 2 min, or longer, which is harmless. One empty or
