@@ -691,9 +691,17 @@ export function Tamagotchi() {
   const [merged, furious, walled] = JSON.parse(dayDeps);
   const day = { ...dayFlags({ merged, furious }, now), walled };
 
-  // Wake when the current window ends; a wall or a verdict landing moves the
-  // end (a walled weekday knocks off at 4pm).
+  // Wake when the current window ends. A wall or a verdict landing moves the
+  // end (a walled weekday knocks off at 4pm), and `now` is when the current
+  // window began, so it re-anchors on the clock first: from `now`, the scene
+  // and the wake were both the old window's until the minute backstop caught up.
+  const anchored = useRef(dayDeps);
   useEffect(() => {
+    if (anchored.current !== dayDeps) {
+      anchored.current = dayDeps;
+      setNow(new Date());
+      return;
+    }
     const t = setTimeout(() => setNow(new Date()), msUntilNextChange(now, day) + 50);
     return () => clearTimeout(t);
   }, [now, dayDeps]);
