@@ -56,8 +56,9 @@ These are the non-obvious behaviors worth preserving:
    erases it. A split or a killed sibling resizes the pane without
    periscope asking — tmux says so only with `%layout-change` — so the
    reconcile announces changed dims (`PaneSize`, sent as `{type:"size"}`)
-   ahead of the frame painted at them, to subscriptions `ws.py` armed at
-   `subscribe()`.
+   ahead of the frame painted at them, measured against the dims each
+   subscription was armed with at `subscribe()` (a required `size`: `ws.py`
+   passes the handshake's, before the connect-time reconcile can land).
 
    On the client the xterm takes the pane's dims, rows capped at its
    container (`xtermDims`): grown to the container it shows those stale
