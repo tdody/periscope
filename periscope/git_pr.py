@@ -53,7 +53,9 @@ _GH_AVAILABLE = shutil.which("gh") is not None
 # (pr_state_for) and the activity-timeline run state (_gh_run_state) so a new
 # failure conclusion is added in one place. The "running" and "success/neutral"
 # buckets intentionally differ between those two callers and are NOT shared.
-_CI_FAILED_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"})
+# ERROR is a commit status's errored state (distinct from a check run's
+# conclusion, but both land in this one shared set).
+_CI_FAILED_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "ERROR"})
 _CI_PENDING_STATES = frozenset({"PENDING", "QUEUED", "IN_PROGRESS", "WAITING"})
 _CI_PASSED_STATES = frozenset({"SUCCESS", "NEUTRAL", "SKIPPED"})
 

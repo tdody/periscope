@@ -40,6 +40,55 @@ def test_pane_returns_parsed_payload(client, mocker):
     assert "content" in body
 
 
+def test_pane_drops_branch_prs_checks_and_base_under_a_linked_pr(client, mocker, clean_state):
+    """ci_checks/pr_base describe the branch PR's own state, not the linked
+    PR's — this route never looks up the linked PR's state, so it must drop
+    them the same way it already drops `ci`."""
+
+    def fake_tmux(*args):
+        if args and args[0] == "capture-pane":
+            return "$ ls\n"
+        return ""
+
+    _patch(mocker, "tmux", side_effect=fake_tmux)
+    _patch(mocker, "pane_meta", return_value=("win-name", "/tmp/proj"))
+    _patch(mocker, "parse_pane", return_value={"agent": None, "spinner": None})
+    _patch(mocker, "smooth_parsed", side_effect=lambda *, pane_id, parsed: parsed)
+    _patch(mocker, "cached_git_state", return_value={"branch": "main"})
+    _patch(
+        mocker,
+        "cached_pr_state",
+        return_value={
+            "pr": 42,
+            "ci": "✗",
+            "ci_checks": [{"name": "build", "state": "failure"}],
+            "pr_base": "main",
+        },
+    )
+    _patch(mocker, "cached_pane_activity", return_value=[])
+
+    def fake_resolve(one):
+        one[0]["pid"] = "p9"
+
+    _patch(mocker, "_attach_git_then_resolve_pids", side_effect=fake_resolve)
+    _patch(
+        mocker,
+        "list_windows",
+        return_value=[{"session": "main", "index": 0, "name": "x", "pane_id": "%7", "cwd": "/tmp"}],
+    )
+    _patch(mocker, "cached_lgtm_state", return_value=None)
+    clean_state["windows"]["p9"] = {"linked_pr": 1234}
+
+    r = client.get("/api/pane?session=main&index=0")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pr"] == "1234"
+    assert body["pr_linked"] is True
+    assert "ci" not in body
+    assert "ci_checks" not in body
+    assert "pr_base" not in body
+
+
 def test_rename_sets_name(client, mocker):
     tmux_mock = mocker.MagicMock(return_value="")
     for path in ("periscope.routes.pane.tmux", "server.tmux"):

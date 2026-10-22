@@ -120,7 +120,12 @@ def pane(session: str, index: int, lines: int = 200):
         pr = dict(pr)
         pr["pr"] = str(linked_pr)
         pr["pr_linked"] = True
+        # ci/ci_checks/pr_base describe the branch's own PR, not the linked
+        # one — this route doesn't look up the linked PR's state, so drop
+        # them rather than mislabel them under the linked number.
         pr.pop("ci", None)
+        pr.pop("ci_checks", None)
+        pr.pop("pr_base", None)
     lgtm = cached_lgtm_state(cwd)
     return {
         "content": content,

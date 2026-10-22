@@ -199,6 +199,12 @@ def test_ci_checks_caps_the_list():
     assert _ci_checks(None) == []
 
 
+def test_ci_checks_treats_a_commit_status_error_as_failed():
+    # A commit status's `state` can be ERROR (distinct from FAILURE) — it
+    # must still be named in the CI-failed banner, not dropped silently.
+    assert _ci_checks([{"context": "ci/legacy", "state": "ERROR"}]) == [{"name": "ci/legacy", "state": "failure"}]
+
+
 def test_linked_pr_state_carries_base_and_checks(tmp_path, mocker):
     import json as _json
 
