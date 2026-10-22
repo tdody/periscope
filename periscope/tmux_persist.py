@@ -30,7 +30,6 @@ Import discipline: stdlib + `periscope.config` only. The shell verb runs this
 under plain `python3`, outside the uv environment.
 """
 
-import contextlib
 import glob
 import json
 import os
@@ -128,7 +127,7 @@ def _tpm_conf_files() -> list[Path]:
     roots = [Path("/etc/tmux.conf"), user_conf()]
     files = list(roots)
     for root in roots:
-        for line in _read_lines(root):
+        for line in _scan_text(root).splitlines():
             files += _source_targets(line)
     return files
 
@@ -136,11 +135,7 @@ def _tpm_conf_files() -> list[Path]:
 def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
     """(plugin, file) for each `@plugin` line TPM will see in `files`, repeats
     included."""
-    out: list[tuple[str, Path]] = []
-    for f in files:
-        with contextlib.suppress(OSError):
-            out += [(name, f) for name in declared_plugins(f.read_text())]
-    return out
+    return [(name, f) for f in files for name in declared_plugins(_scan_text(f))]
 
 
 def plugins_declared_elsewhere() -> dict[str, Path]:
@@ -190,7 +185,7 @@ def heal(repo: Path) -> bool:
     if not conf.exists() or all(n == 1 for n in plugin_declarations().values()):
         return False
     text = owned_conf_text(repo, plugins_declared_elsewhere())
-    if conf.read_text() == text:
+    if _scan_text(conf) == text:
         return False
     conf.write_text(text)
     return True
@@ -204,16 +199,30 @@ def _sources_owned(line: str) -> bool:
     return bool(words) and Path(words[0]) == owned_conf()
 
 
+def _scan_text(path: Path) -> str:
+    """A conf file's text for reading only, "" when unreadable. TPM's `cat …
+    2>/dev/null` is as tolerant, and a raise here 500'd all of /api/healthz
+    (which `bin/periscope update` polls) over one unreadable /etc/tmux.conf or
+    a Latin-1 comment in a sourced file. Bad bytes are replaced, so the
+    `@plugin` lines around them still count."""
+    try:
+        return path.read_text(errors="replace")
+    except OSError:
+        return ""
+
+
+# The user conf is rewritten in place: surrogateescape round-trips bytes that
+# aren't UTF-8 instead of raising on them (or replacing them on write-back).
 def _read_lines(path: Path) -> list[str]:
-    return path.read_text().splitlines() if path.exists() else []
+    return path.read_text(errors="surrogateescape").splitlines() if path.exists() else []
 
 
 def _write_lines(path: Path, lines: list[str]) -> None:
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", errors="surrogateescape")
 
 
 def is_sourced(path: Path) -> bool:
-    return any(_sources_owned(line) for line in _read_lines(path))
+    return any(_sources_owned(line) for line in _scan_text(path).splitlines())
 
 
 def ensure_sourced(path: Path) -> bool:
@@ -264,7 +273,7 @@ def install(repo: Path) -> list[str]:
     conf = owned_conf()
     conf.parent.mkdir(parents=True, exist_ok=True)
     text = owned_conf_text(repo, plugins_declared_elsewhere())
-    if not conf.exists() or conf.read_text() != text:
+    if not conf.exists() or _scan_text(conf) != text:
         conf.write_text(text)
         actions.append(f"wrote {conf}")
     if ensure_sourced(user_conf()):

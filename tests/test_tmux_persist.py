@@ -72,6 +72,13 @@ def test_remove_sourced_round_trips_and_leaves_tpm_run(home):
     assert tp.remove_sourced(conf) is False
 
 
+def test_ensure_sourced_round_trips_non_utf8_bytes(home):
+    conf = home / ".tmux.conf"
+    conf.write_bytes(b"# caf\xe9\nrun '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.ensure_sourced(conf) is True
+    assert conf.read_bytes() == b"# caf\xe9\n" + tp.source_line().encode() + b"\nrun '~/.tmux/plugins/tpm/tpm'\n"
+
+
 def test_uninstall_removes_owned_file_and_line(home):
     tp.owned_conf().parent.mkdir(parents=True)
     tp.owned_conf().write_text("x\n")
@@ -246,6 +253,24 @@ def test_status_flags_a_plugin_declared_nowhere(home, monkeypatch):
     s = tp.status(REPO)
     assert s["plugin_declarations"]["tmux-continuum"] == 0
     assert s["ok"] is False
+
+
+def test_unreadable_or_non_utf8_conf_files_never_raise(home, monkeypatch):
+    # TPM's `cat … 2>/dev/null` shrugs these off. A raise here 500'd all of
+    # /api/healthz, which `bin/periscope update` polls for the new SHA.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    extra = home / "latin1.conf"
+    extra.write_bytes(b"# caf\xe9\nset -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(f"source-file {extra}\n" + conf.read_text())
+    assert tp.status(REPO)["plugin_declarations"]["tmux-continuum"] == 2  # still counted
+    conf.chmod(0)
+    try:
+        s = tp.status(REPO)
+    finally:
+        conf.chmod(0o644)
+    assert s["conf_sourced"] is False and s["ok"] is False
 
 
 # --- status ----------------------------------------------------------------
