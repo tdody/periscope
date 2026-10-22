@@ -244,23 +244,53 @@ def test_ws_closes_on_subscription_eof(client, mocker):
             ws.receive_bytes()
 
 
+def _send_resize(ws, sub, msg):
+    ws.send_text(json.dumps(msg))
+    # Resize handling is async; poll briefly for the side effect.
+    for _i in range(50):
+        if sub.reconciles:
+            break
+        import time
+
+        time.sleep(0.02)
+
+
 def test_ws_resize_message_triggers_reconcile(client, mocker):
-    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
+    calls = []
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
     sub = _patch_mirror(mocker)
 
     with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
         _ = ws.receive_text()  # size
         _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
-        ws.send_text(json.dumps({"type": "resize", "cols": 90, "rows": 30}))
-        # Resize handling is async; poll briefly for the side effect.
-        for _i in range(50):
-            if sub.reconciles:
-                break
-            import time
-
-            time.sleep(0.02)
+        _send_resize(ws, sub, {"type": "resize", "cols": 90, "rows": 30})
         assert sub.reconciles == 1
+    resize = [c for c in calls if "resize-window" in c and "display-message" not in c]
+    assert len(resize) == 1
+    assert resize[0][resize[0].index("-x") + 1] == "90"
+    assert resize[0][resize[0].index("-y") + 1] == "30"
+
+
+def test_ws_rows_only_resize_keeps_the_window_width(client, mocker):
+    """A height-only ask carries no cols (resizeAsk), and resizes the window's
+    height alone. With the client's pinned width in it, a shorter viewer's
+    shrink also set a shared window's width, reverting a wider viewer's on
+    every change it made."""
+    calls = []
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux(calls))
+    sub = _patch_mirror(mocker)
+
+    with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
+        _ = ws.receive_bytes()
+        _send_resize(ws, sub, {"type": "resize", "rows": 22})
+        assert sub.reconciles == 1
+    resize = [c for c in calls if "resize-window" in c and "display-message" not in c]
+    assert len(resize) == 1
+    assert "-x" not in resize[0]
+    assert resize[0][resize[0].index("-y") + 1] == "22"
 
 
 def test_ws_reconcile_message_repaints_without_resizing(client, mocker):

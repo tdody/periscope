@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterSend, hintDims, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
+import { afterSend, hintDims, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
 
 describe("xtermDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {
@@ -81,8 +81,9 @@ describe("resizeAsk", () => {
 
   it("sends a height-only shrink below the pane, which no longer fits", () => {
     // Unsent, the 62-row pane never shrinks to the 40-row container and the
-    // xterm can't show its bottom rows until the next width change.
-    expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 62)).toEqual({ cols: 239, rows: 40 });
+    // xterm can't show its bottom rows until the next width change. Rows only:
+    // the width isn't what changed (see the two-viewer case below).
+    expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 62)).toStrictEqual({ rows: 40 });
   });
 
   it("sends a pane announced taller than the container back down to it", () => {
@@ -91,8 +92,8 @@ describe("resizeAsk", () => {
     // (or a zoom) and the pane is all 40: the xterm capped at 30, every row
     // past it painted onto the last, the prompt hidden. Asked back to 30 —
     // a shrink of ours below the 40 asked before, regrown if the container is.
-    expect(resizeAsk({ cols: 100, rows: 30 }, sent(100, 40), 40)).toEqual({ cols: 100, rows: 30 });
-    expect(afterSend(sent(100, 40), { cols: 100, rows: 30 }).shrunkFrom).toBe(40);
+    expect(resizeAsk({ cols: 100, rows: 30 }, sent(100, 40), 40)).toStrictEqual({ rows: 30 });
+    expect(afterSend(sent(100, 40), { rows: 30 })).toEqual({ cols: 100, rows: 30, shrunkFrom: 40 });
   });
 
   it("drops a height-only shrink the pane still fits in", () => {
@@ -119,9 +120,9 @@ describe("resizeAsk", () => {
       }
       return ask;
     };
-    expect(fitTo(40)).toEqual({ cols: 239, rows: 40 });
-    expect(fitTo(50)).toEqual({ cols: 239, rows: 50 });
-    expect(fitTo(62)).toEqual({ cols: 239, rows: 62 });
+    expect(fitTo(40)).toStrictEqual({ rows: 40 });
+    expect(fitTo(50)).toStrictEqual({ rows: 50 });
+    expect(fitTo(62)).toStrictEqual({ rows: 62 });
     // Back where it was asked to be: further growth is plain height-only
     // growth again, never sent.
     expect(fitTo(70)).toBe(null);
@@ -129,13 +130,59 @@ describe("resizeAsk", () => {
 
   it("regrows no further than the height it had asked for before shrinking", () => {
     const memo = afterSend(sent(239, 62), { cols: 239, rows: 40 });
-    expect(resizeAsk({ cols: 239, rows: 80 }, memo, 40)).toEqual({ cols: 239, rows: 62 });
+    expect(resizeAsk({ cols: 239, rows: 80 }, memo, 40)).toStrictEqual({ rows: 62 });
   });
 
   it("never regrows a pane another viewer shrank", () => {
     // Two viewers: ours 62 rows, theirs 40. Their shrink isn't ours to undo
     // — regrowing it would make them shrink it again, and on.
     expect(resizeAsk({ cols: 239, rows: 62 }, sent(239, 62), 40)).toBe(null);
+  });
+
+  it("never sets a shared window's width with a height-only ask", () => {
+    // Regression: one pane, two viewers — A's box 143x36, B's 230x22 (the
+    // Tauri app and a browser tab). B's shrink to its height carried B's
+    // pinned width, so each time A widened its box B shrank the window back
+    // AND reset it to 230 cols: A right-clipped, two resize-windows (one a
+    // width reflow) per change, and A never got its width. Height-only asks
+    // are rows only, and the server keeps the window's width for them.
+    const win = { cols: 0, rows: 0 };
+    const A = { box: { cols: 143, rows: 36 }, memo: NOTHING_SENT };
+    const B = { box: { cols: 230, rows: 22 }, memo: NOTHING_SENT };
+    const send = (v, ask) => {
+      v.memo = afterSend(v.memo, ask);
+      win.cols = ask.cols ?? win.cols; // resize-window -y alone keeps it
+      win.rows = ask.rows;
+    };
+    // Every resize is announced to both, and each runs its fit (unsplit: the
+    // pane is the window).
+    const settle = () => {
+      for (let i = 0; i < 4; i++) {
+        for (const v of [A, B]) {
+          const ask = resizeAsk(v.box, v.memo, win.rows);
+          if (ask) send(v, ask);
+        }
+      }
+    };
+    send(A, A.box); // the connect hints: the last to connect sets the width
+    send(B, B.box);
+    settle();
+    expect(win).toEqual({ cols: 230, rows: 22 });
+    A.box = { cols: 200, rows: 36 };
+    settle();
+    expect(win).toEqual({ cols: 200, rows: 22 });
+  });
+
+  it("keeps a split window's width through its own shrink and regrow", () => {
+    // A left/right split: the pane is 71 of the window's 143 cols. Asking
+    // for the pane's width instead of none halved the window on each ask.
+    let memo = afterSend(NOTHING_SENT, { cols: 143, rows: 36 });
+    for (const [rows, paneRows] of [[28, 36], [36, 28]]) {
+      const ask = resizeAsk({ cols: 143, rows }, memo, paneRows);
+      expect(ask).toStrictEqual({ rows });
+      memo = afterSend(memo, ask);
+    }
+    expect(memo).toEqual({ cols: 143, rows: 36, shrunkFrom: 0 });
   });
 
   it("forgets the shrink once a width change resizes to the container", () => {

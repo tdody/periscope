@@ -724,7 +724,8 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
           // didn't change, so no fit runs — and capped, the pane's rows past
           // the container's all paint onto its last, hiding the prompt behind
           // the status line. A shared window so ends at the shorter viewer's
-          // height: the taller one regrows only shrinks of its own (resizeAsk).
+          // height and the width last asked for: the shrink is rows only, and
+          // the taller viewer regrows only shrinks of its own (resizeAsk).
           if (fitRows > 0 && resizeAsk(hintDims({ pinnedCols, fitRows }), lastSent, paneRows)) scheduleFit();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
@@ -820,8 +821,9 @@ function scheduleFit() {
     if (!ask) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
       lastSent = afterSend(lastSent, ask);
-      // The server's reconcile answers with the pane's real size.
-      termWs.send(JSON.stringify({ type: "resize", cols: ask.cols, rows: ask.rows }));
+      // The server's reconcile answers with the pane's real size. No cols: a
+      // height-only ask, the window's width kept (resizeAsk).
+      termWs.send(JSON.stringify({ type: "resize", ...ask }));
     }
   }, 80);
 }

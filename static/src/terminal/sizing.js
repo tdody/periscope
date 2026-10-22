@@ -47,25 +47,31 @@ export function hintDims({ pinnedCols, fitRows }) {
 // the pane, or to undo a height-only shrink of our own — back up to the
 // height asked before it, never past. See scheduleFit for why height-only
 // growth is otherwise never sent.
+// A height-only ask is `{ rows }` alone, and the server keeps the window's
+// width for it (`resize-window -y`). With our pin in it, a shorter viewer's
+// shrink also set a shared window's width, reverting a wider or narrower
+// viewer's on every change it made. Nor the pane's cols: on a left/right
+// split that is a slice of the window, and each ask halved it.
 export function resizeAsk(container, sent, knownPaneRows) {
   if (container.cols !== sent.cols) return container;
-  if (knownPaneRows > 0 && container.rows < knownPaneRows) return container;
+  if (knownPaneRows > 0 && container.rows < knownPaneRows) return { rows: container.rows };
   if (sent.shrunkFrom > 0 && container.rows > sent.rows) {
-    return { cols: container.cols, rows: Math.min(container.rows, sent.shrunkFrom) };
+    return { rows: Math.min(container.rows, sent.shrunkFrom) };
   }
   return null;
 }
 
 // Pure: the memo after sending `ask` (or hinting it at connect, from
-// NOTHING_SENT). `shrunkFrom` is the height asked before an outstanding
-// height-only shrink of ours: kept across further shrinks and partial
-// regrowth, cleared once regrown to it or by a width change, which asks for
-// the container's full height anyway.
+// NOTHING_SENT). A rows-only ask keeps the width last asked for. `shrunkFrom`
+// is the height asked before an outstanding height-only shrink of ours: kept
+// across further shrinks and partial regrowth, cleared once regrown to it or
+// by a width change, which asks for the container's full height anyway.
 export function afterSend(sent, ask) {
+  const cols = ask.cols ?? sent.cols;
   let shrunkFrom = 0;
-  if (ask.cols === sent.cols) {
+  if (cols === sent.cols) {
     if (ask.rows < sent.rows) shrunkFrom = sent.shrunkFrom || sent.rows;
     else if (ask.rows < sent.shrunkFrom) shrunkFrom = sent.shrunkFrom;
   }
-  return { cols: ask.cols, rows: ask.rows, shrunkFrom };
+  return { cols, rows: ask.rows, shrunkFrom };
 }

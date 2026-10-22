@@ -85,22 +85,12 @@ async def ws_pane(
     # A tmux invocation runs its `;`-separated commands in order, so pairing
     # them costs one fork instead of two. Each fork is ~20ms — measurable on
     # the pane-switch path, where this runs on every connect.
+    # c == 0 resizes the height alone: see the resize message below.
     def set_pane_size(c: int, r: int) -> None:
+        width = ["-x", str(c)] if c > 0 else []
         with contextlib.suppress(Exception):
             tmux(
-                "setw",
-                "-t",
-                target,
-                "window-size",
-                "manual",
-                ";",
-                "resize-window",
-                "-t",
-                target,
-                "-x",
-                str(c),
-                "-y",
-                str(r),
+                "setw", "-t", target, "window-size", "manual", ";", "resize-window", "-t", target, *width, "-y", str(r)
             )
 
     # 1+2) One fork: resize to the client's hint, then read tmux's view of the
@@ -274,10 +264,13 @@ async def ws_pane(
                     if isinstance(ctrl, dict) and ctrl.get("type") == "reconcile":
                         sub.request_reconcile()
                         continue
+                    # No cols: a height-only ask (the client's resizeAsk), which
+                    # keeps the window's width. Our pin in it set a shared
+                    # window's width from a shorter viewer's every shrink.
                     if isinstance(ctrl, dict) and ctrl.get("type") == "resize":
                         rc = int(ctrl.get("cols") or 0)
                         rr = int(ctrl.get("rows") or 0)
-                        if rc > 0 and rr > 0:
+                        if rr > 0:
                             await loop.run_in_executor(None, lambda c=rc, r=rr: set_pane_size(c, r))
                             # Reflow redraws can race the relay; an
                             # authoritative frame settles the result.

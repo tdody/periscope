@@ -80,7 +80,13 @@ These are the non-obvious behaviors worth preserving:
    nothing else lets the pane fit; and the growth that undoes such a shrink
    of our own, back to the height asked before it and no further — the
    window is `window-size manual`, so nothing else regrows it, and a
-   restored window kept a blank band under the pane for every viewer.
+   restored window kept a blank band under the pane for every viewer. Both
+   go as rows alone (`{type:"resize", rows}`; `ws.py` runs `resize-window
+   -y` alone, keeping the window's width): with our pinned width in them, a
+   shorter viewer's shrink also set a shared window's width, so a viewer
+   with a different width had every width change reverted, at a second
+   resize (and reflow) each. Never the pane's width either — a slice of the
+   window on a left/right split, it halved the window on every ask.
 
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
