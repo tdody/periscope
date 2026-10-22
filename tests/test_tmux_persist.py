@@ -17,8 +17,10 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local/share"))
-    # The host's /etc/tmux.conf would land in every exact count below.
+    # The host's /etc/tmux.conf would land in every exact count below, and the
+    # live server's config list would point the run count at the real ~/.tmux.conf.
     monkeypatch.setattr(tp, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
+    monkeypatch.setattr(tp, "_live_config_files", list)
     return tmp_path
 
 
@@ -254,6 +256,83 @@ def test_user_conf_is_the_one_tpm_reads(home, monkeypatch):
     assert tp.is_sourced(xdg)
     assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
     assert (home / ".tmux.conf").read_text() == "set -g mouse on\n"
+
+
+# Base's install appended exactly this pair to ~/.tmux.conf, XDG conf or not.
+LEGACY_HOME_CONF = "set -g mouse on\n{source}\n" + tp.TPM_RUN_LINE + "\nset -g status-left x\n"
+
+
+def _legacy_install(home, xdg_text):
+    """The state every install since 2026-08 left a user with an XDG conf in:
+    the owned file declaring all three, sourced (and TPM run) from ~/.tmux.conf."""
+    tp.owned_conf().parent.mkdir(parents=True, exist_ok=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, {}))
+    (home / ".tmux.conf").write_text(LEGACY_HOME_CONF.format(source=tp.source_line()))
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True, exist_ok=True)
+    xdg.write_text(xdg_text)
+    return xdg
+
+
+def test_tpm_runs_counts_every_conf_tmux_loads(home, monkeypatch):
+    # tmux executes ~/.tmux.conf AND the XDG conf (TPM reads only the latter):
+    # a run line in each ran TPM — and continuum's racing restores — twice
+    # while the count, over TPM's one file, said 1.
+    (home / ".tmux.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text("run-shell ~/.tmux/plugins/tpm/tpm\n")
+    assert tp.tpm_runs() == 2
+    # The system conf tmux was built with (Homebrew's /opt/homebrew/etc, not
+    # TPM's /etc) comes from the live server's list.
+    sysconf = home / "brew/etc/tmux.conf"
+    sysconf.parent.mkdir(parents=True)
+    sysconf.write_text(tp.TPM_RUN_LINE + "\n")
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [sysconf, home / ".tmux.conf", xdg])
+    assert tp.tpm_runs() == 3
+
+
+@pytest.mark.parametrize(
+    "xdg_text",
+    [USER_PLUGINS + tp.TPM_RUN_LINE + "\n", USER_PLUGINS, "set -g mouse on\n"],
+    ids=["xdg-runs-tpm", "xdg-declares-only", "xdg-neither"],
+)
+def test_install_moves_its_lines_out_of_the_conf_tpm_ignores(home, monkeypatch, xdg_text):
+    # Upgrading such a user left base's source + run pair in ~/.tmux.conf and
+    # added another to the XDG conf: tmux ran TPM twice, healthz said 1.
+    xdg = _legacy_install(home, xdg_text)
+    _stub_live(monkeypatch, HEALTHY)
+    for p in tp.REQUIRED_PLUGINS:
+        (home / ".tmux/plugins" / p).mkdir(parents=True, exist_ok=True)
+    assert tp.status(REPO)["ok"] is False  # 2 runs, or the owned file unseen by TPM
+    _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\nset -g status-left x\n"
+    assert tp.is_sourced(xdg)
+    assert tp.tpm_runs() == 1
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.status(REPO)["ok"] is True
+    assert not any(a.startswith(("wrote", "moved", "added")) for a in _install(home, monkeypatch))
+
+
+def test_install_leaves_the_users_own_run_line(home, monkeypatch):
+    # Only install's verbatim pair moves. A run line of the user's own under
+    # the source line stays put, and the count says TPM now runs twice.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    legacy = home / ".tmux.conf"
+    legacy.write_text(f"{tp.source_line()}\nrun-shell -b ~/.tmux/plugins/tpm/tpm\n")
+    _install(home, monkeypatch)
+    assert legacy.read_text() == "run-shell -b ~/.tmux/plugins/tpm/tpm\n"
+    assert tp.is_sourced(xdg)
+    assert tp.tpm_runs() == 2
+
+
+def test_uninstall_removes_the_source_line_from_both_user_confs(home):
+    # tmux loads both: a source line left in ~/.tmux.conf named a deleted file.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    tp.ensure_sourced(xdg)
+    tp.uninstall()
+    assert not tp.is_sourced(home / ".tmux.conf") and not tp.is_sourced(xdg)
+    assert not tp.owned_conf().exists()
 
 
 def test_status_flags_a_plugin_declared_twice(home, monkeypatch):

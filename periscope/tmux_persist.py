@@ -15,7 +15,8 @@ TPM scans sourced files for `@plugin` lines, so the plugin list lives in the
 owned file too. The source line must precede TPM's `run` line — TPM only
 installs plugins declared before it runs — so it is inserted directly above the
 line that runs TPM (directly, or by sourcing a file that does), or appended
-together with one.
+together with one. tmux itself executes EVERY user conf that exists, so install
+moves its own lines out of the one TPM ignores.
 
 Each plugin must be declared EXACTLY ONCE across everything TPM reads. TPM
 does not dedupe: a plugin the user already declares in ~/.tmux.conf, declared
@@ -26,8 +27,8 @@ the window again, leaving an extra shell pane per restore; once a Claude is
 resumed in it, the next save records it and the window grows every restart
 (observed: one window at three panes, all `--resume`-ing one session). So the
 owned file omits plugins declared elsewhere, the prod worker re-derives that
-omission when those files change (`heal`), and healthz counts declarations and
-TPM run lines.
+omission when those files change (`heal`), and healthz counts declarations
+(over what TPM reads) and TPM run lines (over what tmux executes).
 
 Import discipline: stdlib + `periscope.config` only. The shell verb runs this
 under plain `python3`, outside the uv environment.
@@ -74,6 +75,29 @@ def user_conf() -> Path:
     source line must live here or TPM never sees the owned file's plugins."""
     xdg = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "tmux/tmux.conf"
     return xdg if xdg.is_file() else Path.home() / ".tmux.conf"
+
+
+def _user_confs() -> list[Path]:
+    """Every user conf tmux executes at server start, in its order: its default
+    list is ~/.tmux.conf, $XDG_CONFIG_HOME/tmux/tmux.conf, then
+    ~/.config/tmux/tmux.conf, each that exists. TPM reads just one of them."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return _distinct(
+        [
+            Path.home() / ".tmux.conf",
+            *([Path(xdg) / "tmux/tmux.conf"] if xdg else []),
+            Path.home() / ".config/tmux/tmux.conf",
+        ]
+    )
+
+
+def _distinct(paths: Iterable[Path]) -> list[Path]:
+    """`paths` with later repeats of one file dropped, as tmux drops them from
+    its default list."""
+    seen: dict[str, Path] = {}
+    for p in paths:
+        seen.setdefault(os.path.realpath(p), p)
+    return list(seen.values())
 
 
 def owned_conf() -> Path:
@@ -124,6 +148,15 @@ def _source_targets(line: str) -> list[Path]:
     return [Path(p) for w in _source_words(line) for p in (sorted(glob.glob(w)) or [w])]
 
 
+def _with_sources(roots: list[Path]) -> list[Path]:
+    """`roots` and every file each sources, one level deep, repeats included."""
+    files = list(roots)
+    for root in roots:
+        for line in _scan_text(root).splitlines():
+            files += _source_targets(line)
+    return files
+
+
 def _tpm_conf_files() -> list[Path]:
     """Every file TPM reads for `@plugin` (_tmux_conf_contents "full"), repeats
     included: /etc/tmux.conf, the user conf, and every file either of those
@@ -131,12 +164,16 @@ def _tpm_conf_files() -> list[Path]:
     sourced. A path resolved differently from TPM is a declaration miscounted:
     a `$HOME/…` or glob source read as a literal path hid the user's continuum,
     and install declared it a second time."""
-    roots = [SYSTEM_CONF, user_conf()]
-    files = list(roots)
-    for root in roots:
-        for line in _scan_text(root).splitlines():
-            files += _source_targets(line)
-    return files
+    return _with_sources([SYSTEM_CONF, user_conf()])
+
+
+def _tmux_conf_files() -> list[Path]:
+    """Every file tmux EXECUTES at server start — not TPM's set: tmux runs both
+    user confs where TPM reads one, so a run line in ~/.tmux.conf next to an
+    XDG conf ran TPM a second time that a count over TPM's files never saw.
+    The live server's list adds the system conf tmux was built with
+    (Homebrew's /opt/homebrew/etc/tmux.conf, not TPM's /etc)."""
+    return _with_sources(_distinct([SYSTEM_CONF, *_live_config_files(), *_user_confs()]))
 
 
 def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
@@ -161,10 +198,10 @@ def plugin_declarations() -> dict[str, int]:
 
 
 def tpm_runs() -> int:
-    """How many `run … tpm/tpm` lines tmux will execute across what TPM reads.
+    """How many `run … tpm/tpm` lines tmux will execute at server start.
     Anything but 1 is broken: each run sources every plugin, so two run
     continuum twice — the racing restores, with every declaration at 1."""
-    return sum(bool(_TPM_RUN_RE.match(line)) for f in _tpm_conf_files() for line in _scan_text(f).splitlines())
+    return sum(bool(_TPM_RUN_RE.match(line)) for f in _tmux_conf_files() for line in _scan_text(f).splitlines())
 
 
 def owned_conf_text(repo: Path, declared_elsewhere: Mapping[str, Path]) -> str:
@@ -264,10 +301,16 @@ def ensure_sourced(path: Path) -> bool:
     return True
 
 
-def remove_sourced(path: Path) -> bool:
-    """Drop the source line from `path`. True if written."""
+def remove_sourced(path: Path, *, with_run: bool = False) -> bool:
+    """Drop the source line from `path` — with `with_run`, and the verbatim
+    TPM_RUN_LINE right under it: the pair ensure_sourced appends. True if
+    written."""
     lines = _read_lines(path)
-    kept = [line for line in lines if not _sources_owned(line)]
+    kept = [
+        line
+        for i, line in enumerate(lines)
+        if not _sources_owned(line) and not (with_run and line == TPM_RUN_LINE and i and _sources_owned(lines[i - 1]))
+    ]
     if len(kept) == len(lines):
         return False
     _write_lines(path, kept)
@@ -301,6 +344,16 @@ def install(repo: Path) -> list[str]:
     if not conf.exists() or _scan_text(conf) != text:
         conf.write_text(text)
         actions.append(f"wrote {conf}")
+    # Every install before XDG support appended source + run to ~/.tmux.conf.
+    # TPM ignores that file once the XDG one exists, but tmux still executes
+    # it: left there, TPM (and continuum's racing restores) ran twice. A user's
+    # own verbatim run line in that spot reads the same and goes too; nothing
+    # is lost, ensure_sourced below gives the conf TPM reads its run line.
+    actions += [
+        f"moved periscope's lines from {other} to {user_conf()}, the conf TPM reads"
+        for other in _user_confs()
+        if os.path.realpath(other) != os.path.realpath(user_conf()) and remove_sourced(other, with_run=True)
+    ]
     if ensure_sourced(user_conf()):
         actions.append(f"added source line to {user_conf()}")
 
@@ -335,9 +388,9 @@ def install(repo: Path) -> list[str]:
 
 
 def uninstall() -> list[str]:
-    actions: list[str] = []
-    if remove_sourced(user_conf()):
-        actions.append(f"removed source line from {user_conf()}")
+    # Every user conf: tmux executes each, and a line left behind sources a
+    # deleted file.
+    actions = [f"removed source line from {path}" for path in _user_confs() if remove_sourced(path)]
     conf = owned_conf()
     if conf.exists():
         conf.unlink()
@@ -364,6 +417,24 @@ def _live_option(name: str) -> str | None:
     if out.returncode != 0:
         return None
     return out.stdout.rstrip("\n")
+
+
+def _live_config_files() -> list[Path]:
+    """The config files the running server loaded at start (`#{config_files}`):
+    its built-in system conf, or `-f`'s. [] when there is no server."""
+    try:
+        out = subprocess.run(
+            ["tmux", "display-message", "-p", "#{config_files}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    return [Path(p) for p in out.stdout.strip().split(",") if p]
 
 
 def _resurrect_dir(live_override: str | None) -> Path:

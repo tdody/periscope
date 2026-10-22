@@ -19,6 +19,7 @@ def test_healthz_returns_ok_with_metadata(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setattr(tmux_persist, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
     monkeypatch.setattr(tmux_persist, "_live_option", lambda name: None)
+    monkeypatch.setattr(tmux_persist, "_live_config_files", list)
     client = TestClient(app)
     res = client.get("/api/healthz")
     assert res.status_code == 200
