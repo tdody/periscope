@@ -56,14 +56,20 @@ only when nothing tmux executes runs TPM (see the run rule below). The owned
 file is regenerated wholesale on every `install`/`update` (never merged);
 `uninstall-tmux` removes the line (from every user conf, see below) and the
 file and leaves the plugins. The verb fails loudly — exit 1, after printing
-each line it removed or added. TPM reports a failed clone only as text, so it
-checks the three plugin directories itself (a silently missing plugin is a
-silently missing save), and after writing it re-counts: tmux must run TPM
-exactly once and TPM must see each plugin declared once. Every conf shape
-install misjudged before that check ended at 0 or 2 runs while it exited 0;
-it never removes a line of the user's to pass. A running server is re-sourced
-so the hook path is live immediately; continuum's auto-restore is gated on
-server start time, so that never restores over it.
+each line it removed or added. It plans its conf edits in memory and counts
+their result before writing any: when tmux would still run TPM more than once,
+it writes nothing (no file, no line) and says what it would have changed —
+nothing it adds brings a doubled run back to one, and its source line would
+switch continuum on, to run twice. (Checked only after writing, a symlinked
+pair got the run line, TPM ran 0 → 2 times, and install exited 1 having done
+it.) TPM reports a failed clone only as text, so it checks the three plugin
+directories itself (a silently missing plugin is a silently missing save), and
+after writing it re-counts: tmux must run TPM exactly once and TPM must see
+each plugin declared once. Every conf shape install misjudged before that
+check ended at 0 or 2 runs while it exited 0; it never removes a line of the
+user's to pass. A running server is re-sourced so the hook path is live
+immediately; continuum's auto-restore is gated on server start time, so that
+never restores over it.
 
 **Every plugin is declared exactly once across what TPM reads.** TPM does not
 dedupe `@plugin` lines: a user who already declares tpm/resurrect/continuum in
@@ -141,7 +147,8 @@ continuum read `@continuum-restore on` in 10 of 10 real server starts with TPM
 run first, blocking or `-b`, its restore being a background script that reads
 the option after tmux has carried on through the conf. One file under two
 paths (a symlinked pair) is the conf TPM reads, never moved out of itself;
-once it holds a run line tmux runs TPM twice, and install says so.
+tmux runs any run line in it twice, so install writes nothing there and fails
+naming both paths (delete the link: tmux ≥ 3.1 reads the XDG path itself).
 
 `GET /api/healthz` carries a `resurrect` block built from the LIVE tmux
 server's options (not the conf file — the file being right and the server

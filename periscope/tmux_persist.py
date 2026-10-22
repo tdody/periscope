@@ -16,7 +16,8 @@ list lives in the owned file too. The source line goes directly above the line
 that runs TPM (directly, or by sourcing a file that does), else at the end,
 with TPM's run line after it when nothing tmux executes runs TPM. tmux itself
 executes EVERY user conf that exists, so install moves its own lines out of the
-ones TPM ignores, and checks afterwards that tmux runs TPM exactly once.
+ones TPM ignores. It counts the result on its planned edits before writing any
+(writing nothing when tmux would run TPM twice), and again after.
 
 Each plugin must be declared EXACTLY ONCE across everything TPM reads. TPM
 does not dedupe: a plugin the user already declares in their own conf, declared
@@ -34,6 +35,7 @@ Import discipline: stdlib + `periscope.config` only. The shell verb runs this
 under plain `python3`, outside the uv environment.
 """
 
+import fnmatch
 import glob
 import json
 import os
@@ -44,6 +46,8 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from periscope import config
@@ -279,24 +283,36 @@ def tpm_runs() -> int:
     return len(_tpm_run_lines())
 
 
+def _run_problems() -> list[str]:
+    runs = _tpm_run_lines()
+    if len(runs) == 1:
+        return []
+    where = ", ".join(f"{f}:{n}" for f, n, _ in runs)
+    # A symlinked conf pair: the user sees one file, tmux runs it per path.
+    paths: dict[str, list[str]] = {}
+    for f, _, _ in runs:
+        if str(f) not in (seen := paths.setdefault(os.path.realpath(f), [])):
+            seen.append(str(f))
+    aliased = "".join(
+        f"; {' and '.join(p)} are one file under two paths (a symlink), and tmux runs it once per path — delete the link"
+        for p in paths.values()
+        if len(p) > 1
+    )
+    return [
+        f"tmux would run TPM {len(runs)} times at server start"
+        + (f" ({where})" if runs else "")
+        + aliased
+        + f"; it must run once, from the end of {user_conf()}"
+    ]
+
+
 def conf_problems() -> list[str]:
     """What the next tmux server start gets wrong, worded for the user to fix:
     TPM must run exactly once and see each plugin declared once. install's
-    postcondition, checked after it writes — every conf shape it misjudged so
-    far (a run line two sources deep, a symlinked conf pair, a `run -b` of the
-    user's own) ended at 0 or 2 runs while it printed success."""
-    problems = []
-    runs = _tpm_run_lines()
-    where = ", ".join(f"{f}:{n}" for f, n, _ in runs)
-    # A symlinked conf pair: the user sees one line, tmux runs it per path.
-    aliased = len({(os.path.realpath(f), n) for f, n, _ in runs}) < len(runs)
-    if len(runs) != 1:
-        problems.append(
-            f"tmux would run TPM {len(runs)} times at server start"
-            + (f" ({where})" if runs else "")
-            + ("; one file under two paths runs once per path" if aliased else "")
-            + f"; it must run once, from the end of {user_conf()}"
-        )
+    postcondition — every conf shape it misjudged so far (a run line two
+    sources deep, a symlinked conf pair, a `run -b` of the user's own) ended
+    at 0 or 2 runs while it printed success."""
+    problems = _run_problems()
     if bad := {p: n for p, n in plugin_declarations().items() if n != 1}:
         problems.append(
             "TPM sees " + ", ".join(f"{p} declared {n} times" for p, n in bad.items()) + "; each must be declared once"
@@ -356,10 +372,23 @@ def _write_owned(repo: Path) -> bool:
 
 
 def _sources_owned(line: str) -> bool:
-    """`line` makes tmux read the owned file, resolved as every count here is.
-    Matching its first word only read a glob or multi-path line as unsourced:
-    install added a second source line, every plugin declared twice."""
-    return owned_conf() in _source_targets(line)
+    """`line` makes tmux read the owned file, resolved as every count here is
+    but by pattern, not by what's on disk: install plans its edits before it
+    writes the owned file. Matching its first word only read a glob or
+    multi-path line as unsourced: install added a second source line, every
+    plugin declared twice."""
+    owned = owned_conf()
+    return any(Path(w) == owned or _glob_names(w, str(owned)) for w in _source_words(line))
+
+
+def _glob_names(pattern: str, path: str) -> bool:
+    """`pattern` would glob to `path` were it on disk: component by component,
+    no `*` across a `/`, a leading `.` matched only by a literal one."""
+    pats, parts = pattern.split("/"), path.split("/")
+    return len(pats) == len(parts) and all(
+        fnmatch.fnmatchcase(part, pat) and (pat.startswith(".") or not part.startswith("."))
+        for pat, part in zip(pats, parts, strict=True)
+    )
 
 
 def _is_source_line(line: str) -> bool:
@@ -375,20 +404,49 @@ def _scan_text(path: Path) -> str:
     (which `bin/periscope update` polls) over one unreadable /etc/tmux.conf or
     a Latin-1 comment in a sourced file. Bad bytes are replaced, so the
     `@plugin` lines around them still count."""
+    if (text := _planned_text(path)) is not None:
+        return text
     try:
         return path.read_text(errors="replace")
     except OSError:
         return ""
 
 
+# install's planned conf edits, by realpath: every read sees them, so the
+# counts judge the result before anything is written. Checked after writing,
+# a symlinked pair got TPM's run line and ran it twice even as install failed.
+_PLANNED: ContextVar[dict[str, str] | None] = ContextVar("tmux_persist_planned", default=None)
+
+
+@contextmanager
+def _planning(edits: Mapping[Path, list[str]]) -> Iterator[None]:
+    planned = {**(_PLANNED.get() or {}), **{os.path.realpath(p): _joined(lines) for p, lines in edits.items()}}
+    token = _PLANNED.set(planned)
+    try:
+        yield
+    finally:
+        _PLANNED.reset(token)
+
+
+def _planned_text(path: Path) -> str | None:
+    planned = _PLANNED.get()
+    return planned.get(os.path.realpath(path)) if planned else None
+
+
 # The user conf is rewritten in place: surrogateescape round-trips bytes that
 # aren't UTF-8 instead of raising on them (or replacing them on write-back).
 def _read_lines(path: Path) -> list[str]:
+    if (text := _planned_text(path)) is not None:
+        return text.splitlines()
     return path.read_text(errors="surrogateescape").splitlines() if path.exists() else []
 
 
+def _joined(lines: list[str]) -> str:
+    return "\n".join(lines) + "\n"
+
+
 def _write_lines(path: Path, lines: list[str]) -> None:
-    path.write_text("\n".join(lines) + "\n", errors="surrogateescape")
+    path.write_text(_joined(lines), errors="surrogateescape")
 
 
 def is_sourced(path: Path) -> bool:
@@ -405,44 +463,55 @@ def _runs_tpm(line: str, current: Path) -> bool:
     )
 
 
-def ensure_sourced(path: Path) -> list[str]:
-    """Make `path` source the owned file, and tmux run TPM; returns the lines
-    added. The source line goes directly above the first line that runs TPM
-    (_runs_tpm), else at the end. TPM_RUN_LINE goes at the end only when
-    NOTHING tmux executes runs TPM — asked of all of it, not of `path`: a
-    `run -b …` of the user's own in ~/.tmux.conf next to an XDG conf got a
-    second run line here, TPM ran twice — and asked whether or not `path`
-    already sourced the owned file: install's migration can take the only run
-    line away, and returning early on the source line left TPM running
-    nowhere (no plugins, no restore)."""
-    lines = _read_lines(path)
-    added = []
+def _with_source(path: Path, lines: list[str]) -> tuple[list[str], list[str]]:
+    """`path`'s `lines` made to source the owned file, and tmux to run TPM;
+    with the lines added. The source line goes directly above the first line
+    that runs TPM (_runs_tpm), else at the end. TPM_RUN_LINE goes at the end
+    only when NOTHING tmux executes runs TPM — asked of all of it, not of
+    `path`: a `run -b …` of the user's own in ~/.tmux.conf next to an XDG conf
+    got a second run line here, TPM ran twice — and asked whether or not
+    `path` already sourced the owned file: install's migration can take the
+    only run line away, and returning early on the source line left TPM
+    running nowhere (no plugins, no restore)."""
+    lines, added = list(lines), []
     if not any(_sources_owned(line) for line in lines):
         lines.insert(next((i for i, line in enumerate(lines) if _runs_tpm(line, path)), len(lines)), source_line())
         added.append(source_line())
-        _write_lines(path, lines)
     # `path`'s own run line counts too: when tmux doesn't execute `path` (a
     # server started with -f), the count stays 0 and every install appended one.
     if tpm_runs() == 0 and not any(_runs_tpm(line, path) for line in lines):
         lines.append(TPM_RUN_LINE)
         added.append(TPM_RUN_LINE)
+    return lines, added
+
+
+def ensure_sourced(path: Path) -> list[str]:
+    """_with_source, written; returns the lines added. Unchecked: install
+    plans the same edit and counts its result before writing."""
+    lines, added = _with_source(path, _read_lines(path))
+    if added:
         _write_lines(path, lines)
     return added
 
 
-def remove_sourced(path: Path, *, with_run: bool = False) -> list[str]:
-    """Drop periscope's source line (_is_source_line) from `path` — with
-    `with_run`, and the verbatim TPM_RUN_LINE right under it: the pair
-    ensure_sourced appends. Returns the lines removed."""
-    lines = _read_lines(path)
+def _without_source(lines: list[str], *, with_run: bool) -> tuple[list[str], list[str]]:
+    """`lines` without periscope's source line (_is_source_line) — with
+    `with_run`, nor the verbatim TPM_RUN_LINE right under it: the pair
+    ensure_sourced appends; with the lines removed."""
     gone = {
         i
         for i, line in enumerate(lines)
         if _is_source_line(line) or (with_run and line == TPM_RUN_LINE and i and _is_source_line(lines[i - 1]))
     }
+    return [line for i, line in enumerate(lines) if i not in gone], [lines[i] for i in sorted(gone)]
+
+
+def remove_sourced(path: Path, *, with_run: bool = False) -> list[str]:
+    """_without_source, written; returns the lines removed."""
+    lines, gone = _without_source(_read_lines(path), with_run=with_run)
     if gone:
-        _write_lines(path, [line for i, line in enumerate(lines) if i not in gone])
-    return [lines[i] for i in sorted(gone)]
+        _write_lines(path, lines)
+    return gone
 
 
 # --- install / uninstall ----------------------------------------------------
@@ -474,21 +543,39 @@ def _tmux_server_running() -> bool:
 def install(repo: Path) -> list[str]:
     """Provision everything; returns the actions taken, for the verb to print.
     Raises InstallError on a failure that leaves continuation broken."""
-    actions: list[str] = []
-    owned_conf().parent.mkdir(parents=True, exist_ok=True)
-    if _write_owned(repo):
-        actions.append(f"wrote {owned_conf()}")
     conf = user_conf()
+    edits: list[tuple[Path, list[str], list[str]]] = []  # (conf, its new lines, the actions they are)
     # Every install before XDG support appended source + run to ~/.tmux.conf.
     # TPM ignores that file once the XDG one exists, but tmux still executes
     # it: left there, TPM (and continuum's racing restores) ran twice. A user's
     # own verbatim run line in that spot reads the same and goes too — if it
-    # was the only one, ensure_sourced gives the conf TPM reads its run line.
+    # was the only one, _with_source gives the conf TPM reads its run line.
     # One file under two paths (a symlinked pair) is the conf TPM reads.
     for other in _user_confs():
         if os.path.realpath(other) != os.path.realpath(conf):
-            actions += [f"removed from {other}: {line}" for line in remove_sourced(other, with_run=True)]
-    actions += [f"added to {conf}: {line}" for line in ensure_sourced(conf)]
+            lines, gone = _without_source(_read_lines(other), with_run=True)
+            if gone:
+                edits.append((other, lines, [f"removed from {other}: {line}" for line in gone]))
+    with _planning({path: lines for path, lines, _ in edits}):
+        lines, added = _with_source(conf, _read_lines(conf))
+    if added:
+        edits.append((conf, lines, [f"added to {conf}: {line}" for line in added]))
+    # Nothing install adds brings a doubled run back to 1, and its source line
+    # would switch continuum on — to run twice. Judged on the planned text:
+    # checked after writing, a symlinked pair kept the run line install failed on.
+    with _planning({path: lines for path, lines, _ in edits}):
+        doubled = _run_problems() if len(_tpm_run_lines()) > 1 else []
+    if doubled:
+        planned = "; ".join(a for _, _, done in edits for a in done)
+        raise InstallError("\n".join([*doubled, "changed nothing" + (f" (planned: {planned})" if planned else "")]), [])
+
+    actions: list[str] = []
+    owned_conf().parent.mkdir(parents=True, exist_ok=True)
+    if _write_owned(repo):
+        actions.append(f"wrote {owned_conf()}")
+    for path, lines, done in edits:
+        _write_lines(path, lines)
+        actions += done
 
     tpm = plugins_dir() / "tpm"
     if not tpm.is_dir():

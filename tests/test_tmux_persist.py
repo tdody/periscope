@@ -174,12 +174,16 @@ def test_owned_conf_declares_plugins_nobody_else_does(home):
     assert tp.declared_plugins(text) == ["tpm", "tmux-resurrect"]
 
 
-def _install(home, monkeypatch):
-    """tp.install with TPM and the live server stubbed: rc 1 skips TPM's
-    install_plugins and the re-source."""
+def _stub_install(home, monkeypatch):
+    """TPM's clone and plugins present, its install_plugins a no-op, and no
+    tmux server (rc 1) to re-source."""
     monkeypatch.setattr(tp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
     for p in tp.REQUIRED_PLUGINS:
         (home / ".tmux/plugins" / p).mkdir(parents=True, exist_ok=True)
+
+
+def _install(home, monkeypatch):
+    _stub_install(home, monkeypatch)
     return tp.install(REPO)
 
 
@@ -423,26 +427,70 @@ def test_tpm_runs_follows_a_self_sourcing_conf_as_far_as_tmux_does(home):
     assert tp.tpm_runs() == 51
 
 
+def _symlinked_pair(home, link, text):
+    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    target, link_path = (xdg, dot) if link == "home-to-xdg" else (dot, xdg)
+    target.write_text(text)
+    link_path.symlink_to(target)
+    return target
+
+
 @pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
 def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, link):
     # tmux 3.6a drops a repeat of the same path STRING only, so ~/.tmux.conf
     # and the XDG conf as one file through a symlink run twice. A realpath
     # dedupe counted 1: healthz said ok while TPM, and continuum, ran twice.
-    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
-    xdg.parent.mkdir(parents=True)
-    target, link_path = (xdg, dot) if link == "home-to-xdg" else (dot, xdg)
-    target.write_text("set -g mouse on\n")
-    link_path.symlink_to(target)
-    with pytest.raises(tp.InstallError, match="2 times .* one file under two paths"):
-        _install(home, monkeypatch)
-    assert link_path.is_symlink() and tp.is_sourced(target)
+    target = _symlinked_pair(home, link, f"set -g mouse on\n{tp.TPM_RUN_LINE}\n")
     assert tp.tpm_runs() == 2
     _stub_live(monkeypatch, HEALTHY)
     assert tp.status(REPO)["ok"] is False
-    # One file, not two: install never moves its lines out of it as the other.
-    with pytest.raises(tp.InstallError) as again:
+    with pytest.raises(tp.InstallError, match="2 times"):
         _install(home, monkeypatch)
-    assert not any(a.startswith(("wrote", "removed", "added")) for a in again.value.actions)
+    assert target.read_text() == f"set -g mouse on\n{tp.TPM_RUN_LINE}\n"
+
+
+@pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
+def test_install_writes_nothing_where_tmux_would_run_tpm_twice(home, monkeypatch, link):
+    # install appended TPM's run line to the symlinked pair and only then
+    # checked the count: it exited 1 having left TPM, and continuum's racing
+    # restores, running twice at the next server start (0 before it ran).
+    # Checked on the planned text now, before anything is written.
+    target = _symlinked_pair(home, link, "set -g mouse on\n")
+    assert tp.tpm_runs() == 0
+    with pytest.raises(tp.InstallError) as e:
+        _install(home, monkeypatch)
+    assert e.value.actions == []
+    assert target.read_text() == "set -g mouse on\n"
+    assert not tp.owned_conf().exists()
+    assert tp.tpm_runs() == 0
+    message = str(e.value)
+    assert "tmux would run TPM 2 times" in message and "changed nothing" in message
+    assert f"{home / '.tmux.conf'} and {home / '.config/tmux/tmux.conf'}" in message
+
+
+def test_install_never_switches_continuum_on_under_a_doubled_tpm_run(home, monkeypatch):
+    # The pair already runs TPM twice (`run -b`), but declares no plugin, so
+    # continuum never loaded. Adding just the source line took each
+    # declaration from 0 to 1: continuum loaded, and ran twice.
+    target = _symlinked_pair(home, "home-to-xdg", "set -g mouse on\nrun -b '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.tpm_runs() == 2
+    with pytest.raises(tp.InstallError, match="2 times"):
+        _install(home, monkeypatch)
+    assert target.read_text() == "set -g mouse on\nrun -b '~/.tmux/plugins/tpm/tpm'\n"
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
+
+
+def test_install_checks_its_planned_edits_with_a_glob_covering_the_owned_file(home, monkeypatch):
+    # The edits are planned before the owned file is written: a glob source
+    # covering it must still read as sourcing it, or install adds a second
+    # source line (every plugin declared twice).
+    line = "source-file ~/.config/periscope/*.conf"
+    (home / ".tmux.conf").write_text(f"{line}\n{tp.TPM_RUN_LINE}\n")
+    assert not tp.owned_conf().exists()
+    _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == f"{line}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
 
 
 def test_a_dotfiles_symlink_runs_once(home, monkeypatch):
@@ -546,17 +594,24 @@ def test_install_fails_loudly_when_tmux_never_runs_the_conf_tpm_reads(home, monk
 def test_install_verb_prints_what_it_changed_then_fails(home, monkeypatch, capsys):
     # bin/periscope update runs install-tmux unattended: a conf it rewrote and
     # still can't make right must say both, and exit non-zero.
-    xdg = home / ".config/tmux/tmux.conf"
-    xdg.parent.mkdir(parents=True)
-    xdg.write_text("set -g mouse on\n")
-    (home / ".tmux.conf").symlink_to(xdg)
-    monkeypatch.setattr(tp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
-    for p in tp.REQUIRED_PLUGINS:
-        (home / ".tmux/plugins" / p).mkdir(parents=True)
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "source-file ~/plugins.conf\n")
+    _stub_install(home, monkeypatch)
     assert tp.main(["install", str(REPO)]) == 1
     out, err = capsys.readouterr()
-    assert f"added to {xdg}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert f"added to {conf}: {tp.TPM_RUN_LINE}" in out.splitlines()
+    assert err.startswith("error: TPM sees tmux-continuum declared 2 times")
+
+
+def test_install_verb_says_when_it_changed_nothing(home, monkeypatch, capsys):
+    _symlinked_pair(home, "home-to-xdg", "set -g mouse on\n")
+    _stub_install(home, monkeypatch)
+    assert tp.main(["install", str(REPO)]) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
     assert err.startswith("error: tmux would run TPM 2 times")
+    assert "changed nothing" in err
 
 
 def test_uninstall_removes_the_source_line_from_both_user_confs(home):
