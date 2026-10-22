@@ -86,15 +86,23 @@ describe("the evening pastime", () => {
   });
 
   it("never does the same thing twice in one evening, and gives every pastime of the season a turn", () => {
-    for (const [season, month] of [["winter", 0], ["summer", 6]]) {
+    // Spelled out, not derived from PASTIMES: a season misspelt there would
+    // drop the pastime from the derived pool too, and pass.
+    const yearRound = ["run", "music", "beer", "kids", "game", "cook", "dog"];
+    const inSeason = {
+      winter: [...yearRound, "sled"], spring: [...yearRound, "cycle", "garden"],
+      summer: [...yearRound, "cycle", "garden", "swim"], autumn: [...yearRound, "cycle"],
+    };
+    // Sixty days from the first of a month well inside each season.
+    for (const [season, month] of [["winter", 0], ["spring", 3], ["summer", 6], ["autumn", 9]]) {
       const seen = new Set();
       Array.from({ length: 60 }, (_, n) => new Date(2026, month, 1 + n, 17)).forEach((d, n) => {
+        expect(seasonAt(d), `${season} day ${n}`).toBe(season);
         const [a, b] = [activityAt(d).id, activityAt(new Date(d.getTime() + 30 * 60_000)).id];
         expect(a, `${season} day ${n}`).not.toBe(b);
         seen.add(a).add(b);
       });
-      const pool = PASTIMES.filter((p) => !p.seasons || p.seasons.includes(season)).map((p) => p.id);
-      expect([...seen].sort(), season).toEqual(pool.sort());
+      expect([...seen].sort(), season).toEqual(inSeason[season].sort());
     }
   });
 
