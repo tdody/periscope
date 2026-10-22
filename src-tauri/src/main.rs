@@ -131,6 +131,15 @@ fn main() {
                 _ => {}
             }
         })
+        // will_present can't ask the window whether it's focused from the
+        // main thread, so the focus is kept here for it.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if window.label() == "main" {
+                    notifications::set_focused(*focused);
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {
