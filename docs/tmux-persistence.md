@@ -54,8 +54,9 @@ above the line that runs TPM (its `run ... tpm/tpm`, or the `source-file` of a
 file holding it), or appended together with one, because TPM only installs
 plugins declared before it runs. The owned file is regenerated
 wholesale on every `install`/`update` (never merged); `uninstall-tmux` removes
-the line and the file and leaves the plugins. TPM reports a failed clone only
-as text, so the verb checks the three plugin directories itself and fails
+the line (from every user conf, see below) and the file and leaves the
+plugins. TPM reports a failed clone only as text, so the verb checks the three
+plugin directories itself and fails
 loudly — a silently missing plugin is a silently missing save. A running
 server is re-sourced so the hook path is live immediately; continuum's
 auto-restore is gated on server start time, so that never restores over it.
@@ -77,7 +78,17 @@ file read differently is a declaration miscounted: the user conf is
 reads one, never both — so that is also where the source line goes); a
 `source-file` line's paths are word-split, a leading `~` or `$HOME` expanded,
 and each word globbed. A literal-path read missed `source-file $HOME/…` and
-`…/*.conf`, so install declared continuum a second time. The omission is a
+`…/*.conf`, so install declared continuum a second time. tmux itself is not
+TPM: it EXECUTES every user conf that exists (`~/.tmux.conf`, then the XDG
+ones; `#{config_files}` lists them). Every install before XDG support appended
+its source line plus `run '~/.tmux/plugins/tpm/tpm'` to `~/.tmux.conf`; for a
+user with an XDG conf, tmux then ran TPM from both files (the next install
+appending a run line to the XDG one when it had none) — the same racing
+restores — while a run count over TPM's one file said 1. So install moves its
+pair (the source line and the verbatim run line directly under it) out of
+every user conf but TPM's, and `uninstall-tmux` strips the source line from
+all of them. A run line of the user's own elsewhere in `~/.tmux.conf` is left
+alone, and `tpm_runs` (below) shows it. The omission is a
 snapshot of the other files at install, so it drifts when they are edited:
 drop a declaration the owned file deferred to and the plugin is declared
 nowhere (no auto-restore after the next reboot, silently); add one and it is
@@ -96,9 +107,13 @@ missing save is not stale, a fresh install hasn't had one yet), and
 `plugin_declarations` (see above), and `tpm_runs`: each `run ... tpm/tpm`
 sources every plugin, so two run continuum twice exactly as a doubled
 `@plugin` does — while every declaration still counts 1. Install used to
-append a second run line when the user's lived in a sourced file. `ok` is the
-conjunction. `python3 -m periscope.tmux_persist status <repo>` prints the same
-without a server round-trip.
+append a second run line when the user's lived in a sourced file. Declarations
+count over what TPM reads, runs over what tmux executes at server start: both
+user confs, the system conf (the live server's `#{config_files}` names the one
+tmux was built with — Homebrew's is `/opt/homebrew/etc/tmux.conf`, not TPM's
+`/etc/tmux.conf`), and what each sources. `ok` is the conjunction.
+`python3 -m periscope.tmux_persist status <repo>` prints the same without a
+server round-trip.
 
 Diagnosing a stale restore: `ls -lt ~/.local/share/tmux/resurrect/` — gaps in
 that timeline are the story. `tmux list-clients -F "#{client_flags}"` tells you
