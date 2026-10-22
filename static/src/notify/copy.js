@@ -1,0 +1,90 @@
+// What each notification says (notify/detect.js finds them, notify/feed.js
+// sends them): the pure part. macOS truncates titles around 40 characters, so
+// pane names are clipped before they push the verb off the end.
+
+import { meterLabel } from "../chrome/usageRules.js";
+import { paneLabel, plural, waitKind } from "../util.js";
+
+const clip = (s, n) => {
+  const t = String(s || "").trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+const pane = (w) => clip(paneLabel(w), 26);
+const where = (w) => [w?.session, w?.branch].filter(Boolean).join(" · ");
+
+// The first sentence of a pane's last words, for a done banner.
+export function firstSentence(text) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  const m = t.match(/^.*?[.!?](?=\s|$)/);
+  return clip(m ? m[0] : t, 140);
+}
+
+export function prUrl(w) {
+  return w?.repo_slug && w?.pr ? `https://github.com/${w.repo_slug}/pull/${w.pr}` : null;
+}
+
+const NEEDS_BODY = {
+  permission: "Waiting for your approval.",
+  question: "Waiting for your answer.",
+  dialog: "Waiting for your input.",
+};
+const CHECK_MARK = { failure: "✗", pending: "⟳", success: "✓" };
+
+// Each event's banner: { kind, title, subtitle, body, target, thread, data }.
+// `target` is the pane, so an older shell's plain click can still reveal it;
+// `data` says what a click opens. ctx: { accounts, windows }.
+export function payloadFor(ev, ctx = {}) {
+  const w = ev.w;
+  const base = { kind: ev.kind, thread: ev.kind, target: w?.target || "", data: {} };
+  switch (ev.kind) {
+    case "needs_input":
+      return {
+        ...base, title: `${pane(w)} needs you`, subtitle: where(w),
+        body: NEEDS_BODY[waitKind(w.waiting_for)] || NEEDS_BODY.dialog, data: { open: "pane", pid: w.pid },
+      };
+    case "question": {
+      const a = ev.alert;
+      return {
+        ...base, title: `${clip(w ? paneLabel(w) : a.name || a.session || "A session", 26)} asks`,
+        subtitle: w ? where(w) : a.session || "", body: clip(a.message, 180), target: a.target || base.target,
+        data: { open: "pane", pid: w?.pid ?? null },
+      };
+    }
+    case "done":
+      return {
+        ...base, title: `${pane(w)} is done`,
+        subtitle: w.pr ? `${w.session} · PR #${w.pr} opened` : where(w),
+        body: firstSentence(w.recap || w.last_line) || "Finished.", data: { open: "pane", pid: w.pid },
+      };
+    case "ci_failed": {
+      const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
+      return {
+        ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
+        body: checks || "Checks are failing.", data: { open: "url", url: prUrl(w), pid: w.pid },
+      };
+    }
+    case "pr_merged":
+      return {
+        ...base, title: `PR #${w.pr} merged`,
+        subtitle: w.pr_base ? `${w.session} · ${w.branch} → ${w.pr_base}` : where(w),
+        body: "The worktree and its session can be cleaned up.", data: { open: "url", url: prUrl(w), pid: w.pid },
+      };
+    case "usage": {
+      const registry = ctx.accounts || [];
+      const name = registry.find((a) => a.id === ev.account)?.label || ev.account;
+      const multi = registry.length > 1;
+      const proj = Math.max(...[ev.m.projected_percent, ev.m.projected_recent].filter((v) => v != null), -1);
+      const working = (ctx.windows || []).filter((x) => x.state === "working" && x.account === ev.account).length;
+      return {
+        ...base, target: "",
+        title: multi ? `Account ${name} is running hot` : "Usage is running hot",
+        subtitle: `${meterLabel(ev.meter)} usage ${Math.round(ev.m.percent ?? 0)}%`
+          + (proj >= 0 ? ` · →${Math.round(proj)}% at reset` : ""),
+        body: multi ? `${plural(working, "session")} working on ${name}.` : `${plural(working, "session")} working.`,
+        data: { open: "usage" },
+      };
+    }
+    default:
+      return null;
+  }
+}

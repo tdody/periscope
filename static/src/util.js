@@ -70,6 +70,17 @@ export function waitLabel(reason) {
   return map[reason.toLowerCase()] || reason.toLowerCase();
 }
 
+// What a pane's needs-input waits on, as a kind, from the same raw values as
+// waitLabel: the native notifications word a permission dialog, a multiple-
+// choice question and any other dialog differently. null when unmapped.
+export function waitKind(reason) {
+  if (!reason) return null;
+  const r = reason.toLowerCase();
+  if (r === "permission prompt") return "permission";
+  if (r === "approve askuserquestion") return "question";
+  return "dialog";
+}
+
 // Shortest trailing-path suffix of `name` that is unique among `allNames`.
 // Branch/session names are slash-paths (tc/model-train/feature-store); we show
 // the fewest trailing segments needed to disambiguate from the other names
