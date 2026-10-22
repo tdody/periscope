@@ -107,8 +107,10 @@ These are the non-obvious behaviors worth preserving:
    viewer's height, which asked it back down. A connect is floored when a
    live viewer of the same pane already names the window; a sibling pane's
    viewer, unknown until the connect's own meta, asks the window back down
-   through its size message if its pane no longer fits. The width is still
-   the last ask's, and a window's last viewer leaving restores nothing.
+   through its size message if its pane no longer fits. A socket that died
+   unseen (sleep, a dropped network) holds its ask until uvicorn's ping
+   times it out, ~40s. The width is still the last ask's, and a window's
+   last viewer leaving restores nothing.
 
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the

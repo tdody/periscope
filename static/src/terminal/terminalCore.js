@@ -693,7 +693,8 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
   let url = `${wsProto}://${location.host}/ws/pane?${paneIdQuery(target)}`;
   if (hintCols > 0 && hintRows > 0) {
     url += `&cols=${hintCols}&rows=${hintRows}`;
-    // Seed the "last sent" memo with the dims the handshake resizes tmux to.
+    // Seed the "last sent" memo with the hint, the handshake's ask (the server
+    // may floor a shared window's height below it: routes/ws.py).
     // Without this, the first ResizeObserver fire would send a redundant
     // resize message. From the live memo, not NOTHING_SENT: a reconnect made
     // while shrunk hints the shrunk height, and forgetting the shrink left
