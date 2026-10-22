@@ -17,7 +17,6 @@ docs/superpowers/specs/2026-06-10-terminal-mirror-reconciliation-design.md
 
 import asyncio
 import contextlib
-import json
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -59,6 +58,15 @@ class LayoutChange:
 @dataclass(frozen=True)
 class Exit:
     pass
+
+
+@dataclass(frozen=True)
+class PaneSize:
+    """Subscriber-queue item: the pane now has these dims (see Subscription).
+    A typed event, not wire JSON — the consumer owns its client protocol."""
+
+    cols: int
+    rows: int
 
 
 class ControlParser:
@@ -239,16 +247,16 @@ class Subscription:
     died, client died, shutdown). Async context manager — exit
     unsubscribes.
 
-    A `str` item is a JSON `{type:"size"}` control message, yielded only
-    once the consumer has set `size` (the pane dims it last told its
-    client) — the reconcile path then announces any pane resize ahead of
-    the frame painted at the new size."""
+    A `PaneSize` item announces a pane resize, ahead of the frame painted
+    at the new size. Only a subscription armed with a `size` (the pane dims
+    its client holds, passed to subscribe()) gets them; an unarmed one is a
+    pure byte stream."""
 
-    def __init__(self, mirror: "_SessionMirror", pane_id: str) -> None:
+    def __init__(self, mirror: "_SessionMirror", pane_id: str, size: PaneSize | None = None) -> None:
         self._mirror = mirror
         self.pane_id = pane_id
-        self.size: tuple[int, int] | None = None  # (cols, rows) the client holds
-        self._q: asyncio.Queue[bytes | str | None] = asyncio.Queue()
+        self.size = size
+        self._q: asyncio.Queue[bytes | PaneSize | None] = asyncio.Queue()
 
     def request_reconcile(self) -> None:
         self._mirror.request_reconcile(self.pane_id)
@@ -262,7 +270,7 @@ class Subscription:
     def __aiter__(self) -> "Subscription":
         return self
 
-    async def __anext__(self) -> bytes | str:
+    async def __anext__(self) -> bytes | PaneSize:
         chunk = await self._q.get()
         if chunk is None:
             raise StopAsyncIteration
@@ -311,11 +319,11 @@ class _SessionMirror:
 
     # -- subscriptions --
 
-    def subscribe(self, pane_id: str) -> Subscription:
+    def subscribe(self, pane_id: str, size: PaneSize | None = None) -> Subscription:
         if self._linger is not None:
             self._linger.cancel()
             self._linger = None
-        sub = Subscription(self, pane_id)
+        sub = Subscription(self, pane_id, size)
         self._subs.setdefault(pane_id, []).append(sub)
         if pane_id not in self._timers:
             self._timers[pane_id] = ReconcileTimer(fire=lambda p=pane_id: self._fire_reconcile(p))
@@ -423,7 +431,7 @@ class _SessionMirror:
                 return  # unsubscribed while the commands were in flight
             snap = snapshot_from_replies(reply, disp)
             frame = build_reconcile_frame(snap)
-            dims = (snap.width, snap.height)
+            dims = PaneSize(cols=snap.width, rows=snap.height)
             for s in subs:
                 # The client's xterm rows must track the PANE, which moves
                 # without periscope asking: a split or a killed sibling pane
@@ -431,7 +439,7 @@ class _SessionMirror:
                 # frame paints into a grid of the height it was captured at.
                 if s.size is not None and s.size != dims:
                     s.size = dims
-                    s._q.put_nowait(json.dumps({"type": "size", "cols": dims[0], "rows": dims[1]}))
+                    s._q.put_nowait(dims)
                 s._q.put_nowait(frame)
             timer = self._timers.get(pane_id)
             if timer:
@@ -495,12 +503,14 @@ _MIRRORS: dict[str, _SessionMirror] = {}
 _lock = asyncio.Lock()
 
 
-async def subscribe(session: str, pane_id: str) -> Subscription:
+async def subscribe(session: str, pane_id: str, size: PaneSize | None = None) -> Subscription:
     """Subscribe to a pane's mirrored byte stream, spawning or reusing the
     session's control client. No fork-path fallback by design: byte relay
     without reconciliation is exactly the bug this module removes
     (tmux_input degrades to forks because input has a working degraded
-    mode; mirroring does not)."""
+    mode; mirroring does not). `size` arms resize announcements (see
+    Subscription) from creation — the connect-time reconcile is requested
+    right here, before the caller gets the subscription back."""
     async with _lock:
         mirror = _MIRRORS.get(session)
         if mirror is None:
@@ -511,7 +521,7 @@ async def subscribe(session: str, pane_id: str) -> Subscription:
             except Exception:
                 _MIRRORS.pop(session, None)
                 raise
-        return mirror.subscribe(pane_id)
+        return mirror.subscribe(pane_id, size)
 
 
 async def shutdown() -> None:

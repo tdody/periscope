@@ -22,6 +22,10 @@ from periscope.tmux import tmux
 router = APIRouter()
 
 
+def _size_message(size: tmux_mirror.PaneSize) -> str:
+    return json.dumps({"type": "size", "cols": size.cols, "rows": size.rows})
+
+
 @router.websocket("/ws/state")
 async def ws_state(websocket: WebSocket):
     """Push the dashboard state blob (the /api/state payload) on the hub's
@@ -172,13 +176,15 @@ async def ws_pane(
     # key), now that we've parsed it — a %pane_id key would be a dead write.
     note_action(f"{session_name}:{window_index}")
 
-    sub = await tmux_mirror.subscribe(session_name, pane_id)
+    # Armed with the size the client is about to be told: from then on, a
+    # reconcile that finds the pane at other dims (split, sibling killed, our
+    # own resize-window landing on a split window) announces it ahead of its
+    # frame. Armed AT subscribe — the connect-time reconcile is requested
+    # there, and arming after the first await let it land unannounced.
+    size = tmux_mirror.PaneSize(cols=cols, rows=rows)
+    sub = await tmux_mirror.subscribe(session_name, pane_id, size=size)
     async with sub:
-        await websocket.send_text(json.dumps({"type": "size", "cols": cols, "rows": rows}))
-        # Arms the mirror's size announcements: from here on, a reconcile
-        # that finds the pane at other dims (split, sibling killed, our own
-        # resize-window landing on a split window) re-sends `size` first.
-        sub.size = (cols, rows)
+        await websocket.send_text(_size_message(size))
         await websocket.send_text(json.dumps({"type": "mouse", "on": mouse_on}))
 
         # 3) Initial paint, via the fork path — NOT the control client: a
@@ -220,8 +226,8 @@ async def ws_pane(
         #    FIFO; the client's reconnect FSM takes it from there.
         async def forward_out():
             async for chunk in sub:
-                if isinstance(chunk, str):
-                    await websocket.send_text(chunk)
+                if isinstance(chunk, tmux_mirror.PaneSize):
+                    await websocket.send_text(_size_message(chunk))
                 else:
                     await websocket.send_bytes(chunk)
             with contextlib.suppress(Exception):

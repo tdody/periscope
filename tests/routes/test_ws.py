@@ -11,6 +11,8 @@ import json
 
 import pytest
 
+from periscope.tmux_mirror import PaneSize
+
 
 class FakeSubscription:
     def __init__(self):
@@ -18,7 +20,7 @@ class FakeSubscription:
         self.loop = None  # captured in fake_subscribe (app's loop)
         self.reconciles = 0
         self.exited = False
-        self.size = None  # armed by the route; see test_ws_pane_arms_size_announcements
+        self.size = None  # armed by the route at subscribe; see test_ws_pane_arms_size_announcements
 
     def push(self, chunk):
         # TestClient runs the app loop in another thread; a plain
@@ -47,8 +49,8 @@ class FakeSubscription:
 def _patch_mirror(mocker):
     sub = FakeSubscription()
 
-    async def fake_subscribe(session, pane_id):
-        sub.session, sub.pane_id = session, pane_id
+    async def fake_subscribe(session, pane_id, size=None):
+        sub.session, sub.pane_id, sub.size = session, pane_id, size
         sub.loop = asyncio.get_running_loop()
         return sub
 
@@ -190,11 +192,11 @@ def test_ws_streams_subscription_bytes(client, mocker):
 
 
 def test_ws_pane_arms_size_announcements(client, mocker):
-    """The mirror announces a pane resize only to a subscription whose `size`
-    is set, comparing it with (snap.width, snap.height) — so the route must arm
-    it as (cols, rows), with the dims it just told the client. Left unarmed, a
+    """The mirror announces a pane resize only to a subscription armed with
+    a `size`, comparing it with the pane's (width, height) — so the route must
+    arm it at subscribe with the dims it tells the client. Left unarmed, a
     split under an open terminal never reaches the xterm, and every test of the
-    mirror (which arms it by hand) still passes."""
+    mirror (which arms it itself) still passes."""
     mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
     sub = _patch_mirror(mocker)
 
@@ -202,7 +204,7 @@ def test_ws_pane_arms_size_announcements(client, mocker):
         _ = ws.receive_text()  # size
         _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
-        assert sub.size == (80, 24)
+        assert sub.size == PaneSize(cols=80, rows=24)
 
 
 def test_ws_sends_size_announcement_as_text_ahead_of_its_frame(client, mocker):
@@ -216,7 +218,7 @@ def test_ws_sends_size_announcement_as_text_ahead_of_its_frame(client, mocker):
         _ = ws.receive_text()  # size
         _ = ws.receive_text()  # mouse
         _ = ws.receive_bytes()
-        sub.push(json.dumps({"type": "size", "cols": 80, "rows": 12}))
+        sub.push(PaneSize(cols=80, rows=12))
         sub.push(b"frame")
         assert json.loads(ws.receive_text()) == {"type": "size", "cols": 80, "rows": 12}
         assert ws.receive_bytes() == b"frame"

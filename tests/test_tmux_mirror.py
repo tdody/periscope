@@ -7,7 +7,6 @@ tmux's own grid even when bytes are dropped.
 """
 
 import asyncio
-import json
 import shutil
 import subprocess
 import uuid
@@ -22,6 +21,7 @@ from periscope.tmux_mirror import (
     GridSnapshot,
     LayoutChange,
     Output,
+    PaneSize,
     ReconcileTimer,
     Reply,
     ReplyError,
@@ -308,12 +308,11 @@ def test_reconcile_announces_pane_resize_before_the_frame():
     # the new height.
     async def drive():
         m = _mirror_with_fake_commands()
-        sub = m.subscribe("%7")
-        sub.size = (80, 62)
+        sub = m.subscribe("%7", size=PaneSize(cols=80, rows=62))
         _reconcile_once(m, b"32|0|0|0|1|80")
-        assert json.loads(sub._q.get_nowait()) == {"type": "size", "cols": 80, "rows": 32}
+        assert sub._q.get_nowait() == PaneSize(cols=80, rows=32)
         assert sub._q.get_nowait().startswith(b"\x1b[?1049l")
-        assert sub.size == (80, 32)
+        assert sub.size == PaneSize(cols=80, rows=32)
         _reconcile_once(m, b"32|0|0|0|1|80")  # unchanged: frame only
         assert isinstance(sub._q.get_nowait(), bytes)
         assert sub._q.empty()
@@ -322,7 +321,7 @@ def test_reconcile_announces_pane_resize_before_the_frame():
 
 
 def test_reconcile_never_announces_size_to_an_unarmed_subscriber():
-    # The byte-stream consumers (the pyte oracle tests) never set `size`, and
+    # The byte-stream consumers (the pyte oracle tests) never pass `size`, and
     # must keep receiving bytes only.
     async def drive():
         m = _mirror_with_fake_commands()
