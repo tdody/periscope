@@ -33,9 +33,11 @@ export function planBurst(events, recent, nowMs, group = true) {
 
 const why = (ev) => (ev.kind === "question" ? "question" : waitKind(ev.w?.waiting_for) === "permission" ? "permission" : "input");
 
+// A click opens the first held pane: the summary can't name one target, and
+// opening nothing reads as a broken click.
 export function summaryPayload(held) {
   return {
-    kind: "summary", thread: "needs_you", target: "", data: {},
+    kind: "summary", thread: "needs_you", target: "", data: { open: "pane", pid: held[0]?.w?.pid ?? null },
     title: `${held.length} more sessions need you`, subtitle: "",
     body: held.map((ev) => `● ${ev.w ? paneLabel(ev.w) : ev.alert?.name || "a session"} · ${why(ev)}`).join("\n"),
   };

@@ -49,6 +49,27 @@ where those disagree. The plan is `docs/superpowers/plans/2026-10-22-native-noti
   - `feed.js`: the effects, the badge and click routing.
 
   `alertFeed.js` keeps the row behaviours and only the legacy click listener.
+- **Once per state.** The feed runs once per applied `/api/state`, not once per
+  signal change. Its effect tracks only `stateSeq`, which `applyState` bumps in
+  its `finally`, and peeks everything else under `untracked`. `applyState`
+  writes ~20 signals unbatched, alerts first, so an effect tracking them would
+  fire mid-write and pair new alerts with stale windows; and detect's dedupe
+  grace counts passes, so extra passes would shorten it. The rules are a pure
+  `runPass` in `feed.js`; the effect only applies its result.
+  - `GRACE_PASSES = 120`: about 2 minutes at the ~1 s WS push (`state_hub`'s
+    tick), longer on the 3 s REST fallback.
+  - A pass never throws into the transport. The effect runs inside
+    `applyState`'s `stateSeq` setter, so a throw would count as a bad frame in
+    `poll.js` and could raise the "disconnected" banner. The pass is wrapped,
+    and one event whose banner fails to build is skipped, not the whole pass.
+  - Seeding waits for a full, non-empty snapshot, not one with no windows or
+    taken mid-rename/drag (its windows are held back), which would announce the
+    rest as new once they land.
+  - No detection mid-drag or mid-rename: `applyState` freezes `windows` but
+    still moves `alerts`. The badge still updates, and only when it changes.
+  - An overdue grouping summary flushes on the next pass, since WKWebView
+    throttles timers in a hidden window; the timer stays as the backstop. A
+    summary click opens its first pane.
 - **Click routing.** `data.open` is `"pane"` (select by pid, else reveal the
   target), `"url"` (`openExternal`) or `"usage"`.
 - **The usage pill opener.** The pill's expanded state becomes a module

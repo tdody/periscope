@@ -12,14 +12,15 @@ import { buildNeedsYou } from "../split/attention.js";
 
 export const KINDS = ["needs_input", "question", "done", "ci_failed", "pr_merged", "usage"];
 
-// A key missing from a poll is kept this many passes (about 2 min at the ~3 s
-// poll). One empty or garbled poll (tmux answering nothing) would otherwise
-// drop every key, and the next poll would re-announce every waiting, done and
-// question pane. Passes, not seconds: a sleep, a relaunch or a webview recycle
-// runs no passes (the counter persists with the state), where a wall-clock
-// grace replayed everything still waiting on wake. The feed may also run on
-// unrelated signal changes, which only makes the grace shorter; that's fine.
-export const GRACE_PASSES = 40;
+// A key missing from a pass is kept this many passes. A pass is one applied
+// /api/state (feed.js), so about 1 s on the WS push (state_hub's tick), 3 s on
+// the REST fallback: about 2 min, or longer, which is harmless. One empty or
+// garbled state (tmux answering nothing) would otherwise drop every key, and
+// the next one would re-announce every waiting, done and question pane.
+// Passes, not seconds: a sleep, a relaunch or a webview recycle runs no passes
+// (the counter persists with the state), where a wall-clock grace replayed
+// everything still waiting on wake.
+export const GRACE_PASSES = 120;
 
 // One PR, however many panes show it.
 export const prKey = (w) => `${w.repo_slug || w.repo_key || ""}#${w.pr}`;

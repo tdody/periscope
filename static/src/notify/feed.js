@@ -13,6 +13,11 @@
 // signal it writes, so it's the only signal this effect tracks; everything
 // else is peeked inside `untracked` so prefs/other signal changes don't
 // trigger their own pass (toggles still apply at send time, just a poll late).
+//
+// The rules live in runPass, pure, so they unit-test without Tauri; the
+// effect only applies its result. A pass must never throw: the effect runs
+// inside applyState's `stateSeq.value += 1`, so a throw would land in
+// poll.js as a bad frame and could raise the "disconnected" banner.
 import { effect, untracked } from "@preact/signals";
 import { openUsageDetails } from "../chrome/UsagePill.jsx";
 import { getNotifyPrefs } from "../prefs.js";
@@ -24,6 +29,8 @@ import {
   dismissedAlertIds,
   dismissedNeedsPids,
   dismissedReadyPids,
+  dragState,
+  editingTarget,
   stateSeq,
   usage,
   windows,
@@ -56,23 +63,86 @@ export function openFromBanner({ target, data = {} } = {}) {
   else revealPane(target);
 }
 
+const NO_NEWS = { sends: [], flush: [], badge: null };
+
+// One pass -> what to do: { state, recent, held, heldSince, lastBadge } to
+// carry to the next pass, `sends` and `flush` (a summary) to notify, `badge`
+// to set (null: unchanged). ctx: { state, recent, held, heldSince, lastBadge,
+// editing }, where `editing` is a rename or drag in flight. `build` is
+// injectable so a test can make one banner throw.
+export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
+  let { state, recent, held, heldSince, lastBadge } = ctx;
+  const quiet = { quiet_when_focused: prefs.quiet_when_focused };
+  // WKWebView throttles setTimeout in a hidden window, so the burst timer can
+  // fire long late; the next pass flushes an overdue summary instead. Clearing
+  // `held` here is what keeps the timer from sending it again.
+  const flush = [];
+  if (held.length && nowMs - heldSince >= BURST_MS) {
+    flush.push({ ...summaryPayload(held), ...quiet });
+    held = [];
+    heldSince = null;
+  }
+  const out = (extra) => ({ state, recent, held, heldSince, lastBadge, ...NO_NEWS, flush, ...extra });
+  // null until the first /api/state: unknown, not empty. Seeding from it would
+  // announce every waiting pane as new on the first real poll.
+  if (snap.alerts === null) return out();
+  // Seeding from a partial snapshot would announce the rest as new once it
+  // lands: the first state can be empty (tmux answering nothing) or have its
+  // windows held back by a rename/drag. Waiting only delays the seed.
+  if (!state && (!snap.windows.length || ctx.editing)) return out();
+  const sends = [];
+  // Mid-rename/drag applyState freezes `windows` but still moves `alerts`;
+  // detecting on that mix would pair new alerts with stale panes. The badge
+  // still follows.
+  if (!ctx.editing) {
+    const r = detect(state, snap, nowMs / 1000);
+    state = r.state;
+    // Toggles apply at send time: an event skipped while its kind was off is
+    // still recorded, so turning the kind back on doesn't replay it.
+    const plan = planBurst(r.events.filter((e) => enabled(prefs, e.kind)), recent, nowMs, prefs.group);
+    recent = plan.recent;
+    const bctx = { accounts: snap.accounts, windows: snap.windows };
+    for (const ev of plan.now) {
+      // One bad event mustn't cost the others their banner, or the badge.
+      let p = null;
+      try {
+        p = build(ev, bctx);
+      } catch (e) {
+        console.error("[notify] banner failed", ev.key, e);
+      }
+      if (p) sends.push({ ...p, ...quiet });
+    }
+    if (plan.held.length) {
+      held = [...held, ...plan.held];
+      heldSince ??= nowMs;
+    }
+  }
+  // Panes waiting on you, as the rail counts them, not alert rows.
+  const waiting = waitingPanes(snap.windows, snap.alerts, snap.dismissedAlertIds, snap.dismissedNeedsPids, nowMs / 1000);
+  const count = prefs.badge ? waiting.size : 0;
+  // Only on change: it's a native call every pass otherwise (one a second on
+  // the WS push). lastBadge starts undefined, so a new JS context always sends.
+  const badge = count === lastBadge ? null : count;
+  lastBadge = count;
+  return out({ sends, badge });
+}
+
 let started = false;
 
 export function startNotifyFeed() {
   if (started || !inTauri()) return;
   started = true;
   const storage = typeof localStorage === "undefined" ? null : localStorage;
-  let state = resumeState(storage, Date.now());
-  let recent = [];
-  let held = [];
+  let ctx = { state: resumeState(storage, Date.now()), recent: [], held: [], heldSince: null, lastBadge: undefined };
   let timer = null;
 
-  const send = (payload) => notify({ ...payload, quiet_when_focused: getNotifyPrefs().quiet_when_focused });
-  const flush = () => {
+  // The backstop for a burst that ends with no further pass; runPass flushes
+  // it first when a pass comes due, and either path empties `held`.
+  const flushHeld = () => {
     timer = null;
-    const batch = held;
-    held = [];
-    if (batch.length) send(summaryPayload(batch));
+    const batch = ctx.held;
+    ctx = { ...ctx, held: [], heldSince: null };
+    if (batch.length) notify({ ...summaryPayload(batch), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
   };
 
   onNotificationOpened(openFromBanner);
@@ -81,36 +151,27 @@ export function startNotifyFeed() {
     // comment). Everything else is peeked below so it can't trigger its own pass.
     stateSeq.value;
     untracked(() => {
-      const list = alerts.peek();
-      // null until the first /api/state: unknown, not empty. Seeding from it would
-      // announce every waiting pane as new on the first real poll.
-      if (list === null) return;
-      const prefs = getNotifyPrefs();
-      const snap = {
-        windows: windows.peek() || [], alerts: list, dismissedAlertIds: dismissedAlertIds.peek(),
-        dismissedNeedsPids: dismissedNeedsPids.peek(), dismissedReadyPids: dismissedReadyPids.peek(),
-        plan: usage.peek()?.plan || {},
-      };
-      const nowMs = Date.now();
-      const r = detect(state, snap, nowMs / 1000);
-      state = r.state;
-      saveState(storage, state, nowMs);
-      // Toggles apply at send time: an event skipped while its kind was off is
-      // still recorded, so turning the kind back on doesn't replay it.
-      const plan = planBurst(r.events.filter((e) => enabled(prefs, e.kind)), recent, nowMs, prefs.group);
-      recent = plan.recent;
-      const ctx = { accounts: accounts.peek(), windows: snap.windows };
-      for (const ev of plan.now) {
-        const p = payloadFor(ev, ctx);
-        if (p) send(p);
+      try {
+        const snap = {
+          windows: windows.peek() || [], alerts: alerts.peek(), dismissedAlertIds: dismissedAlertIds.peek(),
+          dismissedNeedsPids: dismissedNeedsPids.peek(), dismissedReadyPids: dismissedReadyPids.peek(),
+          plan: usage.peek()?.plan || {}, accounts: accounts.peek(),
+        };
+        const editing = !!(editingTarget.peek() || dragState.peek());
+        const nowMs = Date.now();
+        const prevState = ctx.state;
+        const { sends, flush, badge, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
+        ctx = next;
+        if (ctx.state !== prevState) saveState(storage, ctx.state, nowMs);
+        for (const p of [...flush, ...sends]) notify(p);
+        if (!ctx.held.length && timer) {
+          clearTimeout(timer);
+          timer = null;
+        } else if (ctx.held.length && !timer) timer = setTimeout(flushHeld, Math.max(0, ctx.heldSince + BURST_MS - nowMs));
+        if (badge !== null) setBadgeCount(badge);
+      } catch (e) {
+        console.error("[notify] pass failed", e);
       }
-      if (plan.held.length) {
-        held.push(...plan.held);
-        if (!timer) timer = setTimeout(flush, BURST_MS);
-      }
-      // Panes waiting on you, as the rail counts them, not alert rows.
-      const waiting = waitingPanes(snap.windows, list, snap.dismissedAlertIds, snap.dismissedNeedsPids, nowMs / 1000);
-      setBadgeCount(prefs.badge ? waiting.size : 0);
     });
   });
 }

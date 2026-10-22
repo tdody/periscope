@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BURST_MS, planBurst, summaryPayload } from "../burst.js";
 
-const ev = (kind, name) => ({ kind, w: { name, waiting_for: kind === "needs_input" ? "permission prompt" : null } });
+const ev = (kind, name) => ({ kind, w: { name, pid: `pid-${name}`, waiting_for: kind === "needs_input" ? "permission prompt" : null } });
 
 describe("planBurst", () => {
   it("sends the first two needs-you banners at once and holds the rest", () => {
@@ -38,5 +38,10 @@ describe("summaryPayload", () => {
     const p = summaryPayload([ev("needs_input", "c"), ev("question", "d")]);
     expect(p).toMatchObject({ kind: "summary", thread: "needs_you", target: "", title: "2 more sessions need you" });
     expect(p.body).toBe("● c · permission\n● d · question");
+  });
+
+  it("opens its first pane when clicked", () => {
+    expect(summaryPayload([ev("needs_input", "c"), ev("question", "d")]).data).toEqual({ open: "pane", pid: "pid-c" });
+    expect(summaryPayload([{ kind: "question", alert: { name: "x" } }]).data).toEqual({ open: "pane", pid: null });
   });
 });

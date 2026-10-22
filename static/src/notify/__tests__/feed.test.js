@@ -1,6 +1,7 @@
-// The feed's click routing and toggles. The detection, copy and grouping it
-// strings together are covered in their own tests; the effect itself needs
-// the Tauri shell and is checked by hand (see the plan's manual checklist).
+// The feed's click routing, toggles and pass rules (runPass). The detection,
+// copy and grouping it strings together are covered in their own tests; the
+// effect itself only applies runPass's result through the Tauri shell and is
+// checked by hand (see the plan's manual checklist).
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../tauri.js", () => ({
@@ -10,7 +11,9 @@ vi.mock("../../tauri.js", () => ({
 const tauri = await import("../../tauri.js");
 const { railSelection, windows } = await import("../../store.js");
 const { usageExpanded } = await import("../../chrome/UsagePill.jsx");
-const { enabled, openFromBanner, startNotifyFeed } = await import("../feed.js");
+const { enabled, openFromBanner, runPass, startNotifyFeed } = await import("../feed.js");
+const { payloadFor } = await import("../copy.js");
+const { BURST_MS } = await import("../burst.js");
 
 afterEach(() => {
   windows.value = [];
@@ -60,5 +63,101 @@ describe("startNotifyFeed", () => {
     startNotifyFeed();
     expect(tauri.onNotificationOpened).not.toHaveBeenCalled();
     expect(tauri.setBadgeCount).not.toHaveBeenCalled();
+  });
+});
+
+describe("runPass", () => {
+  const PREFS = { needs_input: true, done: true, quiet_when_focused: true, group: true, badge: true };
+  const win = (over = {}) => ({ pid: "p1", target: "s:1", session: "s", name: "pane", state: "idle", ...over });
+  const asks = (pid, since = 100) => win({ pid, target: `s:${pid}`, name: pid, state: "needs-input", needs_since: since });
+  const snapOf = (windows, over = {}) => ({ windows, alerts: [], plan: {}, accounts: [], ...over });
+  const fresh = (over = {}) => ({ state: null, recent: [], held: [], heldSince: null, lastBadge: undefined, editing: false, ...over });
+  // Seed on `before`; returns the ctx the next pass starts from.
+  const seeded = (before, over = {}) => {
+    const r = runPass(fresh(), snapOf(before), PREFS, 0);
+    return fresh({ state: r.state, lastBadge: r.lastBadge, ...over });
+  };
+
+  it("seeds silently, then announces what's new with the focus pref attached", () => {
+    const ctx = seeded([win()]);
+    expect(ctx.state).not.toBeNull();
+    const r = runPass(ctx, snapOf([asks("p1")]), PREFS, 1000);
+    expect(r.sends).toHaveLength(1);
+    expect(r.sends[0]).toMatchObject({ kind: "needs_input", quiet_when_focused: true, data: { pid: "p1" } });
+  });
+
+  it("drops only the event whose banner throws; the rest still go out and the badge is still counted", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctx = seeded([win(), win({ pid: "p2" }), win({ pid: "p3" })]);
+    const after = [asks("p1"), win({ pid: "p2", state: "done", completed_at: 5 }), win({ pid: "p3", state: "done", completed_at: 5 })];
+    const build = (ev, c) => {
+      if (ev.w?.pid === "p2") throw new Error("boom");
+      return payloadFor(ev, c);
+    };
+    const r = runPass(ctx, snapOf(after), PREFS, 1000, build);
+    expect(r.sends.map((p) => p.data.pid)).toEqual(["p1", "p3"]);
+    expect(r.badge).toBe(1);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("doesn't seed from an empty snapshot, nor mid-rename/drag; a full one later seeds silently", () => {
+    const empty = runPass(fresh(), snapOf([]), PREFS, 0);
+    expect(empty.state).toBeNull();
+    expect(empty.sends).toEqual([]);
+    const editing = runPass(fresh({ editing: true }), snapOf([asks("p1")]), PREFS, 0);
+    expect(editing.state).toBeNull();
+    expect(editing.sends).toEqual([]);
+    const full = runPass(fresh(), snapOf([asks("p1")]), PREFS, 0);
+    expect(full.state).not.toBeNull();
+    expect(full.sends).toEqual([]);
+  });
+
+  it("detects nothing mid-rename/drag, but still counts the badge", () => {
+    const ctx = seeded([win()], { editing: true });
+    const r = runPass(ctx, snapOf([asks("p1")]), PREFS, 1000);
+    expect(r.state).toBe(ctx.state);
+    expect(r.sends).toEqual([]);
+    expect(r.badge).toBe(1);
+    // Once the drag ends, the same news still announces.
+    expect(runPass({ ...ctx, editing: false }, snapOf([asks("p1")]), PREFS, 2000).sends).toHaveLength(1);
+  });
+
+  it("holds a burst's third banner, keeping when the hold began", () => {
+    const ctx = seeded([win()]);
+    const r = runPass(ctx, snapOf([asks("a"), asks("b"), asks("c")]), PREFS, 1000);
+    expect(r.sends).toHaveLength(2);
+    expect(r.held).toHaveLength(1);
+    expect(r.heldSince).toBe(1000);
+    const r2 = runPass({ ...ctx, ...r }, snapOf([asks("a"), asks("b"), asks("c"), asks("d")]), PREFS, 1500);
+    expect(r2.held).toHaveLength(2);
+    expect(r2.heldSince).toBe(1000);
+  });
+
+  it("flushes an overdue summary on the next pass, once", () => {
+    const held = [{ kind: "needs_input", w: asks("c") }, { kind: "needs_input", w: asks("d") }];
+    const ctx = seeded([win()], { held, heldSince: 1000 });
+    expect(runPass(ctx, snapOf([win()]), PREFS, 1000 + BURST_MS - 1).flush).toEqual([]);
+    const r = runPass(ctx, snapOf([win()]), PREFS, 1000 + BURST_MS);
+    expect(r.flush).toHaveLength(1);
+    expect(r.flush[0]).toMatchObject({ kind: "summary", title: "2 more sessions need you", quiet_when_focused: true });
+    expect(r.held).toEqual([]);
+    expect(r.heldSince).toBeNull();
+    expect(runPass({ ...ctx, ...r }, snapOf([win()]), PREFS, 1000 + 2 * BURST_MS).flush).toEqual([]);
+  });
+
+  it("sends the badge on the first pass and then only when it changes", () => {
+    const ctx = seeded([asks("p1")]);
+    expect(ctx.lastBadge).toBe(1);
+    expect(runPass(ctx, snapOf([asks("p1")]), PREFS, 1000).badge).toBeNull();
+    const r = runPass(ctx, snapOf([win()]), PREFS, 1000);
+    expect(r.badge).toBe(0);
+    expect(r.lastBadge).toBe(0);
+    expect(runPass(ctx, snapOf([asks("p1")]), { ...PREFS, badge: false }, 1000).badge).toBe(0);
+  });
+
+  it("does nothing before the first /api/state", () => {
+    const r = runPass(fresh(), snapOf([asks("p1")], { alerts: null }), PREFS, 0);
+    expect(r).toMatchObject({ state: null, sends: [], flush: [], badge: null });
   });
 });
