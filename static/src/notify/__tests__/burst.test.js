@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BURST_MS, planBurst, summaryPayload } from "../burst.js";
+import { BURST_MS, flushPayload, planBurst, summaryPayload } from "../burst.js";
 
 const ev = (kind, name) => ({ kind, w: { name, pid: `pid-${name}`, waiting_for: kind === "needs_input" ? "permission prompt" : null } });
 
@@ -40,8 +40,24 @@ describe("summaryPayload", () => {
     expect(p.body).toBe("● c · permission\n● d · question");
   });
 
+  it("counts panes, not events, and says one in the singular", () => {
+    expect(summaryPayload([ev("needs_input", "c"), ev("question", "c")]).title).toBe("1 more session needs you");
+    expect(summaryPayload([{ kind: "question", alert: { name: "x" } }, { kind: "question", alert: { name: "y" } }]).title).toBe("2 more sessions need you");
+  });
+
   it("opens its first pane when clicked", () => {
     expect(summaryPayload([ev("needs_input", "c"), ev("question", "d")]).data).toEqual({ open: "pane", pid: "pid-c" });
     expect(summaryPayload([{ kind: "question", alert: { name: "x" } }]).data).toEqual({ open: "pane", pid: null });
+  });
+});
+
+describe("flushPayload", () => {
+  const build = (e) => ({ kind: e.kind, title: `${e.w.name} asks` });
+  it("sends a lone held event as its own banner", () => {
+    expect(flushPayload([ev("question", "c")], build, {})).toEqual({ kind: "question", title: "c asks" });
+  });
+  it("folds two or more, or one that fails to build, into the summary", () => {
+    expect(flushPayload([ev("question", "c"), ev("question", "d")], build, {}).kind).toBe("summary");
+    expect(flushPayload([ev("question", "c")], () => { throw new Error("x"); }, {}).kind).toBe("summary");
   });
 });

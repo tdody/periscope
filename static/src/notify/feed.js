@@ -36,7 +36,7 @@ import {
   windows,
 } from "../store.js";
 import { inTauri, notify, onNotificationOpened, openExternal, setBadgeCount } from "../tauri.js";
-import { BURST_MS, planBurst, summaryPayload } from "./burst.js";
+import { BURST_MS, flushPayload, planBurst } from "./burst.js";
 import { payloadFor } from "./copy.js";
 import { detect } from "./detect.js";
 import { resumeState, saveState } from "./persist.js";
@@ -77,8 +77,9 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
   // fire long late; the next pass flushes an overdue summary instead. Clearing
   // `held` here is what keeps the timer from sending it again.
   const flush = [];
+  const bctx = { accounts: snap.accounts, windows: snap.windows };
   if (held.length && nowMs - heldSince >= BURST_MS) {
-    flush.push({ ...summaryPayload(held), ...quiet });
+    flush.push({ ...flushPayload(held, build, bctx), ...quiet });
     held = [];
     heldSince = null;
   }
@@ -116,7 +117,6 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
     // still recorded, so turning the kind back on doesn't replay it.
     const plan = planBurst(r.events.filter((e) => enabled(prefs, e.kind)), recent, nowMs, prefs.group);
     recent = plan.recent;
-    const bctx = { accounts: snap.accounts, windows: snap.windows };
     for (const ev of plan.now) {
       // One bad event mustn't cost the others their banner, or the badge.
       let p = null;
@@ -156,7 +156,9 @@ export function startNotifyFeed() {
     timerFor = null;
     const batch = ctx.held;
     ctx = { ...ctx, held: [], heldSince: null };
-    if (batch.length) notify({ ...summaryPayload(batch), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
+    if (!batch.length) return;
+    const bctx = { accounts: accounts.peek(), windows: windows.peek() || [] };
+    notify({ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
   };
 
   onNotificationOpened(openFromBanner);

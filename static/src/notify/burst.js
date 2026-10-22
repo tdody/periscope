@@ -34,11 +34,28 @@ export function planBurst(events, recent, nowMs, group = true) {
 const why = (ev) => (ev.kind === "question" ? "question" : waitKind(ev.w?.waiting_for) === "permission" ? "permission" : "input");
 
 // A click opens the first held pane: the summary can't name one target, and
-// opening nothing reads as a broken click.
+// opening nothing reads as a broken click. The title counts panes, not events:
+// a pane's dialog and its question are one session needing you.
 export function summaryPayload(held) {
+  const n = new Set(held.map((ev, i) => ev.w?.pid ?? ev.alert?.pane_id ?? i)).size;
   return {
     kind: "summary", thread: "needs_you", target: "", data: { open: "pane", pid: held[0]?.w?.pid ?? null },
-    title: `${held.length} more sessions need you`, subtitle: "",
+    title: n === 1 ? "1 more session needs you" : `${n} more sessions need you`, subtitle: "",
     body: held.map((ev) => `● ${ev.w ? paneLabel(ev.w) : ev.alert?.name || "a session"} · ${why(ev)}`).join("\n"),
   };
+}
+
+// What a closing burst window sends: a lone held event is its own banner (a
+// burst of three, the common case, held just one — a summary of one only hid
+// its copy); more fold into the summary, as does one whose banner fails to build.
+export function flushPayload(held, build, bctx) {
+  if (held.length === 1) {
+    try {
+      const p = build(held[0], bctx);
+      if (p) return p;
+    } catch (e) {
+      console.error("[notify] banner failed", held[0].key, e);
+    }
+  }
+  return summaryPayload(held);
 }

@@ -146,6 +146,13 @@ describe("runPass", () => {
     expect(runPass({ ...ctx, ...r }, snapOf([win()]), PREFS, 1000 + 2 * BURST_MS).flush).toEqual([]);
   });
 
+  it("flushes a lone held event as its own banner", () => {
+    const ctx = seeded([win()], { held: [{ kind: "needs_input", key: "k", w: asks("c") }], heldSince: 1000 });
+    const r = runPass(ctx, snapOf([win()]), PREFS, 1000 + BURST_MS);
+    expect(r.flush).toHaveLength(1);
+    expect(r.flush[0]).toMatchObject({ kind: "needs_input", quiet_when_focused: true });
+  });
+
   it("sends the badge on the first pass and then only when it changes", () => {
     const ctx = seeded([asks("p1")]);
     expect(ctx.lastBadge).toBe(1);
