@@ -1462,7 +1462,8 @@ body.modal-open { overflow: hidden; }
   .brand-cursor { animation: none; }
   *, *::before, *::after { transition-duration: 0.001s !important; }
   /* Row-enter animations too — the transition clamp above doesn't cover
-     keyframes, and enter motion is the one thing that would still move. */
+     keyframes, and enter motion is the one thing that would still move. Also
+     stops the Settings critter previews (.critter-preview sits outside .tama). */
   .attn-row, .rail-row { animation: none !important; }
   .tama *, .critter-preview * { animation: none !important; }
 }
@@ -2035,6 +2036,23 @@ body.modal-open { overflow: hidden; }
   padding: 0.5em 0.75em;
   margin-bottom: 0.75em;
 }
+/* Settings → Tamagotchi (overlays/TamaPicker.jsx): a row of tiles, each a
+   real radio — kept focusable but invisible over its tile — a 40px preview
+   and the name. ID-qualified to outrank #settings-form label / input, which
+   would make every radio a full-width block. */
+.tama-picker-options { display: flex; flex-wrap: wrap; gap: 6px; }
+#settings-form .tama-picker-option {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  margin: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 0.8em; cursor: pointer;
+}
+#settings-form .tama-picker-option input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; cursor: pointer;
+}
+#settings-form .tama-picker-option:has(input:checked) { border-color: var(--accent); background: var(--bg-1); }
+#settings-form .tama-picker-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.critter-preview { display: block; }
+
 .settings-overrides-empty {
   font-size: 0.85em;
   opacity: 0.6;

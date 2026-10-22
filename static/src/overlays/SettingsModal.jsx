@@ -12,6 +12,7 @@ import { useEffect, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { track } from "../track.js";
 import { modalRequest } from "./modalRequest.js";
+import { TamaPicker } from "./TamaPicker.jsx";
 
 const open = signal(false);
 
@@ -104,6 +105,7 @@ export function SettingsModal() {
           <button id="settings-modal-close" title="close" onClick={close}>×</button>
         </header>
         <form id="settings-form" onSubmit={handleSubmit}>
+          <TamaPicker />
           <label>
             Cleanup idle threshold (days)
             <input
