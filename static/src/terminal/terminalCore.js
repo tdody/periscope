@@ -19,7 +19,7 @@
 import { openExternal } from "../tauri.js";
 import { track } from "../track.js";
 import { paneIdQuery } from "../util.js";
-import { afterSend, hintDims, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "./sizing.js";
+import { afterSend, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "./sizing.js";
 import { terminalTheme } from "./theme.js";
 
 // Scalar Terminal options, exported so the unicode11 regression test can
@@ -112,7 +112,15 @@ export function normalizeAgentTerminalData(data, agent) {
 // wrap widths, even though the user never resized. We snap such wobble back to
 // the pinned width and only accept a genuinely different width (real window /
 // rail resize, or a different container like the modal) as a new pin.
-let pinnedCols = 0;
+// containerDims is the last measurement (measureContainer): the pinned width
+// and the fitted rows, 0 until something is measured this page. It's what
+// every resize and reconnect asks tmux for — never term.cols/term.rows, the
+// pane's (paneRows): on a split those are a slice of the window, and
+// resize-window applies the ask to the whole window, so echoing them back
+// shrank a split window on every reconnect. Nothing measured yet (a pane only
+// ever shown hidden): no hint at all. It outlives mounts on purpose — a mount
+// into a hidden host can't measure, and hints the last measurement.
+let containerDims = { cols: 0, rows: 0 };
 // The xterm's ROWS follow the tmux pane (the server's `{type:"size"}`), never
 // the container — capped at it, never grown to it (xtermDims). The reconcile
 // frame paints rows 1..pane_height, so any extra xterm rows are rows tmux
@@ -126,9 +134,8 @@ let pinnedCols = 0;
 // uncapped (xtermDims).
 let paneCols = 0;                // tmux's pane dims, from the last size message
 let paneRows = 0;
-let fitRows = 0;                 // the container's height in rows — what we ask tmux for
 
-// Measure the container into the session's pin and fitRows. False when it
+// Measure the container into containerDims, holding the pin. False when it
 // can't be measured: under a display:none host proposeDimensions gives NaN
 // cols, and the last measurement stands.
 function measureContainer() {
@@ -139,8 +146,7 @@ function measureContainer() {
     return false;
   }
   if (!proposed || Number.isNaN(proposed.cols) || Number.isNaN(proposed.rows)) return false;
-  pinnedCols = pinWidth(proposed.cols, pinnedCols);
-  fitRows = proposed.rows;
+  containerDims = { cols: pinWidth(proposed.cols, containerDims.cols), rows: proposed.rows };
   return true;
 }
 
@@ -149,7 +155,7 @@ function measureContainer() {
 // xterm to the container, and growing rows drags scrollback down over the
 // screen (see paneRows).
 function syncXtermSize() {
-  const next = xtermDims(paneCols, paneRows, pinnedCols, fitRows);
+  const next = xtermDims(paneCols, paneRows, containerDims.cols, containerDims.rows);
   if (next.cols > 0 && next.rows > 0 && (term.cols !== next.cols || term.rows !== next.rows)) {
     term.resize(next.cols, next.rows);
   }
@@ -664,7 +670,6 @@ export function startLiveTerminal(target) {
   // the handshake's size message.
   measureContainer();
   syncXtermSize();
-  const hint = hintDims({ pinnedCols, fitRows });
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
   // Debounced so a window-drag doesn't spam tmux with subprocess calls.
@@ -680,7 +685,7 @@ export function startLiveTerminal(target) {
   termIntentionalClose = false;
   termReconnectAttempt = 0;
   termReconnectedNotified = false;
-  connectTerminalWs(target, hint.cols, hint.rows);
+  connectTerminalWs(target, containerDims.cols, containerDims.rows);
 }
 
 function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
@@ -722,15 +727,17 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
           // Through the fit's rule (xtermDims): the pane can outgrow this
           // container without our asking (another viewer's resize).
           syncXtermSize();
-          // A pane announced taller than the container (a sibling closed, a
-          // zoom, a taller viewer's resize) is asked back down exactly like a
-          // container shrink below it. Nothing else would ask — the container
-          // didn't change, so no fit runs — and capped, the pane's rows past
-          // the container's all paint onto its last, hiding the prompt behind
-          // the status line. A shared window so ends at the shorter viewer's
-          // height and the width last asked for: the shrink is rows only, and
-          // the taller viewer regrows only shrinks of its own (resizeAsk).
-          if (fitRows > 0 && resizeAsk(hintDims({ pinnedCols, fitRows }), lastSent, paneRows)) scheduleFit();
+          // And through the fit's ask (resizeAsk): a pane announced taller
+          // than the container (a sibling closed, a zoom, a taller viewer's
+          // resize) is asked back down exactly like a container shrink below
+          // it. Nothing else would ask — the container didn't change, so no
+          // fit runs — and capped, the pane's rows past the container's all
+          // paint onto its last, hiding the prompt behind the status line. A
+          // shared window so ends at the shorter viewer's height and the width
+          // last asked for: the shrink is rows only, and the taller viewer
+          // regrows only shrinks of its own. Size messages come only when the
+          // pane's dims change, so the extra measure costs nothing.
+          scheduleFit();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
         }
@@ -769,9 +776,8 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       if (!term || termWsTarget !== target || termIntentionalClose) return;
       // Re-send current dims so the reconnected server resizes tmux before
       // its initial paint — same reasoning as the first connect. The
-      // container's, not term's: those are the pane's (hintDims).
-      const hint = hintDims({ pinnedCols, fitRows });
-      connectTerminalWs(target, hint.cols, hint.rows);
+      // container's, not term's: those are the pane's (containerDims).
+      connectTerminalWs(target, containerDims.cols, containerDims.rows);
     }, delay);
   };
 }
@@ -819,9 +825,9 @@ function scheduleFit() {
     // until the next width change. One redraw per shrink undone; and as only
     // our own shrink is undone, a shorter viewer's is never regrown into a
     // fight.
-    // Compared and sent as the container's dims (hintDims): term.cols is the
-    // pane's, which on a left/right split never equals what we last sent.
-    const ask = resizeAsk(hintDims({ pinnedCols, fitRows }), lastSent, paneRows);
+    // Compared and sent as the container's dims (containerDims): term.cols is
+    // the pane's, which on a left/right split never equals what we last sent.
+    const ask = resizeAsk(containerDims, lastSent, paneRows);
     if (!ask) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
       lastSent = afterSend(lastSent, ask);

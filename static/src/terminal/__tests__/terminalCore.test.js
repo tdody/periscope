@@ -144,12 +144,17 @@ describe("terminal sizing glue", () => {
     expect(env.sockets.map((s) => s.hint)).toEqual([{ cols: 143, rows: 36 }, { cols: 143, rows: 36 }]);
   });
 
-  it("sends no hint before anything has been measured", async () => {
-    // A pane only ever shown hidden: no dims of ours to ask for, and the
-    // xterm's would be the pane's — tmux's view stands.
+  it("sends no hint before anything has been measured, on a reconnect either", async () => {
+    // Regression: a left/right split shown only in transcript mode since page
+    // load. Nothing measured, the xterm took the pane's 71 cols, and hinted on
+    // each reconnect they shrank the 143-col window to 71, then 35. No dims
+    // of ours to ask for: tmux's view stands.
     env.hidden = true;
     await mount("%1");
-    expect(env.sockets[0].hint).toBe(null);
+    await announce(71, 36);
+    await dropSocket();
+    expect(env.sockets.map((s) => s.hint)).toEqual([null, null]);
+    expect(env.sent).toEqual([]);
   });
 
   it("hints a reconnect on a left/right split with the container, not the pane", async () => {

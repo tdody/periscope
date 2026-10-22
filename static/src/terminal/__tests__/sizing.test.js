@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterSend, hintDims, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
+import { afterSend, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
 
 describe("xtermDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {
@@ -47,24 +47,6 @@ describe("pinWidth", () => {
   it("snaps width wobble back to the pin and re-pins a real resize", () => {
     expect(pinWidth(118, 120)).toBe(120);
     expect(pinWidth(150, 120)).toBe(150);
-  });
-});
-
-describe("hintDims", () => {
-  it("asks tmux for the container, not the pane the xterm shows", () => {
-    // Regression: on a split window the xterm holds the pane's dims, a slice
-    // of the window. Echoed back as the reconnect hint they resize the WINDOW
-    // to the pane's size, so it shrank on every retry (200 → 100 → 50 cols
-    // on a left/right split).
-    expect(hintDims({ pinnedCols: 200, fitRows: 62, termCols: 100, termRows: 32 })).toEqual({ cols: 200, rows: 62 });
-  });
-
-  it("sends no hint before a fit has measured the container, never the xterm's dims", () => {
-    // Regression: a left/right split viewed only in transcript mode since page
-    // load — nothing measured, the xterm at the pane's 100 cols. Hinted on a
-    // reconnect, those resized the 200-col window to 100, then 50 on the next.
-    // 0 makes connectTerminalWs omit the hint, and tmux's view stands.
-    expect(hintDims({ pinnedCols: 0, fitRows: 0, termCols: 100, termRows: 32 })).toEqual({ cols: 0, rows: 0 });
   });
 });
 

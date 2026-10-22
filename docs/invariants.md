@@ -69,7 +69,7 @@ These are the non-obvious behaviors worth preserving:
    in transcript mode, under a window wider than the pin); right-clipped it
    stays coherent. A hidden mount can't measure, so it hints the
    container's last measurement. Every resize and reconnect asks tmux for
-   the CONTAINER's dims (`hintDims`: pinned width × fitted rows; with
+   the CONTAINER's dims (`containerDims`: pinned width × fitted rows; with
    nothing measured yet, no hint at all), never `term.cols`/`term.rows` —
    those are the pane's, and `resize-window` applies them to the whole
    window: echoing them back shrank a split window on every reconnect.

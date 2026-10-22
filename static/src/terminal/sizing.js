@@ -32,17 +32,9 @@ export function xtermDims(knownPaneCols, knownPaneRows, containerCols, container
   return { cols: knownPaneCols || containerCols, rows: capped(knownPaneRows, containerRows) };
 }
 
-// Pure: the dims to ask tmux for, on a resize or a reconnect — the CONTAINER's
-// (the pinned width, the fitted rows), never the xterm's. Those are the pane's,
-// a slice of the window on a split, and resize-window applies the hint to the
-// whole window: echoing them back shrank a split window on every reconnect.
-// Nothing measured yet (a pane only ever shown hidden): 0, no hint at all.
-export function hintDims({ pinnedCols, fitRows }) {
-  return { cols: pinnedCols, rows: fitRows };
-}
-
-// Pure: what a fit must ask tmux for, or null. `container` is the fit's
-// hintDims; `sent` the socket's memo of its last ask (afterSend). A width
+// Pure: what a fit must ask tmux for, or null. `container` is the measured
+// container (the pinned width, the fitted rows — never the xterm's dims, the
+// pane's); `sent` the socket's memo of its last ask (afterSend). A width
 // change always; a height-only change when the container is now shorter than
 // the pane, or to undo a height-only shrink of our own — back up to the
 // height asked before it, never past. See scheduleFit for why height-only
