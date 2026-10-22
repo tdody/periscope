@@ -23,8 +23,12 @@ once in the session-lost shape — env prefixes including the spawn-time
 `ANTHROPIC_MODEL`, the captured command including `--effort`, its own
 `--resume` stripped. (Stripping `--resume` off an already-rendered resume line
 instead lost the model and effort, and counted the line twice.)
-Two Claudes on one session both write its transcript; this is the backstop
-that stops a duplicated layout (see the plugin rule below) from compounding.
+Two Claudes on one session both write its transcript; this stops a
+duplicated layout (see the plugin rule below) from putting several Claudes on
+one session. It removes no pane: every pane line is still restored, so if the
+racing restores come back the window still gains a pane every restart (each
+now a fresh Claude). Only the declared-once rule, with a single TPM run line,
+prevents the layout growth.
 
 **Periscope drives the periodic save (`resurrect.save_now()`).**
 tmux-continuum has NO timer: its save fires purely as a side effect of
