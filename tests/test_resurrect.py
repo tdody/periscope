@@ -404,6 +404,27 @@ def test_duplicate_resume_grouped_by_the_session_each_line_renders_with():
     assert resurrect._duplicate_resumes(lines, pane_map, {"%3": SID, "%4": SID}, {}) == {1}
 
 
+@pytest.mark.parametrize(
+    ("cmd", "row"),
+    [
+        (f"claude --resume {OLD_SID} --effort high", SID),  # the row wins over argv
+        (f"claude --resume {OLD_SID} --effort high", None),  # argv kept whole
+        ("claude --effort high", SID),
+        ("claude", None),
+        (f"claude {SYS}", None),  # "--resume not-a-flag" is prompt text
+    ],
+)
+def test_a_line_renders_the_session_it_is_grouped_by(cmd, row):
+    # _duplicate_resumes groups by _line_session; _rewrite_line renders by its
+    # own route. Let them disagree and a duplicate escapes the grouping, or a
+    # line that is not one loses its session.
+    line = _pane_line("s", "1", "1", cmd)
+    pane_map, sess_map = {"s:1.1": "%56"}, ({"%56": row} if row else {})
+    out, _ = resurrect._rewrite_line(line, pane_map, sess_map)
+    m = resurrect._RESUME_ARG_RE.search(out.split("\t")[10])
+    assert (m.group(1) if m else None) == resurrect._line_session(resurrect._claude_pane(line), "%56", sess_map)
+
+
 def test_demoted_line_takes_the_session_lost_shape():
     # Prefixes incl. the spawn-time model, captured flags incl. --effort, and
     # its own captured --resume gone — like any pane with no session to resume.

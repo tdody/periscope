@@ -131,6 +131,20 @@ def _position(parts: list[str]) -> str:
     return f"{parts[1]}:{parts[2]}.{parts[5]}"
 
 
+def _row_session(pane_id: str | None, session_map: dict[str, str]) -> str | None:
+    return session_map.get(pane_id) if pane_id else None
+
+
+def _line_session(parts: list[str], pane_id: str | None, session_map: dict[str, str]) -> str | None:
+    """The session a claude pane line resumes once rendered: its pane_sessions
+    row (_rewrite_line rebuilds `claude --resume <row>`), else the `--resume`
+    its captured argv already carries (kept whole) — a restored zombie's argv
+    says it. The one rule _duplicate_resumes groups by; a duplicate grouped
+    by any other escapes, and a line that isn't one loses its session."""
+    m = _RESUME_ARG_RE.search(parts[10])
+    return _row_session(pane_id, session_map) or (m.group(1) if m else None)
+
+
 def _rewrite_line(
     line: str,
     pane_map: dict[str, str],
@@ -152,12 +166,13 @@ def _rewrite_line(
     parts = _claude_pane(line)
     if parts is None:
         return line, False
-    cmd = parts[10][1:]
-    if demote:
-        cmd = _RESUME_ARG_RE.sub("", cmd)
+    captured = parts[10][1:]
+    cmd = _RESUME_ARG_RE.sub("", captured) if demote else captured
 
     pane_id = pane_map.get(_position(parts))
-    uuid = session_map.get(pane_id) if pane_id and not demote else None
+    # The row only: without one the captured command is kept whole, its own
+    # --resume included (_line_session) — rebuilding it would drop --effort.
+    uuid = None if demote else _row_session(pane_id, session_map)
     cfg = (config_dirs or {}).get(pane_id) if pane_id else None
     prof = (profiles or {}).get(pane_id) if pane_id else None
     model = (models or {}).get(pane_id) if pane_id else None
@@ -166,7 +181,7 @@ def _rewrite_line(
     # pane onto the DEFAULT account — burning the wrong subscription silently,
     # which is worse than losing --resume — or onto the default wrapper profile,
     # silently swapping the plugin set the pane was working under.
-    if not uuid and not cfg and not prof and not model and cmd == parts[10][1:]:
+    if not uuid and not cfg and not prof and not model and cmd == captured:
         return line, False
 
     prefix = f"CLAUDE_CONFIG_DIR={cfg} " if cfg else ""
@@ -213,36 +228,31 @@ def _duplicate_resumes(
     intended. It got into a save via racing restores (see tmux_persist): extra
     panes, each later recorded with the same `--resume`. This does not remove
     those panes; only the declared-once rule stops them appearing. A line's
-    session is the one it renders with: its pane_sessions row, else the
-    `--resume` its captured argv already carries. Keeper: the pane whose live
-    claude reports that session now, then the one that touched its session
-    file last (the one in use), then the active pane, then the first line."""
-    groups: dict[str, list[int]] = {}
+    session is the one it renders with (_line_session). Keeper: the pane whose
+    live claude reports that session now, then the one that touched its
+    session file last (the one in use), then the active pane, then the first
+    line."""
+    groups: dict[str, list[tuple[int, list[str], str | None]]] = {}
     for i, line in enumerate(lines):
         parts = _claude_pane(line)
         if parts is None:
             continue
         pane_id = pane_map.get(_position(parts))
-        m = _RESUME_ARG_RE.search(parts[10])
-        uuid = (session_map.get(pane_id) if pane_id else None) or (m.group(1) if m else None)
-        if uuid:
-            groups.setdefault(uuid, []).append(i)
+        if uuid := _line_session(parts, pane_id, session_map):
+            groups.setdefault(uuid, []).append((i, parts, pane_id))
     demoted: set[int] = set()
-    for uuid, idxs in groups.items():
-        keeper = max(idxs, key=lambda i, uuid=uuid: _keeper_rank(lines[i], i, uuid, pane_map, activity))
-        demoted.update(i for i in idxs if i != keeper)
+    for uuid, members in groups.items():
+        keeper = max(members, key=lambda m, uuid=uuid: _keeper_rank(m, uuid, activity))
+        demoted.update(i for i, _, _ in members if i != keeper[0])
     return demoted
 
 
 def _keeper_rank(
-    line: str,
-    i: int,
+    member: tuple[int, list[str], str | None],
     uuid: str,
-    pane_map: dict[str, str],
     activity: dict[str, tuple[str | None, float]],
 ) -> tuple[bool, float, bool, int]:
-    parts = line.split("\t", _PANE_FIELDS - 1)
-    pane_id = pane_map.get(_position(parts))
+    i, parts, pane_id = member
     live_sid, mtime = activity.get(pane_id, (None, float("-inf"))) if pane_id else (None, float("-inf"))
     return (live_sid == uuid, mtime, parts[8] == "1", -i)
 
