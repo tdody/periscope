@@ -18,6 +18,7 @@ class FakeSubscription:
         self.loop = None  # captured in fake_subscribe (app's loop)
         self.reconciles = 0
         self.exited = False
+        self.size = None  # armed by the route; see test_ws_pane_arms_size_announcements
 
     def push(self, chunk):
         # TestClient runs the app loop in another thread; a plain
@@ -186,6 +187,39 @@ def test_ws_streams_subscription_bytes(client, mocker):
         _ = ws.receive_bytes()
         sub.push(b"live-bytes")
         assert ws.receive_bytes() == b"live-bytes"
+
+
+def test_ws_pane_arms_size_announcements(client, mocker):
+    """The mirror announces a pane resize only to a subscription whose `size`
+    is set, comparing it with (snap.width, snap.height) — so the route must arm
+    it as (cols, rows), with the dims it just told the client. Left unarmed, a
+    split under an open terminal never reaches the xterm, and every test of the
+    mirror (which arms it by hand) still passes."""
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
+    sub = _patch_mirror(mocker)
+
+    with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
+        _ = ws.receive_bytes()
+        assert sub.size == (80, 24)
+
+
+def test_ws_sends_size_announcement_as_text_ahead_of_its_frame(client, mocker):
+    """A size announcement is a JSON control message: a text frame, which the
+    client parses, never bytes it would write into the terminal as data. And it
+    stays ahead of the frame painted at the new size."""
+    mocker.patch("periscope.routes.ws.tmux", side_effect=_fake_tmux())
+    sub = _patch_mirror(mocker)
+
+    with client.websocket_connect("/ws/pane?pane_id=%7") as ws:
+        _ = ws.receive_text()  # size
+        _ = ws.receive_text()  # mouse
+        _ = ws.receive_bytes()
+        sub.push(json.dumps({"type": "size", "cols": 80, "rows": 12}))
+        sub.push(b"frame")
+        assert json.loads(ws.receive_text()) == {"type": "size", "cols": 80, "rows": 12}
+        assert ws.receive_bytes() == b"frame"
 
 
 def test_ws_closes_on_subscription_eof(client, mocker):
