@@ -790,12 +790,12 @@ function scheduleFit() {
     // Hold the pinned width: a fit that wobbled by a column or two (the bug —
     // mount/layout transients) snaps back so tmux never reflows; a genuinely
     // different width (real resize beyond tolerance) becomes the new pin.
-    // The xterm stays at the pane's dims, capped at the container (see paneRows).
+    // The xterm takes the pane's dims, rows capped at the container (xtermDims).
     if (!measureContainer()) return;
     syncXtermSize();
     // Only send a resize message when the width changed since the last one
-    // we sent — height-only changes are dropped, but for two (below). Two
-    // reasons:
+    // we sent. Height-only changes are dropped, for two reasons; resizeAsk
+    // makes two exceptions, described after them.
     //   1. The ResizeObserver's initial observation fires shortly after
     //      mount and produces a no-op resize (cols/rows unchanged from the
     //      WS-connect hint), which tmux silently honors but the cycle of
