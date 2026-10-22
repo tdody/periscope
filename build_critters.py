@@ -213,6 +213,11 @@ def inside(r: list[float], box: list[float]) -> bool:
     return r[0] >= box[0] and r[1] >= box[1] and r[0] + r[2] <= box[0] + box[2] and r[1] + r[3] <= box[1] + box[3]
 
 
+def drawn(n: dict) -> bool:
+    """Would this converted node render outside its own mood layer, however deeply nested?"""
+    return "mood" not in n and ("r" in n or any(drawn(c) for c in n.get("g", [])))
+
+
 def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     """convert, with svg.name prefixed onto any ValueError that doesn't already carry it."""
     try:
@@ -317,14 +322,13 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         raise AssertionError(f"unreachable: callers only pass rect/g, got <{t}>")
 
     root = []
-    any_always_drawn = False
     for c in kids[1:]:
         if tag(c) not in ("rect", "g"):
             raise ValueError(f"{svg.name}: unsupported element <{tag(c)}> directly under the outer <g>")
-        any_always_drawn = any_always_drawn or mood_of(c) is None
         root.append(node(c, False))
-    if kids[1:] and not any_always_drawn:
-        # Every layer conditioned on a mood: nothing renders by default, so spriteBox is Infinity downstream.
+    if not any(drawn(n) for n in root):
+        # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
+        # so spriteBox is Infinity downstream. Also catches an empty root.
         raise ValueError(f"{svg.name}: every layer is inside a mood group, nothing is always drawn")
     return {"name": doc.get("aria-label") or cid.title(), "root": root}
 
