@@ -666,6 +666,31 @@ def test_install_repairs_a_conf_that_runs_tpm_nowhere(home, monkeypatch):
     assert tp.tpm_runs() == 1
 
 
+@pytest.mark.parametrize(
+    ("legacy", "kept"),
+    [
+        ("{source}\n" + tp.TPM_RUN_LINE + "\n", ""),
+        (
+            "{source}\nset -g status-left x\n" + tp.TPM_RUN_LINE + "\n",
+            "set -g status-left x\n" + tp.TPM_RUN_LINE + "\n",
+        ),
+        ("{source}\nrun -b '~/.tmux/plugins/tpm/tpm'\n", "run -b '~/.tmux/plugins/tpm/tpm'\n"),
+    ],
+    ids=["verbatim-run-under-it", "run-not-directly-under", "run-spelled-otherwise"],
+)
+def test_install_moves_exactly_the_source_line_and_a_verbatim_run_line_under_it(home, monkeypatch, legacy, kept):
+    # What the docs and the PR say install moves out of the conf TPM ignores:
+    # periscope's source line, and TPM_RUN_LINE directly under it — the
+    # user's own when an older install put the source line above it, moved to
+    # the conf TPM reads. Any other run line stays, and counts.
+    xdg = _legacy_install(home, USER_PLUGINS)
+    (home / ".tmux.conf").write_text("set -g mouse on\n" + legacy.format(source=tp.source_line()))
+    actions = _install(home, monkeypatch)
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\n" + kept
+    assert (f"added to {xdg}: {tp.TPM_RUN_LINE}" in actions) is (kept == "")
+    assert tp.tpm_runs() == 1
+
+
 def test_install_never_adds_a_run_line_when_tmux_already_runs_tpm(home, monkeypatch):
     # main put its source line above the user's own `run -b` in ~/.tmux.conf:
     # one run. Only install's source line moves — the user's line, spelled

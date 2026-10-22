@@ -152,15 +152,22 @@ appends `run '~/.tmux/plugins/tpm/tpm'` only when nothing tmux executes runs
 TPM — asked even when the conf TPM reads already sources the owned file. Every
 install before XDG support appended its source line plus that run line to
 `~/.tmux.conf`; for a user with an XDG conf, tmux ran TPM from both files. So
-install moves its pair (the source line and the verbatim run line directly
-under it) out of every user conf but TPM's, and `uninstall-tmux` strips the
-source line from all of them. Moving the pair can take the only run line away
-— the XDG conf of a user who had sourced the owned file there by hand then ran
-TPM nowhere (no plugins, no restore, and re-running install didn't repair it) —
-so the count, taken after the move, puts the run line at the end of the conf
-TPM reads. A run line of the user's own spelled otherwise (`run -b …`) is never
-touched and counts, so install adds none (asked of the XDG conf alone, it used
-to append a second one there). Run from
+from every user conf but TPM's, install removes exactly two kinds of line:
+periscope's own source line (the owned file by its path, alone on the line),
+and a line reading verbatim `run '~/.tmux/plugins/tpm/tpm'` directly under
+one. It can't tell whose that run line is, and it is often the user's: the
+same installs put the source line directly ABOVE a TPM user's existing run
+line, so a user whose `~/.tmux.conf` ended in TPM's canonical line sees it
+reported as removed. Nothing else there is touched — a run line spelled
+otherwise (`run -b …`), or not directly under periscope's source line, stays
+and counts. `uninstall-tmux` strips only the source line, from all of them.
+Moving the pair can take the only run line away — the XDG conf of a user who
+had sourced the owned file there by hand then ran TPM nowhere (no plugins, no
+restore, and re-running install didn't repair it) — so the count, taken after
+the move, puts the run line at the end of the conf TPM reads: a removed run
+line that was the only one is moved there, not lost. A run line that stays
+counts, so install adds none (asked of the XDG conf alone, it used to append a
+second one beside a user's `run -b`). Run from
 `~/.tmux.conf` before the XDG conf sources the owned file, it still works —
 continuum read `@continuum-restore on` in 10 of 10 real server starts with TPM
 run first, blocking or `-b`, its restore being a background script that reads

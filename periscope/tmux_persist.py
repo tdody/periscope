@@ -15,8 +15,8 @@ reads (`${XDG_CONFIG_HOME:-~/.config}/tmux/tmux.conf` when it exists, else
 list lives in the owned file too. The source line goes directly above the line
 that runs TPM (directly, or by sourcing a file that does), else at the end,
 with TPM's run line after it when nothing tmux executes runs TPM. tmux itself
-executes EVERY user conf that exists, so install moves its own lines out of the
-ones TPM ignores. It counts the result on its planned edits before writing any
+executes EVERY user conf that exists, so install moves periscope's source line,
+and a verbatim TPM run line directly under it, out of the ones TPM ignores. It counts the result on its planned edits before writing any
 (writing nothing when tmux would run TPM twice), and again after.
 
 Each plugin must be declared EXACTLY ONCE across everything TPM reads. TPM
@@ -610,8 +610,9 @@ def ensure_sourced(path: Path) -> list[str]:
 
 def _without_source(lines: list[str], *, with_run: bool) -> tuple[list[str], list[str]]:
     """`lines` without periscope's source line (_is_source_line) — with
-    `with_run`, nor the verbatim TPM_RUN_LINE right under it: the pair
-    ensure_sourced appends; with the lines removed."""
+    `with_run`, nor a verbatim TPM_RUN_LINE right under it: the pair
+    ensure_sourced appends, or the user's own line that an older install put
+    the source line above (the two read the same); with the lines removed."""
     gone = {
         i
         for i, line in enumerate(lines)
