@@ -25,7 +25,9 @@ checks "pane missing, window present" while the other is mid-create splits
 the window again, leaving an extra shell pane per restore; once a Claude is
 resumed in it, the next save records it and the window grows every restart
 (observed: one window at three panes, all `--resume`-ing one session). So the
-owned file omits plugins declared elsewhere, and healthz counts declarations.
+owned file omits plugins declared elsewhere, the prod worker re-derives that
+omission when those files change (`heal`), and healthz counts declarations and
+TPM run lines.
 
 Import discipline: stdlib + `periscope.config` only. The shell verb runs this
 under plain `python3`, outside the uv environment.
