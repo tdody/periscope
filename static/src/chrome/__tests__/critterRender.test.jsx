@@ -92,12 +92,12 @@ describe("<Critter>", () => {
     expect(draw({ sprite })).not.toContain("tama-startle");
   });
 
-  // One of every node kind Node handles, pre-Task-5: a plain rect, a painted
-  // group, an anim group, a calm-only mood layer (furious sits beside it and
-  // must not show), an eye and a lid that can shut, and a glint. Expected
-  // strings came from rendering this same sprite through the pre-Task-5
-  // Critter (git show 1011413:static/src/chrome/Critter.jsx) — no face/cls/p
-  // existed then, so an unfaced render today must match byte for byte.
+  // One of every node kind Node handled before the duty faces: a plain rect, a
+  // painted group, an anim group, a calm-only mood layer (furious sits beside
+  // it and must not show), an eye and a lid that can shut, and a glint. The
+  // expected strings came from rendering this same sprite through the Critter
+  // that predates the faces (git show 1011413:static/src/chrome/Critter.jsx),
+  // so a render without a face must still match it byte for byte.
   it("draws a sprite exactly as before without a face", () => {
     const sprite = {
       root: [
