@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitDims, hintDims } from "../terminalCore.js";
+import { fitDims, hintDims, resizeNeeded } from "../terminalCore.js";
 
 describe("fitDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {
@@ -7,6 +7,13 @@ describe("fitDims", () => {
     // to the container left 30 rows tmux never repaints, holding a frozen
     // older copy of the screen under the live one.
     expect(fitDims(239, 62, 239, 239, 32)).toEqual({ cols: 239, rows: 32, pinnedCols: 239 });
+  });
+
+  it("caps rows at a container shorter than the pane", () => {
+    // Regression: an unsplit 62-row pane, window dragged to 40 rows. The xterm
+    // stayed 62 rows in a 40-row box (.detail-xterm is overflow: hidden), so
+    // the pane's bottom rows — prompt, input box, cursor — were clipped away.
+    expect(fitDims(239, 40, 239, 239, 62)).toEqual({ cols: 239, rows: 40, pinnedCols: 239 });
   });
 
   it("keeps cols at a narrower pane's width, and the pin at the container's", () => {
@@ -36,5 +43,30 @@ describe("hintDims", () => {
 
   it("falls back to the xterm's dims before a fit has measured the container", () => {
     expect(hintDims({ pinnedCols: 0, fitRows: 0, termCols: 80, termRows: 24 })).toEqual({ cols: 80, rows: 24 });
+  });
+});
+
+describe("resizeNeeded", () => {
+  it("sends a width change", () => {
+    expect(resizeNeeded({ cols: 150, rows: 40 }, 120, 40)).toBe(true);
+  });
+
+  it("drops height-only growth: a SIGWINCH redraw for rows the pane doesn't need", () => {
+    expect(resizeNeeded({ cols: 120, rows: 62 }, 120, 40)).toBe(false);
+  });
+
+  it("sends a height-only shrink below the pane, which no longer fits", () => {
+    // Unsent, the 62-row pane never shrinks to the 40-row container and the
+    // xterm can't show its bottom rows until the next width change.
+    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 62)).toBe(true);
+  });
+
+  it("drops a height-only shrink the pane still fits in", () => {
+    // A top/bottom split: the pane is a 31-row slice, well inside 40 rows.
+    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 31)).toBe(false);
+  });
+
+  it("drops height-only changes before the server has reported the pane", () => {
+    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 0)).toBe(false);
   });
 });
