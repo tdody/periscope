@@ -19,6 +19,7 @@
 import { openExternal } from "../tauri.js";
 import { track } from "../track.js";
 import { paneIdQuery } from "../util.js";
+import { afterSend, NOTHING_SENT, pinWidth, resizeAsk, xtermDims } from "./sizing.js";
 import { terminalTheme } from "./theme.js";
 
 // Scalar Terminal options, exported so the unicode11 regression test can
@@ -71,8 +72,7 @@ let searchAddon = null;
 let termResizeObserver = null;
 let fitDebounce = null;
 let fitHeld = false;              // a splitter drag is in progress — see holdTerminalFit
-let lastSentCols = 0;            // dims of the most recent resize message sent to the server
-let _lastSentRows = 0;            //   — used to suppress redundant resizes during initial mount
+let lastSent = NOTHING_SENT;      // what this mount last asked tmux for (afterSend) — kept across reconnects, reset by stopLiveTerminal
 
 const CODEX_PANEL_BG = "\x1b[48;2;30;30;30m";
 const PERISCOPE_TERM_BG = "\x1b[48;2;40;44;52m";
@@ -112,8 +112,54 @@ export function normalizeAgentTerminalData(data, agent) {
 // wrap widths, even though the user never resized. We snap such wobble back to
 // the pinned width and only accept a genuinely different width (real window /
 // rail resize, or a different container like the modal) as a new pin.
-let pinnedCols = 0;
-const WIDTH_PIN_TOLERANCE = 4;   // cols; absorbs scrollbar/rounding wobble, not a real resize
+// containerDims is the last measurement (measureContainer): the pinned width
+// and the fitted rows, 0 until something is measured this page. It's what
+// every resize and reconnect asks tmux for — never term.cols/term.rows, the
+// pane's (paneRows): on a split those are a slice of the window, and
+// resize-window applies the ask to the whole window, so echoing them back
+// shrank a split window on every reconnect. Nothing measured yet (a pane only
+// ever shown hidden): no hint at all. It outlives mounts on purpose — a mount
+// into a hidden host can't measure, and hints the last measurement.
+let containerDims = { cols: 0, rows: 0 };
+// The xterm's ROWS follow the tmux pane (the server's `{type:"size"}`), never
+// the container — capped at it, never grown to it (xtermDims). The reconcile
+// frame paints rows 1..pane_height, so any extra xterm rows are rows tmux
+// never repaints — and xterm.js GROWING rows pulls scrollback down over the
+// screen, so they held a frozen older copy of the pane under the live one. A
+// pane is shorter than the container both when its window is split (periscope
+// sizes the window, the pane gets a slice) and after the container grows in
+// height only, which is deliberately not sent (resizeAsk).
+// Cols follow the pane the same way, so a left/right split shows the pane's
+// width instead of flipping between it and the container's on every fit — but
+// uncapped (xtermDims).
+let paneCols = 0;                // tmux's pane dims, from the last size message
+let paneRows = 0;
+
+// Measure the container into containerDims, holding the pin. False when it
+// can't be measured: under a display:none host proposeDimensions gives NaN
+// cols, and the last measurement stands.
+function measureContainer() {
+  let proposed;
+  try {
+    proposed = fitAddon.proposeDimensions();
+  } catch (_) {
+    return false;
+  }
+  if (!proposed || Number.isNaN(proposed.cols) || Number.isNaN(proposed.rows)) return false;
+  containerDims = { cols: pinWidth(proposed.cols, containerDims.cols), rows: proposed.rows };
+  return true;
+}
+
+// Size the xterm from what is known of the pane (size messages) and the
+// container (measureContainer), by xtermDims. Never fit(): that grows the
+// xterm to the container, and growing rows drags scrollback down over the
+// screen (see paneRows).
+function syncXtermSize() {
+  const next = xtermDims(paneCols, paneRows, containerDims.cols, containerDims.rows);
+  if (next.cols > 0 && next.rows > 0 && (term.cols !== next.cols || term.rows !== next.rows)) {
+    term.resize(next.cols, next.rows);
+  }
+}
 let containerEl = null;          // set by setTerminalContainer() before startLiveTerminal()
 let xtermHost = null;            // persistent parent for term.open(); moved between mounts
 
@@ -608,30 +654,22 @@ export function startLiveTerminal(target) {
   }
   term.focus();
 
-  // Synchronous initial fit. Reading the container's layout (via fit())
-  // forces a sync layout flush, so we get real dims here — and we pass them
-  // to the WS as a connect-time hint so the server resizes tmux BEFORE
-  // capture-pane. Without that, the initial blob is at tmux's current pane
-  // width (often a real terminal also attached at 200+ cols) and xterm has to
-  // reflow it down, mangling box-drawing TUIs for the first frame. If fit
-  // can't measure for any reason, leave the hint at zero and the server uses
-  // tmux's view.
-  let initialCols = 0;
-  let initialRows = 0;
-  try {
-    fitAddon.fit();
-    // Reuse the session's pinned width unless this is a genuinely different
-    // size (first mount, or a real resize beyond the wobble tolerance). This
-    // is what stops navigation from reflowing tmux at slightly-different
-    // widths. Height always follows the fit — row changes don't reflow.
-    if (pinnedCols <= 0 || Math.abs(term.cols - pinnedCols) > WIDTH_PIN_TOLERANCE) {
-      pinnedCols = term.cols;
-    } else if (term.cols !== pinnedCols) {
-      term.resize(pinnedCols, term.rows);
-    }
-    initialCols = pinnedCols;
-    initialRows = term.rows;
-  } catch (_) {}
+  // Synchronous initial measure. Reading the container's layout (via
+  // proposeDimensions()) forces a sync layout flush, so we get real dims here
+  // — and we pass them to the WS as a connect-time hint so the server resizes
+  // tmux BEFORE capture-pane. Without that, the initial blob is at tmux's
+  // current pane width (often a real terminal also attached at 200+ cols) and
+  // xterm has to reflow it down, mangling box-drawing TUIs for the first
+  // frame. The pin (pinWidth) stops navigation from reflowing tmux at
+  // slightly-different widths. A hidden host (the pane left in transcript
+  // mode, another tab showing) can't be measured, so the hint is the
+  // container's LAST measurement: without one, tmux kept the window's old
+  // width and the capture came in wider than the pin. Nothing measured yet
+  // this page: no hint, and tmux's view stands. No pane dims yet
+  // (stopLiveTerminal cleared them): the xterm takes the container's until
+  // the handshake's size message.
+  measureContainer();
+  syncXtermSize();
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
   // Debounced so a window-drag doesn't spam tmux with subprocess calls.
@@ -647,12 +685,7 @@ export function startLiveTerminal(target) {
   termIntentionalClose = false;
   termReconnectAttempt = 0;
   termReconnectedNotified = false;
-  // Seed the "last sent" memo with the dims we're about to give the server
-  // via the WS query params. Without this, the first ResizeObserver fire
-  // would send a redundant resize message.
-  lastSentCols = initialCols;
-  _lastSentRows = initialRows;
-  connectTerminalWs(target, initialCols, initialRows);
+  connectTerminalWs(target, containerDims.cols, containerDims.rows);
 }
 
 function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
@@ -660,6 +693,15 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
   let url = `${wsProto}://${location.host}/ws/pane?${paneIdQuery(target)}`;
   if (hintCols > 0 && hintRows > 0) {
     url += `&cols=${hintCols}&rows=${hintRows}`;
+    // Seed the "last sent" memo with the hint, the handshake's ask (the server
+    // may floor a shared window's height below it: routes/ws.py).
+    // Without this, the first ResizeObserver fire would send a redundant
+    // resize message. From the live memo, not NOTHING_SENT: a reconnect made
+    // while shrunk hints the shrunk height, and forgetting the shrink left
+    // the window short once the container grew back. A mount starts from
+    // NOTHING_SENT anyway (stopLiveTerminal), so a pane switched to while
+    // short never regrows — that would need memory per window.
+    lastSent = afterSend(lastSent, { cols: hintCols, rows: hintRows });
   }
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
@@ -681,7 +723,16 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "size") {
-          term.resize(msg.cols, msg.rows);
+          paneCols = msg.cols;
+          paneRows = msg.rows;
+          // Through the fit's rule (xtermDims): the pane can outgrow this
+          // container without our asking (another viewer's resize).
+          syncXtermSize();
+          // And through the fit's ask (resizeAsk), which asks a pane announced
+          // taller than the container back down. Nothing else would: the
+          // container didn't change, so no fit runs. Size messages come only
+          // when the pane's dims change, so the extra measure costs nothing.
+          scheduleFit();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
         }
@@ -718,9 +769,10 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
     termReconnectTimer = setTimeout(() => {
       termReconnectTimer = null;
       if (!term || termWsTarget !== target || termIntentionalClose) return;
-      // Re-send current xterm dims so the reconnected server resizes tmux
-      // before its initial paint — same reasoning as the first connect.
-      connectTerminalWs(target, term.cols, term.rows);
+      // Re-send current dims so the reconnected server resizes tmux before
+      // its initial paint — same reasoning as the first connect. The
+      // container's, not term's: those are the pane's (containerDims).
+      connectTerminalWs(target, containerDims.cols, containerDims.rows);
     }, delay);
   };
 }
@@ -730,44 +782,22 @@ function scheduleFit() {
   fitDebounce = setTimeout(() => {
     fitDebounce = null;
     if (!term || !fitAddon || fitHeld) return;
-    try {
-      fitAddon.fit();
-    } catch (_) {
-      return;
-    }
     // Hold the pinned width: a fit that wobbled by a column or two (the bug —
     // mount/layout transients) snaps back so tmux never reflows; a genuinely
     // different width (real resize beyond tolerance) becomes the new pin.
-    if (pinnedCols > 0 && term.cols !== pinnedCols) {
-      if (Math.abs(term.cols - pinnedCols) > WIDTH_PIN_TOLERANCE) {
-        pinnedCols = term.cols;
-      } else {
-        term.resize(pinnedCols, term.rows);
-      }
-    }
-    // Only send a resize message when the dims actually changed since the
-    // last one we sent, AND only when width changed — height-only changes
-    // are dropped. Two reasons:
-    //   1. The ResizeObserver's initial observation fires shortly after
-    //      mount and produces a no-op resize (cols/rows unchanged from the
-    //      WS-connect hint), which tmux silently honors but the cycle of
-    //      "fit → send → tmux resizes → output reflows" can produce visible
-    //      width churn in scrollback.
-    //   2. Height-only resizes (modal drag, sidebar splitter, browser window
-    //      vertical resize) don't reflow content — but tmux resize-window
-    //      still raises SIGWINCH and Claude's TUI re-renders its frame on
-    //      every SIGWINCH. That re-render mangles scrollback (characters
-    //      from earlier frames overlapping the latest content — the same
-    //      failure class as the width-reflow corruption noted in
-    //      `routes/ws.py::set_pane_size`). Suppressing row-only sends costs
-    //      "modal may show empty rows at the bottom until the next real
-    //      width change re-syncs height," which is strictly better than
-    //      scrambled chat history.
-    if (term.cols === lastSentCols) return;
+    // The xterm takes the pane's dims, rows capped at the container (xtermDims).
+    if (!measureContainer()) return;
+    syncXtermSize();
+    // What to ask tmux for — a width change, rarely a height — and why:
+    // resizeAsk. From the container's dims (containerDims): term.cols is the
+    // pane's, which on a left/right split never equals what we last sent.
+    const ask = resizeAsk(containerDims, lastSent, paneRows);
+    if (!ask) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
-      lastSentCols = term.cols;
-      _lastSentRows = term.rows;
-      termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      lastSent = afterSend(lastSent, ask);
+      // The server's reconcile answers with the pane's real size. No cols: a
+      // height-only ask, the window's width kept (resizeAsk).
+      termWs.send(JSON.stringify({ type: "resize", ...ask }));
     }
   }, 80);
 }
@@ -787,8 +817,9 @@ export function stopLiveTerminal() {
     clearTimeout(termReconnectTimer);
     termReconnectTimer = null;
   }
-  lastSentCols = 0;
-  _lastSentRows = 0;
+  lastSent = NOTHING_SENT;
+  paneCols = 0;
+  paneRows = 0;
   if (fitDebounce) {
     clearTimeout(fitDebounce);
     fitDebounce = null;
@@ -822,7 +853,7 @@ export function scrollTerminalToBottom() {
 
 // Re-run FitAddon. Used by mountTerminal after a deferred frame to catch the
 // case where the container's layout wasn't fully computed when
-// startLiveTerminal called fit() synchronously (common when re-mounting into a
+// startLiveTerminal measured it synchronously (common when re-mounting into a
 // container that just became visible via class toggle).
 export function refitTerminal() {
   if (!term || !fitAddon) return;
@@ -832,7 +863,7 @@ export function refitTerminal() {
 // Held while a splitter is dragged (split/ResizeHandle.jsx). The container
 // changes width on every pointermove, and each fit that landed would resize
 // the tmux pane mid-drag — a burst of SIGWINCHes, each one a Claude redraw:
-// the scrollback-mangling reflow scheduleFit's comment describes. The xterm
+// the scrollback-mangling redraw resizeAsk's comment describes. The xterm
 // keeps its size (clipped, or short of the edge) until release, then fits once.
 export function holdTerminalFit() {
   fitHeld = true;

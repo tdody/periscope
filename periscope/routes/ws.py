@@ -11,15 +11,101 @@ docs/superpowers/specs/2026-06-10-terminal-mirror-reconciliation-design.md
 import asyncio
 import contextlib
 import json
+import threading
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from periscope import state_hub, tmux_input, tmux_mirror
-from periscope.log import _task, log
+from periscope.log import _bg, _task, log
 from periscope.panes import note_action
 from periscope.tmux import tmux
 
 router = APIRouter()
+
+
+def _size_message(size: tmux_mirror.PaneSize) -> str:
+    return json.dumps({"type": "size", "cols": size.cols, "rows": size.rows})
+
+
+# Every resize of a viewed window, as one tmux invocation's argv: callers may
+# chain more commands onto it. No cols resizes the height alone
+# (`resize-window -y`), keeping the window's width — see the resize message.
+def _resize_argv(target: str, cols: int | None, rows: int) -> list[str]:
+    width = ["-x", str(cols)] if cols else []
+    return ["setw", "-t", target, "window-size", "manual", ";", "resize-window", "-t", target, *width, "-y", str(rows)]
+
+
+class _WindowHeights:
+    """Each live /ws/pane viewer's last asked rows, by the window it views.
+
+    A window has one height, and each of its viewers asks for its own
+    container's: resize-window applies an ask to the whole window. Left to the
+    clients, the last ask won and nothing gave a height back — when the shorter
+    of two viewers left, the window kept its height and the other viewer a
+    blank band under the pane, since a client undoes only its own shrinks and
+    sees no other viewer leave. So a window takes its smallest live viewer's
+    ask, re-applied when a viewer asks again or leaves. The width stays the
+    last ask's. Read from the event loop and executor threads, hence the lock.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._asks: dict[object, tuple[str, str, int]] = {}  # viewer -> (window @id, pane %id, rows)
+
+    def ask(self, viewer: object, window: str, pane: str, rows: int) -> None:
+        with self._lock:
+            self._asks[viewer] = (window, pane, rows)
+
+    def floor(self, window: str | None) -> int:
+        """The smallest live ask on `window`; 0 when it has none."""
+        with self._lock:
+            return min((r for w, _p, r in self._asks.values() if w == window), default=0)
+
+    def window_of(self, pane: str) -> str | None:
+        """The window a live viewer of `pane` saw it in: known before our own meta is."""
+        with self._lock:
+            return next((w for w, p, _r in self._asks.values() if p == pane), None)
+
+    def leave(self, viewer: object) -> str | None:
+        """Forget `viewer`. Its window when it was holding it down (the viewers
+        left all ask more), else None: a window's last viewer leaving restores
+        nothing (see ws_pane)."""
+        with self._lock:
+            window, _pane, rows = self._asks.pop(viewer, (None, None, 0))
+            rest = [r for w, _p, r in self._asks.values() if w == window]
+        return window if rest and min(rest) > rows else None
+
+
+_HEIGHTS = _WindowHeights()
+# Serializes the resizes that apply a floor, each reading it inside: two
+# computed apart could land in either order, the stale floor last.
+_RESIZE_LOCK = threading.Lock()
+
+
+def _apply_floor(target: str, window: str, cols: int | None = None) -> None:
+    """Resize `target`'s window to `window`'s floor, and to `cols` if given.
+    The resize's %layout-change makes the mirror reconcile every subscribed
+    pane, which announces the new size to each viewer."""
+    with _RESIZE_LOCK, contextlib.suppress(Exception):
+        rows = _HEIGHTS.floor(window)
+        if rows:
+            tmux(*_resize_argv(target, cols, rows))
+
+
+@contextlib.asynccontextmanager
+async def _viewing(viewer: object, window: str, pane: str, rows: int):
+    """Hold `viewer`'s ask (`rows`; 0 = none yet) while it views `window`, and
+    on leaving give back the height it held the window down to."""
+    if rows:
+        _HEIGHTS.ask(viewer, window, pane, rows)
+    try:
+        yield
+    finally:
+        held = _HEIGHTS.leave(viewer)
+        if held:
+            # A thread, not an awaited executor job: a handler being cancelled
+            # (shutdown, the test client's close) drops the await.
+            _bg("ws-pane-height", _apply_floor, held, held)
 
 
 @router.websocket("/ws/state")
@@ -71,33 +157,19 @@ async def ws_pane(
     loop = asyncio.get_running_loop()
 
     # Periscope owns the pane width. Once we resize a window to the modal's
-    # dims, we LEAVE IT THERE — no restore on disconnect. Rationale: the
-    # save/restore dance only matters if a real terminal is also attached
-    # at a different size, but in periscope-primary workflows the restore
-    # just causes churn — each modal open/close pair would reflow the
-    # buffer twice, and reflows during streaming produce duplicated table
-    # fragments in Claude's scrollback. Holding the pane at periscope's
-    # size means subsequent opens at the same width are no-ops.
+    # dims, we LEAVE IT THERE — no restore when its last viewer disconnects.
+    # Rationale: the save/restore dance only matters if a real terminal is
+    # also attached at a different size, but in periscope-primary workflows
+    # the restore just causes churn — each modal open/close pair would reflow
+    # the buffer twice, and reflows during streaming produce duplicated table
+    # fragments in Claude's scrollback. Holding the pane at periscope's size
+    # means subsequent opens at the same width are no-ops. (A viewer that held
+    # a shared window's height down does give it back: _WindowHeights.)
     # A tmux invocation runs its `;`-separated commands in order, so pairing
     # them costs one fork instead of two. Each fork is ~20ms — measurable on
     # the pane-switch path, where this runs on every connect.
-    def set_pane_size(c: int, r: int) -> None:
-        with contextlib.suppress(Exception):
-            tmux(
-                "setw",
-                "-t",
-                target,
-                "window-size",
-                "manual",
-                ";",
-                "resize-window",
-                "-t",
-                target,
-                "-x",
-                str(c),
-                "-y",
-                str(r),
-            )
+    viewer = object()  # this socket, to _HEIGHTS
+    asked_rows = rows if cols > 0 and rows > 0 else 0
 
     # 1+2) One fork: resize to the client's hint, then read tmux's view of the
     #    pane back. The resize must land BEFORE the initial capture or box-
@@ -108,37 +180,18 @@ async def ws_pane(
     #    #{session_name}/#{window_index} for the mirror subscription (keyed on
     #    session NAME) and the recency stamp (keyed on session:index, NOT the
     #    %pane_id address — window_view reads recency_stamps_for(
-    #    f"{session}:{index}")). If the pane is gone, close: the client's
+    #    f"{session}:{index}")), and #{window_id} for the window's height
+    #    (_HEIGHTS: an index drifts). If the pane is gone, close: the client's
     #    reconnect FSM handles it.
     meta_fmt = (
         "#{pane_width}|#{pane_height}|#{cursor_x}|#{cursor_y}"
         "|#{alternate_on}|#{pane_id}|#{session_name}|#{window_index}"
-        "|#{mouse_any_flag}"
+        "|#{mouse_any_flag}|#{window_id}"
     )
 
     def size_then_meta(c: int, r: int) -> str:
         if c > 0 and r > 0:
-            out = tmux(
-                "setw",
-                "-t",
-                target,
-                "window-size",
-                "manual",
-                ";",
-                "resize-window",
-                "-t",
-                target,
-                "-x",
-                str(c),
-                "-y",
-                str(r),
-                ";",
-                "display-message",
-                "-t",
-                target,
-                "-p",
-                meta_fmt,
-            )
+            out = tmux(*_resize_argv(target, c, r), ";", "display-message", "-t", target, "-p", meta_fmt)
             # tmux aborts the chain at the first failing command. A resize
             # failure has always been non-fatal here, so don't let it take the
             # handshake down — re-ask for the meta on its own.
@@ -146,9 +199,21 @@ async def ws_pane(
                 return out
         return tmux("display-message", "-t", target, "-p", meta_fmt)
 
+    def handshake() -> str:
+        # Under the resize lock, so no other resize lands between the floor
+        # read and ours. A live viewer of this pane names its window, and the
+        # hint takes that window's floor: not our height and then the shorter
+        # viewer's again, two Claude redraws for every viewer. A sibling
+        # pane's viewer isn't known before our meta; if its pane no longer
+        # fits, its client asks the window back down.
+        with _RESIZE_LOCK:
+            floor = _HEIGHTS.floor(_HEIGHTS.window_of(pane_id))
+            return size_then_meta(cols, min(rows, floor) if floor else rows)
+
     try:
-        meta = await loop.run_in_executor(None, lambda: size_then_meta(cols, rows))
-        (cols_s, rows_s, cx_s, cy_s, alt_s, _pane_id, session_name, window_index, mouse_s) = meta.strip().split("|")
+        meta = await loop.run_in_executor(None, handshake)
+        fields = meta.strip().split("|")
+        (cols_s, rows_s, cx_s, cy_s, alt_s, _pane_id, session_name, window_index, mouse_s, window_id) = fields
         cols, rows = int(cols_s), int(rows_s)
         cx, cy = int(cx_s), int(cy_s)
         alt_on = alt_s == "1"
@@ -172,9 +237,15 @@ async def ws_pane(
     # key), now that we've parsed it — a %pane_id key would be a dead write.
     note_action(f"{session_name}:{window_index}")
 
-    sub = await tmux_mirror.subscribe(session_name, pane_id)
-    async with sub:
-        await websocket.send_text(json.dumps({"type": "size", "cols": cols, "rows": rows}))
+    # Armed with the size the client is about to be told: from then on, a
+    # reconcile that finds the pane at other dims (split, sibling killed, our
+    # own resize-window landing on a split window) announces it ahead of its
+    # frame. Armed AT subscribe — the connect-time reconcile is requested
+    # there, and arming after the first await let it land unannounced.
+    size = tmux_mirror.PaneSize(cols=cols, rows=rows)
+    sub = await tmux_mirror.subscribe(session_name, pane_id, size=size)
+    async with sub, _viewing(viewer, window_id, pane_id, asked_rows):
+        await websocket.send_text(_size_message(size))
         await websocket.send_text(json.dumps({"type": "mouse", "on": mouse_on}))
 
         # 3) Initial paint, via the fork path — NOT the control client: a
@@ -216,7 +287,10 @@ async def ws_pane(
         #    FIFO; the client's reconnect FSM takes it from there.
         async def forward_out():
             async for chunk in sub:
-                await websocket.send_bytes(chunk)
+                if isinstance(chunk, tmux_mirror.PaneSize):
+                    await websocket.send_text(_size_message(chunk))
+                else:
+                    await websocket.send_bytes(chunk)
             with contextlib.suppress(Exception):
                 await websocket.close()
 
@@ -261,11 +335,16 @@ async def ws_pane(
                     if isinstance(ctrl, dict) and ctrl.get("type") == "reconcile":
                         sub.request_reconcile()
                         continue
+                    # No cols: a height-only ask (the client's resizeAsk), which
+                    # keeps the window's width. Our pin in it set a shared
+                    # window's width from a shorter viewer's every shrink. The
+                    # height is the window's floor, this ask among it.
                     if isinstance(ctrl, dict) and ctrl.get("type") == "resize":
-                        rc = int(ctrl.get("cols") or 0)
+                        rc = int(ctrl.get("cols") or 0) or None
                         rr = int(ctrl.get("rows") or 0)
-                        if rc > 0 and rr > 0:
-                            await loop.run_in_executor(None, lambda c=rc, r=rr: set_pane_size(c, r))
+                        if rr > 0:
+                            _HEIGHTS.ask(viewer, window_id, pane_id, rr)
+                            await loop.run_in_executor(None, _apply_floor, target, window_id, rc)
                             # Reflow redraws can race the relay; an
                             # authoritative frame settles the result.
                             sub.request_reconcile()

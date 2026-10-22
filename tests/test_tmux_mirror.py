@@ -21,6 +21,7 @@ from periscope.tmux_mirror import (
     GridSnapshot,
     LayoutChange,
     Output,
+    PaneSize,
     ReconcileTimer,
     Reply,
     ReplyError,
@@ -117,6 +118,7 @@ def _snap(**kw):
     base = {
         "rows": (b"row1", b"row2"),
         "height": 2,
+        "width": 80,
         "cursor_x": 3,
         "cursor_y": 1,
         "alt_on": False,
@@ -131,17 +133,43 @@ def test_frame_normal_screen_exact_bytes():
     assert frame == (
         b"\x1b[?1049l"  # heal stuck-in-alt; no-op if normal
         b"\x1b[1;1Hrow1\x1b[0m\x1b[K"
-        b"\x1b[2;1Hrow2\x1b[0m\x1b[K"
+        b"\x1b[2;1Hrow2\x1b[0m\x1b[J"  # last row: ED 0 blanks client rows below the pane
         b"\x1b[2;4H"  # cursor 0-indexed (3,1) → 1-indexed (4,2)
         b"\x1b[?25h"
     )
 
 
 def test_frame_normal_screen_never_clears():
-    # 2J would be visually harmless but J-class erases are banned on the
-    # normal screen as a guard rail: scrollback must not be touched.
+    # 2J would be visually harmless but full-screen/scrollback erases are
+    # banned on the normal screen as a guard rail: scrollback must not be
+    # touched. ED 0 (erase below) is the one J allowed — it can't reach it.
     frame = build_reconcile_frame(_snap())
     assert b"\x1b[2J" not in frame
+    assert b"\x1b[3J" not in frame
+
+
+def test_frame_blanks_client_rows_below_the_pane():
+    # Regression: a pane in a split window is shorter than the xterm periscope
+    # sized the window for, and the row loop never addressed the extra rows —
+    # they kept a frozen copy of an older screen under the live one. Exactly
+    # one ED 0, at the end of the last pane row, after that row's content.
+    import pyte
+
+    screen = pyte.Screen(10, 6)
+    stream = pyte.ByteStream(screen)
+    stream.feed(b"".join(b"\x1b[%d;1Hstale%d" % (i + 1, i) for i in range(6)))
+    stream.feed(build_reconcile_frame(_snap(rows=(b"live1", b"live2"), height=2, cursor_x=0, cursor_y=0)))
+    assert [r.rstrip() for r in screen.display] == ["live1", "live2", "", "", "", ""]
+
+
+def test_frame_same_size_client_keeps_last_row():
+    # ED 0 must not be reached via a CUP to height+1: on a client exactly the
+    # pane's height that clamps onto the last row and erases it.
+    import pyte
+
+    screen = pyte.Screen(10, 2)
+    pyte.ByteStream(screen).feed(build_reconcile_frame(_snap()))
+    assert [r.rstrip() for r in screen.display] == ["row1", "row2"]
 
 
 def test_frame_alt_screen_prefix():
@@ -156,7 +184,7 @@ def test_frame_pads_short_capture_to_height():
     # be written even if capture returned fewer lines.
     frame = build_reconcile_frame(_snap(rows=(b"only",), height=3))
     assert b"\x1b[2;1H\x1b[0m\x1b[K" in frame
-    assert b"\x1b[3;1H\x1b[0m\x1b[K" in frame
+    assert b"\x1b[3;1H\x1b[0m\x1b[J" in frame  # last row carries ED 0
 
 
 def test_frame_cursor_hidden():
@@ -165,10 +193,10 @@ def test_frame_cursor_hidden():
 
 def test_snapshot_from_replies():
     cap = Reply(body=(b"r1", b"r2"))
-    disp = Reply(body=(b"2|3|1|0|1",))  # height|cx|cy|alt|cursor_flag
+    disp = Reply(body=(b"2|3|1|0|1|80",))  # height|cx|cy|alt|cursor_flag|width
     snap = snapshot_from_replies(cap, disp)
     assert snap.rows == (b"r1", b"r2")
-    assert snap.height == 2
+    assert (snap.width, snap.height) == (80, 2)
     assert (snap.cursor_x, snap.cursor_y) == (3, 1)
     assert snap.alt_on is False
     assert snap.cursor_visible is True
@@ -220,11 +248,16 @@ def test_request_fires_immediately():
 
 # --- _SessionMirror dispatch (no subprocess: feed events into _dispatch) ---
 
+# The pane the faked display replies below describe (`1|…|80`: height 1, width
+# 80). Subscribing with its real size keeps announcements out of the byte
+# assertions; announcing is test_reconcile_announces_pane_resize_before_the_frame's.
+FAKE_PANE = PaneSize(cols=80, rows=1)
+
 
 def test_dispatch_output_routes_decoded_bytes_to_subscribers():
     async def drive():
         m = _SessionMirror("sess")
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._dispatch(Output(pane_id="%7", raw=rb"hi\033[m"))
         m._dispatch(Output(pane_id="%99", raw=b"other-pane"))  # cheap skip
         assert sub._q.get_nowait() == b"hi\x1b[m"
@@ -250,13 +283,44 @@ def test_reconcile_frame_enqueued_synchronously_on_second_reply():
         m._proc = object()  # _fire_reconcile guards on a live client
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
-        m._dispatch(Reply(body=(b"1|0|0|0|1",)))  # display reply
+        m._dispatch(Reply(body=(b"1|0|0|0|1|80",)))  # display reply
         m._dispatch(Reply(body=(b"row",)))  # capture reply
         frame = sub._q.get_nowait()
         assert frame.startswith(b"\x1b[?1049l")
         assert b"row" in frame
+
+    asyncio.run(drive())
+
+
+def _reconcile_once(m, display=b"1|0|0|0|1|80"):
+    m._fire_reconcile("%7")
+    m._dispatch(Reply(body=(display,)))
+    m._dispatch(Reply(body=(b"row",)))
+
+
+def _mirror_with_fake_commands():
+    m = _SessionMirror("sess")
+    m._proc = object()  # _fire_reconcile guards on a live client
+    m._send_command = lambda cmd, cb: m._reply_callbacks.append(cb)
+    return m
+
+
+def test_reconcile_announces_pane_resize_before_the_frame():
+    # A split (or a killed sibling) resizes the pane under an open terminal;
+    # the client's xterm rows must follow, and BEFORE the frame painted at
+    # the new height.
+    async def drive():
+        m = _mirror_with_fake_commands()
+        sub = m.subscribe("%7", size=PaneSize(cols=80, rows=62))
+        _reconcile_once(m, b"32|0|0|0|1|80")
+        assert sub._q.get_nowait() == PaneSize(cols=80, rows=32)
+        assert sub._q.get_nowait().startswith(b"\x1b[?1049l")
+        assert sub.size == PaneSize(cols=80, rows=32)
+        _reconcile_once(m, b"32|0|0|0|1|80")  # unchanged: frame only
+        assert isinstance(sub._q.get_nowait(), bytes)
+        assert sub._q.empty()
 
     asyncio.run(drive())
 
@@ -271,7 +335,7 @@ def test_cursor_is_sampled_before_the_body():
         m._proc = object()
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         assert sent[0].startswith("display-message -p -t %7"), "cursor must be sampled BEFORE the body, never after"
         assert sent[1].startswith("capture-pane -p -e -N -t %7")
@@ -284,7 +348,7 @@ def test_reply_error_ends_pane_subscriptions():
         m = _SessionMirror("sess")
         m._proc = object()  # _fire_reconcile guards on a live client
         m._send_command = lambda cmd, cb: m._reply_callbacks.append(cb)
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         m._dispatch(ReplyError(body=(b"can't find pane",)))
         m._dispatch(ReplyError(body=(b"can't find pane",)))
@@ -296,7 +360,7 @@ def test_reply_error_ends_pane_subscriptions():
 def test_layout_change_requests_reconcile_for_subscribed_panes():
     async def drive():
         m = _SessionMirror("sess")
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         fired = []
         m._timers["%7"].request = lambda: fired.append(True)
         m._dispatch(LayoutChange(window_id="@1"))
@@ -343,7 +407,7 @@ def test_unsubscribe_last_viewer_arms_linger():
     async def drive():
         m = _SessionMirror("sess")
         m._proc = object()  # pretend a client is running (linger guard)
-        sub = m.subscribe("%7")
+        sub = m.subscribe("%7", size=FAKE_PANE)
         async with sub:
             pass
         assert m._linger is not None
@@ -374,11 +438,16 @@ def _t(*args):
     ).stdout
 
 
-def _mk_session():
+# _mk_session's -x/-y: subscribed at its real size, a pane no test resizes
+# announces nothing into the byte stream pyte is fed.
+SESSION_PANE = PaneSize(cols=80, rows=24)
+
+
+def _mk_session(cmd="/bin/sh"):
     name = f"mtest-{uuid.uuid4().hex[:8]}"
     # /bin/sh, not the login shell: zsh prompt segments can repaint AFTER
     # the last reconcile frame and break the final grid comparison.
-    _t("new-session", "-d", "-s", name, "-x", "80", "-y", "24", "/bin/sh")
+    _t("new-session", "-d", "-s", name, "-x", "80", "-y", "24", cmd)
     pane_id = _t("display-message", "-p", "-t", name, "#{pane_id}").strip()
     return name, pane_id
 
@@ -421,7 +490,7 @@ def test_oracle_mirror_matches_tmux_grid(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        sub = await tmux_mirror.subscribe(name, pane_id)
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         async with sub:
             _t("send-keys", "-t", pane_id, "printf '\\033[31mRED\\033[0m line\\n'; seq 1 30", "Enter")
             chunks = await _drain(sub, 2.0)  # includes ≥1 reconcile frame
@@ -447,7 +516,7 @@ def test_thesis_byte_drops_converge_after_reconcile(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        sub = await tmux_mirror.subscribe(name, pane_id)
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         async with sub:
             _t("send-keys", "-t", pane_id, "seq 100 140", "Enter")
             burst = await _drain(sub, 1.0)
@@ -485,8 +554,8 @@ def test_two_subscribers_multiplex(monkeypatch):
     name, pane_id = _mk_session()
 
     async def drive():
-        a = await tmux_mirror.subscribe(name, pane_id)
-        b = await tmux_mirror.subscribe(name, pane_id)
+        a = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
+        b = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
         assert len(tmux_mirror._MIRRORS) == 1  # one client, two subs
         _t("send-keys", "-t", pane_id, "echo multiplexed", "Enter")
         ca = b"".join(await _drain(a, 1.0))
@@ -494,6 +563,41 @@ def test_two_subscribers_multiplex(monkeypatch):
         assert b"multiplexed" in ca and b"multiplexed" in cb
         async with a, b:
             pass
+        await tmux_mirror.shutdown()
+
+    try:
+        asyncio.run(drive())
+    finally:
+        _t("kill-server")
+
+
+@needs_tmux
+def test_split_under_an_open_pane_announces_its_size_before_the_frame(monkeypatch):
+    """The path the size announcements exist for, end to end: a split resizes
+    the pane under an open terminal without periscope asking, tmux reports it
+    only as %layout-change, and the reconcile that triggers must announce the
+    pane's real dims ahead of the frame painted at them. A left/right split
+    checks the width field too — #{window_width} equals #{pane_width} on every
+    unsplit pane, so the faked-reply tests can't tell them apart."""
+    monkeypatch.setattr(tmux_mirror, "_TMUX", ("tmux", "-L", TEST_SOCKET))
+    # A pane that prints nothing on SIGWINCH: a shell redraws its prompt, and
+    # that %output's reconcile would mask a dead %layout-change path.
+    name, pane_id = _mk_session("sleep 600")
+
+    async def drive():
+        sub = await tmux_mirror.subscribe(name, pane_id, size=SESSION_PANE)
+        async with sub:
+            settled = await _drain(sub, 0.5)  # connect-time frame, dims unchanged
+            assert not any(isinstance(c, PaneSize) for c in settled)
+            _t("split-window", "-h", "-t", pane_id, "/bin/sh")
+            chunks = await _drain(sub, 1.0)
+            w, h = _t("display-message", "-p", "-t", pane_id, "#{pane_width}|#{pane_height}").strip().split("|")
+            announced = [i for i, c in enumerate(chunks) if isinstance(c, PaneSize)]
+            assert announced, f"no size announcement after the split: {chunks!r}"
+            i = announced[0]
+            assert chunks[i] == PaneSize(cols=int(w), rows=int(h))
+            assert int(w) < 80
+            assert chunks[i + 1].startswith(b"\x1b[?1049")
         await tmux_mirror.shutdown()
 
     try:
@@ -517,7 +621,7 @@ def test_capture_preserves_trailing_spaces():
         m._proc = object()
         sent = []
         m._send_command = lambda cmd, cb: (sent.append(cmd), m._reply_callbacks.append(cb))
-        m.subscribe("%7")
+        m.subscribe("%7", size=FAKE_PANE)
         m._fire_reconcile("%7")
         capture = next(c for c in sent if c.startswith("capture-pane"))
         assert " -N " in f" {capture} ", f"capture-pane missing -N: {capture!r}"

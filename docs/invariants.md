@@ -44,6 +44,74 @@ These are the non-obvious behaviors worth preserving:
    `test_two_subscribers_multiplex`, the only mirror test that asserts on
    live `%output` rather than on reconcile frames.
 
+   **The xterm shows the pane; tmux is asked for the container.** The
+   frame paints rows `1..pane_height`, so xterm rows past the pane are rows
+   nothing repaints — and xterm.js growing its rows pulls scrollback down
+   into them. A split window (periscope sizes the window to the container;
+   the pane gets a slice) showed a frozen older copy of the screen under
+   the live pane. So the frame's LAST row ends in ED 0 (`\x1b[J`), not EL,
+   blanking every client row below the pane: the one J-class erase allowed
+   (it can't reach scrollback; 2J/3J stay banned), and not reached by a CUP
+   to `height+1`, which on a same-size xterm clamps onto the last row and
+   erases it. A split or a killed sibling resizes the pane without
+   periscope asking — tmux says so only with `%layout-change` — so the
+   reconcile announces changed dims (`PaneSize`, sent as `{type:"size"}`)
+   ahead of the frame painted at them, measured against the dims each
+   subscription was armed with at `subscribe()` (a required `size`: `ws.py`
+   passes the handshake's, before the connect-time reconcile can land).
+
+   On the client the xterm takes the pane's dims, rows capped at its
+   container (`xtermDims`): grown to the container it shows those stale
+   rows; taller than `.detail-xterm` (overflow hidden) it clipped the pane's
+   prompt and cursor out of view after a height-only shrink. Cols are NOT
+   capped: narrower than the pane, the xterm autowraps the capture and every
+   frame row, a junk line into scrollback per frame (a pane mounted hidden,
+   in transcript mode, under a window wider than the pin); right-clipped it
+   stays coherent. A hidden mount can't measure, so it hints the
+   container's last measurement. Every resize and reconnect asks tmux for
+   the CONTAINER's dims (`containerDims`: pinned width × fitted rows; with
+   nothing measured yet, no hint at all), never `term.cols`/`term.rows` —
+   those are the pane's, and `resize-window` applies them to the whole
+   window: echoing them back shrank a split window on every reconnect.
+   Height-only growth is still never sent (each SIGWINCH is a Claude redraw
+   that can mangle scrollback). Two height-only changes are (`resizeAsk`):
+   a shrink below the pane, whether the container shrank or a size message
+   announced the pane taller than it (a sibling closed, a zoom), since
+   nothing else lets the pane fit; and the growth that undoes a shrink of
+   our own (any ask below the height asked before it), back to that height
+   and no further — the window is `window-size manual`, so nothing else
+   regrows it, and a restored window kept a blank band under the pane for
+   every viewer. Both
+   go as rows alone (`{type:"resize", rows}`; `ws.py` runs `resize-window
+   -y` alone, keeping the window's width): with our pinned width in them, a
+   shorter viewer's shrink also set a shared window's width, so a viewer
+   with a different width had every width change reverted, at a second
+   resize (and reflow) each. Never the pane's width either — a slice of the
+   window on a left/right split, it halved the window on every ask. A
+   reconnect keeps our shrink in its memo (its hint, the shrunk height, is
+   seeded onto the live memo, not a fresh one: a server restart while short
+   left the band for good), and so does a width change made while shrunk
+   (its ask carries the container's rows, still short: dropping the shrink
+   there left the window short once the container grew back). A mount
+   starts afresh, so a pane switched to while the container is short is the
+   one case left unregrown.
+
+   A window its viewers share has one height, and the server owns it
+   (`ws.py` `_WindowHeights`): it records each live viewer's last ask (the
+   connect hint, then every resize message) by window id, sizes the window
+   to the smallest, and re-applies that when a viewer asks again or leaves.
+   Left to the clients the last ask won and nothing gave a height back: when
+   the shorter of two viewers left, the other kept a blank band under the
+   pane (a client undoes only its own shrinks, and sees no other viewer
+   leave), and a taller viewer's regrow grew the window past a shorter
+   viewer's height, which asked it back down. A connect is floored when a
+   live viewer of the same pane already names the window; a sibling pane's
+   viewer, unknown until the connect's own meta, asks the window back down
+   through its size message if its pane no longer fits. A socket that died
+   unseen (sleep, a dropped network) holds its ask until uvicorn's ping
+   times it out, ~40s. The width is still the last ask's, and a window's
+   last viewer leaving restores nothing.
+
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
    previous line's length.
