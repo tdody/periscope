@@ -825,10 +825,15 @@ def status(repo: Path) -> dict:
     except ValueError:
         interval_min = _DEFAULT_SAVE_INTERVAL_MIN
 
-    last = _resurrect_dir(_live_option("@resurrect-dir") if live else None) / "last"
+    rdir = _resurrect_dir(_live_option("@resurrect-dir") if live else None)
+    last = rdir / "last"
     last_save_at: int | None = None
+    # A save writes its file, then deletes it when it matches `last` (save.sh
+    # files_differ), so `last` dates the last layout CHANGE: an idle night read
+    # as a stalled save. Kept or deleted, the save changed the directory; the
+    # newer of the two dates the last save that ran.
     if last.exists():
-        last_save_at = int(last.stat().st_mtime)
+        last_save_at = int(max(last.stat().st_mtime, rdir.stat().st_mtime))
     stale = last_save_at is not None and time.time() - last_save_at > 2 * interval_min * 60
 
     checks = {
