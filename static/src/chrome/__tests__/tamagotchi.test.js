@@ -290,9 +290,20 @@ describe("the evening's rules", () => {
     }
   });
 
+  it("naps at the desk through a walled weekday's coding hours, the 9am mug included", () => {
+    const walled = { walled: true };
+    expect(activityAt(at(9, 30), walled)).toMatchObject({ id: "nap", label: "napping at the desk", coffee: true, from: 9, to: 10 });
+    expect(activityAt(at(10, 0), walled)).toMatchObject({ id: "nap", label: "napping at the desk", from: 10, to: 12 });
+    expect(activityAt(at(10, 0), walled).coffee).toBeFalsy();
+    expect(activityAt(at(13, 0), walled)).toMatchObject({ id: "nap", from: 13, to: 16 });
+    for (const [h, id] of [[8, "coffee"], [12, "eat"], [19, "read"]]) expect(activityAt(at(h, 0), walled).id, `${h}h`).toBe(id);
+    // Weekends have no desk to nap at.
+    for (let h = 0; h < 24; h++) expect(activityAt(new Date(2026, 9, 24, h), walled).id, `${h}h`).not.toBe("nap");
+  });
+
   it("knocks off at 4pm when every account is walled, instead of napping until 5", () => {
     const walled = { walled: true };
-    expect(activityAt(at(15, 59), walled).id).toBe("code");
+    expect(activityAt(at(15, 59), walled).id).toBe("nap");
     const early = activityAt(at(16, 0), walled);
     expect(PASTIMES.map((p) => p.id)).toContain(early.id);
     expect([early.from, early.to]).toEqual([16, 16.5]);
@@ -389,15 +400,14 @@ describe("upNext", () => {
     expect(upNext(new Date(2026, 9, 23, 23)).activity.label).toMatch(/ for brunch$/);
   });
   it("doesn't announce the coding already under way when only the mug goes", () => {
-    expect(upNext(at(7, 30))).toMatchObject({ at: at(9, 0), label: "coding with a coffee" });
-    expect(upNext(at(9, 10))).toMatchObject({ at: at(12, 0), label: activityAt(at(12, 0)).label });
+    expect(upNext(at(7, 30))).toMatchObject({ at: at(9, 0), activity: { label: "coding with a coffee" } });
+    expect(upNext(at(9, 10))).toMatchObject({ at: at(12, 0), activity: { label: activityAt(at(12, 0)).label } });
   });
-  it("says what the hover would: a walled coding window is the nap, and nap to nap is no change", () => {
+  it("announces a walled coding window as the nap, and nap to nap is no change", () => {
     const walled = { walled: true };
-    const said = (a) => (a.id === "code" && walled.walled ? "napping at the desk" : a.label);
-    expect(upNext(at(12, 10), walled, said)).toMatchObject({ at: at(13, 0), label: "napping at the desk" });
-    expect(upNext(at(7, 30), walled, said)).toMatchObject({ at: at(9, 0), label: "napping at the desk" });
-    expect(upNext(at(9, 10), walled, said).at).toEqual(at(12, 0));
+    expect(upNext(at(12, 10), walled)).toMatchObject({ at: at(13, 0), activity: { id: "nap", label: "napping at the desk" } });
+    expect(upNext(at(7, 30), walled)).toMatchObject({ at: at(9, 0), activity: { id: "nap" } });
+    expect(upNext(at(9, 10), walled).at).toEqual(at(12, 0));
   });
 });
 

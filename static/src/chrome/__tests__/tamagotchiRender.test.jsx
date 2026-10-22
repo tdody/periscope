@@ -355,6 +355,16 @@ describe("<Tamagotchi>", () => {
     expect(html).not.toContain("napping at the desk");
   });
 
+  it("naps at the desk under the walls, the scene and the hover alike", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    walls.value = { until: at(18, 0).getTime() / 1000 };
+    const html = render(<Tamagotchi />);
+    expect(html).toContain('data-activity="nap"');
+    expect(html).toContain(">6pm<");
+    expect(html).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until 6pm · up next at 4pm: ');
+  });
+
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(12, 10));
@@ -420,21 +430,21 @@ describe("Clawd on duty", () => {
   });
 
   it("naps at the desk while every account is walled", () => {
-    const html = scene("code", null, { walled: { day: null, time: "3pm" } });
+    const html = scene("nap", null, { walled: { day: null, time: "3pm" } });
     expect(html).toContain('data-activity="nap"');
-    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z"]) expect(html).toContain(piece);
+    for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z", "tama-desk"]) expect(html).toContain(piece);
     expect(scene("read", null, { walled: { day: "Thu", time: "3pm" } })).toContain('data-activity="read"');
   });
 
   it("wakes from the nap for the bell, as it does at night", () => {
-    const html = scene("code", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
+    const html = scene("nap", { kind: "bell" }, { walled: { day: null, time: "3pm" } });
     expect(html).toContain('data-pose="bell"');
     for (const piece of ["tama-slap", "tama-ding", ">3pm<", "tama-bubble"]) expect(html, piece).toContain(piece);
     expect(html).not.toContain("tama-eyes-closed");
     expect(html).not.toContain("tama-z");
     expect(html).not.toContain("tama-alarm");
     // Anything else leaves Clawd asleep under its bubble.
-    expect(scene("code", { kind: "done" }, { walled: { day: null, time: "3pm" } })).toContain("tama-eyes-closed");
+    expect(scene("nap", { kind: "done" }, { walled: { day: null, time: "3pm" } })).toContain("tama-eyes-closed");
   });
 
   it("lights one split per working agent, up to four", () => {

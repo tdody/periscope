@@ -146,18 +146,16 @@ describe("wallLabel", () => {
 });
 
 describe("deskView", () => {
-  it("naps only at the desk", () => {
-    expect(deskView("code", "bell", true).scene).toBe("nap");
-    expect(deskView("code", "bell", false).scene).toBe("code");
-    expect(deskView("read", null, true).scene).toBe("read");
+  it("shows the mood only with nothing on duty, and mirrors agents unless the screen is taken", () => {
+    expect(deskView("code", null)).toEqual({ atDesk: true, moodShown: true, showsPanes: true });
+    expect(deskView("code", "bell")).toMatchObject({ moodShown: false, showsPanes: true });
+    expect(deskView("code", "update")).toMatchObject({ showsPanes: true });
+    for (const kind of ["done", "merged", "ci", "api", "ctx"]) expect(deskView("code", kind).showsPanes, kind).toBe(false);
+    expect(deskView("eat", null)).toMatchObject({ atDesk: false, moodShown: false, showsPanes: false });
   });
 
-  it("shows the mood only with nothing on duty, and mirrors agents unless the screen is taken", () => {
-    expect(deskView("code", null, false)).toEqual({ scene: "code", atDesk: true, moodShown: true, showsPanes: true });
-    expect(deskView("code", "bell", false)).toMatchObject({ moodShown: false, showsPanes: true });
-    expect(deskView("code", "update", false)).toMatchObject({ showsPanes: true });
-    for (const kind of ["done", "merged", "ci", "api", "ctx"]) expect(deskView("code", kind, false).showsPanes, kind).toBe(false);
-    expect(deskView("eat", null, false)).toMatchObject({ atDesk: false, moodShown: false, showsPanes: false });
+  it("leaves the walled nap asleep at the desk: no mood, no agents on the monitor", () => {
+    expect(deskView("nap", null)).toEqual({ atDesk: false, moodShown: false, showsPanes: false });
   });
 });
 

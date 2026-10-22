@@ -33,11 +33,18 @@ export const WEEKEND = [
 ];
 
 // The evening's first half hour: Friday's pint, the day's verdicts and
-// Halloween's rounds all land from here. With every account walled, a weekday
-// knocks off an hour early rather than napping at the desk until then.
+// Halloween's rounds all land from here.
 const EVENING = 17;
 const KNOCK_OFF = 16;
 const HALF = 0.5;
+
+// A weekday with every account walled: Clawd naps at the desk through the
+// coding hours (the 9am mug still on it) and knocks off an hour early rather
+// than napping on until 5. Weekends have no desk, so they don't change.
+const WALLED = SCHEDULE.map((s) => {
+  const nap = s.id === "code" ? { ...s, id: "nap", label: "napping at the desk" } : s;
+  return nap.to === EVENING ? { ...nap, to: KNOCK_OFF } : nap.from === EVENING ? { ...nap, from: KNOCK_OFF } : nap;
+});
 
 // `seasons` keeps the outdoor ones to their weather: sledding stands in for
 // the ride on snow.
@@ -107,9 +114,7 @@ function rollFrom(list, date, salt, avoid = []) {
 // null) plus `walled`, the server's walls.
 function windowsFor(date, day) {
   if (date.getDay() === 0 || date.getDay() === 6) return WEEKEND;
-  if (!day.walled) return SCHEDULE;
-  return SCHEDULE.map((s) =>
-    s.to === EVENING ? { ...s, to: KNOCK_OFF } : s.from === EVENING ? { ...s, from: KNOCK_OFF } : s);
+  return day.walled ? WALLED : SCHEDULE;
 }
 
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
@@ -207,19 +212,17 @@ export function msUntilNextChange(date, day = {}) {
   return end - date;
 }
 
-// The hover's "up next": the first window after this one that it would
-// describe otherwise, so a night's sleep announces the morning, not more sleep
-// at midnight, and 9am's coding with a coffee doesn't announce 10am's coding.
-// `said` is the hover's words for a window (Tamagotchi.jsx resolves the walled
-// nap through the scene's deskView), so the forecast names the scene drawn.
-export function upNext(date, day = {}, said = (a) => a.label) {
+// The hover's "up next": the first window after this one with another scene
+// (activity and dish), so a night's sleep announces the morning, not more
+// sleep at midnight, and 9am's coding (or nap) with a coffee doesn't announce
+// 10am's.
+export function upNext(date, day = {}) {
   const now = activityAt(date, day);
-  const same = (a) => said(a) === said(now) || (a.id === "code" && now.id === "code");
   let t = date;
   for (let k = 0; k < 8; k++) {
     t = new Date(t.getTime() + msUntilNextChange(t, day));
     const activity = activityAt(t, day);
-    if (!same(activity)) return { at: t, activity, label: said(activity) };
+    if (activity.id !== now.id || activity.dish !== now.dish) return { at: t, activity };
   }
   return null;
 }

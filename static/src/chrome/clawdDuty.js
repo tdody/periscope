@@ -186,14 +186,13 @@ export function wallPhrase({ day, time }) {
 // monitor keeps mirroring the working agents.
 const SCREEN_KINDS = new Set(["done", "merged", "ci", "api", "ctx"]);
 
-// What the scene plays, for the drawing and the hover alike: a nap at the
-// desk while every account is walled, else the schedule's. At the desk, the
+// What the desk shows, for the drawing and the hover alike. Only coding sits
+// at it awake (the walled nap is the schedule's, tamagotchi.activityAt): the
 // mood shows only with nothing on duty, and the monitor mirrors the agents
 // unless the top kind needs the screen.
-export function deskView(activity, topKind, walled) {
-  const scene = activity === "code" && walled ? "nap" : activity;
-  const atDesk = scene === "code";
-  return { scene, atDesk, moodShown: atDesk && !topKind, showsPanes: atDesk && !SCREEN_KINDS.has(topKind) };
+export function deskView(activity, topKind) {
+  const atDesk = activity === "code";
+  return { atDesk, moodShown: atDesk && !topKind, showsPanes: atDesk && !SCREEN_KINDS.has(topKind) };
 }
 
 // ---- watcher transition (clawdWatch.js runs it on every poll) -------------

@@ -171,6 +171,7 @@ const JACK_SPOTS = {
   coffee: { x: 1.5, y: 16.4 },
   eat: { x: 1.5, y: 16.4 },
   code: { x: 25.5, y: 16.4 },
+  nap: { x: 25.5, y: 16.4 },
   read: { x: 24.6, y: 3.4 },
 };
 
@@ -529,8 +530,8 @@ const FACE_KINDS = new Set(["bell", "done", "merged", "api", "ctx"]);
 // The monitor's screen at the desk (clawdDuty.deskView decides which):
 // drawn inside Behind's desk, under the morning mug, so it rattles with the
 // monitor and never covers the mug. null keeps CodeScreen (the mood's lines).
-function deskScreen({ view, kind, duty, working, walled, mirroring }) {
-  if (view.scene === "nap") return <WallScreen {...walled} />;
+function deskScreen({ activity, view, kind, duty, working, walled, mirroring }) {
+  if (activity === "nap") return <WallScreen {...walled} />;
   if (!view.atDesk) return null;
   if (kind === "done") return <DoneScreen />;
   if (kind === "merged") return <MergeScreen />;
@@ -550,28 +551,30 @@ function DeskProps({ kind }) {
   );
 }
 
+// `activity` is the schedule's (tamagotchi.activityAt), the walled nap
+// included; `walled` only gives the nap's monitor its reset time.
 export function TamaScene({
   activity, season = "summer", occasion = null, coffee = false, mood = "calm", petted = false, petKey = 0,
   duty = null, working, walled = null, party = false, dish, trick = false,
 }) {
   const kind = duty?.kind || null;
-  const view = deskView(activity, kind, !!walled);
-  const { scene, atDesk } = view;
+  const view = deskView(activity, kind);
+  const { atDesk } = view;
   // Only the Halloween evening's rounds (tamagotchi.activityAt's `trick`) go
   // out in sheets: a Halloween-weekend afternoon run is an ordinary run.
   const ghost = trick;
   // A pastime's record, with what changes on a Halloween round.
-  const base = PASTIME_SCENES[scene];
+  const base = PASTIME_SCENES[activity];
   const p = base && trick ? { ...base, ...base.trick } : base;
-  const { x0, sitting = false, lift = 0 } = p?.pose || POSES[scene] || STANDING;
+  const { x0, sitting = false, lift = 0 } = p?.pose || POSES[activity] || STANDING;
   const jack = p ? p.jack : JACK_SPOTS[activity];
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
   // nap.
-  const sleeping = activity === "sleep" || scene === "nap";
+  const sleeping = activity === "sleep" || activity === "nap";
   const ringing = kind === "bell" && sleeping;
   const asleep = sleeping && !ringing;
-  const deskBell = kind === "bell" && (atDesk || scene === "nap");
+  const deskBell = kind === "bell" && (atDesk || activity === "nap");
   const pose = ghost || asleep ? null : atDesk || FACE_KINDS.has(kind) ? kind : null;
   const celebrating = !ghost && !asleep && (pose === "done" || pose === "merged");
   const fullParty = pose === "merged";
@@ -583,7 +586,7 @@ export function TamaScene({
   // mood (only ever shown with nothing on duty) has it; before the first
   // /api/state the pane count is unknown, so the code stays.
   const mirroring = view.showsPanes && working != null && !moody;
-  const screen = deskScreen({ view, kind, duty, working, walled, mirroring });
+  const screen = deskScreen({ activity, view, kind, duty, working, walled, mirroring });
   const face = ghost ? <GhostSheet x0={x0} />
     : moody ? <MoodFace x0={x0} mood={mood} />
     : asleep ? <Eyes closed x0={x0} />
@@ -594,14 +597,14 @@ export function TamaScene({
     : <Eyes x0={x0} />;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
-         data-activity={scene} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
+         data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
          data-duty={kind || undefined} data-pose={pose || undefined} data-urgent={duty?.urgent ? "" : undefined}
          data-working={mirroring ? Math.min(working, 4) : undefined}
          data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
       {p ? <PastimeBehind p={p} season={season} trick={trick} /> : (
-        <Behind activity={scene === "nap" ? "code" : scene} occasion={occasion} coffee={coffee} ringing={ringing}
+        <Behind activity={activity === "nap" ? "code" : activity} occasion={occasion} coffee={coffee} ringing={ringing}
                 keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"} screen={screen}
                 dish={dish} />
       )}
@@ -632,7 +635,7 @@ export function TamaScene({
       {p?.Front && <p.Front />}
       <InFront activity={activity} />
       {(atDesk || deskBell) && <DeskProps kind={kind} />}
-      {scene === "nap" && !ringing && <DeskZs />}
+      {activity === "nap" && !ringing && <DeskZs />}
       {ringing && activity === "sleep" && <AlarmClock />}
       {celebrating && <Sparkles />}
       {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} />}
@@ -665,9 +668,6 @@ const sceneKey = (d) => {
 // render state, so the minute backstop's closure sees today's, not the first
 // render's.
 const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walled: !!walls.value });
-// The hover's words for an activity in the scene deskView makes of it.
-const doingLabel = (a, view, mood = "calm") =>
-  view.scene === "nap" ? "napping at the desk" : activityLabel(a, view.moodShown ? mood : "calm");
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
@@ -768,20 +768,19 @@ export function Tamagotchi() {
   const top = d.items[0] || null;
 
   const a = activityAt(now, day);
-  // The up-next too, so a walled afternoon is announced as the nap it'll be.
-  const next = upNext(now, day, (x) => doingLabel(x, deskView(x.id, null, walled)));
+  const next = upNext(now, day);
   const occasion = occasionShown(now);
   const headline = headlineAt(now);
   // The same view TamaScene draws from, so the hover can't describe another scene.
-  const view = deskView(a.id, top?.kind, !!d.wall);
-  const doing = doingLabel(a, view, mood);
+  const view = deskView(a.id, top?.kind);
+  const doing = activityLabel(a, view.moodShown ? mood : "calm");
   const parts = [
     ...(d.wall ? [wallPhrase(d.wall)] : []),
     ...d.items.map((i) => i.phrase),
     ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
     ...(view.moodShown && reason ? [reason] : []),
     ...(headline ? [headline] : []),
-    ...(next ? [`up next at ${clockLabel(next.at)}: ${next.label}`] : []),
+    ...(next ? [`up next at ${clockLabel(next.at)}: ${activityLabel(next.activity)}`] : []),
   ];
   const label = `Claude is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
     + (top?.target ? ` · click to ${top.target.says}` : "");
