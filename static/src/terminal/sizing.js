@@ -52,10 +52,10 @@ export function xtermDims(knownPaneCols, knownPaneRows, containerCols, container
 //     rows past the last all paint onto it, hiding the prompt; uncapped, the
 //     box clipped the prompt and cursor away. One redraw is the lesser cost.
 //     (A splitter drag asks once, on release: holdTerminalFit.)
-//   - The growth that undoes such a shrink of ours, back to the height asked
-//     before it and no further: the window is `window-size manual`, so nothing
-//     else regrows it, and it kept a blank band under the pane for every
-//     viewer. It asks for our height, not the window's: the server sizes a
+//   - The growth that undoes a shrink of ours (any ask below the height asked
+//     before it, a width change's included), back to that height and no
+//     further: the window is `window-size manual`, so nothing else regrows
+//     it, and it kept a blank band under the pane for every viewer. It asks for our height, not the window's: the server sizes a
 //     shared window to its shortest viewer's ask (routes/ws.py
 //     _WindowHeights), so it never undoes a shorter viewer's shrink.
 // A height-only ask is `{ rows }` alone, and the server keeps the window's
@@ -75,15 +75,12 @@ export function resizeAsk(container, sent, knownPaneRows) {
 
 // Pure: the memo after sending `ask` (or hinting it at connect, from
 // NOTHING_SENT). A rows-only ask keeps the width last asked for. `shrunkFrom`
-// is the height asked before an outstanding height-only shrink of ours: kept
-// across further shrinks and partial regrowth, cleared once regrown to it or
-// by a width change, which asks for the container's full height anyway.
+// is the height asked before an outstanding shrink of ours: kept across
+// further shrinks, partial regrowth and width changes, cleared once an ask
+// reaches it. A width ask carries the container's current rows, so one made
+// while shrunk is itself short: clearing the shrink there left the window
+// short once the container grew back.
 export function afterSend(sent, ask) {
-  const cols = ask.cols ?? sent.cols;
-  let shrunkFrom = 0;
-  if (cols === sent.cols) {
-    if (ask.rows < sent.rows) shrunkFrom = sent.shrunkFrom || sent.rows;
-    else if (ask.rows < sent.shrunkFrom) shrunkFrom = sent.shrunkFrom;
-  }
-  return { cols, rows: ask.rows, shrunkFrom };
+  const before = sent.shrunkFrom || sent.rows;
+  return { cols: ask.cols ?? sent.cols, rows: ask.rows, shrunkFrom: ask.rows < before ? before : 0 };
 }

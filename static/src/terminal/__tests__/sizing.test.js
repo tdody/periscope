@@ -200,9 +200,20 @@ describe("resizeAsk", () => {
     });
   });
 
-  it("forgets the shrink once a width change resizes to the container", () => {
-    const shrunk = afterSend(sent(239, 62), { cols: 239, rows: 40 });
+  it("keeps its shrink through a width change made while shrunk", () => {
+    // Regression: the box dragged from 62 rows to 40, then the rail splitter
+    // moved. The width ask carries the container's rows, still 40, and it
+    // dropped the shrink, so dragging the box back to 62 never regrew the
+    // window: a blank band under the pane, for every viewer.
+    const shrunk = afterSend(sent(239, 62), { rows: 40 });
     const widened = afterSend(shrunk, { cols: 200, rows: 40 });
-    expect(resizeAsk({ cols: 200, rows: 62 }, widened, 40)).toBe(null);
+    expect(widened).toEqual({ cols: 200, rows: 40, shrunkFrom: 62 });
+    expect(resizeAsk({ cols: 200, rows: 62 }, widened, 40)).toStrictEqual({ rows: 62 });
+  });
+
+  it("forgets the shrink once a width change asks for the height asked before it", () => {
+    const shrunk = afterSend(sent(239, 62), { rows: 40 });
+    const widened = afterSend(shrunk, { cols: 200, rows: 70 });
+    expect(widened).toEqual({ cols: 200, rows: 70, shrunkFrom: 0 });
   });
 });

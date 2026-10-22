@@ -77,10 +77,11 @@ These are the non-obvious behaviors worth preserving:
    that can mangle scrollback). Two height-only changes are (`resizeAsk`):
    a shrink below the pane, whether the container shrank or a size message
    announced the pane taller than it (a sibling closed, a zoom), since
-   nothing else lets the pane fit; and the growth that undoes such a shrink
-   of our own, back to the height asked before it and no further — the
-   window is `window-size manual`, so nothing else regrows it, and a
-   restored window kept a blank band under the pane for every viewer. Both
+   nothing else lets the pane fit; and the growth that undoes a shrink of
+   our own (any ask below the height asked before it), back to that height
+   and no further — the window is `window-size manual`, so nothing else
+   regrows it, and a restored window kept a blank band under the pane for
+   every viewer. Both
    go as rows alone (`{type:"resize", rows}`; `ws.py` runs `resize-window
    -y` alone, keeping the window's width): with our pinned width in them, a
    shorter viewer's shrink also set a shared window's width, so a viewer
@@ -89,8 +90,11 @@ These are the non-obvious behaviors worth preserving:
    window on a left/right split, it halved the window on every ask. A
    reconnect keeps our shrink in its memo (its hint, the shrunk height, is
    seeded onto the live memo, not a fresh one: a server restart while short
-   left the band for good); a mount starts afresh, so a pane switched to
-   while the container is short is the one case left unregrown.
+   left the band for good), and so does a width change made while shrunk
+   (its ask carries the container's rows, still short: dropping the shrink
+   there left the window short once the container grew back). A mount
+   starts afresh, so a pane switched to while the container is short is the
+   one case left unregrown.
 
    A window its viewers share has one height, and the server owns it
    (`ws.py` `_WindowHeights`): it records each live viewer's last ask (the
