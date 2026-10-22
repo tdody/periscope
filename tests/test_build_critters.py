@@ -159,6 +159,16 @@ def test_raises_on_an_attribute_it_does_not_know(tmp_path):
             "always drawn",
             "",
         ),
+        # Nothing but the idle bob: an empty root.
+        ("", "always drawn", ""),
+        # The mood is on a nested <g>, not the direct top-level child — the shallow check missed this.
+        (
+            '<g><g class="mood-calm"><rect x="0" y="0" width="1" height="1"/></g></g>',
+            "always drawn",
+            "",
+        ),
+        # An empty <g> with nothing inside it at all.
+        ("<g></g>", "always drawn", ""),
         # The outer <g> (holding the data-bob) must itself carry no attributes.
         ("", "no attributes", ' fill="#fff"'),
     ],
