@@ -4,18 +4,22 @@
 // detect(prev, snapshot, nowSec) -> { state, events }. `prev` is the last
 // state, or null to seed: the first snapshot records what is already there and
 // announces nothing, so a reload never replays old news. Each event fires once
-// per key; `seen` maps each key to when it was last seen and drops it GRACE_S
-// after that, so the state prunes itself.
+// per key; `seen` maps each key to the pass it was last seen on and drops it
+// GRACE_PASSES after that, so the state prunes itself.
 
 import { isStale, meterMood } from "../chrome/usageRules.js";
 import { buildNeedsYou } from "../split/attention.js";
 
 export const KINDS = ["needs_input", "question", "done", "ci_failed", "pr_merged", "usage"];
 
-// A key missing from a poll is kept this long. One empty or garbled poll (tmux
-// answering nothing) would otherwise drop every key, and the next poll would
-// re-announce every waiting, done and question pane.
-export const GRACE_S = 120;
+// A key missing from a poll is kept this many passes (about 2 min at the ~3 s
+// poll). One empty or garbled poll (tmux answering nothing) would otherwise
+// drop every key, and the next poll would re-announce every waiting, done and
+// question pane. Passes, not seconds: a sleep, a relaunch or a webview recycle
+// runs no passes (the counter persists with the state), where a wall-clock
+// grace replayed everything still waiting on wake. The feed may also run on
+// unrelated signal changes, which only makes the grace shorter; that's fine.
+export const GRACE_PASSES = 40;
 
 // One PR, however many panes show it.
 export const prKey = (w) => `${w.repo_slug || w.repo_key || ""}#${w.pr}`;
@@ -28,21 +32,25 @@ export function detect(prev, snap, nowSec) {
     dismissedReadyPids = new Set(), plan = {},
   } = snap;
   const seeding = !prev;
-  // typeof, not just the comparison: a saved state from before the grace held
-  // `true`, which must read as expired rather than as second 1.
-  const seen = {};
-  for (const [key, at] of Object.entries(prev?.seen || {})) {
-    if (typeof at === "number" && nowSec - at <= GRACE_S) seen[key] = at;
+  const prevPass = prev?.pass ?? 0;
+  const pass = prevPass + 1;
+  // What the last pass kept is known; this pass's absences are counted once
+  // it's over. A value that isn't a pass number (`true`, or epoch seconds,
+  // from states saved before passes were counted) reads as expired.
+  const prevSeen = prev?.seen || {};
+  const known = new Set();
+  for (const [key, at] of Object.entries(prevSeen)) {
+    if (typeof at === "number" && at <= prevPass && prevPass - at <= GRACE_PASSES) known.add(key);
   }
-  const known = new Set(Object.keys(seen));
+  const seen = {};
   const events = [];
   const note = (key, ev) => {
-    seen[key] = nowSec;
+    seen[key] = pass;
     if (!seeding && !known.has(key)) events.push({ key, ...ev });
   };
   // Dismissals live in memory only and reset on a reload; a dismissed item
   // stays seen so a resumed state doesn't announce it as new.
-  const keep = (key) => { seen[key] = nowSec; };
+  const keep = (key) => { seen[key] = pass; };
 
   // Needs-you: a live dialog per needs-input episode (needs_since), a
   // question per agent need_human message. One banner per pane: a pane with a
@@ -136,5 +144,9 @@ export function detect(prev, snap, nowSec) {
     if (worst) events.push(worst);
   }
 
-  return { state: { seen, ci, prs, meters }, events };
+  for (const key of known) {
+    if (!(key in seen) && pass - prevSeen[key] <= GRACE_PASSES) seen[key] = prevSeen[key];
+  }
+
+  return { state: { pass, seen, ci, prs, meters }, events };
 }

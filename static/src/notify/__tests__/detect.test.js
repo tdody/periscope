@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detect, GRACE_S, prKey } from "../detect.js";
+import { detect, GRACE_PASSES, prKey } from "../detect.js";
 
 const NOW = 1_000_000;
 const win = (over = {}) => ({
@@ -16,6 +16,11 @@ function step(before, after) {
   return detect(seeded, after, NOW);
 }
 const kinds = (r) => r.events.map((e) => e.kind);
+// `n` more passes of `snap`, 3 s apart; returns the last state.
+function passes(state, snap, n, t0 = NOW) {
+  for (let i = 1; i <= n; i++) state = detect(state, snap, t0 + 3 * i).state;
+  return state;
+}
 
 describe("detect", () => {
   it("announces nothing on the first snapshot, whatever is already there", () => {
@@ -165,28 +170,40 @@ describe("detect", () => {
     expect(detect(r.state, after, NOW).events).toEqual([]);
   });
 
-  it("keeps a missing key for GRACE_S, then prunes it", () => {
+  it("keeps a missing key for GRACE_PASSES passes, then prunes it", () => {
     const r = step({ windows: [win()] }, { windows: [win({ state: "needs-input", needs_since: 1 })] });
-    const missing = detect(r.state, { windows: [win()] }, NOW + 60).state;
+    const missing = passes(r.state, { windows: [win()] }, GRACE_PASSES);
     expect(Object.keys(missing.seen)).toEqual(["needs:p1@1"]);
-    expect(Object.keys(detect(missing, { windows: [win()] }, NOW + GRACE_S + 1).state.seen)).toEqual([]);
+    expect(Object.keys(passes(missing, { windows: [win()] }, 1).seen)).toEqual([]);
   });
 
-  it("doesn't re-announce everything after one empty poll", () => {
+  it("doesn't re-announce after empty polls within the grace, does after it", () => {
     const waiting = { windows: [win({ state: "needs-input", needs_since: 9 }), win({ pid: "p2", target: "s:2", state: "done", completed_at: 5 })] };
     const r = step({ windows: [] }, waiting);
     expect(kinds(r)).toEqual(["needs_input", "done"]);
-    const empty = detect(r.state, { windows: [] }, NOW + 3).state;
-    expect(detect(empty, waiting, NOW + 6).events).toEqual([]);
-    // Gone longer than the grace: it's news again.
-    expect(kinds(detect(empty, waiting, NOW + GRACE_S + 1))).toEqual(["needs_input", "done"]);
+    for (const n of [1, GRACE_PASSES]) {
+      expect(detect(passes(r.state, { windows: [] }, n), waiting, NOW + 999).events).toEqual([]);
+    }
+    // Absent for longer than the grace: it's news again.
+    expect(kinds(detect(passes(r.state, { windows: [] }, GRACE_PASSES + 1), waiting, NOW + 999))).toEqual(["needs_input", "done"]);
+  });
+
+  it("counts a long sleep or a relaunch as no passes: nothing replays", () => {
+    const all = { windows: [win({ state: "needs-input", needs_since: 9 }), win({ pid: "p2", target: "s:2", state: "done", completed_at: 5 }), win({ pid: "p3", target: "s:3" })], alerts: [ask({ target: "s:3" })] };
+    const r = step({ windows: [] }, all);
+    expect(kinds(r)).toEqual(["needs_input", "question", "done"]);
+    expect(detect(r.state, all, NOW + 3600).events).toEqual([]);
+    expect(detect(JSON.parse(JSON.stringify(r.state)), all, NOW + 600).events).toEqual([]);
   });
 
   it("treats an old-format saved state (seen: { key: true }) as expired", () => {
     const waiting = { windows: [win({ state: "needs-input", needs_since: 9 })] };
     const r = detect({ seen: { "needs:p1@9": true }, ci: {}, prs: {}, meters: {} }, waiting, NOW);
     expect(kinds(r)).toEqual(["needs_input"]);
-    expect(r.state.seen["needs:p1@9"]).toBe(NOW);
+    expect(r.state.seen["needs:p1@9"]).toBe(r.state.pass);
+    // So is one that held seconds, which would otherwise never age out.
+    const secs = detect({ seen: { "needs:p1@9": NOW }, ci: {}, prs: {}, meters: {} }, waiting, NOW);
+    expect(kinds(secs)).toEqual(["needs_input"]);
   });
 
   it("keeps dismissed items seen, so a resume with empty dismissals doesn't replay them", () => {
@@ -196,6 +213,8 @@ describe("detect", () => {
     const d = step({ windows: [win()] }, { ...done, dismissedReadyPids: new Set(["p1"]) });
     expect(d.events).toEqual([]);
     expect(detect(roundTrip(d.state), { ...done, dismissedReadyPids: new Set() }, NOW + 5).events).toEqual([]);
+    // However long the app was gone (persist resumes up to 15 min).
+    expect(detect(roundTrip(d.state), { ...done, dismissedReadyPids: new Set() }, NOW + 600).events).toEqual([]);
     // A dismissed question, the same.
     const q = step({ windows: [win()], alerts: [] }, { windows: [win()], alerts: [ask()], dismissedAlertIds: new Set(["a1"]) });
     expect(q.events).toEqual([]);
@@ -220,8 +239,8 @@ describe("detect", () => {
     const asked = step({ windows: [win()], alerts: [] }, { windows: [win()], alerts: [ask()] });
     expect(kinds(asked)).toEqual(["question"]);
     let st = asked.state;
-    for (const t of [60, 120, 180, 240]) st = detect(st, hidden, NOW + t).state;
-    expect(detect(st, { windows: [win()], alerts: [ask()] }, NOW + 300).events).toEqual([]);
+    st = passes(st, hidden, GRACE_PASSES + 5);
+    expect(detect(st, { windows: [win()], alerts: [ask()] }, NOW + 999).events).toEqual([]);
   });
 
   it("keys a PR by repo and number", () => {
