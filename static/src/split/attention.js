@@ -139,6 +139,35 @@ export function awaitingReplyByPid(windows, alertItems, dismissedIds = new Set()
   return out;
 }
 
+// Panes waiting on you, one entry each: a pane can have both a live
+// needs-input row and an unacked need_human event (Claude notifies while its
+// pane sits waiting), and the rail lists both. A pane waits since the earlier
+// of the server's needs-input stamp (needs_since, which survives a reload) and
+// its oldest unanswered event, the rail's own urgency tier
+// (awaitingReplyByPid). Clawd's bell and the dock badge both count these, so
+// neither can disagree with the rail. `keep(w)` filters panes out (Clawd skips
+// the one open in the detail view). Map of key -> { row, since }; a live row
+// wins over an event row for the same pane.
+export function waitingPanes(windows, alertItems, dismissedIds = new Set(), dismissedNeedsPids = new Set(), nowSec = 0,
+  keep = () => true) {
+  const asked = awaitingReplyByPid(windows, alertItems, dismissedIds);
+  const waiting = new Map();
+  for (const r of buildNeedsYou(windows, alertItems, dismissedIds, dismissedNeedsPids)) {
+    if (!keep(r.w)) continue;
+    const key = r.w?.pid != null ? `pid:${r.w.pid}` : `target:${r.target}`;
+    const since = Math.min(
+      r.kind === "event" ? r.ts : (r.w.needs_since || nowSec),
+      ...(r.w?.pid != null && asked.has(r.w.pid) ? [asked.get(r.w.pid)] : []),
+    );
+    const prev = waiting.get(key);
+    waiting.set(key, {
+      row: prev?.row.kind === "live" ? prev.row : r,
+      since: prev ? Math.min(prev.since, since) : since,
+    });
+  }
+  return waiting;
+}
+
 // Live "working" panes, in /api/state order. A pure mirror of pane state —
 // no events, no dismissals: rows appear and disappear with the spinner.
 export function buildRunning(windows) {

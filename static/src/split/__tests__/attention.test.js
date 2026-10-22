@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { shortestUniqueSuffix } from "../../util.js";
 import {awaitingReplyByPid, buildActivity,
   buildNeedsYou, buildReady, buildRunning, 
-  isSoftQuestion, needsYouCount, prunedStateDismissals,resolvePinned, waitTier,
+  isSoftQuestion, needsYouCount, prunedStateDismissals,resolvePinned, waitingPanes, waitTier,
 } from "../attention.js";
 
 const win = (over = {}) => ({
@@ -250,5 +250,27 @@ describe("waitTier", () => {
     expect(waitTier(1000, 1000 + 600)).toBe("stale");
     expect(waitTier(1000, 1000 + 3599)).toBe("stale");
     expect(waitTier(1000, 1000 + 3600)).toBe("urgent");
+  });
+});
+
+describe("waitingPanes", () => {
+  it("counts a pane once when it has both a live dialog and an unanswered event", () => {
+    const w = win({ state: "needs-input", needs_since: 300 });
+    const m = waitingPanes([w], [evt({ ts: 200 })], new Set(), new Set(), 1000);
+    expect(m.size).toBe(1);
+    expect(m.get("pid:p1").row.kind).toBe("live");
+    expect(m.get("pid:p1").since).toBe(200);
+  });
+
+  it("keys an event for a pane that has gone by its target", () => {
+    const m = waitingPanes([], [evt({ target: "gone:3" })], new Set(), new Set(), 1000);
+    expect([...m.keys()]).toEqual(["target:gone:3"]);
+  });
+
+  it("leaves out the panes `keep` rejects", () => {
+    const a = win({ pid: "a", target: "a:0", state: "needs-input" });
+    const b = win({ pid: "b", target: "b:0", state: "needs-input" });
+    const m = waitingPanes([a, b], [], new Set(), new Set(), 1000, (w) => w?.pid !== "a");
+    expect([...m.keys()]).toEqual(["pid:b"]);
   });
 });

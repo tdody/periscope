@@ -6,7 +6,7 @@
 // (split/alertFeed.js openNeedsPane / openReadyPane), and the context band is
 // the rail's ctxClass: Clawd and the rail can never disagree about a pane.
 
-import { awaitingReplyByPid, buildNeedsYou, buildReady, waitTier } from "../split/attention.js";
+import { buildReady, waitingPanes, waitTier } from "../split/attention.js";
 import { ctxClass } from "../split/ctxBand.js";
 import { paneLabel, plural } from "../util.js";
 
@@ -45,29 +45,10 @@ export function dutyItems({
   const live = windows.filter(notSelected);
   const byPid = new Map(windows.map((w) => [String(w.pid), w]));
 
-  // Panes, not rows: a pane can have both a live needs-input row and an
-  // unacked need_human event (Claude notifies while its pane sits waiting), and
-  // the rail lists both. A pane waits since the earlier of the server's
-  // needs-input stamp (needs_since, which survives a reload) and its oldest
-  // unanswered event — that event time is the rail's own urgency tier
-  // (awaitingReplyByPid), so Clawd's red bubble and the rail's wait-urgent agree.
-  const asked = awaitingReplyByPid(windows, alerts, dismissedAlertIds);
-  const waiting = new Map();
-  for (const r of buildNeedsYou(windows, alerts, dismissedAlertIds, dismissedNeedsPids)) {
-    if (!notSelected(r.w)) continue;
-    const key = r.w?.pid != null ? `pid:${r.w.pid}` : `target:${r.target}`;
-    const since = Math.min(
-      r.kind === "event" ? r.ts : (r.w.needs_since || nowSec),
-      ...(r.w?.pid != null && asked.has(r.w.pid) ? [asked.get(r.w.pid)] : []),
-    );
-    const prev = waiting.get(key);
-    waiting.set(key, {
-      // A live row opens the way the rail's NEEDS YOU row does; an event row
-      // reveals its pane, as the rail's event row does.
-      row: prev?.row.kind === "live" ? prev.row : r,
-      since: prev ? Math.min(prev.since, since) : since,
-    });
-  }
+  // Panes, not rows (attention.waitingPanes), so Clawd's red bubble and the
+  // rail's wait-urgent agree. A live row opens the way the rail's NEEDS YOU row
+  // does; an event row reveals its pane, as the rail's event row does.
+  const waiting = waitingPanes(windows, alerts, dismissedAlertIds, dismissedNeedsPids, nowSec, notSelected);
   if (waiting.size) {
     const oldest = [...waiting.values()].reduce((a, b) => (b.since < a.since ? b : a));
     const r = oldest.row;
