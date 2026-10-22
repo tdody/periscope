@@ -2,31 +2,41 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { EYE_FACES, faceGlyphs, startleGlyph } from "./critters.js";
+import { EYE_FACES, faceGlyphs, hueRotate, startleGlyph } from "./critters.js";
+
+// A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
+// `tint` degrees. No tint draws the critter's own paint, untouched.
+function painted(a, tint) {
+  if (!tint || !a) return a;
+  const out = { ...a };
+  if (a.fill) out.fill = hueRotate(a.fill, tint);
+  if (a.stroke) out.stroke = hueRotate(a.stroke, tint);
+  return out;
+}
 
 // A mood layer shows only in its mood. Asleep, an eye or a lid is drawn as its
 // `shut` frame, held, and the glint riding on a blinking eye goes away. Under a
 // face (`hide`), the face's glyph replaces the eye: the eye and its glint go,
 // and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
 // fields (faceGlyphs/startleGlyph): an SVG path's `d` and a CSS class.
-function Node({ n, mood, asleep, hide }) {
+function Node({ n, mood, asleep, hide, tint }) {
   if (n.mood && n.mood !== mood) return null;
   if ((asleep || hide) && n.role === "glint") return null;
   if (hide && n.role === "eye") return null;
   if (n.r) {
     const [x, y, w, h] = n.r;
-    return <rect class={n.cls} x={x} y={y} width={w} height={h} {...n.a} />;
+    return <rect class={n.cls} x={x} y={y} width={w} height={h} {...painted(n.a, tint)} />;
   }
-  if (n.p) return <path class={n.cls} d={n.p} {...n.a} />;
+  if (n.p) return <path class={n.cls} d={n.p} {...painted(n.a, tint)} />;
   if ((asleep || hide) && n.shut) {
     const [x, y, w, h] = n.shut;
-    return <rect data-role="shut" x={x} y={y} width={w} height={h} {...n.g[0].a} />;
+    return <rect data-role="shut" x={x} y={y} width={w} height={h} {...painted(n.g[0].a, tint)} />;
   }
   // n.anim and n.cls never both land here: `cls` is a face glyph's own field,
   // and a face glyph is static art (critters.js), never animated.
   return (
-    <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...n.a}>
-      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} />)}
+    <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...painted(n.a, tint)}>
+      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} />)}
     </g>
   );
 }
@@ -34,14 +44,14 @@ function Node({ n, mood, asleep, hide }) {
 // `face` is one of the duty faces (critters.js faceGlyphs) and `startle` the
 // bell's "!": both drawn inside the critter's own group, so they scale and bob
 // with it. An eye-replacing face wins over `asleep` if both were ever set
-// (TamaScene never sets both).
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false }) {
+// (TamaScene never sets both). `tint` turns its colours (a critter's friend).
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0 }) {
   const hide = EYE_FACES.has(face);
   return (
     <g class="critter" data-face={face || undefined}>
-      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} />)}
-      {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} />)}
-      {startle && startleGlyph(sprite).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} />)}
+      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} />)}
+      {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
+      {startle && startleGlyph(sprite).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );
 }

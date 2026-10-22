@@ -3,7 +3,7 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById } from "../critters.js";
+import { CRITTERS, critterById, hueRotate } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
@@ -130,5 +130,20 @@ describe("<Critter>", () => {
       "</g></svg>";
     expect(draw({ sprite })).toBe(awake);
     expect(draw({ sprite, asleep: true })).toBe(asleep);
+  });
+
+  it("turns every fill and stroke by `tint`, the face glyphs' ink too", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, tint: 150, face: "happy" });
+    expect(html).toContain(`fill="${hueRotate("#40b8ee", 150)}"`);
+    expect(html).not.toContain('fill="#40b8ee"');
+    expect(html).toContain(`stroke="${hueRotate(sprite.ink, 150)}"`);
+  });
+
+  it("tints a lid drawn shut, and strokes, the same way", () => {
+    const sprite = critterById("nox").sprite;
+    const html = draw({ sprite, tint: 150, face: "x" });
+    expect(html).toContain('data-role="shut"');
+    expect(html).not.toContain('stroke="#4a4f57"');
   });
 });
