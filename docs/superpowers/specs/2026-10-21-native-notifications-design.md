@@ -57,8 +57,10 @@ where those disagree. The plan is `docs/superpowers/plans/2026-10-22-native-noti
   fire mid-write and pair new alerts with stale windows; and detect's dedupe
   grace counts passes, so extra passes would shorten it. The rules are a pure
   `runPass` in `feed.js`; the effect only applies its result.
-  - `GRACE_PASSES = 120`: about 2 minutes at the ~1 s WS push (`state_hub`'s
-    tick), longer on the 3 s REST fallback.
+  - `GRACE_PASSES = 120`: up to about 2 minutes at the ~1 s WS push
+    (`state_hub`'s tick), longer on the 3 s REST fallback, shorter under heavy
+    activity, since every `state_hub.kick()` pushes early. It covers a garbled
+    state or two, not a set time.
   - A pass never throws into the transport. The effect runs inside
     `applyState`'s `stateSeq` setter, so a throw would count as a bad frame in
     `poll.js` and could raise the "disconnected" banner. The pass is wrapped,
@@ -92,6 +94,38 @@ where those disagree. The plan is `docs/superpowers/plans/2026-10-22-native-noti
 - **Settings.** The fieldset is `overlays/NotifySettings.jsx`, mounted under the
   Tamagotchi picker. Outside the app it shows "Notifications appear in the
   Periscope macOS app only."
+
+### Revised after the final 2a review
+
+These also supersede the sections below.
+
+- **Keys survive a server restart.** `bin/periscope restart` runs on every
+  merge, and it used to replay banners:
+  - `needs_since` is persisted per pid in `state.json` (`window_view`). A pane
+    first sighted waiting by a new process continues its episode, so the
+    `needs:` key doesn't change.
+  - A question is keyed `question:{pane_id}@{ts}:{hash(message)}`.
+    `rehydrate_alerts_from_events` regenerates alert ids but keeps the pane,
+    the time and the message. The pane id also survives a rename.
+- **Notification Center.** `will_present` returns `Banner | List | Sound`, and
+  only `List` when quieted. With no options at all, macOS drops a banner from
+  Notification Center too.
+- **Grouping.** A window that held a single event sends that event's own
+  banner. The summary counts panes, not events, and says "1 more session needs
+  you" in the singular. The held burst is saved with the dedupe state, so a
+  recycle inside the window still sends it.
+- **Done subtitle.** `{session} · PR #{n}` for a linked PR only; otherwise
+  `{session} · {branch}`.
+- **Dedupe state.** The shape is `{ pass, seen, ci, prs, prAt, meters }`,
+  saved with `held` and `heldSince` whenever it or the held burst changes, not
+  after every pass. `prAt` forgets a PR no pane has shown for `PR_PASSES`
+  (3600) passes. Seeding also records a stale account's meters.
+- **Usage.** It works per meter with `meterMood` and sends at most one banner
+  per account per pass, the worst. It is keyed `account/meter/{resets_at
+  rounded to the minute}`. The body reads "{n} sessions working on {A}."
+- **Settings apply one pass later, not instantly.** The feed reads the prefs at
+  each pass rather than tracking them.
+- **Rust errors** go to `shell.log` (`recycle::shell_log`), not `eprintln!`.
 
 ## What the code does today, and where the handout's assumptions don't hold
 

@@ -87,3 +87,22 @@ persistence, notification plugin available. Native badge + native
 notifications routing from the JS side via `window.__TAURI__` is
 the next layer up (`static/src/tauri.js`), additive to existing UI —
 the dashboard keeps working unchanged in a regular browser.
+
+## Notifications across version skew
+
+The banners come from `static/src/notify/` and go through `src-tauri/src/notifications.rs`. The webview's JS is served by periscope, but the shell is whatever `.app` is installed, so either one can be the older side.
+
+**The shell accepts anything.** Every request field has a default and tolerates `null`, so an old webview's `{title, body, target}` still parses.
+
+**Clicks go out on one of two events:**
+- A banner sent with a `kind` stores `{target, kind, data, quiet_when_focused}` in `userInfo`, and its click goes out on `periscope:notification-opened`. `feed.js` routes it by `data.open`: a pane, a URL, or the usage pill.
+- A banner without a kind goes out on the legacy `periscope:notification-clicked` with the plain target, which `alertFeed.js` reveals.
+
+**An old shell with new JS** loses:
+- subtitles and threads;
+- quiet-while-focused: every banner sounds;
+- URL and usage clicks, which fall back to revealing the pane.
+
+So **install a rebuilt `.app` before deploying JS** that relies on new shell fields.
+
+The design and the dedupe rules are in `docs/superpowers/specs/2026-10-21-native-notifications-design.md`.

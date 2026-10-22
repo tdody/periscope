@@ -33,6 +33,11 @@ The six kinds:
 
 The banners themselves need the bundled app and macOS notification permission, so they are checked by hand in Task 14.
 
+> **Superseded in places.** The final code and the spec's revision sections
+> (`docs/superpowers/specs/2026-10-21-native-notifications-design.md`) win where this
+> plan disagrees: the focus rationale, `eprintln!` in the Rust blocks, the
+> question and needs-input keys, and grouping.
+
 ---
 
 ## Before you start
