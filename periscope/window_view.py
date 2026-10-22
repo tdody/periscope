@@ -240,7 +240,7 @@ def mem_signal(proc: dict | None) -> dict | None:
 def build_window_view(
     w: dict,
     now_ts: int,
-) -> tuple[dict, tuple[str, int, int] | None]:
+) -> tuple[dict, tuple[str, int, int, int] | None]:
     """Build the per-window dict the dashboard renders, plus an optional
     (pid, completed_at, acked_at, needs_since) tuple if state.json needs
     persisting.

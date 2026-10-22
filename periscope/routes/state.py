@@ -36,7 +36,7 @@ from periscope.window_view import build_window_view
 router = APIRouter()
 
 
-def _safe_build(w: dict, now_ts: int) -> tuple[dict, tuple[str, int, int] | None]:
+def _safe_build(w: dict, now_ts: int) -> tuple[dict, tuple[str, int, int, int] | None]:
     """Per-worker exception isolation for the parallel fan-out.
 
     build_window_view already catches capture()/parse_pane() failures, but the
