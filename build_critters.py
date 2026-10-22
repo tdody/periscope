@@ -81,6 +81,9 @@ def rect_geom(el: ET.Element) -> list[float]:
     return [num(el.get(k, "0")) for k in ("x", "y", "width", "height")]
 
 
+DUR_RE = re.compile(r"^\d+(\.\d+)?m?s$")
+
+
 class Anim:
     """One SMIL element, normalised: attr, its values (scalars, or (dx, dy) moves for a translate), times."""
 
@@ -88,9 +91,18 @@ class Anim:
         check_attrs(el, {"attributeName", "type", "values", "keyTimes", "dur", "repeatCount", "calcMode", "data-bob"})
         if el.get("repeatCount") != "indefinite":
             raise ValueError("only indefinite animations are supported")
+        calc_mode = el.get("calcMode")
+        if calc_mode not in (None, "linear", "discrete"):
+            raise ValueError(f"unsupported calcMode {calc_mode!r}")
+        self.discrete = calc_mode == "discrete"
+        self.dur = el.get("dur")
+        if not self.dur or not DUR_RE.match(self.dur):
+            raise ValueError(f"unsupported dur {self.dur!r}")
         self.attr = el.get("attributeName") or ""
         raw = (el.get("values") or "").split(";")
         self.frames = len(raw)
+        if self.frames < 2:
+            raise ValueError(f"animation needs at least 2 values, got {self.frames}")
         self.values: list[float] = []
         self.moves: list[tuple[float, float]] = []
         if tag(el) == "animateTransform":
@@ -99,12 +111,20 @@ class Anim:
             self.moves = [(num(dx), num(dy)) for dx, dy in (v.split() for v in raw)]
         elif self.attr in ("x", "y", "height", "opacity"):
             self.values = [num(v) for v in raw]
+            if self.attr == "height" and max(self.values) == 0:
+                # Sheet.add divides by this rect's max height to get scaleY; a max of 0 would divide by zero.
+                raise ValueError("height animation's max value is 0, can't scale from it")
         else:
             raise ValueError(f"unsupported animated attribute {self.attr!r}")
-        self.discrete = el.get("calcMode") == "discrete"
-        self.dur = el.get("dur")
         kt = el.get("keyTimes")
         self.key_times = [num(t) for t in kt.split(";")] if kt else None
+        if self.key_times is not None:
+            if len(self.key_times) != self.frames:
+                raise ValueError(f"keyTimes has {len(self.key_times)} entries, values has {self.frames}")
+            if self.key_times[0] != 0:
+                raise ValueError(f"keyTimes must start at 0, got {self.key_times!r}")
+            if not self.discrete and self.key_times[-1] != 1:
+                raise ValueError(f"linear keyTimes must end at 1, got {self.key_times!r}")
 
     def timing(self) -> tuple:
         return (self.dur, self.discrete, tuple(self.key_times or ()), self.frames)
@@ -157,6 +177,15 @@ class Sheet:
         return name
 
 
+def shutter_kind(heights: list[float]) -> str | None:
+    """Classify a height animation outside any mood layer: dips from open = eye, grows from 0 = lid."""
+    if heights[0] > 0 and min(heights) < heights[0]:
+        return "eye"
+    if heights[0] == 0 < max(heights):
+        return "lid"
+    return None
+
+
 def eye_rects(root: ET.Element) -> list[list[float]]:
     """Blinking eyes: rects outside any mood layer whose height dips."""
     out = []
@@ -165,7 +194,7 @@ def eye_rects(root: ET.Element) -> list[list[float]]:
         in_mood = in_mood or mood_of(el) is not None
         if tag(el) == "rect" and not in_mood:
             heights = [Anim(a).values for a in el if tag(a) == "animate" and a.get("attributeName") == "height"]
-            if heights and heights[0][0] > 0:
+            if heights and shutter_kind(heights[0]) == "eye":
                 out.append(rect_geom(el))
         for c in el:
             walk(c, in_mood)
@@ -183,7 +212,13 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     doc = ET.fromstring(text)
     if doc.get("viewBox") != "0 0 20 20":
         raise ValueError(f"{svg.name}: expected viewBox 0 0 20 20")
-    outer = [c for c in doc if tag(c) == "g"]
+    outer = []
+    for c in doc:
+        ct = tag(c)
+        if ct == "g":
+            outer.append(c)
+        elif ct not in ("style", "metadata"):
+            raise ValueError(f"{svg.name}: unsupported top-level element <{ct}>")
     if len(outer) != 1:
         raise ValueError(f"{svg.name}: expected one outer <g>")
     kids = list(outer[0])
@@ -191,13 +226,19 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         raise ValueError(f"{svg.name}: the outer <g> must open with the data-bob idle bob")
     eyes = eye_rects(outer[0])
 
-    def node(el: ET.Element, in_mood: bool) -> dict | None:
+    def node(el: ET.Element, in_mood: bool) -> dict:
         t = tag(el)
         mood = mood_of(el)
         if t == "rect":
             check_attrs(el, {"x", "y", "width", "height"})
+            for c in el:
+                if tag(c) != "animate":
+                    raise ValueError(f"{svg.name}: <rect> may only contain <animate>, found <{tag(c)}>")
+            anims = [Anim(c) for c in el]
+            if el.get("opacity") is not None and any(a.attr == "opacity" for a in anims):
+                # SMIL's animated opacity replaces the static one; the CSS wrapper's would multiply with it.
+                raise ValueError(f"{svg.name}: <rect> has both a static opacity attribute and an animated opacity")
             geom = rect_geom(el)
-            anims = [Anim(a) for a in el if tag(a) == "animate"]
             if not anims:
                 out = {"r": geom}
                 if paint(el):
@@ -213,7 +254,12 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             if mood:
                 g["mood"] = mood
             if heights and not in_mood and not mood:
-                if heights[0] == 0:
+                kind = shutter_kind(heights)
+                if kind is None:
+                    raise ValueError(
+                        f"{svg.name}: height animation on <rect> is neither an eye blink nor a lid: {heights!r}"
+                    )
+                if kind == "lid":
                     g["role"], g["shut"] = "lid", geom
                 else:
                     i = heights.index(min(heights))
@@ -223,8 +269,19 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             return g
         if t == "g":
             check_attrs(el, set())
-            anims = [Anim(a) for a in el if tag(a) == "animateTransform"]
-            children = [n for c in el if (n := node(c, in_mood or mood is not None))]
+            anims = []
+            kids2 = []
+            for c in el:
+                ct = tag(c)
+                if ct == "animateTransform":
+                    anims.append(Anim(c))
+                elif ct == "animate":
+                    raise ValueError(f"{svg.name}: <g> may only animate via a translate <animateTransform>")
+                elif ct in ("rect", "g"):
+                    kids2.append(c)
+                else:
+                    raise ValueError(f"{svg.name}: unsupported element <{ct}> inside <g>")
+            children = [node(c, in_mood or mood is not None) for c in kids2]
             out = {"g": children}
             if paint(el):
                 out["a"] = paint(el)
@@ -238,11 +295,13 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             if anims:
                 out["anim"] = sheet.add(cid, anims, None)
             return out
-        if t in ("animate", "animateTransform"):
-            return None  # read by the parent
         raise ValueError(f"{svg.name}: unsupported element <{t}>")
 
-    root = [n for c in kids[1:] if (n := node(c, False))]
+    root = []
+    for c in kids[1:]:
+        if tag(c) not in ("rect", "g"):
+            raise ValueError(f"{svg.name}: unsupported element <{tag(c)}> directly under the outer <g>")
+        root.append(node(c, False))
     return {"name": doc.get("aria-label") or cid.title(), "root": root}
 
 
