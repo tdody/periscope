@@ -276,6 +276,18 @@ export function upNext(date, day = {}) {
   return null;
 }
 
+// What the widget draws at `date`, as a string: its minute backstop
+// re-renders only when this changes. Keyed on the window start as well as the
+// activity: two adjacent windows can share an id and differ in a prop (9–10am
+// codes with the coffee mug), and a laptop asleep from one lunch to the next
+// wakes on the same window with another dish; and on the walls holding, which
+// the hover names only while they hold.
+export function sceneKey(date, day = {}) {
+  const a = activityAt(date, day);
+  return `${a.from}|${a.id}|${a.dish || ""}|${seasonAt(date)}|${occasionShown(date)?.id || ""}|${headlineAt(date) || ""}`
+    + `|${walledAt(date, day)}`;
+}
+
 const pad = (n) => String(n).padStart(2, "0");
 
 // The local date.

@@ -41,7 +41,8 @@ import { Dish } from "./TamaDishes.jsx";
 import { PASTIME_SCENES, Sprite } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
-  hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, seasonAt, upNext, walledAt, Y0,
+  hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, sceneKey, seasonAt, upNext,
+  walledAt, Y0,
 } from "./tamagotchi.js";
 
 // Where the mascot stands per activity: centred on its feet by default; the
@@ -654,19 +655,6 @@ export function TamaScene({
   );
 }
 
-// Everything the scene and its hover line are drawn from.
-// Keyed on the window start as well as the activity: two adjacent windows can
-// share an id and differ in a prop (9–10am codes with the coffee mug), and a
-// laptop asleep from one lunch to the next wakes on the same window with
-// another dish; and on the walls holding, which the hover names only until
-// their reset.
-const sceneKey = (d) => {
-  const day = dayAt(d);
-  const a = activityAt(d, day);
-  return `${a.from}|${a.id}|${a.dish || ""}|${seasonAt(d)}|${occasionShown(d)?.id || ""}|${headlineAt(d) || ""}`
-    + `|${walledAt(d, day)}`;
-};
-
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
 // day log (prefs.getClawdDay) and the stretches every account was walled, as
 // the server dated them (`wall_spans`, not `walls`: the first usage refresh
@@ -715,7 +703,7 @@ export function Tamagotchi() {
   useEffect(() => {
     const i = setInterval(() => {
       const d = new Date();
-      setNow((prev) => (sceneKey(d) === sceneKey(prev) ? prev : d));
+      setNow((prev) => (sceneKey(d, dayAt(d)) === sceneKey(prev, dayAt(prev)) ? prev : d));
     }, 60_000);
     return () => clearInterval(i);
   }, []);

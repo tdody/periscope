@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityAt, activityLabel, BODY, BRUNCH, clockLabel, codingMood, dayFlags, dayKey, gridCells, headlineAt, hourLabel,
   isFirstDayOfSeason, LEGS, MEALS, moodReason, msUntilNextChange, noteKey, occasionAt, occasionShown, PASTIMES,
-  SCHEDULE, seasonAt, seasonStart, upNext, walledAt, WEEKEND,
+  SCHEDULE, sceneKey, seasonAt, seasonStart, upNext, walledAt, WEEKEND,
 } from "../tamagotchi.js";
 
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0); // a Wednesday
@@ -545,6 +545,16 @@ describe("the walls lifting", () => {
     expect(upNext(at(16, 10), until(16, 15))).toMatchObject({ at: at(16, 30), activity: { id: "code" } });
     // Lifting in the 4:30 half, it's the evening by the end of it.
     expect(activityAt(at(16, 50), until(16, 45))).toEqual(activityAt(at(16, 40), until(16, 45)));
+  });
+
+  it("wakes any scene at the reset, not only the nap, so the hover stops naming the walls on time", () => {
+    // Lunch and an evening pastime outlast the reset: the wake is the reset's.
+    expect(msUntilNextChange(at(12, 10), until(12, 30))).toBe(20 * 60 * 1000);
+    expect(msUntilNextChange(at(16, 5), until(16, 15))).toBe(10 * 60 * 1000);
+    expect(msUntilNextChange(at(12, 10), { walls: [[-Infinity, at(12, 29).getTime() + 59_000]] })).toBe(19 * 60 * 1000);
+    // And the minute backstop's key moves at it, for a laptop asleep through it.
+    expect(sceneKey(at(12, 31), until(12, 30))).not.toBe(sceneKey(at(12, 10), until(12, 30)));
+    expect(sceneKey(at(12, 31))).toBe(sceneKey(at(12, 10)));
   });
 
   it("forecasts the plain day past the reset time", () => {
