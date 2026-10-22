@@ -24,6 +24,7 @@ import {
   editor as editorSignal,
   updateInfo,
   usage,
+  wallSpans,
   walls,
   windows,
   workspaces,
@@ -64,6 +65,7 @@ function applyState(data) {
   spawnEffort.value = data.spawn_effort || null;
   launchDefault.value = data.launch_default || null;
   walls.value = data.walls || null;
+  wallSpans.value = data.wall_spans || [];
   editorSignal.value = data.editor || "";
 }
 

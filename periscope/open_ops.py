@@ -5,6 +5,7 @@ dispatch function is `open_target`, never `open`.
 """
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,7 @@ from periscope.gitutil import (
     resolve_repo_and_branch,
 )
 from periscope.panes import list_windows
+from periscope.repo_locks import open_lock
 from periscope.tmux import _run, _tmux_mutate
 from periscope.worktree_spawn import _layout_two_window, spawn_worktree
 
@@ -79,7 +81,8 @@ def _git_toplevel(path: str) -> str:
 def ensure_project(toplevel: str, repo: str) -> projects.Project:
     """Return the project row pinned at `toplevel`, registering it if absent.
     Idempotent — never raises on an existing project (unlike the legacy
-    create/adopt routes' 409)."""
+    create/adopt routes' 409) — but check-then-insert, so callers hold
+    `open_lock(toplevel)` (`_open_path`, `resolve_worktree_session`)."""
     existing = projects.all_projects().get(os.path.realpath(toplevel))
     if existing:
         return existing
@@ -98,17 +101,45 @@ def _session_live(name: str) -> bool:
     return _tmux_mutate("has-session", "-t", name)[0]  # socket-aware; False when missing
 
 
+# How long the dir an open recorded on a window (`@periscope_opened`) stands in
+# for its live cwd. A fresh pane's pane_current_path is its foreground
+# process's, and while its shell runs its rc that can be a subshell elsewhere
+# (~/.oh-my-zsh, or ""), so a repeat open in that window missed the pair the
+# first had just made and spawned a second. Bounded because the agent window
+# outlives the agent: quit claude, cd elsewhere, start another, and a record
+# trusted forever would focus that pane on every later open of the first dir.
+_OPENED_TRUST_S = 60
+
+
+def _sits_at(w: dict, pinned_dir: str) -> bool:
+    """True if window row `w` is at `pinned_dir` (realpath): by its live cwd,
+    or, while it is fresh, by the dir the open that created it recorded."""
+    # "" is unknown, not a dir: realpath("") is the server's own cwd, and prod
+    # runs from the periscope checkout, so a pane of any project reading "" mid-rc
+    # sat "at" it, and an open of that checkout focused or claimed it.
+    cwd = w.get("cwd")
+    if cwd and os.path.realpath(cwd) == pinned_dir:
+        return True
+    at, _, opened = (w.get("opened") or "").partition(" ")
+    return (
+        bool(opened)
+        and at.isdigit()
+        and time.time() - int(at) < _OPENED_TRUST_S
+        and os.path.realpath(opened) == pinned_dir
+    )
+
+
 def _session_owns_dir(name: str, pinned_dir: str) -> bool:
-    """True if any window of session `name` sits at `pinned_dir` (realpath)."""
-    return any(w["session"] == name and os.path.realpath(w.get("cwd") or "") == pinned_dir for w in list_windows())
+    """True if any window of session `name` sits at `pinned_dir` (`_sits_at`)."""
+    return any(w["session"] == name and _sits_at(w, pinned_dir) for w in list_windows())
 
 
 def _agent_pid_for_dir(session: str, pinned_dir: str, agent: str) -> str:
-    """The @periscope_id (pid_raw) of the claude window in `session` whose cwd
-    is `pinned_dir`. Under one shared session many claude windows coexist, so
-    a session-wide "first claude" match is wrong here — filter by realpath'd
-    cwd. Falls back to the first window at `pinned_dir`. '' if none."""
-    wins = [w for w in list_windows() if w["session"] == session and os.path.realpath(w.get("cwd") or "") == pinned_dir]
+    """The @periscope_id (pid_raw) of the `agent` window in `session` that sits
+    at `pinned_dir` (`_sits_at`). Under one shared session many claude windows
+    coexist, so a session-wide "first claude" match is wrong here — filter by
+    dir. '' if no window there is the agent's, or it isn't stamped yet."""
+    wins = [w for w in list_windows() if w["session"] == session and _sits_at(w, pinned_dir)]
     if not wins:
         return ""
     match = next(
@@ -169,11 +200,20 @@ def resolve_worktree_session(path: str) -> tuple[str, projects.Project] | None:
     except ValueError:
         return None
     repo = resolve_repo(toplevel)
-    project = ensure_project(toplevel, repo)
-    name = project["tmux_session"]
-    if _session_live(name) and not _session_owns_dir(name, toplevel):
-        name = _dedupe_name(name)  # live but foreign
-        projects.update_project(toplevel, tmux_session=name)
+    # The same lock as _open_path: MCP spawn_claude (workspace="new", every
+    # commander spawn) registers here too, and a spawn and a threadpool open
+    # (⌘K's POST /api/open, /api/workspaces/spawn) of one dir both passed
+    # ensure_project's check, so the loser's insert raised "project already
+    # exists" (a 400 when the loser was the open). Two spawns can't race here:
+    # MCP handlers run one at a time on the event loop. Safe to
+    # take: no caller holds a lock (spawn_claude's worktree create has dropped
+    # repo_lock by now), and the body only shells out and takes _STATE_LOCK.
+    with open_lock(toplevel):
+        project = ensure_project(toplevel, repo)
+        name = project["tmux_session"]
+        if _session_live(name) and not _session_owns_dir(name, toplevel):
+            name = _dedupe_name(name)  # live but foreign
+            projects.update_project(toplevel, tmux_session=name)
     return name, project
 
 
@@ -182,19 +222,27 @@ def ensure_session(
     pinned_dir: str,
     agent: Literal["claude", "codex"] = "claude",
     account: str | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, tuple[str, ...]]:
     """Idempotent create-or-focus into the single shared MANAGED_SESSION.
     `pinned_dir` is the project's key (taken explicitly — Project is a
-    TypedDict with no self-key). Returns (tmux_session, claude_pid).
+    TypedDict with no self-key). Returns (tmux_session, agent_pid,
+    created_pids).
 
     "Already open?" is answered by cwd ownership WITHIN the shared session
     (every project's panes live there now) — not by a session named after the
-    project, which no longer exists. So there's no foreign-name dedupe here."""
+    project, which no longer exists. So there's no foreign-name dedupe here.
+
+    `created_pids` are the panes this call made (empty on the focus path): the
+    caller tags them by pid, because a fresh pane's live cwd can't be trusted
+    yet (see `_open_path`).
+
+    Check-then-create, so not safe to race: hold `open_lock(pinned_dir)`
+    across it, as `_open_path` does."""
     session = config.MANAGED_SESSION
     if _session_live(session) and _session_owns_dir(session, pinned_dir):
         existing = _agent_pid_for_dir(session, pinned_dir, agent)
         if existing:
-            return session, existing
+            return session, existing, ()
     if agent == "claude":
         # No account named → launch_policy decides. This is periscope's
         # primary launch path (⌘K omnibox, POST /api/open, PR review); pinning
@@ -203,7 +251,7 @@ def ensure_session(
         # subscription to choose between. choose_launch degrades to "default"
         # when usage is unknown, so an open never waits on it.
         launch = usage.choose_launch(account)
-        agent_pid, _ = _layout_two_window(
+        agent_pid, shell_pid = _layout_two_window(
             session,
             pinned_dir,
             account=launch.account,
@@ -211,8 +259,8 @@ def ensure_session(
             effort=launch.effort,
         )
     else:
-        agent_pid, _ = _layout_two_window(session, pinned_dir, agent=agent, account=account)
-    return session, agent_pid
+        agent_pid, shell_pid = _layout_two_window(session, pinned_dir, agent=agent, account=account)
+    return session, agent_pid, tuple(p for p in (agent_pid, shell_pid) if p)
 
 
 def discover_repos() -> set[str]:
@@ -257,8 +305,16 @@ def _open_path(
         raise ValueError(f"no such directory: {path}")
     toplevel = _git_toplevel(path)  # ValueError if non-git
     repo = resolve_repo(toplevel)  # --git-common-dir → parent
-    project = ensure_project(toplevel, repo)
-    session, agent_pid = ensure_session(project, toplevel, agent)
+    # Check-then-create under a per-dir lock. A double submit is two POSTs on
+    # two threadpool threads, and the MCP `open` tool races ⌘K the same way;
+    # the agent window gets its @periscope_id only as _layout_two_window's last
+    # step, so a second check landing mid-layout saw no agent here and built a
+    # second pair. ensure_project is inside too: two first opens of a dir both
+    # inserted, and the loser's "project already exists" surfaced as a 400
+    # (resolve_worktree_session takes the same lock for spawn_claude's insert).
+    with open_lock(toplevel):
+        project = ensure_project(toplevel, repo)
+        session, agent_pid, created = ensure_session(project, toplevel, agent)
     # Rebuild the full pane list from the now-live session. list_windows()
     # is a live shell-out, so freshly-stamped windows are visible
     # synchronously; pid_raw is the @periscope_id, "" for unmanaged.
@@ -276,6 +332,13 @@ def _open_path(
     # project's panes, so a session-wide re-tag moves the whole rail into this
     # track (the sts2-seed-finder clobber); an existing tag is either already
     # right or a user's goal-track move — never overwrite it here.
+    #
+    # The panes this open just created are tagged by pid, NOT by cwd: a fresh
+    # pane's pane_current_path is its FOREGROUND process's cwd, and a shell
+    # still in its rc can have a subshell elsewhere (oh-my-zsh's `cd $ZSH`
+    # update check reads as ~/.oh-my-zsh ~60ms in, sometimes as ""). This loop
+    # runs inside that window, so a cwd test intermittently left the new
+    # shell — or, under load, the agent pane — untagged.
     from periscope import activity, tracks
 
     tid = tracks.repo_default_track(repo)
@@ -286,7 +349,7 @@ def _open_path(
         if (
             p
             and w.get("session") == session
-            and os.path.realpath(w.get("cwd") or "") == toplevel
+            and (p in created or _sits_at(w, toplevel))
             and activity.get_pane_track(p) is None
         ):
             tracks.move_pane(p, tid)

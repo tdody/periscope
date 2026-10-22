@@ -43,7 +43,7 @@ def _patch_layout(monkeypatch, *, has_session: bool = True) -> list[tuple]:
     monkeypatch.setattr(worktree_spawn, "_tmux_mutate", fake_mutate)
     monkeypatch.setattr(tmux_mod, "_tmux_mutate", fake_mutate)
     monkeypatch.setattr(worktree_spawn, "tmux", lambda *a, **k: "9")
-    monkeypatch.setattr(pids, "stamp_new_window", lambda target: f"pid{target}")
+    monkeypatch.setattr(pids, "stamp_new_window", lambda target, **_: f"pid{target}")
     monkeypatch.setattr(channels, "dismiss_dev_channels_consent_bg", lambda *a: None)
     return calls
 
@@ -131,6 +131,10 @@ def test_layout_two_window_stamps_both_windows(tmp_git_repo, tmux_test_server):
         stamped[wid] = pid.strip()
     pids = [p for p in stamped.values() if p]
     assert claude_pid in pids and shell_pid in pids
+    # Both also record where they were opened: their live cwd reads wrong while
+    # their shells run the rc, and open_ops' create-or-focus needs the answer.
+    opened = tmux("list-windows", "-t", session, "-F", "#{@periscope_opened}").split("\n")
+    assert sum(o.partition(" ")[2] == str(tmp_git_repo) for o in opened) == 2
 
 
 @needs_tmux

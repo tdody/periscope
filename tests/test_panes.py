@@ -804,15 +804,17 @@ def test_list_windows_parses_tmux_list_output(mocker):
     assert out[1]["active"] is False
     assert out[0]["pane_pid"] == ""
     assert out[0]["current_command"] == ""
+    assert out[0]["opened"] == ""
 
 
 def test_list_windows_appends_process_metadata(mocker):
-    sample = "main\t0\tcodex\t1\t/home/tom/dev/foo\t1234abcd\t%5\t1717250000\t@9\t4242\tcodex\n"
+    sample = "main\t0\tcodex\t1\t/home/tom/dev/foo\t1234abcd\t%5\t1717250000\t@9\t4242\tcodex\t1717249990 /home/tom/dev/my foo\n"
     mocker.patch("periscope.panes.tmux", return_value=sample)
     row = list_windows()[0]
     assert row["window_id"] == "@9"
     assert row["pane_pid"] == "4242"
     assert row["current_command"] == "codex"
+    assert row["opened"] == "1717249990 /home/tom/dev/my foo"
 
 
 def test_all_pane_ids_parses_and_dedupes(mocker):

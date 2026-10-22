@@ -129,6 +129,10 @@ export function OpenOmnibox() {
   if (!open.value) return null;
 
   async function post(descriptor) {
+    // A second Enter while "opening…" was a second concurrent POST /api/open.
+    // The server serialises create-or-focus per dir, so it would only focus,
+    // but there's no reason to send it.
+    if (busy) return;
     setBusy(true); setError("");
     const data = await apiCall("open", "/api/open", {
       method: "POST", headers: { "Content-Type": "application/json" },

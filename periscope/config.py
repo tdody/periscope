@@ -279,7 +279,10 @@ def claude_bin() -> str:
 
 PERISCOPE_MCP_CONFIG = config_dir() / "bg-mcp-config.json"  # generated at boot
 ORCHESTRATOR_PROMPT_FILE = config_dir() / "orchestrator-prompt.txt"  # written from bg_commander.ROLE_PROMPT
-CHANNEL_SHIM_PATH = Path(__file__).resolve().parent.parent / "channel_shim.py"
+# This checkout. One constant: the updater pulls it, healthz versions it, and
+# the tmux hook and heal point at it — copies of the expression drifted apart.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CHANNEL_SHIM_PATH = REPO_ROOT / "channel_shim.py"
 BG_COMMANDER_MODEL = "sonnet"
 # Pinned to pane-INDEPENDENT tools (NOT mcp__periscope__*). The wildcard would
 # grant pane-dependent tools (notify/link_pr/open_document/report/…) that resolve

@@ -398,12 +398,55 @@ html, body {
 @keyframes tama-breathe { 50% { transform: scaleY(0.93); } }
 .tama:has([data-activity="code"]) .tama-creature,
 .tama:has([data-activity="eat"]) .tama-creature { animation: tama-bob 0.6s steps(2) infinite; }
-.tama:has([data-activity="run"]) .tama-creature { animation: tama-bob 0.3s steps(2) infinite; }
 @keyframes tama-bob { 50% { transform: translateY(-0.5px); } }
 .tama-legs-b { opacity: 0; }
-.tama:has([data-activity="run"]) .tama-legs-a { animation: tama-stride 0.3s steps(1) infinite; }
-.tama:has([data-activity="run"]) .tama-legs-b { animation: tama-stride 0.3s steps(1) infinite reverse; }
 @keyframes tama-stride { 0% { opacity: 1; } 50% { opacity: 0; } }
+/* The pastimes (tamagotchi.PASTIMES): each bobs at its own tempo, and the
+   striders step to it, from its record (TamaPastimes.PASTIME_SCENES) via the
+   scene's data-tempo / data-stride and --tama-tempo. Before the mood and duty
+   rules, which outrank them at equal specificity (0,3,0) by coming later. */
+.tama [data-tempo] .tama-creature { animation: tama-bob var(--tama-tempo) steps(2) infinite; }
+.tama [data-stride] .tama-legs-a { animation: tama-stride var(--tama-tempo) steps(1) infinite; }
+.tama [data-stride] .tama-legs-b { animation: tama-stride var(--tama-tempo) steps(1) infinite reverse; }
+.tama .tama-spokes, .tama .tama-crank { transform-origin: center; animation: tama-spin 0.5s linear infinite; }
+@keyframes tama-spin { to { transform: rotate(360deg); } }
+.tama .tama-strum { animation: tama-tap 0.25s steps(2) infinite; }
+.tama .tama-speaker { transform-origin: center; animation: tama-thump 0.5s steps(2) infinite; }
+@keyframes tama-thump { 50% { transform: scale(1.1); } }
+.tama .tama-note { animation: tama-float 2.4s linear infinite; }
+.tama .tama-note2 { animation-delay: -1.2s; }
+/* The friend bobs to Clawd's tempo, half a beat behind. */
+.tama .tama-friend { animation: tama-bob var(--tama-tempo) steps(2) infinite; animation-delay: calc(var(--tama-tempo) / -2); }
+.tama .tama-clink { animation: tama-clink 2.4s ease-in-out infinite; }
+.tama .tama-clink2 { animation-name: tama-clink-r; }
+@keyframes tama-clink { 0%, 60%, 100% { transform: translateX(0); } 75% { transform: translateX(0.5px); } }
+@keyframes tama-clink-r { 0%, 60%, 100% { transform: translateX(0); } 75% { transform: translateX(-0.5px); } }
+.tama .tama-cheers { opacity: 0; animation: tama-cheers 2.4s steps(1) infinite; }
+@keyframes tama-cheers { 72% { opacity: 1; } 82% { opacity: 0; } }
+.tama .tama-kid { animation: tama-kid 0.7s ease-in-out infinite; }
+.tama .tama-kid2 { animation-delay: -0.35s; }
+@keyframes tama-kid { 50% { transform: translateY(-1.4px); } }
+.tama .tama-hero { animation: tama-jump 1s ease-in-out infinite; }
+@keyframes tama-jump { 40%, 60% { transform: translateY(-1.6px); } }
+.tama .tama-thumb { animation: tama-tap 0.3s steps(2) infinite; }
+.tama .tama-drop { opacity: 0; animation: tama-drip 0.9s linear infinite; }
+@keyframes tama-drip { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(2.6px); opacity: 0; } }
+.tama .tama-spoon { transform-origin: left bottom; animation: tama-stir 0.8s ease-in-out infinite alternate; }
+@keyframes tama-stir { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+.tama .tama-dog { animation: tama-bob 0.3s steps(2) infinite; }
+.tama .tama-dog-a { animation: tama-stride 0.3s steps(1) infinite; }
+.tama .tama-dog-b { opacity: 0; animation: tama-stride 0.3s steps(1) infinite reverse; }
+.tama .tama-tail { transform-origin: right bottom; animation: tama-wag 0.3s ease-in-out infinite alternate; }
+@keyframes tama-wag { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+.tama .tama-water { animation: tama-sway 2s ease-in-out infinite alternate; }
+@keyframes tama-sway { from { transform: translateX(-0.4px); } to { transform: translateX(0.4px); } }
+.tama .tama-ball { animation: tama-bob 1.4s steps(2) infinite; }
+.tama .tama-splash { opacity: 0; animation: tama-splash 0.8s ease-out infinite; }
+.tama .tama-splash2 { animation-delay: -0.4s; }
+@keyframes tama-splash { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-1.6px); opacity: 0; } }
+.tama .tama-kick { opacity: 0; animation: tama-kick 0.6s ease-out infinite; }
+@keyframes tama-kick { 0% { transform: translate(0, 0); opacity: 0.95; } 100% { transform: translate(-2.4px, -1.6px); opacity: 0; } }
+.tama .tama-scarf-tail { transform-origin: right center; animation: tama-flap 0.3s steps(2) infinite; }
 .tama-z { animation: tama-float 3s linear infinite; }
 .tama-z2 { animation-delay: -1.5s; }
 @keyframes tama-float {
@@ -458,8 +501,9 @@ html, body {
 @keyframes tama-page { 0%, 70% { transform: scaleX(1); } 85%, 100% { transform: scaleX(-1); } }
 /* Petting: a hop and a heart, replayed on every click (keyed in the JSX).
    Tripled class: the per-activity `.tama:has([data-activity=…]) .tama-creature`
-   rules above sit at (0,3,0) and the urgent bell's at (0,4,0); at (0,5,0) the
-   hop outranks every creature rule, wherever it sits in the file. */
+   and the pastimes' `.tama [data-tempo] .tama-creature` rules above sit at
+   (0,3,0) and the urgent bell's at (0,4,0); at (0,5,0) the hop outranks every
+   creature rule, wherever it sits in the file. */
 .tama .tama-creature.tama-hop.tama-hop.tama-hop { animation: tama-hop 0.6s ease-out 1; }
 @keyframes tama-hop { 35% { transform: translateY(-3px); } }
 /* Coding moods (tamagotchi.codingMood). Keyed on the scene's data-mood; the
