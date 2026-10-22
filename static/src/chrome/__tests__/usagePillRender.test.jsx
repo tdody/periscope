@@ -7,7 +7,7 @@
 import render from "preact-render-to-string";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accounts, usage } from "../../store.js";
-import { UsagePill } from "../UsagePill.jsx";
+import { openUsageDetails, UsagePill, usageExpanded } from "../UsagePill.jsx";
 
 const NOW = () => Math.floor(Date.now() / 1000);
 
@@ -24,6 +24,7 @@ beforeEach(() => {
 afterEach(() => {
   usage.value = null;
   accounts.value = [];
+  usageExpanded.value = false;
 });
 
 describe("<UsagePill>", () => {
@@ -167,5 +168,14 @@ describe("<UsagePill>", () => {
     const html = render(<UsagePill />);
     expect(html.match(/usage-acct-waste/g)).toHaveLength(1);
     expect(html).toContain("on pace for 18% at reset");
+  });
+});
+
+describe("openUsageDetails", () => {
+  it("opens the pill to every meter, as a click does (a usage notification's click)", () => {
+    usage.value = { plan: { default: { available: true, fetched_at: NOW(), meters: meters({ session: 10, week_all: 20 }) } }, fallback: null, poke: {} };
+    expect(render(<UsagePill />)).not.toContain("is-expanded");
+    openUsageDetails();
+    expect(render(<UsagePill />)).toContain("is-expanded");
   });
 });

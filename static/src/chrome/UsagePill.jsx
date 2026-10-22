@@ -16,7 +16,7 @@
 // launcher's picker, showing only that account's BINDING meter (highest
 // percent) with the existing ok/warn/danger tone. A pinned red bar next to a
 // near-empty one reads at a glance. Click expands to every meter per account.
-import { useState } from "preact/hooks";
+import { signal } from "@preact/signals";
 import { multiAccount } from "../accounts.js";
 import { usage } from "../store.js";
 import { relTime } from "../util.js";
@@ -123,6 +123,14 @@ function MeterBar({ label, m, resets, pace }) {
 // Collapsing to the binding meter hides the rest from sight, not from reach.
 // Carried on the row rather than the pill because each MeterBar's own title
 // wins on hover — the row's only reliably-hoverable area is its letter.
+// Every meter shown, or each account's headline only. A module signal so a
+// usage notification's click can open it (notify/feed.js).
+export const usageExpanded = signal(false);
+
+export function openUsageDetails() {
+  usageExpanded.value = true;
+}
+
 function acctTitle(a, expanded, poke, waste) {
   const lines = a.meters.map(({ m }) =>
     [`${m.label}: ${m.percent}% used`, fmtReset(m.resets_at), ...paceLines(m)]
@@ -149,7 +157,7 @@ function acctTitle(a, expanded, poke, waste) {
 export function UsagePill() {
   // Expansion is view-only and deliberately unpersisted: the collapsed answer
   // is the one worth having on every load.
-  const [expanded, setExpanded] = useState(false);
+  const expanded = usageExpanded.value;
   const u = usage.value || {};
   const fallback = u.fallback;
   const nowSec = Math.floor(Date.now() / 1000);
@@ -167,7 +175,7 @@ export function UsagePill() {
       <div
         id="usage"
         class={`usage${expanded ? " is-expanded" : ""}`}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => { usageExpanded.value = !expanded; }}
       >
         {accounts.map((a) => (
           <div
