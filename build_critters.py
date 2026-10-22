@@ -108,7 +108,11 @@ class Anim:
         if tag(el) == "animateTransform":
             if el.get("type") != "translate" or self.attr != "transform":
                 raise ValueError("only translate <animateTransform> is supported")
-            self.moves = [(num(dx), num(dy)) for dx, dy in (v.split() for v in raw)]
+            for v in raw:
+                parts = v.split()
+                if len(parts) != 2:
+                    raise ValueError(f"translate <animateTransform> value {v!r} must have exactly 2 numbers")
+                self.moves.append((num(parts[0]), num(parts[1])))
         elif self.attr in ("x", "y", "height", "opacity"):
             self.values = [num(v) for v in raw]
             if self.attr == "height" and max(self.values) == 0:
@@ -123,6 +127,8 @@ class Anim:
                 raise ValueError(f"keyTimes has {len(self.key_times)} entries, values has {self.frames}")
             if self.key_times[0] != 0:
                 raise ValueError(f"keyTimes must start at 0, got {self.key_times!r}")
+            if any(b < a for a, b in zip(self.key_times, self.key_times[1:], strict=False)):
+                raise ValueError(f"keyTimes must be non-decreasing, got {self.key_times!r}")
             if not self.discrete and self.key_times[-1] != 1:
                 raise ValueError(f"linear keyTimes must end at 1, got {self.key_times!r}")
 
@@ -208,6 +214,16 @@ def inside(r: list[float], box: list[float]) -> bool:
 
 
 def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
+    """convert, with svg.name prefixed onto any ValueError that doesn't already carry it."""
+    try:
+        return _convert(cid, svg, sheet)
+    except ValueError as e:
+        prefix = f"{svg.name}: "
+        msg = str(e)
+        raise ValueError(msg if msg.startswith(prefix) else f"{prefix}{msg}") from e
+
+
+def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     text = re.sub(r"<metadata>.*?</metadata>", "", svg.read_text(), flags=re.S)
     doc = ET.fromstring(text)
     if doc.get("viewBox") != "0 0 20 20":
@@ -221,6 +237,9 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             raise ValueError(f"{svg.name}: unsupported top-level element <{ct}>")
     if len(outer) != 1:
         raise ValueError(f"{svg.name}: expected one outer <g>")
+    if outer[0].attrib:
+        # Paint, class or a mood on the outer <g> would be silently dropped — it never reaches node().
+        raise ValueError(f"{svg.name}: the outer <g> must have no attributes, got {sorted(outer[0].attrib)}")
     kids = list(outer[0])
     if not kids or tag(kids[0]) != "animateTransform" or kids[0].get("data-bob") is None:
         raise ValueError(f"{svg.name}: the outer <g> must open with the data-bob idle bob")
@@ -295,13 +314,18 @@ def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             if anims:
                 out["anim"] = sheet.add(cid, anims, None)
             return out
-        raise ValueError(f"{svg.name}: unsupported element <{t}>")
+        raise AssertionError(f"unreachable: callers only pass rect/g, got <{t}>")
 
     root = []
+    any_always_drawn = False
     for c in kids[1:]:
         if tag(c) not in ("rect", "g"):
             raise ValueError(f"{svg.name}: unsupported element <{tag(c)}> directly under the outer <g>")
+        any_always_drawn = any_always_drawn or mood_of(c) is None
         root.append(node(c, False))
+    if kids[1:] and not any_always_drawn:
+        # Every layer conditioned on a mood: nothing renders by default, so spriteBox is Infinity downstream.
+        raise ValueError(f"{svg.name}: every layer is inside a mood group, nothing is always drawn")
     return {"name": doc.get("aria-label") or cid.title(), "root": root}
 
 
