@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterSend, hintDims, pinWidth, resizeAsk, xtermDims } from "../terminalCore.js";
+import { afterSend, hintDims, pinWidth, resizeAsk, xtermDims } from "../sizing.js";
 
 describe("xtermDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {

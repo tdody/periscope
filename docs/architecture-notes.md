@@ -27,7 +27,7 @@ into `#app`. Components grouped by area:
 | chrome | `src/chrome/{Header,FilterBar,UsagePill}.jsx` |
 | poll | `src/poll.js` — the single `/api/state` poll loop (writes `windows` / `projects` / `usage` signals); `openModal` bridge for poll-driven open requests |
 | split view | `src/split/{Split,Rail,RailRows,Detail,AttentionSections,SectionHeader,Transcript}.jsx` + `src/split/railTree.js` (`mergeLiveAndPrefs`) — the only dashboard view (grid retired). Rail membership is TRACK-ANCHORED: every window carries a server-resolved `track_id`, and the tree is Track → (derived Branch) → Pane. A track spanning ≥2 branches renders branch sub-clusters; otherwise it renders flat. Branch rows are DERIVED from live `w.branch`, not entities — you can't close one, only tear down the track |
-| terminal | `src/terminal/{Terminal,TerminalSearch}.jsx` + `src/terminal/terminalCore.js` (imperative xterm + `/ws/pane`) + `theme.js` |
+| terminal | `src/terminal/{Terminal,TerminalSearch}.jsx` + `src/terminal/terminalCore.js` (imperative xterm + `/ws/pane`) + `theme.js` + `sizing.js` (the pure sizing rules: the xterm's dims, what tmux is asked for) |
 | overlays | `src/overlays/{Dialog,Toast,Overlays,CommandsModal,CleanupModal,SettingsModal,LauncherModal,OpenOmnibox}.jsx` + `src/hooks/useEscape.js` (LIFO escape stack). `OpenOmnibox` is the command-palette (↑↓↵ nav, ⌘K, grouped cards) behind the header's single `+ new` button — it replaced the old `+ session` / `+ project` / `review PR` menu and the retired `NewProjectModal` / `ReviewPrModal` / `OpenPickerModal`. `src/open/classify.js` is its pure (unit-tested) query→cards classifier |
 | util | `src/util.js` (`targetQuery` last-colon split, `apiCall`, `relTime`, `prUrl`, `rewriteLgtmHost`) |
 
