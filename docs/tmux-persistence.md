@@ -16,7 +16,9 @@ Import discipline: stdlib + `periscope.config` only — it runs under plain
 **One `--resume` per session per save.** After the rewrite, if several pane
 lines resume the same session (captured argv included — a restored zombie's
 argv already says `--resume`), only one keeps it: the pane whose live claude
-touched its session file last, then the active pane, then the first line. The
+reports that session now, then the one that touched its session file last
+(the same file `live_session_id_for_pane` reads), then the active pane, then
+the first line. The
 rest restore as a fresh `claude` with their env prefixes and channel flags.
 Two Claudes on one session both write its transcript; this is the backstop
 that stops a duplicated layout (see the plugin rule below) from compounding.

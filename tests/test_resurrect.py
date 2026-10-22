@@ -366,7 +366,8 @@ def test_duplicate_resume_kept_only_on_the_pane_in_use():
     cmd = f"claude --resume {SID} --dangerously-load-development-channels server:periscope"
     lines = [_active_line("p", "6", str(i), cmd, "0") for i in range(3)]
     pane_map = {"p:6.0": "%3", "p:6.1": "%4", "p:6.2": "%5"}
-    out, demoted = resurrect._dedupe_resumes(lines, pane_map, {"%3": 10.0, "%4": 11.0, "%5": 99.0})
+    activity = {"%3": (SID, 10.0), "%4": (SID, 11.0), "%5": (SID, 99.0)}
+    out, demoted = resurrect._dedupe_resumes(lines, pane_map, activity)
     assert demoted == ["p:6.0", "p:6.1"]
     assert out[2] == lines[2]
     assert out[0].endswith(":claude --dangerously-load-development-channels server:periscope")
@@ -388,7 +389,17 @@ def test_duplicate_resume_activity_beats_the_active_flag():
     cmd = f"claude --resume {SID}"
     lines = [_active_line("p", "6", "0", cmd, "1"), _active_line("p", "6", "1", cmd, "0")]
     pane_map = {"p:6.0": "%3", "p:6.1": "%4"}
-    assert resurrect._dedupe_resumes(lines, pane_map, {"%3": 10.0, "%4": 99.0})[1] == ["p:6.0"]
+    assert resurrect._dedupe_resumes(lines, pane_map, {"%3": (SID, 10.0), "%4": (SID, 99.0)})[1] == ["p:6.0"]
+
+
+def test_duplicate_resume_goes_to_the_pane_live_on_that_session():
+    # The newest file can belong to a claude that has moved to another session
+    # (a /clear); the pane whose live claude reports THIS session is on it.
+    cmd = f"claude --resume {SID}"
+    lines = [_active_line("p", "6", "0", cmd, "0"), _active_line("p", "6", "1", cmd, "0")]
+    pane_map = {"p:6.0": "%3", "p:6.1": "%4"}
+    activity = {"%3": (SID, 10.0), "%4": (OLD_SID, 99.0)}
+    assert resurrect._dedupe_resumes(lines, pane_map, activity)[1] == ["p:6.1"]
 
 
 def test_distinct_sessions_and_prompt_text_untouched():

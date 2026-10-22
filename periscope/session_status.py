@@ -281,7 +281,8 @@ def pane_claude_pids() -> dict[str, int]:
     return found
 
 
-_RESUME_RE = re.compile(r"--resume[= ]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+# UUID-only: a captured --system-prompt can quote "--resume <word>" as text.
+RESUME_RE = re.compile(r"--resume[= ]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 
 
 def pane_resume_ids() -> dict[str, str]:
@@ -296,7 +297,7 @@ def pane_resume_ids() -> dict[str, str]:
     out: dict[str, str] = {}
     _, cmds = proc_table()
     for pane_id, pid in pane_pids.items():
-        m = _RESUME_RE.search(cmds.get(pid) or "")
+        m = RESUME_RE.search(cmds.get(pid) or "")
         if m:
             out[pane_id] = m.group(1)
     return out
@@ -453,32 +454,31 @@ def pane_efforts() -> dict[str, str]:
     return out
 
 
-def pane_session_activity() -> dict[str, float]:
-    """tmux pane id -> mtime of its live claude's session file. A running
-    claude rewrites that file on every status change, so among panes running
-    the same session the newest mtime is the one actually being used."""
+def pane_session_activity() -> dict[str, tuple[str | None, float]]:
+    """tmux pane id -> (sessionId, mtime) of its live claude's session file —
+    the same file live_session_id_for_pane reads. A running claude rewrites
+    that file on every status change, so among panes running the same session
+    the newest mtime is the one actually being used."""
     # Panes first: rewrite_save_file calls this on every save, and with no
     # claude panes (or under conftest's tmux stub) there is nothing to fork ps
     # or index ~/.claude/sessions for.
-    pane_pids = pane_claude_pids()
-    if not pane_pids:
-        return {}
-    live = _live_claude_pids()
-    by_pid = _indexes()[1]
-    return {pane_id: by_pid[pid][0]["_mtime"] for pane_id, pid in pane_pids.items() if pid in live and by_pid.get(pid)}
+    out: dict[str, tuple[str | None, float]] = {}
+    for pane_id in pane_claude_pids():
+        f = _live_session_file(pane_id)
+        if f:
+            out[pane_id] = (f.get("sessionId"), f["_mtime"])
+    return out
 
 
-def live_session_id_for_pane(pane_id: str) -> str | None:
-    """The sessionId the pane's RUNNING claude reports right now, or None when
-    the pane has no live claude / no session file for it.
+def _live_session_file(pane_id: str) -> dict | None:
+    """The session file of the pane's RUNNING claude, or None when the pane
+    has no live claude / no session file for it.
 
     Only honored when the pid is a live claude: a leftover <pid>.json whose pid
     has been recycled would otherwise hand back an unrelated session. Across
     accounts the same pid can have one live and one stale file (a recycled pid
     overwrites in place only within its own dir) — prefer the file from the
     pane's own CLAUDE_CONFIG_DIR; newest-mtime when that dir is unknown."""
-    if not pane_id:
-        return None
     pid = pane_claude_pids().get(pane_id)
     if pid is None or pid not in _live_claude_pids():
         return None
@@ -491,12 +491,21 @@ def live_session_id_for_pane(pane_id: str) -> str | None:
         # (env var absent → no entry) — so "dir unknown" covers every
         # default-account pane. Newest mtime is the live file there: a running
         # claude rewrites its session file; a stale one never does.
-        return cands[0].get("sessionId")
+        return cands[0]
     want = str(Path(cfg).expanduser())
     for c in cands:
         if c["_dir"] == want:
-            return c.get("sessionId")
-    return cands[0].get("sessionId")  # pane's dir had no file — newest wins
+            return c
+    return cands[0]  # pane's dir had no file — newest wins
+
+
+def live_session_id_for_pane(pane_id: str) -> str | None:
+    """The sessionId the pane's RUNNING claude reports right now, or None when
+    the pane has no live claude / no session file for it (_live_session_file)."""
+    if not pane_id:
+        return None
+    f = _live_session_file(pane_id)
+    return f.get("sessionId") if f else None
 
 
 def claude_proc_for(sid: str | None) -> dict | None:
