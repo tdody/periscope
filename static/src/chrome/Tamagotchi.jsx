@@ -445,8 +445,10 @@ function Behind({ activity, occasion, coffee, ringing, keyboard = true, mood = "
 // A pastime's backdrop (PASTIME_SCENES): the outdoor ones in the season's
 // scenery, at night on a Halloween round. Scenery is drawn here, not in
 // TamaPastimes.jsx: importing it back from there would make an import cycle.
-function PastimeBehind({ p, season, trick }) {
-  const drawn = <p.Behind season={season} trick={trick} />;
+// The critter goes to the friend and the kids (TamaPastimes.jsx), which match
+// the mascot; the other pastimes' props ignore it.
+function PastimeBehind({ p, season, trick, critter }) {
+  const drawn = <p.Behind season={season} trick={trick} critter={critter} />;
   return p.outdoors ? <g><Scenery season={season} night={trick} />{drawn}</g> : drawn;
 }
 
@@ -651,7 +653,7 @@ export function TamaScene({
          data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
-      {p ? <PastimeBehind p={p} season={season} trick={trick} /> : (
+      {p ? <PastimeBehind p={p} season={season} trick={trick} critter={critter} /> : (
         <Behind activity={activity === "nap" ? "code" : activity} occasion={occasion} coffee={coffee} ringing={ringing}
                 keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"} screen={screen}
                 dish={dish} />

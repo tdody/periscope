@@ -6,9 +6,9 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, placement } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
@@ -657,7 +657,10 @@ describe("critters", () => {
     expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
   });
 
-  const faceOf = (html) => html.match(/<g class="critter"(?: data-face="(\w+)")?/)[1] ?? null;
+  // The mascot's own critter, not a beer/kids scene's friend or kids: those
+  // carry `class="critter"` too now, nested in Behind, ahead of the mascot's
+  // group (`tama-creature`) in the markup.
+  const faceOf = (html) => html.slice(html.indexOf('class="tama-creature')).match(/<g class="critter"(?: data-face="(\w+)")?/)[1] ?? null;
   const duty = (kind) => ({ duty: { kind, label: "1", more: 0 } });
 
   it.each(critters.map((c) => [c.id, c]))("%s makes Clawd's duty faces when he would", (_id, c) => {
@@ -706,7 +709,12 @@ describe("critter faces follow Clawd's in every scene", () => {
     if (/<g fill="[^"]+"><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><\/g>/.test(html)) return "down";
     return null;
   };
-  const critterFace = (html) => (html.match(/<g class="critter"(?: data-face="(\w+)")?/) || [])[1] ?? null;
+  // Scoped to the mascot's own group, same reason as faceOf above: a beer or
+  // kids scene's friend/kids are critters too, drawn ahead of it in Behind.
+  const critterFace = (html) => {
+    const from = html.indexOf('class="tama-creature');
+    return (html.slice(from).match(/<g class="critter"(?: data-face="(\w+)")?/) || [])[1] ?? null;
+  };
 
   it("matches Clawd's face and startle on every activity × duty × mood × occasion × trick × party", () => {
     const scope = critterById("scope");
@@ -772,6 +780,37 @@ describe("critters at their pastimes", () => {
   it("lifts the head props onto a seated critter's head at a pastime too", () => {
     expect(scene(nox, "sled", { season: "winter" })).toMatch(/<g transform="translate\(0 -2\)"><rect class="tama-snowcap"/);
     expect(scene(nox, "game", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+  });
+
+  const count = (html, needle) => html.split(needle).length - 1;
+
+  it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
+    const html = scene(nox, "beer");
+    expect(count(html, 'class="critter"')).toBe(2);
+    const friend = html.slice(html.indexOf('class="tama-friend"'));
+    expect(friend).toMatch(/<g class="tama-critter" style="transform-box: view-box" transform="translate\([^)]*\) scale\(-/);
+    expect(friend).toContain('data-face="happy"');
+    expect(friend).toContain(`fill="${hueRotate("#c6e05a", FRIEND_HUE)}"`);
+    expect(html).not.toContain('fill="#6f93d6"'); // no blue Clawd
+    expect(friend).toContain("tama-pint");
+  });
+
+  it("plays with two half-size kids of its own kind", () => {
+    const html = scene(nox, "kids");
+    expect(count(html, 'class="critter"')).toBe(3);
+    const kidScale = Math.round(placement(nox.sprite, { x0: 0, sitting: false, height: 5 }).scale * 1e4) / 1e4;
+    expect(count(html, `scale(${kidScale})`)).toBe(2);
+    expect(count(html, 'class="tama-kid')).toBe(2);
+  });
+
+  it("still dresses the kids in sheets on a Halloween evening", () => {
+    expect(count(scene(nox, "kids", { trick: true }), 'class="tama-kid-sheet"')).toBe(2);
+  });
+
+  it("keeps Clawd's own friend and kids for Clawd", () => {
+    expect(render(<TamaScene activity="beer" />)).toContain('fill="#6f93d6"');
+    expect(render(<TamaScene activity="beer" />)).not.toContain('class="critter"');
+    expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
   });
 });
 

@@ -4,6 +4,8 @@
 // TamaDishes.jsx's. Behind-the-mascot pieces take fixed positions, set against
 // the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
 // inside its group, so they bob with it. Motion is CSS (styles.css, `.tama`).
+import { Critter } from "./Critter.jsx";
+import { CLAWD_HEIGHT, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -163,9 +165,30 @@ export function BassAmp() {
 }
 
 // ---- a beer with friends: a friend facing Clawd, string lights overhead -----
-// The friend is Clawd mirrored, in another colour, arm to arm at x 18.
+// The friend is Clawd mirrored, in another colour, arm to arm at x 18; a
+// critter's is that critter (CritterFriend).
 const FRIEND_X0 = 18;
 const FRIEND = "#6f93d6";
+
+// A critter's friend is that critter, mirrored, its colours turned this far:
+// another individual of the same kind, as Clawd's is Clawd in blue.
+export const FRIEND_HUE = 150;
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+
+// Placed like the mascot on the friend's spot, then mirrored about its own
+// centre so it faces the mascot. The wrapper carries the view-box pivot for
+// the same reason as the mascot's (Tamagotchi.jsx): `.tama g` pivots on its
+// fill-box.
+function CritterFriend({ sprite }) {
+  const { scale, tx, ty } = placement(sprite, { x0: FRIEND_X0, sitting: false });
+  const cx = FRIEND_X0 + 8.5;
+  return (
+    <g class="tama-critter" style="transform-box: view-box"
+       transform={`translate(${r4(2 * cx - tx)} ${r4(ty)}) scale(${r4(-scale)} ${r4(scale)})`}>
+      <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} />
+    </g>
+  );
+}
 
 function Pint({ x, cls }) {
   return (
@@ -184,7 +207,7 @@ export function ClawdPint({ x0 }) {
 
 const BULBS = [["#ffd166", 15.4], ["#f28ab2", 19.6], ["#7fb6e6", 23.8], ["#9be38f", 28], ["#ffd166", 32.2]];
 
-export function Friend() {
+export function Friend({ critter }) {
   return (
     <g>
       <path d="M13.4 1.2 Q23.6 3.6 34 1.2" fill="none" stroke="var(--fg-3)" stroke-width="0.2" shape-rendering={GEO} />
@@ -193,12 +216,16 @@ export function Friend() {
               width="0.7" height="0.9" rx="0.3" fill={color} />
       ))}
       <g class="tama-friend">
-        <Sprite cells={FRIEND_CELLS.body} x0={FRIEND_X0} fill={FRIEND} />
-        <Sprite cells={FRIEND_CELLS.legs} x0={FRIEND_X0} y0={Y0 + 2 * BODY.length} fill={FRIEND} />
-        <g fill="none" stroke={EYE} stroke-width="0.45" stroke-linecap="square">
-          <path d={`M${FRIEND_X0 + 3.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
-          <path d={`M${FRIEND_X0 + 10.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
-        </g>
+        {critter?.sprite ? <CritterFriend sprite={critter.sprite} /> : (
+          <>
+            <Sprite cells={FRIEND_CELLS.body} x0={FRIEND_X0} fill={FRIEND} />
+            <Sprite cells={FRIEND_CELLS.legs} x0={FRIEND_X0} y0={Y0 + 2 * BODY.length} fill={FRIEND} />
+            <g fill="none" stroke={EYE} stroke-width="0.45" stroke-linecap="square">
+              <path d={`M${FRIEND_X0 + 3.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
+              <path d={`M${FRIEND_X0 + 10.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
+            </g>
+          </>
+        )}
         <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />
       </g>
       <g class="tama-cheers" fill="#ffd166">
@@ -210,7 +237,7 @@ export function Friend() {
   );
 }
 
-// ---- time with the kids: two half-size Clawds, hand in hand, hopping --------
+// ---- time with the kids: two half-size Clawds (or the picked critter), hand in hand, hopping --------
 // On a Halloween evening they trick-or-treat in little sheets, pails in hand.
 function KidSheet({ x }) {
   const L = x + 1.1;
@@ -227,12 +254,27 @@ function KidSheet({ x }) {
   );
 }
 
-function Kid({ x, cls, costume }) {
+// A critter's kid: the critter at half height on a kid's spot (8.5 wide, so
+// centred at x + 4.25), feet on the floor.
+function CritterKid({ x, sprite }) {
+  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: CLAWD_HEIGHT / 2 });
+  return (
+    <g class="tama-critter" style="transform-box: view-box" transform={`translate(${r4(tx)} ${r4(ty)}) scale(${r4(scale)})`}>
+      <Critter sprite={sprite} />
+    </g>
+  );
+}
+
+function Kid({ x, cls, costume, sprite }) {
   return (
     <g class={cls}>
-      <Sprite cells={KID_CELLS.body} x0={x} y0={14} w={0.5} h={1} />
-      <Sprite cells={KID_CELLS.legs} x0={x} y0={18} w={0.5} h={1} />
-      {costume ? <KidSheet x={x} /> : (
+      {sprite ? <CritterKid x={x} sprite={sprite} /> : (
+        <>
+          <Sprite cells={KID_CELLS.body} x0={x} y0={14} w={0.5} h={1} />
+          <Sprite cells={KID_CELLS.legs} x0={x} y0={18} w={0.5} h={1} />
+        </>
+      )}
+      {costume ? <KidSheet x={x} /> : !sprite && (
         <g fill={EYE}>
           <rect x={x + 2.5} y="15" width="0.5" height="1" />
           <rect x={x + 6} y="15" width="0.5" height="1" />
@@ -242,11 +284,11 @@ function Kid({ x, cls, costume }) {
   );
 }
 
-export function Kids({ trick = false }) {
+export function Kids({ trick = false, critter }) {
   return (
     <g>
-      <Kid x={17.4} cls="tama-kid" costume={trick} />
-      <Kid x={25.4} cls="tama-kid tama-kid2" costume={trick} />
+      <Kid x={17.4} cls="tama-kid" costume={trick} sprite={critter?.sprite} />
+      <Kid x={25.4} cls="tama-kid tama-kid2" costume={trick} sprite={critter?.sprite} />
     </g>
   );
 }
