@@ -383,6 +383,14 @@ def test_duplicate_resume_falls_back_to_active_then_first():
     assert resurrect._dedupe_resumes(lines, {}, {})[1] == ["p:6.1"]
 
 
+def test_duplicate_resume_activity_beats_the_active_flag():
+    # The pane in use keeps the session even when another pane is the active one.
+    cmd = f"claude --resume {SID}"
+    lines = [_active_line("p", "6", "0", cmd, "1"), _active_line("p", "6", "1", cmd, "0")]
+    pane_map = {"p:6.0": "%3", "p:6.1": "%4"}
+    assert resurrect._dedupe_resumes(lines, pane_map, {"%3": 10.0, "%4": 99.0})[1] == ["p:6.0"]
+
+
 def test_distinct_sessions_and_prompt_text_untouched():
     lines = [
         _pane_line("p", "1", "0", f"claude --resume {SID}"),

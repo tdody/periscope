@@ -369,6 +369,28 @@ def test_live_session_id_for_pane_ignores_dead_pid(tmp_path, monkeypatch):
     assert ss.live_session_id_for_pane("%7") is None
 
 
+# ── pane_session_activity: which of several panes is using its session ──
+
+
+def test_pane_session_activity_takes_each_live_panes_newest_file(tmp_path, monkeypatch):
+    # resurrect's keeper among panes resuming one session: a dead pid (502, a
+    # leftover file) or a pane with no session file (503) must not compete.
+    import os
+
+    _seed(
+        tmp_path,
+        monkeypatch,
+        _sess(500, "sid-a", "busy"),
+        _sess(501, "sid-b", "idle"),
+        _sess(502, "sid-c", "idle"),
+        live_pids={500, 501},
+    )
+    os.utime(tmp_path / "500.json", (1000, 1000))
+    os.utime(tmp_path / "501.json", (2000, 2000))
+    monkeypatch.setattr(ss, "pane_claude_pids", lambda: {"%3": 500, "%4": 501, "%5": 502, "%6": 503})
+    assert ss.pane_session_activity() == {"%3": 1000.0, "%4": 2000.0}
+
+
 # ── multi-account sessions-dir scan ──────────────────────────────────────
 
 
