@@ -88,8 +88,8 @@ export function faceGlyphs(sprite, face) {
   if (face === "worried") {
     const sweat = {
       // A curve, unlike the eyes' and brows' straight strokes: those keep the
-      // scene's crispEdges (Tamagotchi.jsx's root svg), but crispEdges snaps a
-      // curve's control points to the pixel grid and shows as a visible kink.
+      // scene's crispEdges (Tamagotchi.jsx's root svg), which drops the
+      // anti-aliasing a drop this small needs, leaving it stair-stepped.
       p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
       cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
     };

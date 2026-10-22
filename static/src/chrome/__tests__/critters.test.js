@@ -109,6 +109,7 @@ describe("faceGlyphs", () => {
   const scope = critterById("scope").sprite;
   const moss = critterById("moss").sprite;
   const nox = critterById("nox").sprite;
+  const nums = (p) => p.match(/-?[\d.]+/g).map(Number);
 
   it("draws one glyph per eye, in the critter's ink", () => {
     for (const face of ["happy", "x", "down"]) {
@@ -137,7 +138,6 @@ describe("faceGlyphs", () => {
   });
 
   it("peaks the happy face at the eye's centre", () => {
-    const nums = (p) => p.match(/-?[\d.]+/g).map(Number);
     const [happy] = faceGlyphs(scope, "happy");
     happy.g.forEach(({ p }, i) => {
       const e = scope.anchors.eyes[i];
@@ -151,12 +151,12 @@ describe("faceGlyphs", () => {
     const [x] = faceGlyphs(scope, "x");
     x.g.forEach(({ p }, i) => {
       const e = scope.anchors.eyes[i];
-      const nums = p.match(/-?[\d.]+/g).map(Number);
-      for (let j = 0; j < nums.length; j += 2) {
-        expect(nums[j]).toBeGreaterThanOrEqual(e.x);
-        expect(nums[j]).toBeLessThanOrEqual(e.x + e.w);
-        expect(nums[j + 1]).toBeGreaterThanOrEqual(e.y);
-        expect(nums[j + 1]).toBeLessThanOrEqual(e.y + e.h);
+      const pts = nums(p);
+      for (let j = 0; j < pts.length; j += 2) {
+        expect(pts[j]).toBeGreaterThanOrEqual(e.x);
+        expect(pts[j]).toBeLessThanOrEqual(e.x + e.w);
+        expect(pts[j + 1]).toBeGreaterThanOrEqual(e.y);
+        expect(pts[j + 1]).toBeLessThanOrEqual(e.y + e.h);
       }
     });
   });
@@ -169,14 +169,16 @@ describe("faceGlyphs", () => {
   });
 
   it("raises each brow's inner end", () => {
-    const nums = (p) => p.match(/-?[\d.]+/g).map(Number);
-    const [left, right] = faceGlyphs(scope, "worried")[0].g;
-    expect(nums(left.p).at(-1)).toBeLessThan(0);
-    expect(nums(right.p).at(-1)).toBeGreaterThan(0);
+    const [left, right] = faceGlyphs(scope, "worried")[0].g.map(({ p }) => nums(p)); // [x, y, dx, dy]
+    expect(left[3]).toBeLessThan(0);
+    expect(right[3]).toBeGreaterThan(0);
+    // Mirrored: the inner ends meet at one height.
+    expect(left[1] + left[3]).toBeCloseTo(right[1]);
 
     const [tent] = faceGlyphs(moss, "worried")[0].g;
-    const [x0, , dx0] = nums(tent.p);
+    const [x0, , dx0, dy0] = nums(tent.p);
     expect(x0 + dx0).toBeCloseTo(moss.anchors.eyes[0].x + moss.anchors.eyes[0].w / 2);
+    expect(dy0).toBeLessThan(0); // a tent, not a V
   });
 
   it("uses a critter's own face layer over the generated glyph", () => {
@@ -187,6 +189,7 @@ describe("faceGlyphs", () => {
   it("keeps the sweat drop under a critter's own worried brows", () => {
     const own = [{ g: [{ r: [1, 1, 1, 1] }] }];
     const worried = faceGlyphs({ ...scope, faces: { worried: own } }, "worried");
+    expect(worried).toHaveLength(own.length + 1); // own brows instead of the generated ones, not as well
     expect(worried[0]).toEqual(own[0]);
     expect(worried.at(-1).cls).toBe("tama-sweat");
     expect(nox.faces.worried).toBeDefined();
