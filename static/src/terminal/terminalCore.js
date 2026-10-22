@@ -71,7 +71,8 @@ let searchAddon = null;
 let termResizeObserver = null;
 let fitDebounce = null;
 let fitHeld = false;              // a splitter drag is in progress — see holdTerminalFit
-let lastSentCols = 0;            // width of the last resize asked of the server — suppresses redundant resizes
+const NOTHING_SENT = { cols: 0, rows: 0, shrunkFrom: 0 };
+let lastSent = NOTHING_SENT;      // what this socket last asked tmux for (resizeAsk) — suppresses redundant resizes
 
 const CODEX_PANEL_BG = "\x1b[48;2;30;30;30m";
 const PERISCOPE_TERM_BG = "\x1b[48;2;40;44;52m";
@@ -162,11 +163,33 @@ export function hintDims({ pinnedCols, fitRows }) {
   return { cols: pinnedCols, rows: fitRows };
 }
 
-// Pure: whether a fit's ask (hintDims) must go to tmux. A width change always;
-// a height-only change only when the container is now shorter than the pane —
-// see scheduleFit for why height-only growth never is.
-export function resizeNeeded(ask, lastSentCols, knownPaneRows) {
-  return ask.cols !== lastSentCols || (knownPaneRows > 0 && ask.rows < knownPaneRows);
+// Pure: what a fit must ask tmux for, or null. `container` is the fit's
+// hintDims; `sent` the socket's memo of its last ask (afterSend). A width
+// change always; a height-only change when the container is now shorter than
+// the pane, or to undo a height-only shrink of our own — back up to the
+// height asked before it, never past. See scheduleFit for why height-only
+// growth is otherwise never sent.
+export function resizeAsk(container, sent, knownPaneRows) {
+  if (container.cols !== sent.cols) return container;
+  if (knownPaneRows > 0 && container.rows < knownPaneRows) return container;
+  if (sent.shrunkFrom > 0 && container.rows > sent.rows) {
+    return { cols: container.cols, rows: Math.min(container.rows, sent.shrunkFrom) };
+  }
+  return null;
+}
+
+// Pure: the memo after sending `ask` (or hinting it at connect, from
+// NOTHING_SENT). `shrunkFrom` is the height asked before an outstanding
+// height-only shrink of ours: kept across further shrinks and partial
+// regrowth, cleared once regrown to it or by a width change, which asks for
+// the container's full height anyway.
+export function afterSend(sent, ask) {
+  let shrunkFrom = 0;
+  if (ask.cols === sent.cols) {
+    if (ask.rows < sent.rows) shrunkFrom = sent.shrunkFrom || sent.rows;
+    else if (ask.rows < sent.shrunkFrom) shrunkFrom = sent.shrunkFrom;
+  }
+  return { cols: ask.cols, rows: ask.rows, shrunkFrom };
 }
 
 // Measure the container into the session's pin and fitRows. False when it
@@ -721,10 +744,6 @@ export function startLiveTerminal(target) {
   termIntentionalClose = false;
   termReconnectAttempt = 0;
   termReconnectedNotified = false;
-  // Seed the "last sent" memo with the dims we're about to give the server
-  // via the WS query params. Without this, the first ResizeObserver fire
-  // would send a redundant resize message.
-  lastSentCols = hint.cols;
   connectTerminalWs(target, hint.cols, hint.rows);
 }
 
@@ -733,6 +752,10 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
   let url = `${wsProto}://${location.host}/ws/pane?${paneIdQuery(target)}`;
   if (hintCols > 0 && hintRows > 0) {
     url += `&cols=${hintCols}&rows=${hintRows}`;
+    // Seed the "last sent" memo with the dims the handshake resizes tmux to.
+    // Without this, the first ResizeObserver fire would send a redundant
+    // resize message.
+    lastSent = afterSend(NOTHING_SENT, { cols: hintCols, rows: hintRows });
   }
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
@@ -816,7 +839,7 @@ function scheduleFit() {
     if (!measureContainer()) return;
     syncXtermSize();
     // Only send a resize message when the width changed since the last one
-    // we sent — height-only changes are dropped, but for one (below). Two
+    // we sent — height-only changes are dropped, but for two (below). Two
     // reasons:
     //   1. The ResizeObserver's initial observation fires shortly after
     //      mount and produces a no-op resize (cols/rows unchanged from the
@@ -834,18 +857,25 @@ function scheduleFit() {
     //      re-syncs height — empty only because the xterm stays at the
     //      pane's height (paneRows); grown to the container, those rows
     //      showed a stale copy of the screen.
-    // A height-only SHRINK below the pane is sent (resizeNeeded): the pane no
+    // A height-only SHRINK below the pane is sent (resizeAsk): the pane no
     // longer fits, and the xterm can't show it whole until tmux shrinks it —
     // capped at the container, every pane row past its last paints onto that
     // row; uncapped, it clipped the prompt and cursor out of view. One
     // SIGWINCH redraw is the lesser cost. (A splitter drag still sends once,
     // on release — holdTerminalFit.)
+    // The height-only GROWTH that undoes such a shrink of ours is sent too —
+    // only that growth, and only up to the height asked before the shrink.
+    // The window is window-size manual, so nothing else ever regrew it: the
+    // pane stayed short, a blank band under Claude's TUI for every viewer,
+    // until the next width change. One redraw per shrink undone; and as only
+    // our own shrink is undone, a shorter viewer's is never regrown into a
+    // fight.
     // Compared and sent as the container's dims (hintDims): term.cols is the
     // pane's, which on a left/right split never equals what we last sent.
-    const ask = hintDims({ pinnedCols, fitRows });
-    if (!resizeNeeded(ask, lastSentCols, paneRows)) return;
+    const ask = resizeAsk(hintDims({ pinnedCols, fitRows }), lastSent, paneRows);
+    if (!ask) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
-      lastSentCols = ask.cols;
+      lastSent = afterSend(lastSent, ask);
       // The server's reconcile answers with the pane's real size.
       termWs.send(JSON.stringify({ type: "resize", cols: ask.cols, rows: ask.rows }));
     }
@@ -867,7 +897,7 @@ export function stopLiveTerminal() {
     clearTimeout(termReconnectTimer);
     termReconnectTimer = null;
   }
-  lastSentCols = 0;
+  lastSent = NOTHING_SENT;
   paneCols = 0;
   paneRows = 0;
   if (fitDebounce) {

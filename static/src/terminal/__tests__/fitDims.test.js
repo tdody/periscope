@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hintDims, pinWidth, resizeNeeded, xtermDims } from "../terminalCore.js";
+import { afterSend, hintDims, pinWidth, resizeAsk, xtermDims } from "../terminalCore.js";
 
 describe("xtermDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {
@@ -68,27 +68,69 @@ describe("hintDims", () => {
   });
 });
 
-describe("resizeNeeded", () => {
+describe("resizeAsk", () => {
+  const sent = (cols, rows, shrunkFrom = 0) => ({ cols, rows, shrunkFrom });
+
   it("sends a width change", () => {
-    expect(resizeNeeded({ cols: 150, rows: 40 }, 120, 40)).toBe(true);
+    expect(resizeAsk({ cols: 150, rows: 40 }, sent(120, 40), 40)).toEqual({ cols: 150, rows: 40 });
   });
 
   it("drops height-only growth: a SIGWINCH redraw for rows the pane doesn't need", () => {
-    expect(resizeNeeded({ cols: 120, rows: 62 }, 120, 40)).toBe(false);
+    expect(resizeAsk({ cols: 120, rows: 62 }, sent(120, 40), 40)).toBe(null);
   });
 
   it("sends a height-only shrink below the pane, which no longer fits", () => {
     // Unsent, the 62-row pane never shrinks to the 40-row container and the
     // xterm can't show its bottom rows until the next width change.
-    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 62)).toBe(true);
+    expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 62)).toEqual({ cols: 239, rows: 40 });
   });
 
   it("drops a height-only shrink the pane still fits in", () => {
     // A top/bottom split: the pane is a 31-row slice, well inside 40 rows.
-    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 31)).toBe(false);
+    expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 31)).toBe(null);
   });
 
   it("drops height-only changes before the server has reported the pane", () => {
-    expect(resizeNeeded({ cols: 239, rows: 40 }, 239, 0)).toBe(false);
+    expect(resizeAsk({ cols: 239, rows: 40 }, sent(239, 62), 0)).toBe(null);
+  });
+
+  it("undoes its own height-only shrink when the container grows back", () => {
+    // Regression: an unsplit 239x62 pane, the window shortened to 40 rows and
+    // restored. The shrink went to tmux; the restore didn't (height-only
+    // growth), so the pane stayed 40 rows — a blank band under Claude's TUI,
+    // for every viewer, until the next width change.
+    let memo = afterSend(sent(0, 0), { cols: 239, rows: 62 }); // the connect hint
+    let paneRows = 62;
+    const fitTo = (rows) => {
+      const ask = resizeAsk({ cols: 239, rows }, memo, paneRows);
+      if (ask) {
+        memo = afterSend(memo, ask);
+        paneRows = ask.rows; // unsplit: the pane is the window tmux was sized to
+      }
+      return ask;
+    };
+    expect(fitTo(40)).toEqual({ cols: 239, rows: 40 });
+    expect(fitTo(50)).toEqual({ cols: 239, rows: 50 });
+    expect(fitTo(62)).toEqual({ cols: 239, rows: 62 });
+    // Back where it was asked to be: further growth is plain height-only
+    // growth again, never sent.
+    expect(fitTo(70)).toBe(null);
+  });
+
+  it("regrows no further than the height it had asked for before shrinking", () => {
+    const memo = afterSend(sent(239, 62), { cols: 239, rows: 40 });
+    expect(resizeAsk({ cols: 239, rows: 80 }, memo, 40)).toEqual({ cols: 239, rows: 62 });
+  });
+
+  it("never regrows a pane another viewer shrank", () => {
+    // Two viewers: ours 62 rows, theirs 40. Their shrink isn't ours to undo
+    // — regrowing it would make them shrink it again, and on.
+    expect(resizeAsk({ cols: 239, rows: 62 }, sent(239, 62), 40)).toBe(null);
+  });
+
+  it("forgets the shrink once a width change resizes to the container", () => {
+    const shrunk = afterSend(sent(239, 62), { cols: 239, rows: 40 });
+    const widened = afterSend(shrunk, { cols: 200, rows: 40 });
+    expect(resizeAsk({ cols: 200, rows: 62 }, widened, 40)).toBe(null);
   });
 });

@@ -71,10 +71,14 @@ These are the non-obvious behaviors worth preserving:
    the CONTAINER's dims (`hintDims`: pinned width × fitted rows; with
    nothing measured yet, no hint at all), never `term.cols`/`term.rows` —
    those are the pane's, and `resize-window` applies them to the whole
-   window: echoing them back shrank a split window on every reconnect. Height-only growth is still
-   never sent (each SIGWINCH is a Claude redraw that can mangle
-   scrollback); a height-only shrink below the pane is (`resizeNeeded`),
-   since nothing else lets the pane fit.
+   window: echoing them back shrank a split window on every reconnect.
+   Height-only growth is still never sent (each SIGWINCH is a Claude redraw
+   that can mangle scrollback); a height-only shrink below the pane is
+   (`resizeAsk`), since nothing else lets the pane fit, and so is the
+   growth that undoes such a shrink of our own, back to the height asked
+   before it and no further: the window is `window-size manual`, so
+   nothing else regrows it, and a restored window kept a blank band under
+   the pane for every viewer.
 
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
