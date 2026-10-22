@@ -387,6 +387,21 @@ describe("<Tamagotchi>", () => {
     expect(render(<Tamagotchi />)).toContain('title="Claude is napping at the desk (1pm–2:30pm) · every account is at its limit until 2:30pm · up next at 2:30pm: coding"');
   });
 
+  it("naps, and knocks off at 4pm, under walls with no reset time reported", () => {
+    // launch_policy.walls' {until: null}: no walling meter says when it resets.
+    vi.useFakeTimers();
+    vi.setSystemTime(at(14, 30));
+    walls.value = { until: null };
+    const nap = render(<Tamagotchi />);
+    expect(nap).toContain('data-activity="nap"');
+    expect(nap).toContain('title="Claude is napping at the desk (1pm–4pm) · every account is at its limit until later · up next at 4pm: ');
+    vi.setSystemTime(at(16, 10));
+    const pastime = activityAt(at(16, 10), { walledUntil: Infinity });
+    const html = render(<Tamagotchi />);
+    expect(html).toContain(`data-activity="${pastime.id}"`);
+    expect(html).toContain(`title="Claude is ${pastime.label} (4pm–4:30pm) · every account is at its limit until later`);
+  });
+
   it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
     vi.useFakeTimers();
     vi.setSystemTime(at(12, 10));
@@ -456,6 +471,10 @@ describe("Clawd on duty", () => {
     expect(html).toContain('data-activity="nap"');
     for (const piece of ["back at", ">3pm<", "tama-eyes-closed", "tama-z", "tama-desk"]) expect(html).toContain(piece);
     expect(scene("read", null, { walled: { day: "Thu", time: "3pm" } })).toContain('data-activity="read"');
+  });
+
+  it("lights the jack-o'-lantern under the desk through the nap in Halloween week", () => {
+    expect(scene("nap", null, { occasion: "halloween", walled: { day: null, time: "3pm" } })).toContain("tama-jack");
   });
 
   it("wakes from the nap for the bell, as it does at night", () => {
