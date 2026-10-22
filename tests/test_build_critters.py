@@ -356,7 +356,7 @@ def test_mood_plus_face_layer_alone_still_raises_always_drawn(tmp_path):
 
 def test_nox_draws_its_own_worried_brows():
     worried = _sprite("nox")["faces"]["worried"]
-    assert worried[0]["a"] == {"fill": "#8f9397"}
+    assert worried[0]["a"] == {"fill": "#d5d8dc"}
     assert len(worried[0]["g"]) == 4
 
 

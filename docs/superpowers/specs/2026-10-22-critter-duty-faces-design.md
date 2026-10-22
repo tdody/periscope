@@ -39,7 +39,7 @@ Each sprite in `SPRITES` gains three things:
 - **`faces`** (optional): `{happy|x|worried|down: [nodes]}`. These come from top-level `<g class="face-happy">`, `face-x`, `face-worried` and `face-down` layers in the critter's SVG, parsed like the mood layers into the same node format. Any other `face-*` class raises. A face layer is hidden in the sprite's normal tree; only the face renderer draws it.
 
 **Art changes:**
-- `nox.svg`: `data-ink="#c6e05a"` (its sclera), plus a `face-worried` layer with light-grey brows (`#8f9397`), because dark brows vanish on the black cat.
+- `nox.svg`: `data-ink="#c6e05a"` (its sclera), plus a `face-worried` layer with light-grey brows (`#d5d8dc`), because dark brows vanish on the black cat.
 - `moss.svg`: `data-ink="#0f2e1b"` (its pupil).
 
 No other SVG changes.
