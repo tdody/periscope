@@ -446,11 +446,11 @@ def _t(*args):
     ).stdout
 
 
-def _mk_session():
+def _mk_session(cmd="/bin/sh"):
     name = f"mtest-{uuid.uuid4().hex[:8]}"
     # /bin/sh, not the login shell: zsh prompt segments can repaint AFTER
     # the last reconcile frame and break the final grid comparison.
-    _t("new-session", "-d", "-s", name, "-x", "80", "-y", "24", "/bin/sh")
+    _t("new-session", "-d", "-s", name, "-x", "80", "-y", "24", cmd)
     pane_id = _t("display-message", "-p", "-t", name, "#{pane_id}").strip()
     return name, pane_id
 
@@ -566,6 +566,41 @@ def test_two_subscribers_multiplex(monkeypatch):
         assert b"multiplexed" in ca and b"multiplexed" in cb
         async with a, b:
             pass
+        await tmux_mirror.shutdown()
+
+    try:
+        asyncio.run(drive())
+    finally:
+        _t("kill-server")
+
+
+@needs_tmux
+def test_split_under_an_open_pane_announces_its_size_before_the_frame(monkeypatch):
+    """The path the size announcements exist for, end to end: a split resizes
+    the pane under an open terminal without periscope asking, tmux reports it
+    only as %layout-change, and the reconcile that triggers must announce the
+    pane's real dims ahead of the frame painted at them. A left/right split
+    checks the width field too — #{window_width} equals #{pane_width} on every
+    unsplit pane, so the faked-reply tests can't tell them apart."""
+    monkeypatch.setattr(tmux_mirror, "_TMUX", ("tmux", "-L", TEST_SOCKET))
+    # A pane that prints nothing on SIGWINCH: a shell redraws its prompt, and
+    # that %output's reconcile would mask a dead %layout-change path.
+    name, pane_id = _mk_session("sleep 600")
+
+    async def drive():
+        sub = await tmux_mirror.subscribe(name, pane_id, size=PaneSize(cols=80, rows=24))
+        async with sub:
+            settled = await _drain(sub, 0.5)  # connect-time frame, dims unchanged
+            assert not any(isinstance(c, PaneSize) for c in settled)
+            _t("split-window", "-h", "-t", pane_id, "/bin/sh")
+            chunks = await _drain(sub, 1.0)
+            w, h = _t("display-message", "-p", "-t", pane_id, "#{pane_width}|#{pane_height}").strip().split("|")
+            announced = [i for i, c in enumerate(chunks) if isinstance(c, PaneSize)]
+            assert announced, f"no size announcement after the split: {chunks!r}"
+            i = announced[0]
+            assert chunks[i] == PaneSize(cols=int(w), rows=int(h))
+            assert int(w) < 80
+            assert chunks[i + 1].startswith(b"\x1b[?1049")
         await tmux_mirror.shutdown()
 
     try:
