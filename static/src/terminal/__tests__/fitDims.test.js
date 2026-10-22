@@ -1,35 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { fitDims, hintDims, resizeNeeded } from "../terminalCore.js";
+import { hintDims, pinWidth, resizeNeeded, xtermDims } from "../terminalCore.js";
 
-describe("fitDims", () => {
+describe("xtermDims", () => {
   it("keeps rows at the pane's height, not the container's", () => {
     // Regression: a 32-row pane in a split 62-row window. Fitting the xterm
     // to the container left 30 rows tmux never repaints, holding a frozen
     // older copy of the screen under the live one.
-    expect(fitDims(239, 62, 239, 239, 32)).toEqual({ cols: 239, rows: 32, pinnedCols: 239 });
+    expect(xtermDims(239, 32, 239, 62)).toEqual({ cols: 239, rows: 32 });
   });
 
   it("caps rows at a container shorter than the pane", () => {
     // Regression: an unsplit 62-row pane, window dragged to 40 rows. The xterm
     // stayed 62 rows in a 40-row box (.detail-xterm is overflow: hidden), so
     // the pane's bottom rows — prompt, input box, cursor — were clipped away.
-    expect(fitDims(239, 40, 239, 239, 62)).toEqual({ cols: 239, rows: 40, pinnedCols: 239 });
+    expect(xtermDims(239, 62, 239, 40)).toEqual({ cols: 239, rows: 40 });
   });
 
-  it("keeps cols at a narrower pane's width, and the pin at the container's", () => {
+  it("keeps cols at a narrower pane's width", () => {
     // A left/right split: the pane is half the window periscope sized to the
     // container. The xterm shows the pane; the pin is what tmux is asked for.
-    expect(fitDims(200, 50, 200, 100, 50)).toEqual({ cols: 100, rows: 50, pinnedCols: 200 });
+    expect(xtermDims(100, 50, 200, 50)).toEqual({ cols: 100, rows: 50 });
   });
 
-  it("pins the first width it measures, and takes the container's dims before the server reports a size", () => {
-    // The mount path (startLiveTerminal) pins from nothing; one rule for both.
-    expect(fitDims(120, 40, 0, 0, 0)).toEqual({ cols: 120, rows: 40, pinnedCols: 120 });
+  it("caps a pane announced bigger than the container", () => {
+    // Another viewer's taller, wider container resized the window: no fit
+    // runs here, only the size message, and it goes through this rule too.
+    expect(xtermDims(239, 62, 200, 40)).toEqual({ cols: 200, rows: 40 });
+  });
+
+  it("takes the container's dims before the server reports a size, and the pane's before a measure", () => {
+    expect(xtermDims(0, 0, 120, 40)).toEqual({ cols: 120, rows: 40 });
+    expect(xtermDims(200, 50, 0, 0)).toEqual({ cols: 200, rows: 50 });
+  });
+});
+
+describe("pinWidth", () => {
+  it("pins the first width it measures", () => {
+    expect(pinWidth(120, 0)).toBe(120);
   });
 
   it("snaps width wobble back to the pin and re-pins a real resize", () => {
-    expect(fitDims(118, 40, 120, 0, 40).cols).toBe(120);
-    expect(fitDims(150, 40, 120, 0, 40)).toEqual({ cols: 150, rows: 40, pinnedCols: 150 });
+    expect(pinWidth(118, 120)).toBe(120);
+    expect(pinWidth(150, 120)).toBe(150);
   });
 });
 

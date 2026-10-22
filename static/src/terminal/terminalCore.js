@@ -114,7 +114,7 @@ export function normalizeAgentTerminalData(data, agent) {
 let pinnedCols = 0;
 const WIDTH_PIN_TOLERANCE = 4;   // cols; absorbs scrollbar/rounding wobble, not a real resize
 // The xterm's ROWS follow the tmux pane (the server's `{type:"size"}`), never
-// the container — capped at it, never grown to it (fitDims). The reconcile
+// the container — capped at it, never grown to it (xtermDims). The reconcile
 // frame paints rows 1..pane_height, so any extra xterm rows are rows tmux
 // never repaints — and xterm.js GROWING rows pulls scrollback down over the
 // screen, so they held a frozen older copy of the pane under the live one. A
@@ -132,15 +132,19 @@ let fitRows = 0;                 // the container's height in rows — what we a
 // hidden), and what's clipped is the pane's bottom — prompt, input box, cursor.
 const capped = (pane, container) => (pane > 0 && container > 0 ? Math.min(pane, container) : pane || container);
 
-// Pure: the xterm dims for a proposed fit. Width snaps to the pin within
-// tolerance (and pins anew beyond it, or when nothing is pinned yet); each
-// dimension is the pane's when known, capped at the container's.
-export function fitDims(proposedCols, proposedRows, pinned, knownPaneCols, knownPaneRows) {
-  let cols = proposedCols;
-  let pin = pinned;
-  if (pin <= 0 || Math.abs(cols - pin) > WIDTH_PIN_TOLERANCE) pin = cols;
-  else cols = pin;
-  return { cols: capped(knownPaneCols, cols), rows: capped(knownPaneRows, proposedRows), pinnedCols: pin };
+// Pure: the width to pin for a measured container width. Wobble within
+// tolerance snaps back to the pin; beyond it, or with nothing pinned yet, the
+// measured width is the new pin.
+export function pinWidth(measuredCols, pinned) {
+  return pinned > 0 && Math.abs(measuredCols - pinned) <= WIDTH_PIN_TOLERANCE ? pinned : measuredCols;
+}
+
+// Pure: the xterm's dims — the pane's once the server has reported them, each
+// capped at the container's; the container's until then. 0 = not known yet.
+// The one sizing rule: the mount, every fit and every size message go through
+// it (syncXtermSize).
+export function xtermDims(knownPaneCols, knownPaneRows, containerCols, containerRows) {
+  return { cols: capped(knownPaneCols, containerCols), rows: capped(knownPaneRows, containerRows) };
 }
 
 // Pure: the dims to ask tmux for, on a resize or a reconnect — the CONTAINER's
@@ -157,6 +161,33 @@ export function hintDims({ pinnedCols, fitRows, termCols, termRows }) {
 // see scheduleFit for why height-only growth never is.
 export function resizeNeeded(ask, lastSentCols, knownPaneRows) {
   return ask.cols !== lastSentCols || (knownPaneRows > 0 && ask.rows < knownPaneRows);
+}
+
+// Measure the container into the session's pin and fitRows. False when it
+// can't be measured: under a display:none host proposeDimensions gives NaN
+// cols, and the last measurement stands.
+function measureContainer() {
+  let proposed;
+  try {
+    proposed = fitAddon.proposeDimensions();
+  } catch (_) {
+    return false;
+  }
+  if (!proposed || Number.isNaN(proposed.cols) || Number.isNaN(proposed.rows)) return false;
+  pinnedCols = pinWidth(proposed.cols, pinnedCols);
+  fitRows = proposed.rows;
+  return true;
+}
+
+// Size the xterm from what is known of the pane (size messages) and the
+// container (measureContainer), by xtermDims. Never fit(): that grows the
+// xterm to the container, and growing rows drags scrollback down over the
+// screen (see paneRows).
+function syncXtermSize() {
+  const next = xtermDims(paneCols, paneRows, pinnedCols, fitRows);
+  if (next.cols > 0 && next.rows > 0 && (term.cols !== next.cols || term.rows !== next.rows)) {
+    term.resize(next.cols, next.rows);
+  }
 }
 let containerEl = null;          // set by setTerminalContainer() before startLiveTerminal()
 let xtermHost = null;            // persistent parent for term.open(); moved between mounts
@@ -660,24 +691,16 @@ export function startLiveTerminal(target) {
   // xterm has to reflow it down, mangling box-drawing TUIs for the first
   // frame. If the container can't be measured for any reason, leave the hint
   // at zero and the server uses tmux's view.
+  // The pin (pinWidth) is what stops navigation from reflowing tmux at
+  // slightly-different widths. No pane dims yet (stopLiveTerminal cleared
+  // them): the xterm takes the container's until the handshake's size message.
   let initialCols = 0;
   let initialRows = 0;
-  try {
-    const proposed = fitAddon.proposeDimensions();
-    if (proposed && !Number.isNaN(proposed.cols) && !Number.isNaN(proposed.rows)) {
-      // Reuse the session's pinned width unless this is a genuinely different
-      // size (first mount, or a real resize beyond the wobble tolerance). This
-      // is what stops navigation from reflowing tmux at slightly-different
-      // widths. No pane dims yet (stopLiveTerminal cleared them): the xterm
-      // takes the container's until the handshake's size message.
-      fitRows = proposed.rows;
-      const next = fitDims(proposed.cols, proposed.rows, pinnedCols, 0, 0);
-      pinnedCols = next.pinnedCols;
-      if (term.cols !== next.cols || term.rows !== next.rows) term.resize(next.cols, next.rows);
-      initialCols = pinnedCols;
-      initialRows = fitRows;
-    }
-  } catch (_) {}
+  if (measureContainer()) {
+    syncXtermSize();
+    initialCols = pinnedCols;
+    initialRows = fitRows;
+  }
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
   // Debounced so a window-drag doesn't spam tmux with subprocess calls.
@@ -729,8 +752,8 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
           paneCols = msg.cols;
           paneRows = msg.rows;
           // Capped like any fit: the pane can outgrow this container without
-          // our asking (another viewer's resize). 0 = not yet measured.
-          term.resize(capped(paneCols, pinnedCols), capped(paneRows, fitRows));
+          // our asking (another viewer's resize).
+          syncXtermSize();
         } else if (msg.type === "mouse") {
           mouseReportingOn = !!msg.on;
         }
@@ -781,23 +804,12 @@ function scheduleFit() {
   fitDebounce = setTimeout(() => {
     fitDebounce = null;
     if (!term || !fitAddon || fitHeld) return;
-    let proposed;
-    try {
-      proposed = fitAddon.proposeDimensions();
-    } catch (_) {
-      return;
-    }
-    if (!proposed || Number.isNaN(proposed.cols) || Number.isNaN(proposed.rows)) return;
     // Hold the pinned width: a fit that wobbled by a column or two (the bug —
     // mount/layout transients) snaps back so tmux never reflows; a genuinely
     // different width (real resize beyond tolerance) becomes the new pin.
-    // Rows stay at the pane's height, capped at the container (see paneRows) —
-    // proposeDimensions, not fit(), so the xterm never transiently grows and
-    // drags scrollback down.
-    fitRows = proposed.rows;
-    const next = fitDims(proposed.cols, proposed.rows, pinnedCols, paneCols, paneRows);
-    pinnedCols = next.pinnedCols;
-    if (term.cols !== next.cols || term.rows !== next.rows) term.resize(next.cols, next.rows);
+    // The xterm stays at the pane's dims, capped at the container (see paneRows).
+    if (!measureContainer()) return;
+    syncXtermSize();
     // Only send a resize message when the width changed since the last one
     // we sent — height-only changes are dropped, but for one (below). Two
     // reasons:

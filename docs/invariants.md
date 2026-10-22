@@ -60,7 +60,7 @@ These are the non-obvious behaviors worth preserving:
    `subscribe()`.
 
    On the client the xterm takes the pane's dims capped at its container
-   (`fitDims`): grown to the container it shows those stale rows; taller
+   (`xtermDims`): grown to the container it shows those stale rows; taller
    than `.detail-xterm` (overflow hidden) it clipped the pane's prompt and
    cursor out of view after a height-only shrink. Every resize and
    reconnect asks tmux for the CONTAINER's dims (`hintDims`: pinned width ×
