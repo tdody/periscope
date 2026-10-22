@@ -22,6 +22,8 @@ else, so a new SVG fails loudly instead of drawing wrong):
     translate <animateTransform> on a group;
   - a blinking eye is a rect outside any mood layer whose height dips; a lid is
     one whose height starts at 0 and grows over the eye.
+  - a critter whose eyes are lids declares its face colour with data-ink="#rrggbb"
+    on the <svg> (the colour under a lid isn't in the drawing).
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
+INK_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def tag(el: ET.Element) -> str:
@@ -219,6 +222,64 @@ def drawn(n: dict) -> bool:
     return "mood" not in n and ("r" in n or any(drawn(c) for c in n.get("g", [])))
 
 
+def clean(v: float) -> float:
+    """A coordinate as the generated JS should print it: 4 decimals, "16" not "16.0"."""
+    v = round(v, 4)
+    return int(v) if float(v).is_integer() else v
+
+
+def sprite_box(root: list[dict]) -> list[float]:
+    """critters.js's spriteBox, in Python: the always-drawn layers' [x, y, w, h], mood layers left out."""
+    x0 = y0 = float("inf")
+    x1 = y1 = float("-inf")
+
+    def walk(n: dict) -> None:
+        nonlocal x0, y0, x1, y1
+        if "mood" in n:
+            return
+        if "r" in n:
+            x, y, w, h = n["r"]
+            x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x + w), max(y1, y + h)
+            return
+        for c in n.get("g", []):
+            walk(c)
+
+    for n in root:
+        walk(n)
+    return [x0, y0, x1 - x0, y1 - y0]
+
+
+def shutters(nodes: list[dict]):
+    """Every eye and lid node (the roles _convert assigns), depth first."""
+    for n in nodes:
+        if n.get("role") in ("eye", "lid"):
+            yield n
+        yield from shutters(n.get("g", []))
+
+
+def anchors_of(root: list[dict]) -> dict:
+    """Where the duty faces go (critters.js faceGlyphs): each eye's box, and the head's top-right corner."""
+    x, y, w, _ = sprite_box(root)
+    eyes = [dict(zip(("x", "y", "w", "h"), n["g"][0]["r"], strict=True), role=n["role"]) for n in shutters(root)]
+    return {"eyes": eyes, "head": {"top": clean(y), "right": clean(x + w)}}
+
+
+def ink_of(svg_name: str, doc: ET.Element, root: list[dict]) -> str | None:
+    """The faces' glyph colour: the eyes' own fill, or data-ink on the <svg> where it can't be read."""
+    declared = doc.get("data-ink")
+    if declared is not None:
+        if not INK_RE.match(declared):
+            raise ValueError(f"{svg_name}: data-ink must be #rrggbb, got {declared!r}")
+        return declared
+    found = list(shutters(root))
+    eye = next((n for n in found if n["role"] == "eye"), None)
+    fill = eye and (eye["g"][0].get("a", {}).get("fill") or eye.get("a", {}).get("fill"))
+    if found and not fill:
+        # A lid covers the eye it shuts, so the colour under it isn't in the drawing.
+        raise ValueError(f'{svg_name}: its eyes are lids or unpainted; declare the face colour with data-ink="#rrggbb"')
+    return fill
+
+
 def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     """convert, with svg.name prefixed onto any ValueError that doesn't already carry it."""
     try:
@@ -331,7 +392,12 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
         # so spriteBox is Infinity downstream. Also catches an empty root.
         raise ValueError(f"{svg.name}: every layer is inside a mood group, nothing is always drawn")
-    return {"name": doc.get("aria-label") or cid.title(), "root": root}
+    return {
+        "name": doc.get("aria-label") or cid.title(),
+        "root": root,
+        "anchors": anchors_of(root),
+        "ink": ink_of(svg.name, doc, root),
+    }
 
 
 def render() -> tuple[str, str]:

@@ -1,5 +1,6 @@
 """build_critters.py — the critter SVGs → committed sprite data + CSS."""
 
+import json
 import re
 from pathlib import Path
 
@@ -53,11 +54,72 @@ def test_glint_role_is_per_critter():
     assert '"role":"glint"' not in nox_line
 
 
-def _svg(tmp_path: Path, body: str, g_attrs: str = "") -> Path:
+def _svg(tmp_path: Path, body: str, g_attrs: str = "", svg_attrs: str = "") -> Path:
     p = tmp_path / "bad.svg"
     bob = '<animateTransform attributeName="transform" type="translate" values="0 0;0 -1" dur="1s" repeatCount="indefinite" data-bob="x"/>'
-    p.write_text(f'<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><g{g_attrs}>{bob}{body}</g></svg>')
+    p.write_text(
+        f'<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"{svg_attrs}><g{g_attrs}>{bob}{body}</g></svg>'
+    )
     return p
+
+
+def _sprite(cid: str) -> dict:
+    js, _ = build_critters.render()
+    line = next(ln for ln in js.splitlines() if ln.startswith(f"  {cid}:"))
+    return json.loads(line.split(":", 1)[1].strip().rstrip(","))
+
+
+# A blinking eye (height dips) and a lid (height grows from 0), as the real SVGs draw them.
+EYE = (
+    '<rect x="6" y="9" width="2" height="2" fill="#111111">'
+    '<animate attributeName="height" values="2;0.4;2" dur="4s" repeatCount="indefinite"/></rect>'
+)
+LID = (
+    '<rect x="6" y="6" width="3" height="0" fill="#222222">'
+    '<animate attributeName="height" values="0;3;0" dur="5s" repeatCount="indefinite"/></rect>'
+)
+BODY = '<rect x="3" y="5" width="14" height="10" fill="#40b8ee"/>'
+
+
+def test_anchors_list_each_critters_eyes():
+    assert _sprite("scope")["anchors"]["eyes"] == [
+        {"x": 6, "y": 9, "w": 2, "h": 2, "role": "eye"},
+        {"x": 12, "y": 9, "w": 2, "h": 2, "role": "eye"},
+    ]
+    assert _sprite("moss")["anchors"]["eyes"] == [{"x": 8, "y": 7, "w": 4, "h": 3, "role": "lid"}]
+    for cid in build_critters.CRITTERS:
+        assert _sprite(cid)["anchors"]["eyes"], cid
+
+
+def test_anchors_head_is_the_top_right_of_the_sprite_box():
+    # Jelly's always-drawn box is x 4, y 3, w 12, h 15 (critters.test.js pins the same box).
+    assert _sprite("jelly")["anchors"]["head"] == {"top": 3, "right": 16}
+
+
+def test_ink_is_the_eye_fill_or_the_declared_colour():
+    assert _sprite("scope")["ink"] == "#0f1215"
+    assert _sprite("nox")["ink"] == "#c6e05a"
+    assert _sprite("moss")["ink"] == "#0f2e1b"
+
+
+def test_ink_from_an_eye_and_overridden_by_data_ink(tmp_path):
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
+    assert s["ink"] == "#111111"
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=' data-ink="#abcdef"'), build_critters.Sheet())
+    assert s["ink"] == "#abcdef"
+
+
+def test_a_lid_critter_must_declare_its_ink(tmp_path):
+    with pytest.raises(ValueError, match="data-ink"):
+        build_critters.convert("t", _svg(tmp_path, BODY + LID), build_critters.Sheet())
+    s = build_critters.convert("t", _svg(tmp_path, BODY + LID, svg_attrs=' data-ink="#c6e05a"'), build_critters.Sheet())
+    assert s["ink"] == "#c6e05a"
+    assert s["anchors"]["eyes"] == [{"x": 6, "y": 6, "w": 3, "h": 3, "role": "lid"}]
+
+
+def test_data_ink_must_be_a_hex_colour(tmp_path):
+    with pytest.raises(ValueError, match="data-ink"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=' data-ink="green"'), build_critters.Sheet())
 
 
 def test_raises_on_an_element_it_does_not_know(tmp_path):
