@@ -22,8 +22,9 @@ describe("fitDims", () => {
     expect(fitDims(200, 50, 200, 100, 50)).toEqual({ cols: 100, rows: 50, pinnedCols: 200 });
   });
 
-  it("falls back to the container's rows before the server reports a size", () => {
-    expect(fitDims(120, 40, 0, 0, 0)).toEqual({ cols: 120, rows: 40, pinnedCols: 0 });
+  it("pins the first width it measures, and takes the container's dims before the server reports a size", () => {
+    // The mount path (startLiveTerminal) pins from nothing; one rule for both.
+    expect(fitDims(120, 40, 0, 0, 0)).toEqual({ cols: 120, rows: 40, pinnedCols: 120 });
   });
 
   it("snaps width wobble back to the pin and re-pins a real resize", () => {

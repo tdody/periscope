@@ -71,8 +71,7 @@ let searchAddon = null;
 let termResizeObserver = null;
 let fitDebounce = null;
 let fitHeld = false;              // a splitter drag is in progress — see holdTerminalFit
-let lastSentCols = 0;            // dims of the most recent resize message sent to the server
-let _lastSentRows = 0;            //   — used to suppress redundant resizes during initial mount
+let lastSentCols = 0;            // width of the last resize asked of the server — suppresses redundant resizes
 
 const CODEX_PANEL_BG = "\x1b[48;2;30;30;30m";
 const PERISCOPE_TERM_BG = "\x1b[48;2;40;44;52m";
@@ -134,15 +133,13 @@ let fitRows = 0;                 // the container's height in rows — what we a
 const capped = (pane, container) => (pane > 0 && container > 0 ? Math.min(pane, container) : pane || container);
 
 // Pure: the xterm dims for a proposed fit. Width snaps to the pin within
-// tolerance (and re-pins beyond it); each dimension is the pane's when known,
-// capped at the container's.
+// tolerance (and pins anew beyond it, or when nothing is pinned yet); each
+// dimension is the pane's when known, capped at the container's.
 export function fitDims(proposedCols, proposedRows, pinned, knownPaneCols, knownPaneRows) {
   let cols = proposedCols;
   let pin = pinned;
-  if (pin > 0 && cols !== pin) {
-    if (Math.abs(cols - pin) > WIDTH_PIN_TOLERANCE) pin = cols;
-    else cols = pin;
-  }
+  if (pin <= 0 || Math.abs(cols - pin) > WIDTH_PIN_TOLERANCE) pin = cols;
+  else cols = pin;
   return { cols: capped(knownPaneCols, cols), rows: capped(knownPaneRows, proposedRows), pinnedCols: pin };
 }
 
@@ -655,30 +652,31 @@ export function startLiveTerminal(target) {
   }
   term.focus();
 
-  // Synchronous initial fit. Reading the container's layout (via fit())
-  // forces a sync layout flush, so we get real dims here — and we pass them
-  // to the WS as a connect-time hint so the server resizes tmux BEFORE
-  // capture-pane. Without that, the initial blob is at tmux's current pane
-  // width (often a real terminal also attached at 200+ cols) and xterm has to
-  // reflow it down, mangling box-drawing TUIs for the first frame. If fit
-  // can't measure for any reason, leave the hint at zero and the server uses
-  // tmux's view.
+  // Synchronous initial fit. Reading the container's layout (via
+  // proposeDimensions()) forces a sync layout flush, so we get real dims here
+  // — and we pass them to the WS as a connect-time hint so the server resizes
+  // tmux BEFORE capture-pane. Without that, the initial blob is at tmux's
+  // current pane width (often a real terminal also attached at 200+ cols) and
+  // xterm has to reflow it down, mangling box-drawing TUIs for the first
+  // frame. If the container can't be measured for any reason, leave the hint
+  // at zero and the server uses tmux's view.
   let initialCols = 0;
   let initialRows = 0;
   try {
-    fitAddon.fit();
-    // Reuse the session's pinned width unless this is a genuinely different
-    // size (first mount, or a real resize beyond the wobble tolerance). This
-    // is what stops navigation from reflowing tmux at slightly-different
-    // widths. Height always follows the fit — row changes don't reflow.
-    if (pinnedCols <= 0 || Math.abs(term.cols - pinnedCols) > WIDTH_PIN_TOLERANCE) {
-      pinnedCols = term.cols;
-    } else if (term.cols !== pinnedCols) {
-      term.resize(pinnedCols, term.rows);
+    const proposed = fitAddon.proposeDimensions();
+    if (proposed && !Number.isNaN(proposed.cols) && !Number.isNaN(proposed.rows)) {
+      // Reuse the session's pinned width unless this is a genuinely different
+      // size (first mount, or a real resize beyond the wobble tolerance). This
+      // is what stops navigation from reflowing tmux at slightly-different
+      // widths. No pane dims yet (stopLiveTerminal cleared them): the xterm
+      // takes the container's until the handshake's size message.
+      fitRows = proposed.rows;
+      const next = fitDims(proposed.cols, proposed.rows, pinnedCols, 0, 0);
+      pinnedCols = next.pinnedCols;
+      if (term.cols !== next.cols || term.rows !== next.rows) term.resize(next.cols, next.rows);
+      initialCols = pinnedCols;
+      initialRows = fitRows;
     }
-    initialCols = pinnedCols;
-    initialRows = term.rows;
-    fitRows = term.rows;
   } catch (_) {}
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
@@ -699,7 +697,6 @@ export function startLiveTerminal(target) {
   // via the WS query params. Without this, the first ResizeObserver fire
   // would send a redundant resize message.
   lastSentCols = initialCols;
-  _lastSentRows = initialRows;
   connectTerminalWs(target, initialCols, initialRows);
 }
 
@@ -832,7 +829,6 @@ function scheduleFit() {
     if (!resizeNeeded(ask, lastSentCols, paneRows)) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
       lastSentCols = ask.cols;
-      _lastSentRows = ask.rows;
       // The server's reconcile answers with the pane's real size.
       termWs.send(JSON.stringify({ type: "resize", cols: ask.cols, rows: ask.rows }));
     }
@@ -855,7 +851,6 @@ export function stopLiveTerminal() {
     termReconnectTimer = null;
   }
   lastSentCols = 0;
-  _lastSentRows = 0;
   paneCols = 0;
   paneRows = 0;
   if (fitDebounce) {
@@ -891,7 +886,7 @@ export function scrollTerminalToBottom() {
 
 // Re-run FitAddon. Used by mountTerminal after a deferred frame to catch the
 // case where the container's layout wasn't fully computed when
-// startLiveTerminal called fit() synchronously (common when re-mounting into a
+// startLiveTerminal measured it synchronously (common when re-mounting into a
 // container that just became visible via class toggle).
 export function refitTerminal() {
   if (!term || !fitAddon) return;
