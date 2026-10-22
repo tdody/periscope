@@ -42,13 +42,15 @@ export async function setBadgeCount(n) {
 
 // Emit a banner to the Rust side, which owns UNUserNotificationCenter
 // (delegate, authorization, click routing). `target` is the pane the
-// banner is about — Rust stashes it so a click can route back here.
-export async function notify({ title, body, target }) {
+// banner is about — Rust stashes it so a click can route back here. The
+// rest (kind, subtitle, thread, data, quiet_when_focused) is for shells that
+// know it; an older shell reads title/body/target and ignores the rest.
+export async function notify({ title, body, target = "", ...rest }) {
   if (!inTauri()) return;
   try {
     await invoke("plugin:event|emit", {
       event: "periscope:notify",
-      payload: { title, body, target },
+      payload: { title, body, target, ...rest },
     });
   } catch (e) {
     console.warn("[tauri] notify failed:", e);
@@ -72,6 +74,26 @@ export async function onNotificationClick(cb) {
     });
   } catch (e) {
     console.warn("[tauri] notification-click listener failed:", e);
+  }
+}
+
+// Register a handler for clicks on banners that carry a kind: a shell that
+// knows kinds sends { target, kind, data } here instead of the plain target
+// onNotificationClick gets, so a click can open a PR or the usage pill, not
+// just a pane.
+export async function onNotificationOpened(cb) {
+  if (!inTauri()) return;
+  try {
+    const handler = window.__TAURI_INTERNALS__.transformCallback((e) => {
+      if (e?.payload) cb(e.payload);
+    });
+    await invoke("plugin:event|listen", {
+      event: "periscope:notification-opened",
+      target: { kind: "Any" },
+      handler,
+    });
+  } catch (e) {
+    console.warn("[tauri] notification-opened listener failed:", e);
   }
 }
 
