@@ -2,19 +2,21 @@
 // <Detail> (right). This is the only view (grid retired).
 import { computed, effect } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
-import { getPaneWidth } from "../prefs.js";
+import { startNotifyFeed } from "../notify/feed.js";
 import { startPolling } from "../poll.js";
+import { getPaneWidth } from "../prefs.js";
 import { startAlertFeed } from "./alertFeed.js";
 import { Detail } from "./Detail.jsx";
-import { PANE_WIDTHS, storedWidth } from "./paneResize.js";
 import { railHidden, sideHidden } from "./panels.js";
+import { PANE_WIDTHS, storedWidth } from "./paneResize.js";
 import { Rail } from "./Rail.jsx";
 import { ResizeHandle } from "./ResizeHandle.jsx";
 
 export function Split() {
   // Own the single /api/state poll loop that feeds the `windows` signal — the
-  // Rail + Detail render off it. startAlertFeed similarly owns the alert poll.
-  useEffect(() => { startPolling(); startAlertFeed(); }, []);
+  // Rail + Detail render off it. startNotifyFeed turns it into native banners
+  // and the dock badge; startAlertFeed takes an older shell's banner clicks.
+  useEffect(() => { startPolling(); startAlertFeed(); startNotifyFeed(); }, []);
 
   useEffect(() => {
     // Mirror the view onto the body attribute (legacy CSS still keys some

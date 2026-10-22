@@ -13,15 +13,16 @@ import {
   alerts,
   dragState,
   editingTarget,
+  editor as editorSignal,
   launchDefault,
   moveTargets,
   projects,
   spawnAccount,
   spawnEffort,
   spawnModel,
+  stateSeq,
   syncTabsFromWindows,
   tracks,
-  editor as editorSignal,
   updateInfo,
   usage,
   wallSpans,
@@ -42,31 +43,39 @@ function bannerEl() {
 }
 
 function applyState(data) {
-  // Alerts commit ahead of the rename/drag guard below: they share none of
-  // that state, and stalling them would stall the dock badge and native
-  // notifications for as long as a drag is held.
-  alerts.value = data.alerts || [];
-  // user is mid-rename / mid-drag; a commit would blow away their input or
-  // destroy the drag source.
-  if (editingTarget.value) return;
-  if (dragState.value) return;
-  windows.value = data.windows || [];
-  projects.value = data.projects || [];
-  workspaces.value = data.workspaces || [];
-  tracks.value = data.tracks || [];
-  syncTabsFromWindows(windows.value);
-  // UsagePill reads { plan, fallback, poke }.
-  usage.value = { plan: data.usage_plan, fallback: data.usage, poke: data.poke || {} };
-  updateInfo.value = data.update || null;
-  accounts.value = data.accounts || [];
-  moveTargets.value = data.move_targets || {};
-  spawnAccount.value = data.spawn_account || null;
-  spawnModel.value = data.spawn_model || null;
-  spawnEffort.value = data.spawn_effort || null;
-  launchDefault.value = data.launch_default || null;
-  walls.value = data.walls || null;
-  wallSpans.value = data.wall_spans || [];
-  editorSignal.value = data.editor || "";
+  // finally bumps stateSeq after every applied state, including the early
+  // returns below (mid-rename / mid-drag): a consumer that must see one
+  // consistent snapshot per pass (the notify feed) watches only stateSeq and
+  // peeks at the rest, so it never pairs new alerts with stale windows.
+  try {
+    // Alerts commit ahead of the rename/drag guard below: they share none of
+    // that state, and stalling them would stall the dock badge and native
+    // notifications for as long as a drag is held.
+    alerts.value = data.alerts || [];
+    // user is mid-rename / mid-drag; a commit would blow away their input or
+    // destroy the drag source.
+    if (editingTarget.value) return;
+    if (dragState.value) return;
+    windows.value = data.windows || [];
+    projects.value = data.projects || [];
+    workspaces.value = data.workspaces || [];
+    tracks.value = data.tracks || [];
+    syncTabsFromWindows(windows.value);
+    // UsagePill reads { plan, fallback, poke }.
+    usage.value = { plan: data.usage_plan, fallback: data.usage, poke: data.poke || {} };
+    updateInfo.value = data.update || null;
+    accounts.value = data.accounts || [];
+    moveTargets.value = data.move_targets || {};
+    spawnAccount.value = data.spawn_account || null;
+    spawnModel.value = data.spawn_model || null;
+    spawnEffort.value = data.spawn_effort || null;
+    launchDefault.value = data.launch_default || null;
+    walls.value = data.walls || null;
+    wallSpans.value = data.wall_spans || [];
+    editorSignal.value = data.editor || "";
+  } finally {
+    stateSeq.value += 1;
+  }
 }
 
 function markOk() {

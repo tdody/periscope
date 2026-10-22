@@ -33,6 +33,11 @@ export const wallSpans = signal([]);          // /api/state wall_spans: [{ since
 export const launchDefault = signal(null);    // /api/state launch_default: { account, model, reason } — what an unnamed spawn gets right now
 export const editor = signal("");              // /api/state preferred editor display name; "" => action hidden
 
+// Bumped once per applied /api/state (poll.js applyState), after every
+// signal it writes: a consumer that must act once per snapshot (the
+// notify feed) tracks this and peeks at the rest.
+export const stateSeq = signal(0);
+
 // poll-pause flags (replace state.editingTarget / state.dragging guards):
 export const editingTarget = signal(null);
 
