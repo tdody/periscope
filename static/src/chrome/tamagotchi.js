@@ -199,15 +199,19 @@ export function msUntilNextChange(date, day = {}) {
   return end - date;
 }
 
-// The hover's "up next": the first window after this one with another
-// label, so a night's sleep announces the morning, not more sleep at midnight.
-export function upNext(date, day = {}) {
-  const { label } = activityAt(date, day);
+// The hover's "up next": the first window after this one that it would
+// describe otherwise, so a night's sleep announces the morning, not more sleep
+// at midnight, and 9am's coding with a coffee doesn't announce 10am's coding.
+// `said` is the hover's words for a window (Tamagotchi.jsx resolves the walled
+// nap through the scene's deskView), so the forecast names the scene drawn.
+export function upNext(date, day = {}, said = (a) => a.label) {
+  const now = activityAt(date, day);
+  const same = (a) => said(a) === said(now) || (a.id === "code" && now.id === "code");
   let t = date;
   for (let k = 0; k < 8; k++) {
     t = new Date(t.getTime() + msUntilNextChange(t, day));
     const activity = activityAt(t, day);
-    if (activity.label !== label) return { at: t, activity };
+    if (!same(activity)) return { at: t, activity, label: said(activity) };
   }
   return null;
 }

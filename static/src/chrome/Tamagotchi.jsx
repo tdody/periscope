@@ -674,6 +674,9 @@ const sceneKey = (d) => {
 // render's.
 const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walled: !!walls.value });
 const clock = (d) => hourLabel(d.getHours() + d.getMinutes() / 60);
+// The hover's words for an activity in the scene deskView makes of it.
+const doingLabel = (a, view, mood = "calm") =>
+  view.scene === "nap" ? "napping at the desk" : activityLabel(a, view.moodShown ? mood : "calm");
 
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
@@ -774,19 +777,20 @@ export function Tamagotchi() {
   const top = d.items[0] || null;
 
   const a = activityAt(now, day);
-  const next = upNext(now, day);
+  // The up-next too, so a walled afternoon is announced as the nap it'll be.
+  const next = upNext(now, day, (x) => doingLabel(x, deskView(x.id, null, walled)));
   const occasion = occasionShown(now);
   const headline = headlineAt(now);
   // The same view TamaScene draws from, so the hover can't describe another scene.
   const view = deskView(a.id, top?.kind, !!d.wall);
-  const doing = view.scene === "nap" ? "napping at the desk" : activityLabel(a, view.moodShown ? mood : "calm");
+  const doing = doingLabel(a, view, mood);
   const parts = [
     ...(d.wall ? [wallPhrase(d.wall)] : []),
     ...d.items.map((i) => i.phrase),
     ...(view.showsPanes && d.working ? [`${plural(d.working, "agent")} working`] : []),
     ...(view.moodShown && reason ? [reason] : []),
     ...(headline ? [headline] : []),
-    ...(next ? [`up next at ${clock(next.at)}: ${activityLabel(next.activity)}`] : []),
+    ...(next ? [`up next at ${clock(next.at)}: ${next.label}`] : []),
   ];
   const label = `Claude is ${doing} (${hourLabel(a.from)}–${hourLabel(a.to)})${parts.map((x) => ` · ${x}`).join("")}`
     + (top?.target ? ` · click to ${top.target.says}` : "");

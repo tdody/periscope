@@ -289,6 +289,17 @@ describe("upNext", () => {
     expect(next.activity.id).toBe("coffee");
     expect(upNext(new Date(2026, 9, 23, 23)).activity.label).toMatch(/ for brunch$/);
   });
+  it("doesn't announce the coding already under way when only the mug goes", () => {
+    expect(upNext(at(7, 30))).toMatchObject({ at: at(9, 0), label: "coding with a coffee" });
+    expect(upNext(at(9, 10))).toMatchObject({ at: at(12, 0), label: activityAt(at(12, 0)).label });
+  });
+  it("says what the hover would: a walled coding window is the nap, and nap to nap is no change", () => {
+    const walled = { walled: true };
+    const said = (a) => (a.id === "code" && walled.walled ? "napping at the desk" : a.label);
+    expect(upNext(at(12, 10), walled, said)).toMatchObject({ at: at(13, 0), label: "napping at the desk" });
+    expect(upNext(at(7, 30), walled, said)).toMatchObject({ at: at(9, 0), label: "napping at the desk" });
+    expect(upNext(at(9, 10), walled, said).at).toEqual(at(12, 0));
+  });
 });
 
 describe("the day log", () => {

@@ -3,7 +3,7 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { accounts, usage } from "../../store.js";
+import { accounts, usage, walls } from "../../store.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -285,6 +285,7 @@ describe("<Tamagotchi>", () => {
     vi.useRealTimers();
     usage.value = null;
     accounts.value = [];
+    walls.value = null;
   });
 
   it("codes furiously, naming the account, when one of several burns", () => {
@@ -311,6 +312,13 @@ describe("<Tamagotchi>", () => {
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is [^"(]+ \(5:30pm–6pm\)/);
     vi.setSystemTime(at(12, 10));
     expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · up next at 1pm: coding"/);
+  });
+
+  it("announces a walled afternoon as the nap the scene will draw, not coding", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(12, 10));
+    walls.value = { until: at(18, 0).getTime() / 1000 };
+    expect(render(<Tamagotchi />)).toMatch(/title="Claude is having [^"(]+ for lunch \(noon–1pm\) · [^"]+ · up next at 1pm: napping at the desk"/);
   });
 
   it("drops the mood and its reason outside the coding hours", () => {
