@@ -114,8 +114,13 @@ def plugin_name(spec: str) -> str:
     return name.removesuffix(".git")
 
 
+def _declared(line: str) -> str | None:
+    """The plugin `line` declares to TPM, if any."""
+    return plugin_name(m.group(2)) if (m := _PLUGIN_RE.match(line)) else None
+
+
 def declared_plugins(text: str) -> list[str]:
-    return [plugin_name(m.group(2)) for line in text.splitlines() if (m := _PLUGIN_RE.match(line))]
+    return [name for line in text.splitlines() if (name := _declared(line))]
 
 
 def _source_words(line: str) -> list[str]:
@@ -143,23 +148,23 @@ def _source_targets(line: str) -> list[Path]:
     return [Path(p) for w in _source_words(line) for p in (sorted(glob.glob(w)) or [w])]
 
 
-def _with_sources(roots: list[Path]) -> list[Path]:
-    """`roots` and every file each sources, one level deep, repeats included."""
-    files = list(roots)
-    for root in roots:
-        for line in _scan_text(root).splitlines():
-            files += _source_targets(line)
-    return files
+Via = tuple[Path, int] | None  # the line that sourced a file TPM reads; None for a root
 
 
-def _tpm_conf_files() -> list[Path]:
+def _tpm_reads() -> list[tuple[Path, Via]]:
     """Every file TPM reads for `@plugin` (_tmux_conf_contents "full"), repeats
-    included: /etc/tmux.conf, the user conf, and every file either of those
-    sources, one level deep as TPM does. The owned file is among them once
-    sourced. A path resolved differently from TPM is a declaration miscounted:
-    a `$HOME/…` or glob source read as a literal path hid the user's continuum,
-    and install declared it a second time."""
-    return _with_sources([SYSTEM_CONF, user_conf()])
+    included, with the line that sourced it (None for a root): /etc/tmux.conf,
+    the user conf, and every file either of those sources, one level deep as
+    TPM does. The owned file is among them once sourced. A path resolved
+    differently from TPM is a declaration miscounted: a `$HOME/…` or glob
+    source read as a literal path hid the user's continuum, and install
+    declared it a second time."""
+    roots = [SYSTEM_CONF, user_conf()]
+    reads: list[tuple[Path, Via]] = [(root, None) for root in roots]
+    for root in roots:
+        for n, line in enumerate(_scan_text(root).splitlines(), 1):
+            reads += [(f, (root, n)) for f in _source_targets(line)]
+    return reads
 
 
 def _tmux_roots() -> list[Path]:
@@ -309,16 +314,21 @@ def _executed(files: Iterable[Path], env: Env, depth: int = 0, via: tuple = ()) 
                 yield from _executed(targets, env, depth + 1, (*via, (f, n)))
 
 
-def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
-    """(plugin, file) for each `@plugin` line TPM will see in `files`, repeats
-    included."""
-    return [(name, f) for f in files for name in declared_plugins(_scan_text(f))]
+def _declarations(reads: Iterable[tuple[Path, Via]]) -> list[tuple[str, Path, int, Via]]:
+    """(plugin, file, line number, via) for each `@plugin` line TPM will see
+    in `reads`, repeats included."""
+    return [
+        (name, f, n, via)
+        for f, via in reads
+        for n, line in enumerate(_scan_text(f).splitlines(), 1)
+        if (name := _declared(line))
+    ]
 
 
 def plugins_declared_elsewhere() -> dict[str, Path]:
     """Each plugin declared outside the owned file -> the first file that does."""
     out: dict[str, Path] = {}
-    for name, f in _declarations(f for f in _tpm_conf_files() if f != owned_conf()):
+    for name, f, _, _ in _declarations(r for r in _tpm_reads() if r[0] != owned_conf()):
         out.setdefault(name, f)
     return out
 
@@ -326,7 +336,7 @@ def plugins_declared_elsewhere() -> dict[str, Path]:
 def plugin_declarations() -> dict[str, int]:
     """How many times TPM will see each required plugin declared. Anything but
     1 is broken: 0 never loads it, 2 runs it twice (the racing restores)."""
-    counts = Counter(name for name, _ in _declarations(_tpm_conf_files()))
+    counts = Counter(name for name, *_ in _declarations(_tpm_reads()))
     return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
@@ -399,10 +409,24 @@ def conf_problems() -> list[str]:
     sources deep, a symlinked conf pair, a `run -b` of the user's own) ended
     at 0 or 2 runs while it printed success."""
     problems = _run_problems()
-    if bad := {p: n for p, n in plugin_declarations().items() if n != 1}:
-        problems.append(
-            "TPM sees " + ", ".join(f"{p} declared {n} times" for p, n in bad.items()) + "; each must be declared once"
+    # Where, not just how often: which files TPM counts (the XDG conf or
+    # ~/.tmux.conf, one level of sources, globs) are rules the user would
+    # otherwise apply by hand to find the second line.
+    sites: dict[str, list[str]] = {p: [] for p in REQUIRED_PLUGINS}
+    for name, f, n, via in _declarations(_tpm_reads()):
+        if name in sites:
+            sites[name].append(f"{f}:{n}" + (f" (sourced by {via[0]}:{via[1]})" if via else ""))
+    problems += [
+        f"TPM sees {p} declared {len(where)} times"
+        + (
+            f": {', '.join(where)}"
+            if where
+            else f" in what it reads ({SYSTEM_CONF}, {user_conf()} and the files they source)"
         )
+        + "; each must be declared once"
+        for p, where in sites.items()
+        if len(where) != 1
+    ]
     return problems
 
 

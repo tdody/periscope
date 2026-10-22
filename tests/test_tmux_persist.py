@@ -818,6 +818,26 @@ def test_status_flags_a_plugin_declared_nowhere(home, monkeypatch):
     s = tp.status(REPO)
     assert s["plugin_declarations"]["tmux-continuum"] == 0
     assert s["ok"] is False
+    assert (
+        f"TPM sees tmux-continuum declared 0 times in what it reads ({tp.SYSTEM_CONF}, {home / '.tmux.conf'} and"
+        " the files they source); each must be declared once"
+    ) in tp.conf_problems()
+
+
+def test_a_doubled_declaration_names_the_lines_at_fault(home, monkeypatch):
+    # The problem said only "declared 2 times": which files count (the XDG
+    # conf or ~/.tmux.conf, one level of sources, globs) are the rules this
+    # code had to learn, and the user was left to apply them by hand.
+    plugins = home / "plugins.conf"
+    plugins.write_text("set -g mouse on\nset -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    conf = home / ".tmux.conf"
+    conf.write_text(USER_PLUGINS + "source-file ~/plug*.conf\n")
+    with pytest.raises(tp.InstallError) as e:
+        _install(home, monkeypatch)
+    assert (
+        f"TPM sees tmux-continuum declared 2 times: {conf}:3, {plugins}:2 (sourced by {conf}:4);"
+        " each must be declared once"
+    ) in str(e.value).splitlines()
 
 
 def test_unreadable_or_non_utf8_conf_files_never_raise(home, monkeypatch):

@@ -108,7 +108,9 @@ nowhere (no auto-restore after the next reboot, silently); add one and it is
 declared twice. The prod worker therefore calls `tmux_persist.heal` each tick,
 which regenerates the owned file whenever a count is off 1 (never creating it,
 never re-sourcing — plugins load at server start). Each omitted plugin leaves a
-comment naming the file that declares it. Check by hand:
+comment naming the file that declares it. When a count is off 1, install's
+error lists each declaring `file:line` and the source line that brought that
+file in (or, at 0, the files TPM reads). Check by hand:
 `bash -c 'source ~/.tmux/plugins/tpm/scripts/helpers/plugin_functions.sh; tpm_plugins_list_helper' | sort | uniq -c`.
 
 **TPM runs exactly once at server start.** Each `run ... tpm/tpm` sources
