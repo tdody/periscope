@@ -193,6 +193,46 @@ def test_heal_drops_a_plugin_the_user_conf_added(home, monkeypatch):
     assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
 
 
+# heal runs on every 30s worker tick: a state it cannot fix must not write
+# (and log a drift warning) on every one of them, ~2,880 times a day.
+
+
+def test_heal_leaves_a_drift_it_cannot_fix(home, monkeypatch):
+    # The user's own files declare continuum twice: regenerating the owned file
+    # changes nothing, so writing it would repeat forever.
+    (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tmux-continuum'\n")
+    (home / ".tmux.conf").write_text(USER_PLUGINS + "source-file ~/plugins.conf\n" + tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    before = tp.owned_conf().read_text()
+    assert tp.plugin_declarations()["tmux-continuum"] == 2
+    assert tp.heal(REPO) is False
+    assert tp.heal(REPO) is False
+    assert tp.owned_conf().read_text() == before
+
+
+def test_heal_leaves_an_unsourced_owned_file_alone(home, monkeypatch):
+    # The user removed the source line: every count is 0, and the owned file
+    # already says what regenerating would — re-sourcing is install's call.
+    conf = home / ".tmux.conf"
+    conf.write_text(tp.TPM_RUN_LINE + "\n")
+    _install(home, monkeypatch)
+    tp.remove_sourced(conf)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
+    assert tp.heal(REPO) is False
+
+
+def test_heal_leaves_an_undrifted_file_alone(home):
+    # Every count at 1: nothing to heal, even though this checkout's hook path
+    # differs — repointing the hook is install's job, not a tick's.
+    tp.ensure_sourced(home / ".tmux.conf")
+    tp.owned_conf().parent.mkdir(parents=True)
+    text = tp.owned_conf_text(Path("/elsewhere/periscope"), {})
+    tp.owned_conf().write_text(text)
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.heal(REPO) is False
+    assert tp.owned_conf().read_text() == text
+
+
 def test_heal_never_creates_the_owned_file(home):
     (home / ".tmux.conf").write_text(USER_PLUGINS)
     assert tp.heal(REPO) is False

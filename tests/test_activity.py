@@ -558,6 +558,23 @@ def test_worker_tick_heals_the_tmux_conf(monkeypatch, fresh_activity_db):
     assert called == [True]
 
 
+def test_worker_tick_survives_a_failing_heal(monkeypatch, fresh_activity_db):
+    # heal writes ~/.config/periscope/tmux.conf; an OSError there must not skip
+    # the rest of the tick (update check, WAL checkpoint, fd watchdog).
+    from periscope import updater
+
+    monkeypatch.setattr(activity, "list_windows", list)
+
+    def heal():
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(activity, "_heal_tmux_conf", heal)
+    checked = []
+    monkeypatch.setattr(updater, "check", lambda: checked.append(True))
+    activity._worker_tick({})
+    assert checked == [True]
+
+
 def test_heal_tmux_conf_is_prod_only_and_points_at_this_checkout(monkeypatch):
     from pathlib import Path
 
