@@ -592,6 +592,14 @@ describe("critters", () => {
     expect(html).not.toContain("data-critter");
   });
 
+  it("scales the critter about the view box, not styles.css's fill-box pivot", () => {
+    // Node can't measure layout (styles.css's `.tama g { transform-box: fill-box }`
+    // would pivot scale() around this group's own, mood-dependent bounding box
+    // instead of 0,0) — this pins the inline override instead.
+    const html = scene(critterById("jelly"), "code");
+    expect(html).toContain('<g class="tama-critter" style="transform-box: view-box"');
+  });
+
   it("keeps the scene's props", () => {
     const jelly = critterById("jelly");
     expect(scene(jelly, "code")).toContain("tama-desk");
@@ -602,10 +610,20 @@ describe("critters", () => {
 
   it("shows the coding mood in the critter's own layers, not Clawd's face", () => {
     const html = scene(critterById("ember"), "code", { mood: "furious" });
-    expect(html).toContain('data-mood="furious"');
+    // data-mood="furious" on the root <svg> and tama-smoke from MoodDesk are
+    // both drawn regardless of whether Critter honors mood — assert on the
+    // critter's own markup instead, so a mood-blind Critter fails this.
+    const own = html.slice(html.indexOf('class="critter"'));
+    expect(own).toContain('data-mood="furious"');
+    expect(own).not.toContain('data-mood="calm"');
     expect(html).toContain("tama-smoke");
     expect(html).not.toContain("tama-brows");
     expect(html).not.toContain("tama-hand");
+  });
+
+  it("rides the furious heat shimmer up onto a seated critter's head", () => {
+    const html = scene(critterById("ember"), "code", { mood: "furious" });
+    expect(html).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-shimmer"/);
   });
 
   it("stays calm in the critter while on duty, as Clawd does", () => {
