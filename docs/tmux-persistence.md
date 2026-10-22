@@ -127,6 +127,16 @@ through TPM's reader:
   it); each path is globbed, one matching nothing skipped. A one-level read
   missed a run line two sources deep or behind `-F '#{d:current_file}/…'`:
   install appended a second one, and healthz counted that one alone.
+- `$VAR` is what tmux will expand it to: periscope's own environment when it
+  has the variable (install run from a shell), else the running server's
+  global one (`tmux show-environment -g VAR`), which tmux expands from. A
+  dashboard update runs `install-tmux` under launchd, whose environment has no
+  `XDG_CONFIG_HOME`: `source-file $XDG_CONFIG_HOME/…` named no file, the run
+  line behind it went uncounted, and every update appended a second one
+  (exit 0, healthz 1, TPM run twice). Neither has it (no server, or one
+  without it): the file is unknown and the count only a floor — install
+  appends no run line, writes nothing, and names the line; healthz reports
+  `tpm_runs: null`, `ok` false.
 
 Install's run line follows from that count, not from the conf it edits: it
 appends `run '~/.tmux/plugins/tpm/tpm'` only when nothing tmux executes runs

@@ -22,6 +22,7 @@ def home(tmp_path, monkeypatch):
     # live server's config list would point the run count at the real ~/.tmux.conf.
     monkeypatch.setattr(tp, "SYSTEM_CONF", tmp_path / "etc/tmux.conf")
     monkeypatch.setattr(tp, "_live_config_files", list)
+    monkeypatch.setattr(tp, "_live_env", lambda name: None)
     return tmp_path
 
 
@@ -418,6 +419,66 @@ def test_tpm_runs_follows_what_tmux_executes(home, monkeypatch, line, runs):
     )
     assert xdg.read_text().splitlines() == after
     assert tp.tpm_runs() == 1
+
+
+def _launchd_conf(home, monkeypatch):
+    """A dashboard update's view: launchd's environment has no
+    XDG_CONFIG_HOME, and the conf TPM reads, already sourcing the owned file,
+    runs TPM only from behind `source-file $XDG_CONFIG_HOME/…`."""
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    (xdg.parent / "plugins.conf").write_text(tp.TPM_RUN_LINE + "\n")
+    text = f"{USER_PLUGINS}{tp.source_line()}\nsource-file $XDG_CONFIG_HOME/tmux/plugins.conf\n"
+    xdg.write_text(text)
+    tp.owned_conf().parent.mkdir(parents=True)
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, tp.plugins_declared_elsewhere()))
+    return xdg, text
+
+
+def test_a_variable_periscope_lacks_is_read_from_the_tmux_server(home, monkeypatch):
+    # tmux expands $VAR from its server's environment; launchd's has no
+    # XDG_CONFIG_HOME. Expanded from periscope's own, the path named nothing,
+    # the run line behind it went uncounted, and every dashboard update
+    # appended a second one — exit 0, healthz tpm_runs 1, TPM run twice.
+    xdg, text = _launchd_conf(home, monkeypatch)
+    asked = []
+    monkeypatch.setattr(tp, "_live_env", lambda name: asked.append(name) or str(home / ".config"))
+    assert tp.tpm_runs() == 1
+    assert asked and set(asked) == {"XDG_CONFIG_HOME"}
+    assert not any(a.startswith(("removed", "added")) for a in _install(home, monkeypatch))
+    assert xdg.read_text() == text
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["tpm_runs"] == 1
+
+
+def test_a_variable_nobody_can_expand_leaves_tpm_runs_unknown(home, monkeypatch):
+    # No server to ask (or one without the variable): the target is unknown,
+    # so install appends no run line, writes nothing, and says which line.
+    xdg, text = _launchd_conf(home, monkeypatch)
+    assert tp.ensure_sourced(xdg) == []
+    assert any("$XDG_CONFIG_HOME" in p and f"{xdg}:5" in p for p in tp.conf_problems())
+    with pytest.raises(tp.InstallError, match=r"\$XDG_CONFIG_HOME") as e:
+        _install(home, monkeypatch)
+    assert e.value.actions == []
+    assert xdg.read_text() == text
+    _stub_live(monkeypatch, HEALTHY)
+    s = tp.status(REPO)
+    assert s["tpm_runs"] is None and s["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("rc", "stdout", "value"),
+    [(0, "XDG_CONFIG_HOME=/x/y\n", "/x/y"), (1, "", None), (0, "-XDG_CONFIG_HOME\n", None)],
+    ids=["set", "unset-or-no-server", "removed"],
+)
+def test_live_env_reads_the_servers_global_environment(monkeypatch, rc, stdout, value):
+    calls = []
+    monkeypatch.setattr(
+        tp.subprocess, "run", lambda args, **kw: calls.append(args) or subprocess.CompletedProcess(args, rc, stdout)
+    )
+    assert tp._live_env("XDG_CONFIG_HOME") == value
+    assert calls == [["tmux", "show-environment", "-g", "XDG_CONFIG_HOME"]]
 
 
 def test_tpm_runs_follows_a_self_sourcing_conf_as_far_as_tmux_does(home):
