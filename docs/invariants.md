@@ -44,6 +44,33 @@ These are the non-obvious behaviors worth preserving:
    `test_two_subscribers_multiplex`, the only mirror test that asserts on
    live `%output` rather than on reconcile frames.
 
+   **The xterm shows the pane; tmux is asked for the container.** The
+   frame paints rows `1..pane_height`, so xterm rows past the pane are rows
+   nothing repaints — and xterm.js growing its rows pulls scrollback down
+   into them. A split window (periscope sizes the window to the container;
+   the pane gets a slice) showed a frozen older copy of the screen under
+   the live pane. So the frame's LAST row ends in ED 0 (`\x1b[J`), not EL,
+   blanking every client row below the pane: the one J-class erase allowed
+   (it can't reach scrollback; 2J/3J stay banned), and not reached by a CUP
+   to `height+1`, which on a same-size xterm clamps onto the last row and
+   erases it. A split or a killed sibling resizes the pane without
+   periscope asking — tmux says so only with `%layout-change` — so the
+   reconcile announces changed dims (`PaneSize`, sent as `{type:"size"}`)
+   ahead of the frame painted at them, to subscriptions `ws.py` armed at
+   `subscribe()`.
+
+   On the client the xterm takes the pane's dims capped at its container
+   (`fitDims`): grown to the container it shows those stale rows; taller
+   than `.detail-xterm` (overflow hidden) it clipped the pane's prompt and
+   cursor out of view after a height-only shrink. Every resize and
+   reconnect asks tmux for the CONTAINER's dims (`hintDims`: pinned width ×
+   fitted rows), never `term.cols`/`term.rows` — those are the pane's, and
+   `resize-window` applies them to the whole window: echoing them back
+   shrank a split window on every reconnect. Height-only growth is still
+   never sent (each SIGWINCH is a Claude redraw that can mangle
+   scrollback); a height-only shrink below the pane is (`resizeNeeded`),
+   since nothing else lets the pane fit.
+
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the
    previous line's length.

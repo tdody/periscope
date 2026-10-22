@@ -134,6 +134,8 @@ Frame construction, all through the control client (no forks):
 `display-message` for cursor x/y, `alternate_on`, cursor visibility —
 capture first so the cursor is the fresher of the two samples.
 
+> **Superseded (Oct 2026), see `docs/invariants.md` #3:** the last row ends in ED 0 (`\x1b[J`), not EL, and a reconcile that finds the pane resized sends `{"type":"size"}` ahead of its frame — the client's xterm follows the pane, not its container.
+
 **Coverage requirement:** the frame iterates rows 1..pane_height —
 padding with empty rows if capture ever returns short — each written as
 `\x1b[<r>;1H<content>\x1b[0m\x1b[K`. The row loop is the mechanism that
