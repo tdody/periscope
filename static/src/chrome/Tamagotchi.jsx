@@ -18,7 +18,7 @@
 // terminal quadrants are twice as tall as wide), drawn with crisp-edged
 // rects. All motion is CSS (styles.css, `.tama`) and switches off under
 // prefers-reduced-motion.
-import { useComputed, useSignal } from "@preact/signals";
+import { computed, useComputed, useSignal } from "@preact/signals";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { accountLabel, multiAccount } from "../accounts.js";
 import { selectedPid } from "../keys.js";
@@ -29,11 +29,11 @@ import {
   windows,
 } from "../store.js";
 import { plural } from "../util.js";
-import { clickHandlers } from "./clawdClick.js";
 import { Critter } from "./Critter.jsx";
-import { CRITTERS, critterById, placement } from "./critters.js";
+import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
+import { CRITTERS, critterById, placement } from "./critters.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
@@ -703,6 +703,12 @@ export function TamaScene({
   );
 }
 
+// The picked critter, as its own signal: prefsSignal is one blob of every ui
+// pref, and reading it in render would rebuild the scene on any pin, reorder
+// or splitter drag. critterById returns the same object for the same id, so
+// this only notifies when the pick changes.
+const pickedCritter = computed(() => critterById(getTamaCritter()));
+
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
 // day log (prefs.getClawdDay) and the stretches every account was walled, as
 // the server dated them (`wall_spans`, not `walls`: the first usage refresh
@@ -716,7 +722,6 @@ const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walls: wallsOf(wallSpans.
 export function Tamagotchi() {
   const [now, setNow] = useState(() => new Date());
   const [pets, setPets] = useState(0);
-  const critter = critterById(getTamaCritter());
   const [petted, setPetted] = useState(false);
 
   // The day log and the walls' stretches, as a string key: /api/state
@@ -773,6 +778,8 @@ export function Tamagotchi() {
   }, []);
 
   useEffect(() => { startClawdWatch(); }, []);
+
+  const critter = pickedCritter.value;
 
   // The coding mood, as a string key: /api/state replaces `usage` every poll,
   // and a poll that leaves the mood unchanged mustn't rebuild the scene.
