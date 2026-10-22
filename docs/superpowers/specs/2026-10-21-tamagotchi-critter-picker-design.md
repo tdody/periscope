@@ -41,13 +41,14 @@ from there.
 
 ```js
 export const CRITTERS = [
-  { id: "clawd", name: "Clawd" },            // drawn by Tamagotchi.jsx's Cells/Eyes, no sprite
-  { id: "scope", name: "Scope", sprite: { layers: [...] } },
+  { id: "clawd", name: "Clawd", sprite: null },  // drawn by Tamagotchi.jsx's Sprite/Eyes
+  { id: "scope", name: "Scope", sprite: { name, root } },  // from critterSprites.js
   ...
 ];
+export const CLAWD_HEIGHT = 10;
 export function critterById(id)              // unknown / unset → the clawd entry
 export function spriteBox(sprite)            // visible bbox of the always-drawn layers
-export function placement(sprite, { x0, sitting })  // → { scale, tx, ty } for the scene
+export function placement(sprite, { x0, sitting })  // → { scale, tx, ty, top } for the scene
 ```
 
 A sprite (`critterSprites.js`) is `{ name, root: [node…] }` in the source's
@@ -79,14 +80,15 @@ standing height (body 4 rows × 2 + legs = **10 units**), centred on Clawd's
 centre (`x0 + 8.5`):
 
 - standing: bottom on the feet line, **y = 19**;
-- sitting (`code`, `nap`, `read`): bottom at **y = 17**, where sitting Clawd's
-  body ends. Bottom-aligning to 19 would sink the critter through the desk
-  chair's seat (y 16.9) and the armchair's (16.8).
+- sitting (`code`, `nap`, `read`, and the seated pastimes `game`, `swim`,
+  `sled`): bottom at **y = 17**, where sitting Clawd's body ends. Bottom-aligning
+  to 19 would sink the critter through the desk chair's seat (y 16.9), the
+  armchair's (16.8) and the couch cushion (16.6).
 
 Scales come out at 0.59–0.67 (measured from the rects: Ember and Scope 17 units
 tall, Volt 16, the rest 15). **Known trade-off, accepted:** the widget renders
-at exactly 4× or 5× for crisp edges (`styles.css` `.tama`), so a critter pixel
-lands on 2.4–3.3 CSS px and `crispEdges` rounds unevenly — some pixel columns
+at an exact integer zoom (4× or 6×, `styles.css` `.tama`) for crisp edges, so a
+critter pixel lands on a fractional number of CSS px (about 2.4–4) and `crispEdges` rounds unevenly — some pixel columns
 come out a device pixel wider than others. A fixed 0.5 scale would keep them
 uniform on Retina, at the cost of smaller critters (7.5–8.5 units); matching
 Clawd's height was chosen instead.
@@ -110,43 +112,51 @@ Used in two places: inside the header scene, and on its own in a
 changes. For any other critter, inside the existing `.tama-creature` group:
 
 ```jsx
-<g transform={`translate(${tx} ${ty}) scale(${scale})`}>   {/* placement: SVG attribute */}
-  <Critter sprite={critter.sprite} mood={shownMood} asleep={asleep} />
+<g class="tama-critter" style="transform-box: view-box" transform={`translate(${tx} ${ty}) scale(${scale})`}>
+  <Critter sprite={critter.sprite} mood={moody ? mood : "calm"} asleep={asleep} />
 </g>
 ```
 
 - **The placement transform is an SVG attribute on a wrapper that no CSS
   animation targets.** A CSS `transform` (the creature's bob, shake, hop)
   overrides a `transform` attribute on the same element — the trap the heart's
-  comment at `Tamagotchi.jsx:640` records. The creature group animates; the
+  comment in `Tamagotchi.jsx` records. The creature group animates; the
   wrapper inside it doesn't. The wrapper also sets `transform-box: view-box`,
   because `styles.css`'s `.tama g { transform-box: fill-box }` would otherwise
   pivot the `scale()` around the group's own bounding box, which shifts with
   its mood and animated children.
-- **Replaced for critters:** Clawd's body and leg `Cells`, and the overlays drawn
-  for Clawd's body only — `Eyes`, `MoodFace` (brows, flush, scowl,
+- **Replaced for critters:** Clawd's body and leg `Sprite`s, and the overlays
+  drawn for Clawd's body only — `Eyes`, `MoodFace` (brows, flush, scowl,
   skin-coloured typing hands and key clacks), `HappyEyes`, `XEyes`, `LookDown`,
-  `Worried`, `ArmsUp`, `SlapHand`.
+  `Worried`, `ArmsUp`, `SlapHand`, and the two pastime props worn on Clawd's own
+  face and neck, `Goggles` (swim) and `Scarf` (sled), which would float across a
+  critter's body.
 - **Kept, unchanged:** every scene prop — `Behind` / `InFront` (desk, chair,
   armchair, fireplace, scenery, seasons), occasions (jack-o'-lantern, tree,
   stockings, fireworks, confetti), duty screens, `DeskProps`, `DeskZs`,
   `AlarmClock`, `Sparkles`, `Extinguisher`, `MoodDesk` (flying keys, smoke,
   shimmer, spill), the bubble, the heart, `GhostSheet` + `Pail` (the sheet
-  covers the creature whatever it is).
+  covers the creature whatever it is), and the pastimes' scenes and held props
+  (`Behind`, `Front`, the bass, pint, controller, watering can, spoon). The bike's
+  `lift` wrapper sits outside the creature group, so it raises a critter too.
 - **Head-anchored props** — `SantaHat`, `PartyHat`, `Stars`, `Startle`, the
-  winter snowcap, and `MoodDesk`'s furious heat shimmer — are drawn at Clawd's
+  winter snowcap, a pastime's `Headwear` (helmet, toque), and `MoodDesk`'s
+  furious heat shimmer — are drawn at Clawd's
   head (top at `Y0 = 9`). For a critter they get an extra
   `translate(0, critterTop − Y0)` so they sit on its actual top (a sitting
   critter's top is ~2 units higher than Clawd's).
-- **Mood:** `shownMood = moody ? mood : "calm"`, with `moody` exactly as today
+- **Mood:** the critter gets `moody ? mood : "calm"`, with `moody` exactly as today
   (`view.moodShown && MOODS[mood].rank > 0`) — a critter shows grumpy / furious
   in the same moments Clawd does. Celebrating, API-error and other duty poses
   show calm; the scene's own props carry them.
 - **Asleep:** the existing `asleep` flag (night sleep or the walled nap, not
   ringing) closes the critter's eyes.
 
-`Tamagotchi()` reads `getTamaCritter()` (reactive via `prefsSignal`) and passes
-`critterById(...)` down. The hover label is `Claude is …` for Clawd, unchanged,
+`Tamagotchi()` reads a module-level `pickedCritter = computed(() =>
+critterById(getTamaCritter()))` and passes it down. It's its own computed
+because `prefsSignal` is one blob of every ui pref: reading it in render would
+rebuild the scene on any pin, reorder or splitter drag, and `critterById` returns
+the same object for the same id, so the computed only notifies on a new pick. The hover label is `Claude is …` for Clawd, unchanged,
 and `${critter.name} is …` for the others. Prefs load before the first render
 (`main.jsx:31`), so a reload doesn't flash Clawd first.
 
@@ -155,18 +165,11 @@ and `${critter.name} is …` for the others. Prefs load before the first render
 One class + `@keyframes` per SMIL animation in the sources, in the style of
 `tama-blink` / `tama-bob`, linked from `index.html` after `styles.css`:
 
-| SMIL in the source | CSS |
-|---|---|
-| `height`/`y` blink (eyes shrink toward their centre) | `transform: scaleY()`, origin centre |
-| `height 0→3` lid (Nox, Moss) | `scaleY(0→1)`, origin top |
-| `x` shift (pupils glancing) | `translateX()` |
-| `translate` sway (tentacles, tail) | `translate()` |
-| `y` rise (Scope's bubbles) | `translateY()` + opacity |
-| `opacity` (lens glow, sparks, flicker) | `opacity` |
-| `calcMode="discrete"` | `steps(n)` |
-| `keyTimes` | keyframe percentages |
-
-Each frame is `translate(dx, dy) scaleY(s)` about the top of the element's
+Rect animations (`x` / `y` / `height`: blinks, lids, glances, Scope's bubbles,
+Ember's flame) and group `translate` animations (tentacles, tails) become
+`transform` keyframes; `opacity` stays `opacity`. `keyTimes` become keyframe
+percentages, and `calcMode="discrete"` becomes `steps(1, end)` with the last
+frame held to 100%. Each rect frame is `translate(dx, dy) scaleY(s)` about the top of the element's
 fill-box, with `s = h / H` and the rect drawn at its full height `H`; that one
 rule covers blinks, lids and Ember's flickering flame. Lengths are in sprite
 units (CSS px inside SVG = user units), applied inside the scaled wrapper, so
@@ -186,13 +189,13 @@ included) joins `.tama *` in the existing
 `@media (prefers-reduced-motion: reduce)` rule. The header critter is already
 inside `.tama`.
 
-### Settings — `SettingsModal.jsx`
+### Settings — `overlays/TamaPicker.jsx`, mounted by `SettingsModal.jsx`
 
 A **Tamagotchi** fieldset above the existing fields:
 
 - a row of seven `<label>`s, each wrapping a real
   `<input type="radio" name="tama-critter">`, a 40 px preview (Clawd drawn by an
-  exported `ClawdSprite` built from the same `Cells`/`Eyes`, the others by
+  exported `ClawdSprite` built from the same `Sprite`/`Eyes`, the others by
   `Critter`, calm, awake) and the name; the fieldset and its `<legend>` group
   the radios — no extra `role`, which would double the announced name;
 - keyboard: native radio-group behaviour (arrow keys move and select);
@@ -209,26 +212,37 @@ A **Tamagotchi** fieldset above the existing fields:
   (without it Pydantic drops the field and the optimistic update reverts on the
   echo), validated in `patch_prefs_ui` against
   `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss")`
-  → 400 otherwise, like `view`. A comment on each list points at the other.
+  → 400 otherwise, like `view`. A comment on each list points at the other, and
+  a test pins them equal.
 
 ## Tests
 
 vitest (`static/src/chrome/__tests__/`):
 
-- `critters.test.js` — ids unique; `critterById` falls back for unset and
-  unknown ids; every sprite has `eyes` layers and calm, grumpy and furious
-  layers; `spriteBox` ignores mood layers (a mood-only rect outside the body
+- `critters.test.js` — ids in order; `critterById` falls back for unset and
+  unknown ids; every sprite has `eye` or `lid` groups with a `shut` frame and
+  calm, grumpy and furious layers; `spriteBox` ignores mood layers (a mood-only rect outside the body
   doesn't move it); `placement` gives height 10, bottom 19 standing and 17
   sitting, centred on `x0 + 8.5`.
 - `critterRender.test.jsx` — each mood draws its own layers and none of the
-  others; `asleep` drops `eyes` and `lid` layers and draws closed lines.
-- `tamagotchiRender.test.jsx` — each critter renders in every activity
-  (including the nap) with no Clawd body cells; the default still renders
-  Clawd; hover copy uses the critter's name.
+  others; `asleep` draws each `eye`/`lid` as its held `shut` frame and drops
+  glints.
+- `tamagotchiRender.test.jsx` — each critter renders in every activity and
+  pastime (including the nap) with no Clawd body; the default still renders
+  Clawd; the wrapper's `transform-box: view-box`; mood in the critter's own
+  layers; head props (hats, snowcap, shimmer) lifted on a seated critter;
+  goggles and scarf dropped, helmet kept; hover copy uses the critter's name.
 - prefs getter: default, unknown-id fallback.
+- `overlays/__tests__/tamaPickerRender.test.jsx` — seven radios with previews,
+  the checked one follows the saved pick.
+- `__tests__/styles.test.js` — `critters.css` shares no keyframes name with
+  `styles.css`.
 
-pytest (`tests/routes/test_prefs.py`): `PATCH /api/prefs/ui` accepts each of
-the seven ids and rejects junk with 400.
+pytest: `tests/routes/test_prefs.py` — `PATCH /api/prefs/ui` accepts each of
+the seven ids, rejects junk with 400, and `TAMA_CRITTERS` matches the
+generator's list; `tests/test_build_critters.py` — the committed output is
+fresh, known conversions are exact, and every unsupported input raises with the
+SVG's name.
 
 ## Done when
 
