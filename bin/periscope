@@ -333,9 +333,11 @@ PY
     ;;
   install-tmux)
     # The tmux side of continuation-over-reboot: TPM + tmux-resurrect +
-    # tmux-continuum, plus a periscope-owned conf sourced from ~/.tmux.conf
-    # that points @resurrect-hook-post-save-layout at THIS checkout. Fails
-    # loudly — a silently missing plugin is a silently missing save.
+    # tmux-continuum, plus a periscope-owned conf sourced from the user conf
+    # TPM reads (the XDG one when it exists, else ~/.tmux.conf) that points
+    # @resurrect-hook-post-save-layout at THIS checkout. Fails loudly (exit 1)
+    # on a missing plugin, or when tmux would not run TPM exactly once — a
+    # silently missing plugin is a silently missing save.
     ( cd "$REPO" && exec python3 -m periscope.tmux_persist install "$REPO" )
     ;;
   uninstall-tmux)

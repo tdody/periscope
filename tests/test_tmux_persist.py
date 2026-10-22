@@ -1,5 +1,6 @@
-"""Tests for periscope.tmux_persist — the ~/.tmux.conf line rules and the
-healthz status built from live tmux options."""
+"""Tests for periscope.tmux_persist — the user-conf line rules, the counts of
+what TPM reads and tmux executes, and the healthz status built from live tmux
+options."""
 
 import subprocess
 import time
@@ -136,7 +137,7 @@ def test_owned_conf_carries_this_checkouts_hook():
     assert "set -g @resurrect-hook-post-save-layout '/opt/periscope/bin/periscope resurrect-rewrite'" in text
     assert "set -g @resurrect-processes '~claude'" in text
     assert "set -g @continuum-restore 'on'" in text
-    # TPM is run from ~/.tmux.conf, after this file is sourced — never here.
+    # TPM is run from the user conf, after this file is sourced — never here.
     assert not any(line.startswith("run") for line in text.splitlines())
 
 

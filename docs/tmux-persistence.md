@@ -49,7 +49,7 @@ periscope-owned `~/.config/periscope/tmux.conf` (an `@plugin` line for each of
 the three not declared elsewhere — see below — `@continuum-restore on`,
 `@resurrect-processes '~claude'`, and `@resurrect-hook-post-save-layout`
 pointing at THIS checkout), and adds one `source-file` line to the user conf
-(`~/.tmux.conf`, or the XDG one TPM prefers — see below) — inserted directly
+TPM reads (the XDG one when it exists, else `~/.tmux.conf` — see below) — inserted directly
 above the line that runs TPM (its `run ... tpm/tpm`, or the `source-file` of a
 file holding it), or appended together with one, because TPM only installs
 plugins declared before it runs. The owned file is regenerated
@@ -74,8 +74,11 @@ panes, all `--resume`-ing one session, two of them zombie Claudes). So
 reports `plugin_declarations` (each must be 1). "What TPM reads" is resolved
 exactly as TPM resolves it (`scripts/helpers/plugin_functions.sh`), because a
 file read differently is a declaration miscounted: the user conf is
-`$XDG_CONFIG_HOME/tmux/tmux.conf` when it exists, else `~/.tmux.conf` (TPM
-reads one, never both — so that is also where the source line goes); a
+`${XDG_CONFIG_HOME:-~/.config}/tmux/tmux.conf` when it exists (the `~/.config`
+fallback is the launchd job's case: it has no `XDG_CONFIG_HOME`), else
+`~/.tmux.conf` (TPM reads one, never both — so that is also where the source
+line goes, and an `@plugin` added to `~/.tmux.conf` next to an XDG conf is
+never installed or run); a
 `source-file` line's paths are word-split, a leading `~` or `$HOME` expanded,
 and each word globbed. A literal-path read missed `source-file $HOME/…` and
 `…/*.conf`, so install declared continuum a second time; whether a conf
