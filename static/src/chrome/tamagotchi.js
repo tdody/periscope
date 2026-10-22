@@ -1,7 +1,7 @@
 // The header's Claude tamagotchi (Tamagotchi.jsx): the pure parts, so the
 // day schedule and the sprite unit-test without a clock or a DOM.
 
-import { isStale, meterLabel, projectsPastLimit } from "./usageRules.js";
+import { isStale, meterLabel, meterMood } from "./usageRules.js";
 
 // What Claude is up to, by local hour. Each window runs [from, to); every
 // boundary is on the hour, so the hour alone finds the window. `coffee` keeps
@@ -410,7 +410,7 @@ export function activityLabel(activity, mood = "calm") {
 }
 
 // Clawd's mood while coding follows the usage trend, worst meter across every
-// account, by the pill's own rules (usageSummary.js): a meter burning at least
+// account, by the pill's own rules (usageRules.meterMood): a meter burning at least
 // twice its even pace (`hot`, the pill's 🔥) is furious; one on track to hit
 // its limit (projectsPastLimit, the pill's red →) is grumpy; anything else is
 // calm. A stale or unavailable account counts as calm rather than replaying
@@ -422,7 +422,7 @@ export function codingMood(plan, nowSec) {
     if (!entry?.available || !entry.meters || isStale(entry, nowSec)) continue;
     for (const [meter, m] of Object.entries(entry.meters)) {
       if (!m) continue;
-      const mood = m.hot ? "furious" : projectsPastLimit(m) ? "grumpy" : "calm";
+      const mood = meterMood(m);
       if (MOODS[mood].rank > MOODS[worst.mood].rank) worst = { mood, account, meter, atLimit: (m.percent ?? 0) >= 100 };
     }
   }

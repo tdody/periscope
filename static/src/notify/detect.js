@@ -4,18 +4,23 @@
 // detect(prev, snapshot, nowSec) -> { state, events }. `prev` is the last
 // state, or null to seed: the first snapshot records what is already there and
 // announces nothing, so a reload never replays old news. Each event fires once
-// per key; the state holds only keys still live, so it prunes itself.
+// per key; `seen` maps each key to when it was last seen and drops it GRACE_S
+// after that, so the state prunes itself.
 
-import { isStale, projectsPastLimit } from "../chrome/usageRules.js";
+import { isStale, meterMood } from "../chrome/usageRules.js";
 import { buildNeedsYou } from "../split/attention.js";
 
 export const KINDS = ["needs_input", "question", "done", "ci_failed", "pr_merged", "usage"];
+
+// A key missing from a poll is kept this long. One empty or garbled poll (tmux
+// answering nothing) would otherwise drop every key, and the next poll would
+// re-announce every waiting, done and question pane.
+export const GRACE_S = 120;
 
 // One PR, however many panes show it.
 export const prKey = (w) => `${w.repo_slug || w.repo_key || ""}#${w.pr}`;
 
 const MOOD_RANK = { calm: 0, grumpy: 1, furious: 2 };
-const meterMood = (m) => (m.hot ? "furious" : projectsPastLimit(m) ? "grumpy" : "calm");
 
 export function detect(prev, snap, nowSec) {
   const {
@@ -23,13 +28,21 @@ export function detect(prev, snap, nowSec) {
     dismissedReadyPids = new Set(), plan = {},
   } = snap;
   const seeding = !prev;
-  const prevSeen = prev?.seen || {};
+  // typeof, not just the comparison: a saved state from before the grace held
+  // `true`, which must read as expired rather than as second 1.
   const seen = {};
+  for (const [key, at] of Object.entries(prev?.seen || {})) {
+    if (typeof at === "number" && nowSec - at <= GRACE_S) seen[key] = at;
+  }
+  const known = new Set(Object.keys(seen));
   const events = [];
   const note = (key, ev) => {
-    seen[key] = true;
-    if (!seeding && !prevSeen[key]) events.push({ key, ...ev });
+    seen[key] = nowSec;
+    if (!seeding && !known.has(key)) events.push({ key, ...ev });
   };
+  // Dismissals live in memory only and reset on a reload; a dismissed item
+  // stays seen so a resumed state doesn't announce it as new.
+  const keep = (key) => { seen[key] = nowSec; };
 
   // Needs-you: a live dialog per needs-input episode (needs_since), a
   // question per agent need_human message. One banner per pane: a pane with a
@@ -41,16 +54,30 @@ export function detect(prev, snap, nowSec) {
     asking.add(r.w.pid);
     note(`needs:${r.w.pid}@${r.w.needs_since || 0}`, { kind: "needs_input", w: r.w });
   }
+  // buildNeedsYou leaves dismissed rows out, so find them on the windows.
+  for (const w of windows) {
+    if (w.state === "needs-input" && dismissedNeedsPids.has(w.pid)) keep(`needs:${w.pid}@${w.needs_since || 0}`);
+  }
   for (const r of rows) {
     if (r.kind !== "event") continue;
     const key = `question:${r.id}`;
-    if (r.w && asking.has(r.w.pid)) seen[key] = true;
-    else note(key, { kind: "question", w: r.w, alert: r });
+    // Hidden behind its pane's dialog: not recorded, so it announces once the
+    // dialog closes if still unanswered (engaging the pane acks it). One
+    // already announced before the dialog opened stays seen past the grace.
+    if (r.w && asking.has(r.w.pid)) {
+      if (seeding || known.has(key)) keep(key);
+    } else note(key, { kind: "question", w: r.w, alert: r });
+  }
+  for (const a of alerts) {
+    if (a.kind === "need_human" && dismissedAlertIds.has(a.id)) keep(`question:${a.id}`);
   }
 
   // Done: each finished turn (completed_at), the rail's READY rule.
   for (const w of windows) {
-    if (w.state === "done" && !dismissedReadyPids.has(w.pid)) note(`done:${w.pid}@${w.completed_at || 0}`, { kind: "done", w });
+    if (w.state !== "done") continue;
+    const key = `done:${w.pid}@${w.completed_at || 0}`;
+    if (dismissedReadyPids.has(w.pid)) keep(key);
+    else note(key, { kind: "done", w });
   }
 
   // PRs, by transition rather than by key: CI turning red, a linked PR
@@ -62,6 +89,10 @@ export function detect(prev, snap, nowSec) {
   const byPr = new Map();
   for (const w of windows) {
     if (!w.pr) continue;
+    // A linked PR whose cache is cold (or gh failed) carries no pr_state and
+    // no ci: it says nothing, or it would record "no CI" and the next red poll
+    // would re-announce.
+    if (w.pr_linked && !w.pr_state) continue;
     const k = prKey(w);
     // The linked pane (it carries pr_state) speaks for the PR.
     if (!byPr.has(k) || (w.pr_state && !byPr.get(k).pr_state)) byPr.set(k, w);
@@ -78,20 +109,31 @@ export function detect(prev, snap, nowSec) {
   }
 
   // Usage: a meter's mood getting worse, at most once per mood step per reset
-  // window (the key carries resets_at). The highest mood reached is kept, so a
-  // meter flapping back to calm doesn't re-arm within the window. Stale or
-  // unavailable accounts are left out, as the pill and Clawd's mood do.
+  // window, and at most one banner per account per pass (the worst). The
+  // window is keyed by the minute: the server truncates fractional resets_at,
+  // so it flickers a second either way within one window. The highest mood
+  // reached is kept until the window resets, not while the meter is present,
+  // so neither flapping back to calm nor a stale or unavailable fetch (left
+  // out, as the pill and Clawd's mood do) re-arms it.
   const meters = {};
+  for (const [k, rank] of Object.entries(prev?.meters || {})) {
+    if (Number(k.slice(k.lastIndexOf("/") + 1)) * 60 > nowSec) meters[k] = rank;
+  }
   for (const [account, entry] of Object.entries(plan || {})) {
     if (!entry?.available || !entry.meters || isStale(entry, nowSec)) continue;
+    let worst = null;
     for (const [meter, m] of Object.entries(entry.meters)) {
-      if (!m) continue;
+      // No reset time, no window to dedupe within.
+      if (!m?.resets_at) continue;
       const mood = meterMood(m);
-      const k = `${account}/${meter}/${m.resets_at || 0}`;
-      const was = prev?.meters?.[k] ?? (seeding ? MOOD_RANK[mood] : 0);
+      const k = `${account}/${meter}/${Math.round(m.resets_at / 60)}`;
+      const was = meters[k] ?? 0;
       meters[k] = Math.max(was, MOOD_RANK[mood]);
-      if (!seeding && MOOD_RANK[mood] > was) events.push({ key: `usage:${k}:${mood}`, kind: "usage", account, meter, m, mood });
+      if (!seeding && MOOD_RANK[mood] > was && (!worst || MOOD_RANK[mood] > MOOD_RANK[worst.mood])) {
+        worst = { key: `usage:${k}:${mood}`, kind: "usage", account, meter, m, mood };
+      }
     }
+    if (worst) events.push(worst);
   }
 
   return { state: { seen, ci, prs, meters }, events };

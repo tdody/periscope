@@ -26,6 +26,13 @@ export function projectsPastLimit(m) {
   return hi > (m.percent ?? 0) && hi >= 100;
 }
 
+// A meter's mood, the one rule: burning (hot) is furious, on track to hit its
+// limit is grumpy. Clawd's coding mood and the usage banners both read it, so
+// a banner never names a mood Clawd isn't showing.
+export function meterMood(m) {
+  return m?.hot ? "furious" : projectsPastLimit(m) ? "grumpy" : "calm";
+}
+
 const METER_LABELS = {
   session: "session",
   week_all: "week",
