@@ -18,10 +18,19 @@ not injected SVG strings:
 
 - one `Critter.jsx` means mood switching, sleeping eyes and placement are
   written once;
-- adding a critter is a sprite entry in `CRITTERS` (plus the server id tuple,
-  below);
 - the source SVGs animate with SMIL, which `prefers-reduced-motion` can't stop,
   and each carries an ~8 KB C2PA metadata block — neither belongs in the bundle.
+
+**The sprite data and its CSS are generated** (decided while planning): a
+stdlib-only `build_critters.py` at the repo root (beside `build_icons.py`)
+reads the SVGs and writes `static/src/chrome/critterSprites.js` (the trees) and
+`static/critters.css` (one class + `@keyframes` per SMIL animation). Both are
+committed. Hand-transcribing ~300 rects and 32 animations would be slow and
+error-prone. The script raises on anything outside the conventions the six SVGs
+follow, so a new SVG fails loudly instead of drawing wrong. **Adding a critter**
+= drop its SVG in `docs/specs/assets/critters/`, add its id to the script's
+`CRITTERS` list and to the server's `TAMA_CRITTERS` tuple, re-run. A pytest
+checks the committed output is fresh and that the two id lists agree.
 
 The SVGs stay in `docs/specs/assets/critters/` as source art; nothing ships
 from there.
@@ -41,15 +50,25 @@ export function spriteBox(sprite)            // visible bbox of the always-drawn
 export function placement(sprite, { x0, sitting })  // → { scale, tx, ty } for the scene
 ```
 
-A sprite is `{ layers: [{ rects: [[x, y, w, h, fill], …], mood?, role?, anim? }] }`
-in the source's 20×20 coordinates:
+A sprite (`critterSprites.js`) is `{ name, root: [node…] }` in the source's
+20×20 coordinates. It keeps the SVG's nesting, because paint is inherited
+(Nox's outline is a stroked group under a fill-only copy):
+
+- rect: `{ r: [x, y, w, h], a?: { fill, stroke, "stroke-width", opacity } }`;
+- group: `{ g: [node…], a?, mood?, role?, shut?, anim? }`.
+
+The group fields:
 
 - `mood` — `"calm" | "grumpy" | "furious"`; absent means always drawn
   (the SVGs' `.mood-*` classes).
-- `role` — `"eyes"` (the eye rects and anything riding on them, e.g. calm-mood
-  highlights) or `"lid"` (Nox's and Moss's blink, a rect that grows over the
-  eye). Sleep needs to find both.
-- `anim` — a class name from the `.critter` CSS block (below).
+- `anim` — a class from `static/critters.css`. An animated rect is wrapped in a
+  group that carries the class.
+- `role` — what sleep does to it:
+  - `"eye"` — a blinking eye (Scope, Jelly, Ember, Volt);
+  - `"lid"` — the rect that grows over the eye to blink (Nox, Moss);
+  - `"glint"` — the calm highlight on a blinking eye.
+- `shut: [x, y, w, h]` — the closed frame, on eyes and lids. For an eye it's
+  the blink's lowest frame, held; for a lid, the lid at full height.
 
 **`spriteBox` measures only layers without a `mood`.** Mood-only rects sit
 outside the body (Jelly's furious sparks at x=2 and x=17); counting them would
@@ -78,9 +97,9 @@ Clawd's height was chosen instead.
 coordinates:
 
 - layers with no `mood`, plus the layers whose `mood` matches — nothing else;
-- `asleep`: every `eyes` and `lid` layer is skipped and each eye rect is
-  replaced by a closed line (`height 0.5` at the eye's bottom edge, the
-  `Eyes closed` treatment Clawd gets).
+- `asleep`: each `eye` and `lid` group is drawn as its static `shut` rect
+  (the held blink frame: a thin line for an eye, a closed lid for Nox and
+  Moss), and `glint` groups are skipped.
 
 Used in two places: inside the header scene, and on its own in a
 `<svg viewBox="0 0 20 20">` as the Settings preview.
@@ -127,10 +146,10 @@ changes. For any other critter, inside the existing `.tama-creature` group:
 and `${critter.name} is …` for the others. Prefs load before the first render
 (`main.jsx:31`), so a reload doesn't flash Clawd first.
 
-### Motion — `styles.css`
+### Motion — `static/critters.css` (generated)
 
-A `.critter` block beside `.tama`, one class + `@keyframes` per SMIL animation
-in the sources, in the style of `tama-blink` / `tama-bob`:
+One class + `@keyframes` per SMIL animation in the sources, in the style of
+`tama-blink` / `tama-bob`, linked from `index.html` after `styles.css`:
 
 | SMIL in the source | CSS |
 |---|---|
@@ -143,10 +162,13 @@ in the sources, in the style of `tama-blink` / `tama-bob`:
 | `calcMode="discrete"` | `steps(n)` |
 | `keyTimes` | keyframe percentages |
 
-Lengths are in sprite units (CSS px inside SVG = user units), applied inside
-the scaled wrapper, so they scale with the critter. `transform-box: fill-box`
-already applies to `.tama` descendants; the preview needs it too, so the
-selector covers `.critter` as well.
+Each frame is `translate(dx, dy) scaleY(s)` about the top of the element's
+fill-box, with `s = h / H` and the rect drawn at its full height `H`; that one
+rule covers blinks, lids and Ember's flickering flame. Lengths are in sprite
+units (CSS px inside SVG = user units), applied inside the scaled wrapper, so
+they scale with the critter. The generated file opens with
+`.critter g { transform-box: fill-box; transform-origin: 0 0; }`, so the
+Settings previews outside `.tama` get it too.
 
 **Each source's outer idle bob (`data-bob`) is dropped.** The scene already
 moves `.tama-creature` per activity (breathe asleep, bob while coding and
@@ -155,9 +177,10 @@ eating, stride on the run) and per mood (grumpy: 0.3 s bob; furious:
 two bobs. In `coffee` and `read`, where Clawd stands still apart from blinking,
 the critter does too.
 
-Reduced motion: `.critter *` joins `.tama *` in the existing
-`@media (prefers-reduced-motion: reduce)` rule, so the Settings previews stop
-as well.
+Reduced motion: `.critter-preview *` (the Settings previews, Clawd's blink
+included) joins `.tama *` in the existing
+`@media (prefers-reduced-motion: reduce)` rule. The header critter is already
+inside `.tama`.
 
 ### Settings — `SettingsModal.jsx`
 
