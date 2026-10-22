@@ -53,10 +53,10 @@ def test_glint_role_is_per_critter():
     assert '"role":"glint"' not in nox_line
 
 
-def _svg(tmp_path: Path, body: str) -> Path:
+def _svg(tmp_path: Path, body: str, g_attrs: str = "") -> Path:
     p = tmp_path / "bad.svg"
     bob = '<animateTransform attributeName="transform" type="translate" values="0 0;0 -1" dur="1s" repeatCount="indefinite" data-bob="x"/>'
-    p.write_text(f'<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><g>{bob}{body}</g></svg>')
+    p.write_text(f'<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><g{g_attrs}>{bob}{body}</g></svg>')
     return p
 
 
@@ -73,19 +73,22 @@ def test_raises_on_an_attribute_it_does_not_know(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "body,match",
+    "body,match,g_attrs",
     [
         # <rect> may only contain <animate> — stray SMIL on a rect isn't swallowed.
         (
             '<rect><animateTransform attributeName="transform" type="translate" values="0 0;1 0" '
             'dur="1s" repeatCount="indefinite"/></rect>',
             "animateTransform",
+            "",
         ),
-        ('<rect><set attributeName="fill" to="red"/></rect>', "set"),
-        # <g> may only animate via a translate <animateTransform> — not a bare <animate>.
+        ('<rect><set attributeName="fill" to="red"/></rect>', "set", ""),
+        # <g> may only animate via a translate <animateTransform> — not a bare <animate>. Pinned to
+        # the exact message, not just "animate" (which also matches unrelated messages).
         (
             '<g><animate attributeName="opacity" values="0;1" dur="1s" repeatCount="indefinite"/></g>',
-            "animate",
+            "may only animate via a translate",
+            "",
         ),
         # Timing validation in Anim.__init__.
         (
@@ -93,45 +96,86 @@ def test_raises_on_an_attribute_it_does_not_know(tmp_path):
             '<animate attributeName="height" values="1;0.5" calcMode="paced" dur="1s" '
             'repeatCount="indefinite"/></rect>',
             "paced",
+            "",
         ),
         (
             '<rect x="0" y="0" width="1" height="1">'
             '<animate attributeName="height" values="1;0.5" repeatCount="indefinite"/></rect>',
             "dur",
+            "",
         ),
         (
             '<rect x="0" y="0" width="1" height="1">'
             '<animate attributeName="height" values="1" dur="1s" repeatCount="indefinite"/></rect>',
             "values",
+            "",
         ),
         (
             '<rect x="0" y="0" width="1" height="1">'
             '<animate attributeName="height" values="1;0.5;1" keyTimes="0;1" dur="1s" '
             'repeatCount="indefinite"/></rect>',
             "keyTimes",
+            "",
         ),
         (
             '<rect x="0" y="0" width="1" height="1">'
             '<animate attributeName="height" values="1;0.5;1" keyTimes="0;0.5;0.9" dur="1s" '
             'repeatCount="indefinite"/></rect>',
             "keyTimes",
+            "",
+        ),
+        # keyTimes must be non-decreasing (discrete, so the linear-ends-at-1 rule doesn't interfere).
+        (
+            '<rect x="0" y="0" width="1" height="1">'
+            '<animate attributeName="height" values="1;0.5;1" keyTimes="0;0.6;0.4" calcMode="discrete" '
+            'dur="1s" repeatCount="indefinite"/></rect>',
+            "non-decreasing",
+            "",
         ),
         # A height animation outside a mood layer that neither dips nor grows from 0.
         (
             '<rect x="0" y="0" width="1" height="1">'
             '<animate attributeName="height" values="1;3;1" dur="1s" repeatCount="indefinite"/></rect>',
             "neither",
+            "",
         ),
         # Static opacity + an opacity animation on the same rect.
         (
             '<rect x="0" y="0" width="1" height="1" opacity="0.5">'
             '<animate attributeName="opacity" values="1;0" dur="1s" repeatCount="indefinite"/></rect>',
             "opacity",
+            "",
         ),
+        # A translate <animateTransform> value with the wrong arity (not 2 numbers).
+        (
+            '<g><animateTransform attributeName="transform" type="translate" values="0 0;1" '
+            'dur="1s" repeatCount="indefinite"/></g>',
+            "exactly 2 numbers",
+            "",
+        ),
+        # Every top-level layer inside a mood group — nothing is ever always drawn.
+        (
+            '<g class="mood-calm"><rect x="0" y="0" width="1" height="1"/></g>',
+            "always drawn",
+            "",
+        ),
+        # The outer <g> (holding the data-bob) must itself carry no attributes.
+        ("", "no attributes", ' fill="#fff"'),
     ],
 )
-def test_raises_on_unsupported_input(tmp_path, body, match):
+def test_raises_on_unsupported_input(tmp_path, body, match, g_attrs):
     with pytest.raises(ValueError, match=match):
+        build_critters.convert("bad", _svg(tmp_path, body, g_attrs), build_critters.Sheet())
+
+
+def test_timing_errors_name_the_svg_file(tmp_path):
+    # Structural errors already said which file; Anim's didn't. Now every error does.
+    body = (
+        '<rect x="0" y="0" width="1" height="1">'
+        '<animate attributeName="height" values="1;0.5" calcMode="paced" dur="1s" '
+        'repeatCount="indefinite"/></rect>'
+    )
+    with pytest.raises(ValueError, match="bad.svg"):
         build_critters.convert("bad", _svg(tmp_path, body), build_critters.Sheet())
 
 
