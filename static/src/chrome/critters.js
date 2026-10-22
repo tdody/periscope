@@ -55,14 +55,6 @@ export function placement(sprite, { x0, sitting }) {
   };
 }
 
-// The duty faces Critter.jsx draws over a critter's eyes (TamaScene picks one
-// with Clawd's rules), as nodes in the sprite tree's own format, in sprite
-// units: generated from the eye boxes build_critters.py found
-// (`sprite.anchors`), in the critter's `ink`, unless its SVG drew its own
-// (`sprite.faces`). Two node fields ride alongside the tree's `r` rects and
-// `g` groups, for Critter.jsx to draw the same way: `p` (an SVG path's `d`)
-// and `cls` (a CSS class). The worried face's sweat drop is always generated:
-// it's the head's, not the eyes'.
 const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
@@ -85,6 +77,14 @@ function brows(eyes) {
     : { p: `M${r4(x - 0.1)} ${r4(y - 1.9)} l${r4(w + 0.4)} 0.8` }));
 }
 
+// The duty faces Critter.jsx draws over a critter's eyes (TamaScene picks one
+// with Clawd's rules), as nodes in the sprite tree's own format, in sprite
+// units: generated from the eye boxes build_critters.py found
+// (`sprite.anchors`), in the critter's `ink`, unless its SVG drew its own
+// (`sprite.faces`). Two node fields ride alongside the tree's `r` rects and
+// `g` groups, for Critter.jsx to draw the same way: `p` (an SVG path's `d`)
+// and `cls` (a CSS class). The worried face's sweat drop is always generated:
+// it's the head's, not the eyes'.
 export function faceGlyphs(sprite, face) {
   const { eyes, head } = sprite.anchors;
   const ink = sprite.ink;

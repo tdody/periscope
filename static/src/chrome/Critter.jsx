@@ -33,8 +33,8 @@ function Node({ n, mood, asleep, hide }) {
 
 // `face` is one of the duty faces (critters.js faceGlyphs) and `startle` the
 // bell's "!": both drawn inside the critter's own group, so they scale and bob
-// with it. A face wins over `asleep` if both were ever set (TamaScene never
-// sets both).
+// with it. An eye-replacing face wins over `asleep` if both were ever set
+// (TamaScene never sets both).
 export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false }) {
   const hide = EYE_FACES.has(face);
   return (

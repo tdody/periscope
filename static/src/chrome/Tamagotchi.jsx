@@ -600,8 +600,9 @@ export function TamaScene({
   const { x0, sitting = false, lift = 0 } = p?.pose || POSES[activity] || STANDING;
   const jack = p ? p.jack : JACK_SPOTS[activity];
   // Any creature but Clawd is a sprite (critters.js) standing in Clawd's spot,
-  // showing its own moods and shutting its own eyes; the overlays drawn for
-  // Clawd's body (its face kinds, brows, hands) stay Clawd's.
+  // showing its own moods and shutting its own eyes. Clawd's overlay
+  // components stay Clawd's; a critter draws its own duty faces (`critterFace`
+  // → Critter.jsx); hands and props are still Clawd-only.
   const sprite = critter.sprite;
   const place = sprite && placement(sprite, { x0, sitting });
   const headDy = place ? place.top - Y0 : 0;
