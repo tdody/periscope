@@ -14,7 +14,7 @@ Two pastime scenes draw Clawd-shaped figures beside the mascot. When a critter i
 - **The friend matches the mascot.** It's the picked critter, mirrored to face the mascot, with its colours hue-shifted so it reads as another individual of the same kind. That's what Clawd's blue friend already is. It wears the duty faces' `happy` face, and keeps the pint, the string lights and the "cheers" sparkle.
 - **The kids match the mascot.** They're two half-size copies of the critter, in its own colours and with its calm face, at the kids' spots, feet on the floor line, still hopping. On Halloween the sheets still go over them.
 - **The hue shift is computed, not filtered.** It's a pure `hueRotate(hex, deg)` applied to every fill and stroke, including the face glyphs' ink, through a `tint` prop on `Critter`. CSS `filter` on SVG child elements is unreliable in WebKit, which is the Periscope app's webview.
-- **Clawd's scenes stay byte-identical.** His friend and kids are drawn exactly as before. The Clawd hash pin and the critter-faces parity test prove it.
+- **Clawd's scenes stay byte-identical.** His friend and kids are drawn exactly as before: the critter path is an `if (critter.sprite)` branch beside Clawd's own markup, not a rewrite of it, so Clawd's fragments are unchanged by construction. The hash pin (which never varies `trick`, so it doesn't by itself cover the Halloween sheets) and the critter-faces parity test guard against a regression; a base-vs-head render comparison, including Halloween, verified it directly.
 - **No other pastime changes.** The dog is a dog.
 
 ## Changes

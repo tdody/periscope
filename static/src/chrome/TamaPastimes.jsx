@@ -237,7 +237,7 @@ export function Friend({ critter }) {
   );
 }
 
-// ---- time with the kids: two half-size Clawds (or the picked critter), hand in hand, hopping --------
+// ---- time with the kids: two half-size Clawds (or critters), hopping ----
 // On a Halloween evening they trick-or-treat in little sheets, pails in hand.
 function KidSheet({ x }) {
   const L = x + 1.1;
