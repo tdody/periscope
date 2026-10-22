@@ -87,6 +87,9 @@ class WindowAnnotation(TypedDict, total=False):
     linked_linear_status: str
     completed_at: int
     acked_at: int
+    # When the pane entered needs-input (0 once it stops waiting), so a server
+    # restart doesn't start a new episode for a pane still waiting.
+    needs_since: int
     alias: str
     is_fork: bool  # phase 4: set on PR-review projects' claude window
     open_tabs: list  # [{"path": str, "line": int|None}], see periscope.tabs

@@ -8,7 +8,7 @@ documented here so callers don't expect it to be pure.
 
 Returns `(view_dict, stamp_update | None)`. The view_dict goes straight
 into the /api/state response payload; stamp_update is a `(pid, completed,
-acked)` triple when the state.json entry needs writing. The route
+acked, needs_since)` tuple when the state.json entry needs writing. The route
 batches stamp_updates across all panes and writes them under one
 _STATE_LOCK acquisition for efficiency.
 """
@@ -242,7 +242,8 @@ def build_window_view(
     now_ts: int,
 ) -> tuple[dict, tuple[str, int, int] | None]:
     """Build the per-window dict the dashboard renders, plus an optional
-    (pid, completed_at, acked_at) tuple if state.json needs persisting.
+    (pid, completed_at, acked_at, needs_since) tuple if state.json needs
+    persisting.
 
     Side effects (intentional — match the in-route behavior before
     extraction):
@@ -323,22 +324,28 @@ def build_window_view(
             now_ts=now_ts,
         )
     cur = parsed.get("state")
+    persisted = get_window(pid) if pid else {}
+    persisted_needs = int(persisted.get("needs_since") or 0)
     if parsed.get("agent") != "codex":
-        record_state_transition(pid, target, cur, now_ts)
+        record_state_transition(pid, target, cur, now_ts, persisted_since=persisted_needs)
 
     # Pull persisted stamps; in-memory may be ahead (just bumped) or
     # behind (fresh process, never observed a transition this run).
     stamps = recency_stamps_for(target)
-    persisted = get_window(pid) if pid else {}
     completed = max(stamps["completed_at"], int(persisted.get("completed_at") or 0))
     acked = max(stamps["acted_at"], int(persisted.get("acked_at") or 0))
 
     if cur == "idle" and parsed.get("agent") and (parsed.get("agent") != "codex" or codex_valid) and completed > acked:
         parsed["state"] = "done"
 
-    stamp_update: tuple[str, int, int] | None = None
-    if pid and (completed > int(persisted.get("completed_at") or 0) or acked > int(persisted.get("acked_at") or 0)):
-        stamp_update = (pid, completed, acked)
+    needs_since = needs_since_for(pid)
+    stamp_update: tuple[str, int, int, int] | None = None
+    if pid and (
+        completed > int(persisted.get("completed_at") or 0)
+        or acked > int(persisted.get("acked_at") or 0)
+        or needs_since != persisted_needs
+    ):
+        stamp_update = (pid, completed, acked, needs_since)
 
     git = cached_git_state(w.get("cwd", "")) or {}
     pr = cached_pr_state(w.get("cwd", ""), git.get("branch")) or {}
@@ -427,7 +434,7 @@ def build_window_view(
         "focused_at": stamps["focused_at"],
         "acted_at": acked,
         "completed_at": completed,
-        "needs_since": needs_since_for(pid),
+        "needs_since": needs_since,
         "mem": mem_signal(claude_proc_for(sid)),
         "channel_attached": channel["attached"],
         "channel_unread": channel["unread"],

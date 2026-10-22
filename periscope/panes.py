@@ -48,8 +48,9 @@ _completed_at: dict[str, int] = {}
 _prev_state: dict[str, str | None] = {}
 # When the pane entered needs-input, stamped on that edge and cleared when it
 # leaves. Keyed by pid like `_prev_state`. Published as `needs_since` so a
-# question's age survives a browser reload (Clawd's red bell, 10 minutes in);
-# in-memory only, so a server restart re-stamps a pane still waiting.
+# question's age survives a browser reload (Clawd's red bell, 10 minutes in).
+# Persisted per pid too (window_view): a restart that re-stamped a pane still
+# waiting gave it a new episode, and the native banner keyed on it replayed.
 _needs_since: dict[str, int] = {}
 # Structured-agent transition baselines.  Unlike `_prev_state`, these carry
 # session/turn identity so an idle edge from a different turn can never finish
@@ -164,19 +165,21 @@ def update_focus_from_windows(windows: list[dict]) -> None:
             _active_per_session[session] = target
 
 
-def record_state_transition(pid: str, target: str, state: str | None, now_ts: int) -> None:
+def record_state_transition(pid: str, target: str, state: str | None, now_ts: int, persisted_since: int = 0) -> None:
     """Record this poll's parsed `state` for `pid`. On a working/needs-input
     → idle edge, stamp `target`'s completed-at to `now_ts` — the signal that
     Claude finished something the user hasn't acknowledged. No-op when `pid`
     is empty. Lets window_view drive the done-vs-idle edge without touching
-    `_prev_state` / `_completed_at` directly."""
+    `_prev_state` / `_completed_at` directly. `persisted_since` is the
+    needs-input stamp state.json holds for `pid`: a pane first sighted
+    waiting by this process continues that episode rather than starting one."""
     if not pid:
         return
     prev = _prev_state.get(pid)
     if prev in ("working", "needs-input") and state == "idle":
         _completed_at[target] = now_ts
     if state == "needs-input":
-        _needs_since.setdefault(pid, now_ts)
+        _needs_since.setdefault(pid, persisted_since if prev is None and persisted_since else now_ts)
     else:
         _needs_since.pop(pid, None)
     _prev_state[pid] = state

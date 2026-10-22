@@ -101,7 +101,7 @@ def build_state() -> dict:
                 if rail:
                     view["status_rail"] = rail
 
-    stamp_updates: list[tuple[str, int, int]] = [stamp for _, stamp in built if stamp is not None]
+    stamp_updates: list[tuple[str, int, int, int]] = [stamp for _, stamp in built if stamp is not None]
 
     # GC against ALL live panes, not the active-pane-per-window set `windows`
     # carries — otherwise a split window's background Claude pane has its alerts
@@ -115,7 +115,10 @@ def build_state() -> dict:
     # pane in this poll. set_window_fields_bulk skips the write when no
     # field actually changed.
     set_window_fields_bulk(
-        {pid: {"completed_at": completed, "acked_at": acked} for pid, completed, acked in stamp_updates}
+        {
+            pid: {"completed_at": completed, "acked_at": acked, "needs_since": needs}
+            for pid, completed, acked, needs in stamp_updates
+        }
     )
 
     # Garbage-collect stale resumes: targets that are no longer in tmux's

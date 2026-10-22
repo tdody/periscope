@@ -121,7 +121,9 @@ def test_state_writes_stamps_once_after_join(client, mocker, clean_state):
     _patch(mocker, "_attach_git_then_resolve_pids")
     _patch(mocker, "all_projects", return_value={})
     _patch(
-        mocker, "build_window_view", side_effect=lambda w, now_ts: ({"index": w["index"]}, (f"pid{w['index']}", 10, 5))
+        mocker,
+        "build_window_view",
+        side_effect=lambda w, now_ts: ({"index": w["index"]}, (f"pid{w['index']}", 10, 5, 0)),
     )
     bulk = _patch(mocker, "set_window_fields_bulk")
     client.get("/api/state")

@@ -156,7 +156,7 @@ def test_view_done_refinement_promotes_idle_to_done_after_busy(mocker, clean_sta
     assert view["state"] == "done"
     assert view["completed_at"] == 5000
     # Stamp update should record the new completed_at for persistence.
-    assert stamp == (pid, 5000, 0)
+    assert stamp == (pid, 5000, 0, 0)
 
 
 def test_view_stamps_when_a_pane_started_waiting(mocker, clean_state):
@@ -175,6 +175,40 @@ def test_view_stamps_when_a_pane_started_waiting(mocker, clean_state):
     assert build_window_view(_window(pid=pid), now_ts=1600)[0]["needs_since"] == 1000
     parse.return_value = {"agent": "claude", "state": "working", "spinner": "✻"}
     assert build_window_view(_window(pid=pid), now_ts=1700)[0]["needs_since"] == 0
+
+
+def test_view_persists_needs_since_so_a_restart_continues_the_episode(mocker, clean_state):
+    """A restart forgets _needs_since; a pane still waiting keeps the persisted
+    stamp (the notification feed keys a needs-input banner on it), while a
+    pane this process watched start waiting again gets a fresh one."""
+    from periscope import panes
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    _stub_subsystems(mocker, pane_content="x")
+    mocker.patch("periscope.window_view.capture", return_value="x")
+    parse = mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "needs-input", "spinner": None},
+    )
+    view, stamp = build_window_view(_window(pid=pid), now_ts=1000)
+    assert stamp == (pid, 0, 0, 1000)
+    clean_state["windows"][pid] = {"completed_at": 0, "acked_at": 0, "needs_since": 1000}
+    # The restart: in-memory stamps are gone, the persisted one isn't.
+    panes._needs_since.clear()
+    panes._prev_state.clear()
+    view, stamp = build_window_view(_window(pid=pid), now_ts=2000)
+    assert view["needs_since"] == 1000
+    assert stamp is None
+    # Stops waiting: cleared, and the clear is persisted.
+    parse.return_value = {"agent": "claude", "state": "working", "spinner": "✻"}
+    view, stamp = build_window_view(_window(pid=pid), now_ts=2100)
+    assert view["needs_since"] == 0
+    assert stamp == (pid, 0, 0, 0)
+    clean_state["windows"][pid]["needs_since"] = 0
+    # A new episode in the same process is stamped now, not from state.json.
+    parse.return_value = {"agent": "claude", "state": "needs-input", "spinner": None}
+    assert build_window_view(_window(pid=pid), now_ts=2200)[0]["needs_since"] == 2200
 
 
 # --- account attribution ---------------------------------------------------
@@ -298,7 +332,7 @@ def test_codex_same_turn_working_to_idle_completes_once(mocker, clean_state):
     assert first["state"] == "working"
     assert second["state"] == third["state"] == "done"
     assert second["completed_at"] == third["completed_at"] == 1001
-    assert stamp == ("abc12345", 1001, 0)
+    assert stamp == ("abc12345", 1001, 0, 0)
 
 
 def test_codex_unknown_is_no_opinion_then_same_turn_idle_completes(mocker, clean_state):
