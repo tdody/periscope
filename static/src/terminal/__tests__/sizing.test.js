@@ -129,6 +129,15 @@ describe("resizeAsk", () => {
     expect(fitTo(70)).toBe(null);
   });
 
+  it("keeps its shrink through a reconnect's reseed at the shrunk height", () => {
+    // The reconnect hints the shrunk container; seeded from the live memo,
+    // not NOTHING_SENT, the regrow still fires once the container is back.
+    const shrunk = afterSend(afterSend(NOTHING_SENT, { cols: 239, rows: 62 }), { rows: 40 });
+    const reseeded = afterSend(shrunk, { cols: 239, rows: 40 });
+    expect(reseeded).toEqual({ cols: 239, rows: 40, shrunkFrom: 62 });
+    expect(resizeAsk({ cols: 239, rows: 62 }, reseeded, 40)).toStrictEqual({ rows: 62 });
+  });
+
   it("regrows no further than the height it had asked for before shrinking", () => {
     const memo = afterSend(sent(239, 62), { cols: 239, rows: 40 });
     expect(resizeAsk({ cols: 239, rows: 80 }, memo, 40)).toStrictEqual({ rows: 62 });

@@ -86,7 +86,11 @@ These are the non-obvious behaviors worth preserving:
    shorter viewer's shrink also set a shared window's width, so a viewer
    with a different width had every width change reverted, at a second
    resize (and reflow) each. Never the pane's width either — a slice of the
-   window on a left/right split, it halved the window on every ask.
+   window on a left/right split, it halved the window on every ask. A
+   reconnect keeps our shrink in its memo (its hint, the shrunk height, is
+   seeded onto the live memo, not a fresh one: a server restart while short
+   left the band for good); a mount starts afresh, so a pane switched to
+   while the container is short is the one case left unregrown.
 
 4. **`capture-pane` separates rows with bare `\n`; xterm needs `\r\n`.**
    Forgetting the carriage return staircases every line right by the

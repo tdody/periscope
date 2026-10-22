@@ -116,6 +116,23 @@ describe("terminal sizing glue", () => {
     expect(env.sent).toStrictEqual([{ type: "resize", rows: 28 }]);
   });
 
+  it("regrows its own shrink after a reconnect made while shrunk", async () => {
+    // Regression: an unsplit 239x62 window, the container shortened to 40,
+    // and the socket dropped (a periscope restart, sleep/wake) before it grew
+    // back. The reconnect's seed forgot the shrink, so the regrow was never
+    // sent: a 22-row blank band under Claude's TUI, for every viewer.
+    env.box = { cols: 239, rows: 62 };
+    await mount("%1");
+    await announce(239, 62);
+    await resizeBox(239, 40);
+    await announce(239, 40);
+    await dropSocket();
+    await announce(239, 40); // the reconnect's handshake
+    await resizeBox(239, 62);
+    expect(env.sockets[1].hint).toEqual({ cols: 239, rows: 40 });
+    expect(env.sent).toStrictEqual([{ type: "resize", rows: 40 }, { type: "resize", rows: 62 }]);
+  });
+
   it("hints a hidden mount with the container's last measurement", async () => {
     // Regression: a pane selected in transcript mode mounts into a display:none
     // host and can't measure. Unhinted, tmux kept the window's width (another

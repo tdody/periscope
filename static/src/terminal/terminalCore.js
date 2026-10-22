@@ -690,8 +690,12 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
     url += `&cols=${hintCols}&rows=${hintRows}`;
     // Seed the "last sent" memo with the dims the handshake resizes tmux to.
     // Without this, the first ResizeObserver fire would send a redundant
-    // resize message.
-    lastSent = afterSend(NOTHING_SENT, { cols: hintCols, rows: hintRows });
+    // resize message. From the live memo, not NOTHING_SENT: a reconnect made
+    // while shrunk hints the shrunk height, and forgetting the shrink left
+    // the window short once the container grew back. A mount starts from
+    // NOTHING_SENT anyway (stopLiveTerminal), so a pane switched to while
+    // short never regrows — that would need memory per window.
+    lastSent = afterSend(lastSent, { cols: hintCols, rows: hintRows });
   }
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
