@@ -190,10 +190,11 @@ inside `.tama`.
 
 A **Tamagotchi** fieldset above the existing fields:
 
-- a `role="radiogroup"` row of seven `<label>`s, each wrapping a real
+- a row of seven `<label>`s, each wrapping a real
   `<input type="radio" name="tama-critter">`, a 40 px preview (Clawd drawn by an
   exported `ClawdSprite` built from the same `Cells`/`Eyes`, the others by
-  `Critter`, calm, awake) and the name;
+  `Critter`, calm, awake) and the name; the fieldset and its `<legend>` group
+  the radios — no extra `role`, which would double the announced name;
 - keyboard: native radio-group behaviour (arrow keys move and select);
 - **saves on change** through `setTamaCritter(id)`, independently of the form's
   Save button. The other fields still save on Save; the modal's **Cancel does
