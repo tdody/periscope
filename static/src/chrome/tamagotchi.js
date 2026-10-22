@@ -130,11 +130,10 @@ function mealAt(slot, date) {
 }
 
 // The pastime window's half hours, in order. Forced first: Halloween's
-// trick-or-treat rounds, Friday's pint, then the day's verdicts (a furious
-// day is run off before a merge is toasted, and Friday's pint covers the
-// toast). The rest roll from the season's pastimes, never the same twice
-// running, forced neighbours included (rollFrom), so forcing one half leaves
-// the others as they were.
+// trick-or-treat rounds, Friday's pint, then the day's verdicts (Friday's
+// pint covers the toast). The rest roll from the season's pastimes, never the
+// same twice running, forced neighbours included (rollFrom), so forcing one
+// half leaves the others as they were.
 function pastimePlan(slot, date, day) {
   const byId = (id) => PASTIMES.find((p) => p.id === id);
   const n = (slot.to - slot.from) / HALF;
@@ -162,16 +161,24 @@ function pastimePlan(slot, date, day) {
     });
   } else {
     if (date.getDay() === 5) forced[at(EVENING + HALF)] = byId("beer");
-    // A verdict books a half hour still running or to come when it's noted,
-    // never one already over, and the stored time keeps every caller on the
-    // same plan whenever it's read. A pastime already under way then can't
-    // step aside for the half after it: being the verdict, it covers it.
-    for (const [flag, id] of [["furious", "run"], ["merged", "beer"]]) {
-      const noted = day[flag];
-      if (noted == null || evening.some((i) => forced[i]?.id === id)) continue;
-      const free = evening.find((i) => !forced[i] && start(i + 1) > noted);
+    // Each verdict books the first free half hour still running or to come
+    // when it was noted, against the evening as it stood then: they're placed
+    // in the order they were noted (a run first within the same minute), so a
+    // later one can't take the half under way from an earlier one's pint or
+    // run. The stored time keeps every caller on the same plan whenever it's
+    // read.
+    const verdicts = [["furious", "run"], ["merged", "beer"]]
+      .filter(([flag]) => day[flag] != null)
+      .sort(([a], [b]) => day[a] - day[b]);
+    for (const [flag, id] of verdicts) {
+      if (evening.some((i) => forced[i]?.id === id)) continue;
+      const underWay = Math.floor(at(day[flag]));
+      const free = evening.find((i) => !forced[i] && i >= underWay);
       if (free === undefined) continue;
-      if (free > 0 && start(free - 1) <= noted && noted < start(free) && rolled()[free - 1].id === id) continue;
+      // Only the half before the evening (4:30 on a weekend or a walled
+      // weekday) can be under way with the booked half next: booking it would
+      // make that half step aside, so being the verdict, it covers it instead.
+      if (free === underWay + 1 && rolled()[underWay]?.id === id) continue;
       forced[free] = byId(id);
     }
   }

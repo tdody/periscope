@@ -147,7 +147,7 @@ describe("the evening's rules", () => {
     }
   });
 
-  it("toasts a merged PR, and runs off a furious day first", () => {
+  it("toasts a merged PR, and runs off a furious day noted in the same minute first", () => {
     for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
       expect(evening(d, { merged: MORNING }).map((x) => x.id), d.toDateString()).toContain("beer");
       expect(evening(d, { furious: MORNING })[0].id, d.toDateString()).toBe("run");
@@ -197,6 +197,59 @@ describe("the evening's rules", () => {
       }
     }
     expect(covered).toBeGreaterThan(0);
+  });
+
+  it("books the verdicts in the order they were noted", () => {
+    for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
+      expect(evening(d, { merged: 9, furious: MORNING }).map((x) => x.id), d.toDateString()).toEqual(["beer", "run"]);
+      expect(evening(d, { furious: 9, merged: MORNING }).map((x) => x.id), d.toDateString()).toEqual(["run", "beer"]);
+    }
+  });
+
+  it("never takes the pastime under way from a verdict noted earlier", () => {
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    const year = Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => occasionShown(x)?.id !== "halloween");
+    // A merge's pint at 5:00, then the day's first furious mood at 5:10: the
+    // pint carries on, and the run waits for 5:30.
+    for (const d of year.filter((x) => x.getDay() % 6 && x.getDay() !== 5)) {
+      const day = { merged: 11, furious: 17 + 10 / 60 };
+      expect([activityAt(at(d, 17, 10), day).id, activityAt(at(d, 17, 30), day).id], d.toDateString()).toEqual(["beer", "run"]);
+    }
+    // A weekend's 4:30 scene stays as it was when a furious mood lands at
+    // 4:40 after a morning merge booked 5:00.
+    for (const d of year.filter((x) => !(x.getDay() % 6))) {
+      const merged = { merged: 9 };
+      expect(activityAt(at(d, 16, 40), { ...merged, furious: 16 + 40 / 60 }), d.toDateString()).toEqual(activityAt(at(d, 16, 40), merged));
+    }
+  });
+
+  it("changes the scene under way for a second verdict only to that verdict's pastime, and never from the first's", () => {
+    const PAST = { furious: "run", merged: "beer" };
+    const at = (d, t) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(t), Math.round((t % 1) * 60));
+    // Every kind of evening: weekdays, Friday, walled weekdays, weekends, in
+    // two seasons.
+    const sample = [0, 4].flatMap((month) => Array.from({ length: 14 }, (_, n) => new Date(2026, month, 5 + n)));
+    for (const d of sample) {
+      for (const walled of d.getDay() % 6 ? [false, true] : [false]) {
+        const from = d.getDay() % 6 ? (walled ? 16 : 17) : 15;
+        const times = Array.from({ length: (18 - from) * 6 }, (_, k) => from + k / 6);
+        for (const [k1, k2] of [["merged", "furious"], ["furious", "merged"]]) {
+          for (const t1 of [9, ...times]) {
+            for (const t2 of times.filter((t) => t > t1)) {
+              const first = { walled, [k1]: t1 };
+              const plain = activityAt(at(d, t2), { walled }).id;
+              const before = activityAt(at(d, t2), first).id;
+              const after = activityAt(at(d, t2), { ...first, [k2]: t2 }).id;
+              const what = `${d.toDateString()} walled=${walled} ${k1}@${t1.toFixed(2)} ${k2}@${t2.toFixed(2)}: ${before} -> ${after}`;
+              // The first verdict's pastime, where it booked it (not the day's
+              // own roll), is never the one that moves.
+              const booked = before === PAST[k1] && before !== plain;
+              if (after !== before) expect([after, booked], what).toEqual([PAST[k2], false]);
+            }
+          }
+        }
+      }
+    }
   });
 
   it("moves the unforced half only for a collision", () => {
