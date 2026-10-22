@@ -30,7 +30,7 @@ def home(tmp_path, monkeypatch):
 def test_source_line_inserted_above_existing_tpm_run(home):
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on\nset -g @plugin 'tmux-plugins/tpm'\nrun '~/.tmux/plugins/tpm/tpm'\n")
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
     lines = conf.read_text().splitlines()
     assert lines[-2] == tp.source_line()
     assert lines[-1] == "run '~/.tmux/plugins/tpm/tpm'"
@@ -40,7 +40,7 @@ def test_source_line_inserted_above_existing_tpm_run(home):
 def test_source_line_appended_with_tpm_run_when_absent(home):
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on")  # no trailing newline
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line(), tp.TPM_RUN_LINE]
     assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
 
 
@@ -50,14 +50,14 @@ def test_source_line_goes_above_a_sourced_tpm_run(home):
     (home / "plugins.conf").write_text("set -g @plugin 'tmux-plugins/tpm'\n" + tp.TPM_RUN_LINE + "\n")
     conf = home / ".tmux.conf"
     conf.write_text("set -g mouse on\nsource-file ~/plugins.conf\n")
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
     assert conf.read_text() == f"set -g mouse on\n{tp.source_line()}\nsource-file ~/plugins.conf\n"
     assert tp.tpm_runs() == 1
 
 
 def test_ensure_sourced_creates_missing_conf(home):
     conf = home / ".tmux.conf"
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line(), tp.TPM_RUN_LINE]
     assert conf.read_text() == f"{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
 
 
@@ -66,7 +66,7 @@ def test_ensure_sourced_is_idempotent(home):
     conf.write_text("run-shell ~/.tmux/plugins/tpm/tpm\n")
     tp.ensure_sourced(conf)
     before = conf.read_text()
-    assert tp.ensure_sourced(conf) is False
+    assert tp.ensure_sourced(conf) == []
     assert conf.read_text() == before
 
 
@@ -74,7 +74,7 @@ def test_source_line_recognised_with_quotes_and_tilde(home):
     conf = home / ".tmux.conf"
     conf.write_text('source-file -q "~/.config/periscope/tmux.conf"\nrun ~/.tmux/plugins/tpm/tpm\n')
     assert tp.is_sourced(conf) is True
-    assert tp.ensure_sourced(conf) is False
+    assert tp.ensure_sourced(conf) == []
 
 
 @pytest.mark.parametrize(
@@ -95,7 +95,7 @@ def test_a_glob_or_multi_path_source_of_the_owned_file_counts(home, monkeypatch,
     tp.owned_conf().parent.mkdir(parents=True)
     tp.owned_conf().write_text(tp.owned_conf_text(REPO, {}))
     assert tp.is_sourced(conf)
-    assert tp.ensure_sourced(conf) is False
+    assert tp.ensure_sourced(conf) == []
     _install(home, monkeypatch)
     assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
     # The line sources more than periscope's file: uninstall leaves it.
@@ -108,15 +108,15 @@ def test_remove_sourced_round_trips_and_leaves_tpm_run(home):
     original = "set -g mouse on\nrun '~/.tmux/plugins/tpm/tpm'\n"
     conf.write_text(original)
     tp.ensure_sourced(conf)
-    assert tp.remove_sourced(conf) is True
+    assert tp.remove_sourced(conf) == [tp.source_line()]
     assert conf.read_text() == original
-    assert tp.remove_sourced(conf) is False
+    assert tp.remove_sourced(conf) == []
 
 
 def test_ensure_sourced_round_trips_non_utf8_bytes(home):
     conf = home / ".tmux.conf"
     conf.write_bytes(b"# caf\xe9\nrun '~/.tmux/plugins/tpm/tpm'\n")
-    assert tp.ensure_sourced(conf) is True
+    assert tp.ensure_sourced(conf) == [tp.source_line()]
     assert conf.read_bytes() == b"# caf\xe9\n" + tp.source_line().encode() + b"\nrun '~/.tmux/plugins/tpm/tpm'\n"
 
 
@@ -357,7 +357,7 @@ def _legacy_install(home, xdg_text):
     (home / ".tmux.conf").write_text(LEGACY_HOME_CONF.format(source=tp.source_line()))
     xdg = home / ".config/tmux/tmux.conf"
     xdg.parent.mkdir(parents=True, exist_ok=True)
-    xdg.write_text(xdg_text)
+    xdg.write_text(xdg_text.format(source=tp.source_line()))
     return xdg
 
 
@@ -437,7 +437,7 @@ def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, lin
     _stub_live(monkeypatch, HEALTHY)
     assert tp.status(REPO)["ok"] is False
     # One file, not two: install never moves its lines out of it as the other.
-    assert not any(a.startswith(("wrote", "moved", "added")) for a in _install(home, monkeypatch))
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
 
 
 def test_a_dotfiles_symlink_runs_once(home, monkeypatch):
@@ -469,19 +469,59 @@ def test_install_moves_its_lines_out_of_the_conf_tpm_ignores(home, monkeypatch, 
     assert tp.tpm_runs() == 1
     assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
     assert tp.status(REPO)["ok"] is True
-    assert not any(a.startswith(("wrote", "moved", "added")) for a in _install(home, monkeypatch))
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
 
 
-def test_install_leaves_the_users_own_run_line(home, monkeypatch):
-    # Only install's verbatim pair moves. A run line of the user's own under
-    # the source line stays put, and the count says TPM now runs twice.
+@pytest.mark.parametrize(
+    "xdg_text",
+    ["set -g status-left x\n{source}\n", USER_PLUGINS + "source-file ~/.config/periscope/*.conf\n"],
+    ids=["exact-line", "glob"],
+)
+def test_install_keeps_tpm_running_when_the_conf_tpm_reads_already_sources_it(home, monkeypatch, xdg_text):
+    # The hand fix for base's failed XDG install: source the owned file from
+    # the XDG conf, TPM still run by base's pair in ~/.tmux.conf. Moving that
+    # pair out while ensure_sourced returned early on the XDG conf's source
+    # line left no run line anywhere — no plugins and no restore at the next
+    # server start, and re-running install didn't repair it.
+    xdg = _legacy_install(home, xdg_text)
+    assert tp.tpm_runs() == 1
+    actions = _install(home, monkeypatch)
+    assert f"added to {xdg}: {tp.TPM_RUN_LINE}" in actions
+    assert (home / ".tmux.conf").read_text() == "set -g mouse on\nset -g status-left x\n"
+    assert xdg.read_text().endswith(f"\n{tp.TPM_RUN_LINE}\n")
+    assert tp.tpm_runs() == 1
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["ok"] is True
+    assert not any(a.startswith(("wrote", "removed", "added")) for a in _install(home, monkeypatch))
+
+
+def test_install_repairs_a_conf_that_runs_tpm_nowhere(home, monkeypatch):
+    # What the migration above left behind: the conf TPM reads sources the
+    # owned file, and nothing tmux executes runs TPM.
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text(f"set -g status-left x\n{tp.source_line()}\n")
+    (home / ".tmux.conf").write_text("set -g mouse on\n")
+    assert tp.tpm_runs() == 0
+    _install(home, monkeypatch)
+    assert xdg.read_text() == f"set -g status-left x\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.tpm_runs() == 1
+
+
+def test_install_never_adds_a_run_line_when_tmux_already_runs_tpm(home, monkeypatch):
+    # main put its source line above the user's own `run -b` in ~/.tmux.conf:
+    # one run. Only install's source line moves — the user's line, spelled
+    # unlike TPM_RUN_LINE, stays — and install, asking the XDG conf alone,
+    # appended a second run line there: TPM, and continuum, ran twice.
     xdg = _legacy_install(home, USER_PLUGINS)
     legacy = home / ".tmux.conf"
-    legacy.write_text(f"{tp.source_line()}\nrun-shell -b ~/.tmux/plugins/tpm/tpm\n")
+    legacy.write_text(f"{tp.source_line()}\nrun -b '~/.tmux/plugins/tpm/tpm'\n")
+    assert tp.tpm_runs() == 1
     _install(home, monkeypatch)
-    assert legacy.read_text() == "run-shell -b ~/.tmux/plugins/tpm/tpm\n"
-    assert tp.is_sourced(xdg)
-    assert tp.tpm_runs() == 2
+    assert legacy.read_text() == "run -b '~/.tmux/plugins/tpm/tpm'\n"
+    assert xdg.read_text() == USER_PLUGINS + tp.source_line() + "\n"
+    assert tp.tpm_runs() == 1
 
 
 def test_uninstall_removes_the_source_line_from_both_user_confs(home):

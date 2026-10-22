@@ -372,34 +372,44 @@ def _runs_tpm(line: str, current: Path) -> bool:
     )
 
 
-def ensure_sourced(path: Path) -> bool:
-    """Add the source line to `path` per the ordering rule. True if written."""
+def ensure_sourced(path: Path) -> list[str]:
+    """Make `path` source the owned file, and tmux run TPM; returns the lines
+    added. The source line goes directly above the first line that runs TPM
+    (_runs_tpm), else at the end. TPM_RUN_LINE goes at the end only when
+    NOTHING tmux executes runs TPM — asked of all of it, not of `path`: a
+    `run -b …` of the user's own in ~/.tmux.conf next to an XDG conf got a
+    second run line here, TPM ran twice — and asked whether or not `path`
+    already sourced the owned file: install's migration can take the only run
+    line away, and returning early on the source line left TPM running
+    nowhere (no plugins, no restore)."""
     lines = _read_lines(path)
-    if any(_sources_owned(line) for line in lines):
-        return False
-    tpm_at = next((i for i, line in enumerate(lines) if _runs_tpm(line, path)), None)
-    if tpm_at is None:
-        lines += [source_line(), TPM_RUN_LINE]
-    else:
-        lines.insert(tpm_at, source_line())
-    _write_lines(path, lines)
-    return True
+    added = []
+    if not any(_sources_owned(line) for line in lines):
+        lines.insert(next((i for i, line in enumerate(lines) if _runs_tpm(line, path)), len(lines)), source_line())
+        added.append(source_line())
+        _write_lines(path, lines)
+    # `path`'s own run line counts too: when tmux doesn't execute `path` (a
+    # server started with -f), the count stays 0 and every install appended one.
+    if tpm_runs() == 0 and not any(_runs_tpm(line, path) for line in lines):
+        lines.append(TPM_RUN_LINE)
+        added.append(TPM_RUN_LINE)
+        _write_lines(path, lines)
+    return added
 
 
-def remove_sourced(path: Path, *, with_run: bool = False) -> bool:
+def remove_sourced(path: Path, *, with_run: bool = False) -> list[str]:
     """Drop periscope's source line (_is_source_line) from `path` — with
     `with_run`, and the verbatim TPM_RUN_LINE right under it: the pair
-    ensure_sourced appends. True if written."""
+    ensure_sourced appends. Returns the lines removed."""
     lines = _read_lines(path)
-    kept = [
-        line
+    gone = {
+        i
         for i, line in enumerate(lines)
-        if not _is_source_line(line) and not (with_run and line == TPM_RUN_LINE and i and _is_source_line(lines[i - 1]))
-    ]
-    if len(kept) == len(lines):
-        return False
-    _write_lines(path, kept)
-    return True
+        if _is_source_line(line) or (with_run and line == TPM_RUN_LINE and i and _is_source_line(lines[i - 1]))
+    }
+    if gone:
+        _write_lines(path, [line for i, line in enumerate(lines) if i not in gone])
+    return [lines[i] for i in sorted(gone)]
 
 
 # --- install / uninstall ----------------------------------------------------
@@ -426,18 +436,17 @@ def install(repo: Path) -> list[str]:
     owned_conf().parent.mkdir(parents=True, exist_ok=True)
     if _write_owned(repo):
         actions.append(f"wrote {owned_conf()}")
+    conf = user_conf()
     # Every install before XDG support appended source + run to ~/.tmux.conf.
     # TPM ignores that file once the XDG one exists, but tmux still executes
     # it: left there, TPM (and continuum's racing restores) ran twice. A user's
-    # own verbatim run line in that spot reads the same and goes too; nothing
-    # is lost, ensure_sourced below gives the conf TPM reads its run line.
-    actions += [
-        f"moved periscope's lines from {other} to {user_conf()}, the conf TPM reads"
-        for other in _user_confs()
-        if os.path.realpath(other) != os.path.realpath(user_conf()) and remove_sourced(other, with_run=True)
-    ]
-    if ensure_sourced(user_conf()):
-        actions.append(f"added source line to {user_conf()}")
+    # own verbatim run line in that spot reads the same and goes too — if it
+    # was the only one, ensure_sourced gives the conf TPM reads its run line.
+    # One file under two paths (a symlinked pair) is the conf TPM reads.
+    for other in _user_confs():
+        if os.path.realpath(other) != os.path.realpath(conf):
+            actions += [f"removed from {other}: {line}" for line in remove_sourced(other, with_run=True)]
+    actions += [f"added to {conf}: {line}" for line in ensure_sourced(conf)]
 
     tpm = plugins_dir() / "tpm"
     if not tpm.is_dir():
