@@ -71,11 +71,14 @@ class UIPatch(BaseModel):
     # Navigator / context-column visibility (the filter bar's panel toggles).
     rail_hidden: bool | None = None
     side_hidden: bool | None = None
-    # Clawd's day log ({"merged" | "furious": "YYYY-MM-DDTHH:MM"}, local): the
-    # header tamagotchi's evening follows what happened today, and /api/state
-    # can't say when a PR merged, only that it has. The minute decides which
-    # half hours the verdict can still book.
-    clawd_day: dict[str, str] | None = None
+    # Clawd's day log, the local "YYYY-MM-DDTHH:MM" a PR last merged / usage
+    # last went furious: the header tamagotchi's evening follows what happened
+    # today, and /api/state can't say when a PR merged, only that it has. The
+    # minute decides which half hours the verdict can still book. One key per
+    # kind: update_ui merges only at the top level, so a nested dict written
+    # from one window's stale cache dropped the other kind's note.
+    clawd_merged: str | None = None
+    clawd_furious: str | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
@@ -93,9 +96,9 @@ def patch_prefs_ui(body: UIPatch):
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):
                 raise HTTPException(400, f"invalid detail_mode for {pid!r}: {mode!r}")
-    for kind, day in (patch.get("clawd_day") or {}).items():
-        if kind not in ("merged", "furious") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", day):
-            raise HTTPException(400, f"invalid clawd_day entry: {kind!r}: {day!r}")
+    for key in ("clawd_merged", "clawd_furious"):
+        if key in patch and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", patch[key]):
+            raise HTTPException(400, f"invalid {key}: {patch[key]!r}")
     # The client clamps to the window; this only keeps junk out of the file.
     for key in ("rail_width", "side_width"):
         if key in patch and not 100 <= patch[key] <= 4000:

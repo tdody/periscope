@@ -188,18 +188,32 @@ def test_ui_patch_accepts_rail_state_keys(client, clean_state):
         assert ui[key] == body[key]
 
 
-def test_patch_prefs_ui_clawd_day_round_trips(client, clean_state):
+def test_patch_prefs_ui_clawd_notes_round_trip(client, clean_state):
     # Clawd's evening reads what happened today (a merged PR, a furious usage
     # day); kept server-side so a reload at 5pm, or a second window, agrees.
     # The minute it was noted decides which evening half hours it can book.
-    day = {"merged": "2026-10-21T17:40", "furious": "2026-10-20T11:05"}
-    r = client.patch("/api/prefs/ui", json={"clawd_day": day})
+    r = client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T17:40", "clawd_furious": "2026-10-20T11:05"})
     assert r.status_code == 200
-    assert r.json()["ui"]["clawd_day"] == day
+    ui = r.json()["ui"]
+    assert (ui["clawd_merged"], ui["clawd_furious"]) == ("2026-10-21T17:40", "2026-10-20T11:05")
 
 
-def test_patch_prefs_ui_rejects_bogus_clawd_day(client, clean_state):
-    for bad in ({"merged": "yesterday"}, {"lunch": "2026-10-21T12:00"}, {"merged": "2026-10-21"}):
-        r = client.patch("/api/prefs/ui", json={"clawd_day": bad})
-        assert r.status_code == 400, bad
-        assert "clawd_day" in r.json()["detail"]
+def test_patch_prefs_ui_clawd_notes_are_independent(client, clean_state):
+    # One key per kind, so a window noting a furious day can't drop the merge
+    # another window noted: update_ui merges only at the top level.
+    client.patch("/api/prefs/ui", json={"clawd_merged": "2026-10-21T11:00"})
+    r = client.patch("/api/prefs/ui", json={"clawd_furious": "2026-10-21T14:30"})
+    assert r.status_code == 200
+    ui = r.json()["ui"]
+    assert (ui["clawd_merged"], ui["clawd_furious"]) == ("2026-10-21T11:00", "2026-10-21T14:30")
+
+
+def test_patch_prefs_ui_rejects_bogus_clawd_notes(client, clean_state):
+    for key, bad in (
+        ("clawd_merged", "yesterday"),
+        ("clawd_furious", "2026-10-21"),
+        ("clawd_merged", "2026-10-21 12:00"),
+    ):
+        r = client.patch("/api/prefs/ui", json={key: bad})
+        assert r.status_code == 400, (key, bad)
+        assert key in r.json()["detail"]

@@ -669,8 +669,9 @@ const sceneKey = (d) => {
 };
 
 // What the schedule knows about today (tamagotchi.activityAt's `day`): the
-// clawd_day log and the server's walls. Read from signals, not render state,
-// so the minute backstop's closure sees today's, not the first render's.
+// day log (prefs.getClawdDay) and the server's walls. Read from signals, not
+// render state, so the minute backstop's closure sees today's, not the first
+// render's.
 const dayAt = (d) => ({ ...dayFlags(getClawdDay(), d), walled: !!walls.value });
 const clock = (d) => hourLabel(d.getHours() + d.getMinutes() / 60);
 

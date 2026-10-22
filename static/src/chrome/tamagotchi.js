@@ -219,15 +219,15 @@ export function dayKey(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// The local date and minute, as the clawd_day pref stores a verdict
+// The local date and minute, as the day log stores a verdict
 // (prefs.noteClawdDay): the time it was noted decides which half hours it
 // can still book.
 export function noteKey(date) {
   return `${dayKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// What happened today, from the clawd_day pref: the hour each verdict was
-// noted, or null; other days' don't count.
+// What happened today, from the day log (prefs.getClawdDay): the hour each
+// verdict was noted, or null; other days' don't count.
 export function dayFlags(log, date) {
   const today = dayKey(date);
   const noted = (stamp) => {
