@@ -338,6 +338,23 @@ export function setTamaCritter(id) {
 }
 
 
+// Settings → Notifications: which native banners fire (notify/feed.js). Every
+// toggle defaults on; the whole set is written each time, because update_ui
+// merges only top-level keys.
+export const NOTIFY_DEFAULTS = {
+  needs_input: true, done: true, ci_failed: true, pr_merged: true, usage: true,
+  quiet_when_focused: true, group: true, badge: true,
+};
+
+export function getNotifyPrefs() {
+  return { ...NOTIFY_DEFAULTS, ...(P().ui?.notify || {}) };
+}
+
+export function setNotifyPref(key, on) {
+  return patchUI({ notify: { ...getNotifyPrefs(), [key]: on } });
+}
+
+
 export function getPinnedPids() {
   return [...(P().ui?.pinned_pids || [])];
 }

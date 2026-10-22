@@ -68,3 +68,18 @@ describe("noteClawdDay", () => {
     expect(prefs.getClawdDay().merged).toBe("2026-10-21T11:00");
   });
 });
+
+describe("notify prefs", () => {
+  it("defaults every toggle on", () => {
+    expect(prefs.getNotifyPrefs()).toEqual(prefs.NOTIFY_DEFAULTS);
+    expect(Object.values(prefs.NOTIFY_DEFAULTS).every(Boolean)).toBe(true);
+  });
+
+  it("writes the whole set, so the server's top-level merge keeps the others", async () => {
+    await prefs.setNotifyPref("done", false);
+    const sent = JSON.parse(apiCall.mock.calls.at(-1)[2].body);
+    expect(sent.notify).toEqual({ ...prefs.NOTIFY_DEFAULTS, done: false });
+    await prefs.setNotifyPref("usage", false);
+    expect(prefs.getNotifyPrefs()).toMatchObject({ done: false, usage: false, ci_failed: true });
+  });
+});
