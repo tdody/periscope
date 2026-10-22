@@ -39,7 +39,8 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Set as AbstractSet
+from collections import Counter
+from collections.abc import Collection, Iterable
 from pathlib import Path
 
 from periscope import config
@@ -132,27 +133,30 @@ def _tpm_conf_files() -> list[Path]:
     return files
 
 
-def plugins_declared_elsewhere() -> set[str]:
-    out: set[str] = set()
-    for f in _tpm_conf_files():
-        if f == owned_conf():
-            continue
+def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
+    """(plugin, file) for each `@plugin` line TPM will see in `files`, repeats
+    included."""
+    out: list[tuple[str, Path]] = []
+    for f in files:
         with contextlib.suppress(OSError):
-            out.update(declared_plugins(f.read_text()))
+            out += [(name, f) for name in declared_plugins(f.read_text())]
     return out
+
+
+def plugins_declared_elsewhere() -> set[str]:
+    return {name for name, _ in _declarations(f for f in _tpm_conf_files() if f != owned_conf())}
 
 
 def plugin_declarations() -> dict[str, int]:
     """How many times TPM will see each required plugin declared. Anything but
     1 is broken: 0 never loads it, 2 runs it twice (the racing restores)."""
-    names: list[str] = []
-    for f in _tpm_conf_files():
-        with contextlib.suppress(OSError):
-            names += declared_plugins(f.read_text())
-    return {p: names.count(p) for p in REQUIRED_PLUGINS}
+    counts = Counter(name for name, _ in _declarations(_tpm_conf_files()))
+    return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
-def owned_conf_text(repo: Path, declared_elsewhere: AbstractSet[str] = frozenset()) -> str:
+def owned_conf_text(repo: Path, declared_elsewhere: Collection[str]) -> str:
+    # No default: "declared nowhere else" is the pre-fix text that put every
+    # plugin in TPM's list twice — a caller must say what it found.
     plugins = "".join(
         f"set -g @plugin 'tmux-plugins/{p}'\n"
         if p not in declared_elsewhere

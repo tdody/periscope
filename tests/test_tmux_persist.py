@@ -84,7 +84,7 @@ def test_uninstall_removes_owned_file_and_line(home):
 
 
 def test_owned_conf_carries_this_checkouts_hook():
-    text = tp.owned_conf_text(REPO)
+    text = tp.owned_conf_text(REPO, ())
     assert "set -g @resurrect-hook-post-save-layout '/opt/periscope/bin/periscope resurrect-rewrite'" in text
     assert "set -g @resurrect-processes '~claude'" in text
     assert "set -g @continuum-restore 'on'" in text
@@ -235,7 +235,7 @@ def _healthy_home(home):
         (home / ".tmux/plugins" / p).mkdir(parents=True)
     tp.ensure_sourced(home / ".tmux.conf")
     tp.owned_conf().parent.mkdir(parents=True, exist_ok=True)
-    tp.owned_conf().write_text(tp.owned_conf_text(REPO))
+    tp.owned_conf().write_text(tp.owned_conf_text(REPO, ()))
 
 
 HEALTHY = {
