@@ -39,6 +39,10 @@ UI prefs (free-form key/value):
   - `get_ui() -> dict` — copy
   - `update_ui(patch: dict)` — merge + persist; None values delete the key
 
+Walls (usage.next_wall_spans):
+  - `get_wall_spans() -> list[WallSpan]` — copy
+  - `update_wall_spans(step)` — step under the lock, persist on change
+
 Commands (palette):
   - `get_commands() -> list[Command]` — copy
   - `add_command(label, exec_cmd)` — append + persist
@@ -55,6 +59,7 @@ import os
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -119,6 +124,14 @@ class PokeEntry(TypedDict):
     at: int  # epoch of the poke
     resets_at: int | None  # the 5h session reset observed right after
     verified: bool  # resets_at landed within tolerance of at + 5h
+
+
+class WallSpan(TypedDict):
+    """A stretch every account was walled (usage.next_wall_spans)."""
+
+    since: int  # epoch: the minute after the poll that first found the walls up
+    until: float | None  # their reset; once gone, no later than the poll that found them gone
+    holding: bool  # still up at the last poll
 
 
 class Command(TypedDict):
@@ -615,6 +628,26 @@ def record_poke(account_id: str, entry: PokeEntry) -> None:
     with _STATE_LOCK:
         _STATE.setdefault("poke_log", {})[account_id] = dict(entry)
         _write_state(_STATE)
+
+
+def get_wall_spans() -> list[WallSpan]:
+    """Snapshot of state['wall_spans'] (copies of each span)."""
+    with _STATE_LOCK:
+        return [cast(WallSpan, dict(s)) for s in _STATE.get("wall_spans") or []]
+
+
+def update_wall_spans(step: Callable[[list[WallSpan]], list[WallSpan]]) -> list[WallSpan]:
+    """Apply `step` to the walls' stretches under the lock, since two
+    /api/state polls run in parallel threads, and return the result. Persisted
+    so a restart keeps the day's stretches; written only when `step` changed
+    them, since it runs on every poll."""
+    with _STATE_LOCK:
+        old = [cast(WallSpan, dict(s)) for s in _STATE.get("wall_spans") or []]
+        new = step([cast(WallSpan, dict(s)) for s in old])
+        if new != old:
+            _STATE["wall_spans"] = [dict(s) for s in new]
+            _write_state(_STATE)
+        return [cast(WallSpan, dict(s)) for s in new]
 
 
 def get_commands() -> list[Command]:

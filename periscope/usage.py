@@ -688,6 +688,50 @@ def walls() -> dict | None:
     )
 
 
+# A lifted stretch of walls stays published for a day: Clawd plans only the
+# day it's in.
+WALL_SPAN_KEEP_S = 24 * 3600
+
+
+def _minute_after(t: float) -> int:
+    return (int(t) // 60 + 1) * 60
+
+
+def next_wall_spans(spans: list[store.WallSpan], walls: dict | None, now: float) -> list[store.WallSpan]:
+    """The stretches every account was walled, after a poll that found `walls`.
+
+    `walls` says only whether they hold now, and until when. The first usage
+    refresh past the reset drops them (up to PLAN_USAGE_REFRESH_S late), a pin
+    change can drop them early, and walls just landed read like walls held all
+    day. Clawd fixes each half hour's scene when it starts, so planning from
+    `walls` alone switched the knock-off half under way at that refresh, and
+    walls landing at 5:15 re-planned the 5:00 half. So each stretch is dated:
+    `since` is the minute after the poll that found the walls up; `until`,
+    their reset while they hold (None while no walling meter reports one),
+    then no later than the minute after the poll that found them gone. The
+    minute after, since the client counts whole minutes: a moment it drew
+    before the poll must read the same after it."""
+    last = spans[-1] if spans else None
+    if walls is not None:
+        if last and last["holding"]:
+            spans = [*spans[:-1], {**last, "until": walls["until"]}]
+        else:
+            spans = [*spans, {"since": _minute_after(now), "until": walls["until"], "holding": True}]
+    elif last and last["holding"]:
+        gone = _minute_after(now)
+        until = gone if last["until"] is None else min(last["until"], gone)
+        spans = [*spans[:-1], {"since": last["since"], "until": until, "holding": False}]
+    return [s for s in spans if s["holding"] or (s["until"] or 0) > now - WALL_SPAN_KEEP_S]
+
+
+def wall_spans(walls: dict | None) -> list[dict]:
+    """Record this poll's `walls` (next_wall_spans) and return the stretches as
+    /api/state publishes them, `[{since, until}]` oldest first: Clawd naps and
+    knocks off on these rather than on `walls`."""
+    spans = store.update_wall_spans(lambda s: next_wall_spans(s, walls, time.time()))
+    return [{"since": s["since"], "until": s["until"]} for s in spans]
+
+
 def choose_launch(
     account: str | None = None,
     model: str | None = None,

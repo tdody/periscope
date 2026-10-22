@@ -360,3 +360,26 @@ def test_state_has_no_move_targets_with_one_account(client, mocker, clean_state)
     body = client.get("/api/state").json()
     assert body["accounts"] == [{"id": "default", "label": "A"}]
     assert body["move_targets"] == {}
+
+
+def test_state_keeps_the_walls_stretch_past_the_refresh_that_drops_them(client, mocker, clean_state):
+    # Clawd plans its half hours from `wall_spans`: `walls` goes null at the
+    # first usage refresh past the reset, and the knock-off half under way
+    # then would have been re-read as a day never walled.
+    from periscope import usage
+
+    _patch(mocker, "list_windows", return_value=[])
+    _patch(mocker, "update_focus_from_windows")
+    _patch(mocker, "_attach_git_then_resolve_pids")
+    _patch(mocker, "cached_claude_usage", return_value={})
+    _patch(mocker, "cached_plan_usage", return_value={})
+    walls = mocker.patch.object(usage, "walls", return_value={"until": 1_792_603_799})
+    mocker.patch.object(usage.time, "time", return_value=1_792_598_410)
+    body = client.get("/api/state").json()
+    assert body["walls"] == {"until": 1_792_603_799}
+    assert body["wall_spans"] == [{"since": 1_792_598_460, "until": 1_792_603_799}]
+    walls.return_value = None
+    usage.time.time.return_value = 1_792_604_000
+    body = client.get("/api/state").json()
+    assert body["walls"] is None
+    assert body["wall_spans"] == [{"since": 1_792_598_460, "until": 1_792_603_799}]
