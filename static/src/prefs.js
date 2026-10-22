@@ -14,6 +14,7 @@
 // localStorage→server migration at boot.
 
 import { signal } from "@preact/signals";
+import { CRITTER_IDS } from "./chrome/critters.js";
 import { apiCall } from "./util.js";
 
 // The cache mirrors the server's state.json shape. `loaded` flips to true
@@ -322,6 +323,19 @@ export function getLaunchProfile() {
 
 export function setLaunchProfile(id) {
   return patchUI({ launch_profile: id });
+}
+
+
+// The header tamagotchi's creature (chrome/critters.js), picked in Settings.
+// Unset, or an id no longer in the list, is Clawd — the default nobody has to
+// opt out of.
+export function getTamaCritter() {
+  const id = P().ui?.tama_critter;
+  return CRITTER_IDS.includes(id) ? id : "clawd";
+}
+
+export function setTamaCritter(id) {
+  return patchUI({ tama_critter: id });
 }
 
 

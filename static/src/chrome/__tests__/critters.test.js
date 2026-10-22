@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { getTamaCritter, prefsSignal } from "../../prefs.js";
 import { CLAWD_HEIGHT, CRITTER_IDS, CRITTERS, critterById, placement, spriteBox } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite);
@@ -71,5 +72,25 @@ describe("placement", () => {
     expect(bottomOf(p, box)).toBeCloseTo(17);
     expect(centreOf(p, box)).toBeCloseTo(11.5);
     expect(p.top).toBe(7);
+  });
+});
+
+describe("getTamaCritter", () => {
+  const withUI = (ui) => { prefsSignal.value = { ...prefsSignal.value, loaded: true, ui }; };
+  afterEach(() => withUI({}));
+
+  it("is Clawd until one is picked", () => {
+    withUI({});
+    expect(getTamaCritter()).toBe("clawd");
+  });
+
+  it("returns the picked critter", () => {
+    withUI({ tama_critter: "moss" });
+    expect(getTamaCritter()).toBe("moss");
+  });
+
+  it("falls back to Clawd for an id it doesn't know", () => {
+    withUI({ tama_critter: "dragon" });
+    expect(getTamaCritter()).toBe("clawd");
   });
 });
