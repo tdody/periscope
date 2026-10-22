@@ -368,6 +368,27 @@ describe("the evening's rules", () => {
     }
   });
 
+  it("keeps the walled 4:30 half's cover of a verdict when the walls lift in it", () => {
+    // Out on a pint (or a run) at 4:30 when a merge (or a furious mood) is
+    // noted at 4:40, then the walls lift at 4:45: the evening stays as the
+    // walled day planned it, not a second pint at 5:00.
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    let count = 0;
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => x.getDay() % 6)) {
+      if (d.getDay() === 5 || occasionShown(d)?.id === "halloween") continue;
+      for (const [flag, id] of [["merged", "beer"], ["furious", "run"]]) {
+        if (activityAt(at(d, 16, 30), WALLED).id !== id) continue;
+        count += 1;
+        const log = { [flag]: 16 + 40 / 60 };
+        const lifted = { ...log, walls: [[-Infinity, at(d, 16, 45).getTime()]] };
+        for (const m of [0, 30]) {
+          expect(activityAt(at(d, 17, m), lifted), `${d.toDateString()} ${flag} 17:${m}`).toEqual(activityAt(at(d, 17, m), { ...log, ...WALLED }));
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(0);
+  });
+
   it("leaves a verdict booked while Clawd coded through 4:30 where it is when the walls land later", () => {
     // A furious mood at 4:40, on a day whose walled 4:30 would have been a
     // run: at the desk then, the run books 5:00, and walls landing at 5:15
