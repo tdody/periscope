@@ -12,18 +12,23 @@ const NEEDS_YOU = new Set(["needs_input", "question"]);
 
 // -> { now, held, recent }. `recent` is the send times of needs-you banners
 // still inside the window, carried to the next call.
+//
+// The window counts only banners actually sent (`sent`), not elapsed time —
+// so a sustained trickle slower than one per BURST_MS / LEADING (1.5s) is
+// never held, no matter how long it runs. Grouping exists to flatten a
+// burst, not to rate-limit a steady stream.
 export function planBurst(events, recent, nowMs, group = true) {
-  const live = recent.filter((t) => nowMs - t < BURST_MS);
+  const sent = recent.filter((t) => nowMs - t < BURST_MS);
   const now = [];
   const held = [];
   for (const ev of events) {
     if (!group || !NEEDS_YOU.has(ev.kind)) now.push(ev);
-    else if (live.length < LEADING) {
+    else if (sent.length < LEADING) {
       now.push(ev);
-      live.push(nowMs);
+      sent.push(nowMs);
     } else held.push(ev);
   }
-  return { now, held, recent: live };
+  return { now, held, recent: sent };
 }
 
 const why = (ev) => (ev.kind === "question" ? "question" : waitKind(ev.w?.waiting_for) === "permission" ? "permission" : "input");

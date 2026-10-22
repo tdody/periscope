@@ -3,24 +3,28 @@
 // pane names are clipped before they push the verb off the end.
 
 import { meterLabel } from "../chrome/usageRules.js";
-import { paneLabel, plural, waitKind } from "../util.js";
+import { paneLabel, plural, prUrl, waitKind } from "../util.js";
 
+// Cut by code point, not UTF-16 code unit — a pane name ending in an emoji
+// or other surrogate-pair character would otherwise leave a lone surrogate
+// (an unpaired high surrogate renders as a replacement glyph in the banner).
 const clip = (s, n) => {
   const t = String(s || "").trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+  const chars = Array.from(t);
+  return chars.length > n ? `${chars.slice(0, n - 1).join("")}…` : t;
 };
 const pane = (w) => clip(paneLabel(w), 26);
 const where = (w) => [w?.session, w?.branch].filter(Boolean).join(" · ");
 
-// The first sentence of a pane's last words, for a done banner.
+// The first sentence of a pane's last words, for a done banner. A sentence
+// ends at `.`/`!`/`?` only when followed by whitespace-then-capital/digit (or
+// the end of the text) — plain "e.g."/"i.e." no longer read as sentence
+// ends. "Mr. Smith approved." still cuts at "Mr." since "Smith" is
+// capitalized; there's no cheap way to special-case every title abbreviation.
 export function firstSentence(text) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
-  const m = t.match(/^.*?[.!?](?=\s|$)/);
+  const m = t.match(/^.*?[.!?](?=\s[A-Z0-9]|$)/);
   return clip(m ? m[0] : t, 140);
-}
-
-export function prUrl(w) {
-  return w?.repo_slug && w?.pr ? `https://github.com/${w.repo_slug}/pull/${w.pr}` : null;
 }
 
 const NEEDS_BODY = {
@@ -60,18 +64,18 @@ export function payloadFor(ev, ctx = {}) {
       const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
       return {
         ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
-        body: checks || "Checks are failing.", data: { open: "url", url: prUrl(w), pid: w.pid },
+        body: checks || "Checks are failing.", data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid },
       };
     }
     case "pr_merged":
       return {
         ...base, title: `PR #${w.pr} merged`,
         subtitle: w.pr_base ? `${w.session} · ${w.branch} → ${w.pr_base}` : where(w),
-        body: "The worktree and its session can be cleaned up.", data: { open: "url", url: prUrl(w), pid: w.pid },
+        body: "The worktree and its session can be cleaned up.", data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid },
       };
     case "usage": {
       const registry = ctx.accounts || [];
-      const name = registry.find((a) => a.id === ev.account)?.label || ev.account;
+      const name = clip(registry.find((a) => a.id === ev.account)?.label || ev.account, 16);
       const multi = registry.length > 1;
       const proj = Math.max(...[ev.m.projected_percent, ev.m.projected_recent].filter((v) => v != null), -1);
       const working = (ctx.windows || []).filter((x) => x.state === "working" && x.account === ev.account).length;

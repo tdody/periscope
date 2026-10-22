@@ -20,6 +20,17 @@ describe("planBurst", () => {
     expect(planBurst([ev("done", "x"), ev("ci_failed", "y")], [0, 0], 10).now).toHaveLength(2);
     expect(planBurst([ev("needs_input", "x")], [0, 0], 10, false).now).toHaveLength(1);
   });
+
+  it("never holds a trickle slower than the window allows, even carried across calls", () => {
+    let recent = [];
+    for (let i = 0; i < 5; i++) {
+      const nowMs = i * 2000;
+      const r = planBurst([ev("needs_input", `e${i}`)], recent, nowMs);
+      expect(r.now).toHaveLength(1);
+      expect(r.held).toHaveLength(0);
+      recent = r.recent;
+    }
+  });
 });
 
 describe("summaryPayload", () => {

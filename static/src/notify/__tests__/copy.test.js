@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { waitKind } from "../../util.js";
-import { firstSentence, payloadFor, prUrl } from "../copy.js";
+import { firstSentence, payloadFor } from "../copy.js";
+
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])/;
 
 const w = (over = {}) => ({ pid: "p1", target: "s:1", session: "periscope", name: "dual-moas", branch: "main", ...over });
 
@@ -19,6 +21,11 @@ describe("payloadFor", () => {
     const p = payloadFor({ kind: "needs_input", w: w({ name: "a-really-long-pane-name-that-goes-on-and-on" }) });
     expect(p.title.length).toBeLessThanOrEqual(40);
     expect(p.title.endsWith("… needs you")).toBe(true);
+  });
+
+  it("clips a pane name by code point, never splitting a surrogate pair", () => {
+    const p = payloadFor({ kind: "needs_input", w: w({ name: `${"a".repeat(25)}😀bbbb` }) });
+    expect(LONE_SURROGATE.test(p.title)).toBe(false);
   });
 
   it("carries the agent's question, even for a pane that has gone", () => {
@@ -45,6 +52,11 @@ describe("payloadFor", () => {
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).body).toBe("Checks are failing.");
   });
 
+  it("links the PR through util's prUrl, null without a repo_slug", () => {
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).data.url).toBeNull();
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r" }) }).data.url).toBe("https://github.com/o/r/pull/7");
+  });
+
   it("shows where a merged PR went", () => {
     const p = payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", branch: "feat", pr_base: "main" }) });
     expect(p).toMatchObject({ title: "PR #7 merged", subtitle: "periscope · feat → main" });
@@ -63,6 +75,30 @@ describe("payloadFor", () => {
     });
     expect(payloadFor({ ...ev, m: { percent: 99, hot: true } }, { accounts: two }).subtitle).toBe("week usage 99%");
   });
+
+  it("clips a long account label in the usage title", () => {
+    const ev = { kind: "usage", account: "b", meter: "week_all", m: { percent: 10 } };
+    const accounts = [{ id: "b", label: "A Really Long Account Label" }, { id: "default", label: "A" }];
+    const p = payloadFor(ev, { accounts, windows: [] });
+    expect(p.title).toBe("Account A Really Long A… is running hot");
+  });
+
+  it("renders 0% when the meter's percent is undefined", () => {
+    const ev = { kind: "usage", account: "default", meter: "week_all", m: {} };
+    expect(payloadFor(ev, { accounts: [{ id: "default", label: "A" }] }).subtitle).toBe("week usage 0%");
+  });
+
+  it("says 0 sessions working when a multi-account setup has no working sessions", () => {
+    const ev = { kind: "usage", account: "b", meter: "week_all", m: { percent: 50 } };
+    const two = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    expect(payloadFor(ev, { accounts: two, windows: [] }).body).toBe("0 sessions working on B.");
+  });
+
+  it("falls back to the raw account id when it's missing from ctx.accounts", () => {
+    const ev = { kind: "usage", account: "ghost", meter: "week_all", m: { percent: 50 } };
+    const two = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    expect(payloadFor(ev, { accounts: two, windows: [] }).title).toBe("Account ghost is running hot");
+  });
 });
 
 describe("helpers", () => {
@@ -73,9 +109,14 @@ describe("helpers", () => {
     expect(firstSentence(null)).toBe("");
   });
 
-  it("prUrl needs both the repo and the number", () => {
-    expect(prUrl({ repo_slug: "o/r", pr: 3 })).toBe("https://github.com/o/r/pull/3");
-    expect(prUrl({ pr: 3 })).toBeNull();
+  it("firstSentence doesn't cut at an abbreviation's period", () => {
+    expect(firstSentence("Fixed the bug in e.g. the parser module. Tests now pass.")).toBe(
+      "Fixed the bug in e.g. the parser module.",
+    );
+  });
+
+  it("firstSentence also cuts at a sentence-ending !", () => {
+    expect(firstSentence("Shipped it! Tests pass.")).toBe("Shipped it!");
   });
 
   it("waitKind sorts the raw waiting_for values", () => {
