@@ -65,3 +65,13 @@
 @keyframes crit-moss-3 { 0% { transform: translate(0px, 0px) scaleY(1); } 50% { transform: translate(0px, 0px) scaleY(1); } 60% { transform: translate(-0.6px, 0px) scaleY(1); } 80% { transform: translate(0.6px, 0px) scaleY(1); } 100% { transform: translate(0px, 0px) scaleY(1); } }
 .crit-moss-4 { animation: crit-moss-4 5.2s linear infinite; }
 @keyframes crit-moss-4 { 0% { transform: translate(0px, 0px) scaleY(0); } 90% { transform: translate(0px, 0px) scaleY(0); } 95% { transform: translate(0px, 0px) scaleY(1); } 100% { transform: translate(0px, 0px) scaleY(0); } }
+.crit-octocat-1 { animation: crit-octocat-1 1.6s steps(1, end) infinite; }
+@keyframes crit-octocat-1 { 0% { transform: translate(0px, 0px); } 25% { transform: translate(0.4px, 0px); } 50% { transform: translate(0px, 0px); } 75% { transform: translate(-0.4px, 0px); } 100% { transform: translate(-0.4px, 0px); } }
+.crit-octocat-2 { animation: crit-octocat-2 4.6s linear infinite; }
+@keyframes crit-octocat-2 { 0% { transform: translate(0px, 0px) scaleY(1); } 90% { transform: translate(0px, 0px) scaleY(1); } 95% { transform: translate(0px, 1px) scaleY(0.2); } 100% { transform: translate(0px, 0px) scaleY(1); } }
+.crit-octocat-3 { animation: crit-octocat-3 4.6s linear infinite; }
+@keyframes crit-octocat-3 { 0% { transform: translate(0px, 0px) scaleY(1); } 90% { transform: translate(0px, 0px) scaleY(1); } 95% { transform: translate(0px, 1px) scaleY(0.2); } 100% { transform: translate(0px, 0px) scaleY(1); } }
+.crit-octocat-4 { animation: crit-octocat-4 0.4s linear infinite; }
+@keyframes crit-octocat-4 { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+.crit-octocat-5 { animation: crit-octocat-5 0.4s linear infinite; }
+@keyframes crit-octocat-5 { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }

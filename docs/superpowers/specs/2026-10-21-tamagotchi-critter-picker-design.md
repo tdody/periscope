@@ -7,7 +7,9 @@ notification work (`2026-10-21-native-notifications-design.md`).
 ## Goal
 
 A Settings choice of which creature lives in the header corner: `clawd`
-(default, unchanged), `scope`, `jelly`, `nox`, `ember`, `volt`, `moss`. Picking
+(default, unchanged), `scope`, `jelly`, `nox`, `ember`, `volt`, `moss`, `octocat`
+(added after the first six: an original pixel take on GitHub's mascot, its SVG
+drawn to the same conventions). Picking
 one swaps it in immediately and survives reload; a default install still shows
 Clawd.
 
@@ -65,7 +67,7 @@ The group fields:
 - `anim` — a class from `static/critters.css`. An animated rect is wrapped in a
   group that carries the class.
 - `role` — what sleep does to it:
-  - `"eye"` — a blinking eye (Scope, Jelly, Ember, Volt);
+  - `"eye"` — a blinking eye (Scope, Jelly, Ember, Volt, Octocat);
   - `"lid"` — the rect that grows over the eye to blink (Nox, Moss);
   - `"glint"` — the calm highlight on a blinking eye.
 - `shut: [x, y, w, h]` — the closed frame, on eyes and lids. For an eye it's
@@ -211,7 +213,7 @@ A **Tamagotchi** fieldset above the existing fields:
 - `periscope/routes/prefs.py`: `tama_critter: str | None = None` on `UIPatch`
   (without it Pydantic drops the field and the optimistic update reverts on the
   echo), validated in `patch_prefs_ui` against
-  `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss")`
+  `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat")`
   → 400 otherwise, like `view`. A comment on each list points at the other, and
   a test pins them equal.
 
