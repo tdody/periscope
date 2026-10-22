@@ -260,7 +260,12 @@ def test_heal_leaves_an_undrifted_file_alone(home):
 
 
 def test_heal_never_creates_the_owned_file(home):
-    (home / ".tmux.conf").write_text(USER_PLUGINS)
+    # A user who never ran install-tmux: every count is 0, so only the
+    # never-create guard stops each prod tick writing the file (and logging a
+    # drift warning) — a conf declaring all three returned on the all-1 guard.
+    (home / ".tmux.conf").write_text("set -g mouse on\n")
+    tp.owned_conf().parent.mkdir(parents=True)  # periscope's config dir always exists in prod
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 0)
     assert tp.heal(REPO) is False
     assert not tp.owned_conf().exists()
 
