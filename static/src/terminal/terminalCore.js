@@ -122,14 +122,16 @@ const WIDTH_PIN_TOLERANCE = 4;   // cols; absorbs scrollbar/rounding wobble, not
 // sizes the window, the pane gets a slice) and after the container grows in
 // height only, which is deliberately not sent (scheduleFit).
 // Cols follow the pane the same way, so a left/right split shows the pane's
-// width instead of flipping between it and the container's on every fit.
+// width instead of flipping between it and the container's on every fit — but
+// uncapped (xtermDims).
 let paneCols = 0;                // tmux's pane dims, from the last size message
 let paneRows = 0;
 let fitRows = 0;                 // the container's height in rows — what we ask tmux for
 
-// The pane's dim once the server has reported it, capped at the container's:
-// an xterm bigger than its box is clipped (`.detail-xterm` is overflow:
-// hidden), and what's clipped is the pane's bottom — prompt, input box, cursor.
+// The pane's rows once the server has reported them, capped at the
+// container's: an xterm taller than its box is clipped (`.detail-xterm` is
+// overflow: hidden), and what's clipped is the pane's bottom — prompt, input
+// box, cursor.
 const capped = (pane, container) => (pane > 0 && container > 0 ? Math.min(pane, container) : pane || container);
 
 // Pure: the width to pin for a measured container width. Wobble within
@@ -139,12 +141,16 @@ export function pinWidth(measuredCols, pinned) {
   return pinned > 0 && Math.abs(measuredCols - pinned) <= WIDTH_PIN_TOLERANCE ? pinned : measuredCols;
 }
 
-// Pure: the xterm's dims — the pane's once the server has reported them, each
+// Pure: the xterm's dims — the pane's once the server has reported them, rows
 // capped at the container's; the container's until then. 0 = not known yet.
+// Cols are never capped: a pane wider than the container (our resize not yet
+// landed, a wider viewer's, a hidden mount that couldn't measure) in a
+// narrower xterm autowraps the capture and every frame row, pushing a junk
+// line into scrollback per frame. Right-clipped, it stays coherent.
 // The one sizing rule: the mount, every fit and every size message go through
 // it (syncXtermSize).
 export function xtermDims(knownPaneCols, knownPaneRows, containerCols, containerRows) {
-  return { cols: capped(knownPaneCols, containerCols), rows: capped(knownPaneRows, containerRows) };
+  return { cols: knownPaneCols || containerCols, rows: capped(knownPaneRows, containerRows) };
 }
 
 // Pure: the dims to ask tmux for, on a resize or a reconnect — the CONTAINER's
@@ -683,24 +689,24 @@ export function startLiveTerminal(target) {
   }
   term.focus();
 
-  // Synchronous initial fit. Reading the container's layout (via
+  // Synchronous initial measure. Reading the container's layout (via
   // proposeDimensions()) forces a sync layout flush, so we get real dims here
   // — and we pass them to the WS as a connect-time hint so the server resizes
   // tmux BEFORE capture-pane. Without that, the initial blob is at tmux's
   // current pane width (often a real terminal also attached at 200+ cols) and
   // xterm has to reflow it down, mangling box-drawing TUIs for the first
-  // frame. If the container can't be measured for any reason, leave the hint
-  // at zero and the server uses tmux's view.
-  // The pin (pinWidth) is what stops navigation from reflowing tmux at
-  // slightly-different widths. No pane dims yet (stopLiveTerminal cleared
-  // them): the xterm takes the container's until the handshake's size message.
-  let initialCols = 0;
-  let initialRows = 0;
-  if (measureContainer()) {
-    syncXtermSize();
-    initialCols = pinnedCols;
-    initialRows = fitRows;
-  }
+  // frame. The pin (pinWidth) stops navigation from reflowing tmux at
+  // slightly-different widths. A hidden host (the pane left in transcript
+  // mode, another tab showing) can't be measured, so the hint is the
+  // container's LAST measurement: without one, tmux kept the window's old
+  // width and the capture came in wider than the pin. Nothing measured yet
+  // this page: no hint, and tmux's view stands. No pane dims yet
+  // (stopLiveTerminal cleared them): the xterm takes the container's until
+  // the handshake's size message.
+  measureContainer();
+  syncXtermSize();
+  const initialCols = pinnedCols;
+  const initialRows = fitRows;
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
   // Debounced so a window-drag doesn't spam tmux with subprocess calls.

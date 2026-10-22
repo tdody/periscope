@@ -59,14 +59,19 @@ These are the non-obvious behaviors worth preserving:
    ahead of the frame painted at them, to subscriptions `ws.py` armed at
    `subscribe()`.
 
-   On the client the xterm takes the pane's dims capped at its container
-   (`xtermDims`): grown to the container it shows those stale rows; taller
-   than `.detail-xterm` (overflow hidden) it clipped the pane's prompt and
-   cursor out of view after a height-only shrink. Every resize and
-   reconnect asks tmux for the CONTAINER's dims (`hintDims`: pinned width ×
-   fitted rows), never `term.cols`/`term.rows` — those are the pane's, and
-   `resize-window` applies them to the whole window: echoing them back
-   shrank a split window on every reconnect. Height-only growth is still
+   On the client the xterm takes the pane's dims, rows capped at its
+   container (`xtermDims`): grown to the container it shows those stale
+   rows; taller than `.detail-xterm` (overflow hidden) it clipped the pane's
+   prompt and cursor out of view after a height-only shrink. Cols are NOT
+   capped: narrower than the pane, the xterm autowraps the capture and every
+   frame row, a junk line into scrollback per frame (a pane mounted hidden,
+   in transcript mode, under a window wider than the pin); right-clipped it
+   stays coherent. A hidden mount can't measure, so it hints the
+   container's last measurement. Every resize and reconnect asks tmux for
+   the CONTAINER's dims (`hintDims`: pinned width × fitted rows), never
+   `term.cols`/`term.rows` — those are the pane's, and `resize-window`
+   applies them to the whole window: echoing them back shrank a split
+   window on every reconnect. Height-only growth is still
    never sent (each SIGWINCH is a Claude redraw that can mangle
    scrollback); a height-only shrink below the pane is (`resizeNeeded`),
    since nothing else lets the pane fit.

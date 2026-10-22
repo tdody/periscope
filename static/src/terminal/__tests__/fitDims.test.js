@@ -22,10 +22,15 @@ describe("xtermDims", () => {
     expect(xtermDims(100, 50, 200, 50)).toEqual({ cols: 100, rows: 50 });
   });
 
-  it("caps a pane announced bigger than the container", () => {
-    // Another viewer's taller, wider container resized the window: no fit
-    // runs here, only the size message, and it goes through this rule too.
-    expect(xtermDims(239, 62, 200, 40)).toEqual({ cols: 200, rows: 40 });
+  it("caps a pane announced taller than the container, but not wider", () => {
+    // Another viewer's bigger container resized the window: no fit runs here,
+    // only the size message, and it goes through this rule too. Rows cap (the
+    // clipped part would be the prompt and cursor). Cols don't: an xterm
+    // narrower than the pane autowraps the capture and every frame row, a junk
+    // line into scrollback per frame (a pane mounted hidden, in transcript
+    // mode, at a 200-col window under a 150-col pin); right-clipped it stays
+    // coherent until the pane comes back to the container's width.
+    expect(xtermDims(239, 62, 200, 40)).toEqual({ cols: 239, rows: 40 });
   });
 
   it("takes the container's dims before the server reports a size, and the pane's before a measure", () => {
