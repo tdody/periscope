@@ -415,6 +415,20 @@ def test_status_flags_tpm_run_twice(home, monkeypatch):
     assert s["ok"] is False
 
 
+def test_status_flags_no_tpm_run(home, monkeypatch):
+    # No run line: TPM never runs, nothing restores after a reboot — yet every
+    # declaration counts 1 and the live options come from the owned file's own
+    # `set -g` lines. tpm_runs is the only term of `ok` that sees it.
+    _healthy_home(home)
+    _stub_live(monkeypatch, HEALTHY)
+    conf = home / ".tmux.conf"
+    conf.write_text(conf.read_text().replace(tp.TPM_RUN_LINE + "\n", ""))
+    s = tp.status(REPO)
+    assert s["tpm_runs"] == 0
+    assert s["plugin_declarations"] == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert s["ok"] is False
+
+
 def test_status_flags_a_plugin_declared_nowhere(home, monkeypatch):
     _healthy_home(home)
     _stub_live(monkeypatch, HEALTHY)
