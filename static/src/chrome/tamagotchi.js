@@ -125,8 +125,8 @@ function rollFrom(list, date, salt, avoid = []) {
 // the reset is the plain day's. Each counts in whole minutes, its reset from
 // the minute the hover names (wallLabel): resets land a second or so before a
 // minute, and a nap cut at 2:29pm under walls held to 2:29:59 would re-arm its
-// wake, already due, for that whole minute.
-// A stretch first seen past its reset (a server just started) never held.
+// wake, already due, for that whole minute. A stretch first seen past its
+// reset (by a server just started) never held.
 const minute = (t) => Math.floor(t / 60_000) * 60_000;
 const stretches = (day) => (day.walls || []).map((s) => s.map(minute)).filter(([from, until]) => from < until);
 export const walledAt = (date, day) => stretches(day).some(([from, until]) => from <= date.getTime() && date.getTime() < until);
@@ -139,12 +139,12 @@ function dateAt(date, h) {
 }
 
 // Where the walls switch a weekday between its tables: where they land or
-// lift, or at the end of the knock-off half that falls in. A half hour's plan
-// is fixed when it starts, so a knock-off pastime under way when the walls
-// lift runs to its end, and a half begun at the desk when they land stays
-// there (walls landing and lifting inside one switch nothing). The one switch
-// time: the scene, the cover and the hover's range all read it, so they
-// can't drift apart.
+// lift, or at the end of the knock-off half they land or lift in. A half
+// hour's plan is fixed when it starts, so a knock-off pastime under way when
+// the walls lift runs to its end, and a half begun at the desk when they land
+// stays there (walls landing and lifting inside one switch nothing). The one
+// switch time: the scene, the cover and the hover's range all read it, so
+// they can't drift apart.
 function switchAt(t) {
   if (!Number.isFinite(t)) return t;
   const h = hours(new Date(t));
