@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detect, GRACE_PASSES, prKey, questionKey } from "../detect.js";
+import { detect, GRACE_PASSES, PR_PASSES, prKey, questionKey } from "../detect.js";
 
 const NOW = 1_000_000;
 const win = (over = {}) => ({
@@ -90,6 +90,18 @@ describe("detect", () => {
     const gone = detect(detect(null, linked("open"), NOW).state, { windows: [] }, NOW).state;
     expect(kinds(detect(gone, linked("merged"), NOW))).toEqual(["pr_merged"]);
     expect(step({ windows: [] }, linked("merged")).events).toEqual([]);
+  });
+
+  it("forgets a PR no pane has shown for PR_PASSES passes", () => {
+    const open = { windows: [win({ pr: 7, repo_slug: "o/r", pr_state: "open", ci: "⟳" })] };
+    const kept = passes(detect(null, open, NOW).state, { windows: [win()] }, PR_PASSES);
+    expect(Object.keys(kept.prs)).toEqual(["o/r#7"]);
+    const gone = passes(kept, { windows: [win()] }, 1);
+    expect(gone.prs).toEqual({});
+    expect(gone.ci).toEqual({});
+    expect(gone.prAt).toEqual({});
+    // Seen again after that: recorded, not announced.
+    expect(detect(gone, { windows: [win({ pr: 7, repo_slug: "o/r", pr_state: "merged" })] }, NOW).events).toEqual([]);
   });
 
   it("announces a meter getting worse once per mood step per reset window", () => {

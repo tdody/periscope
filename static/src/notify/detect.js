@@ -20,6 +20,12 @@ import { buildNeedsYou } from "../split/attention.js";
 // everything still waiting on wake.
 export const GRACE_PASSES = 120;
 
+// A PR no pane has shown for this many passes (about an hour on the push) is
+// forgotten, or `ci`/`prs` grow with every PR ever seen, saved every pass.
+// Long, unlike GRACE_PASSES: a merge while its pane was briefly gone still
+// needs the "open" it follows. A forgotten PR seen again is only recorded.
+export const PR_PASSES = 3600;
+
 // One PR, however many panes show it.
 export const prKey = (w) => `${w.repo_slug || w.repo_key || ""}#${w.pr}`;
 
@@ -102,8 +108,14 @@ export function detect(prev, snap, nowSec) {
   // merging. A PR first sighted mid-state (already red, already merged) only
   // records it. PRs missing from a poll keep their last state, so a rolling
   // reload can't erase the "open" a merge needs to follow.
-  const ci = { ...(prev?.ci || {}) };
-  const prs = { ...(prev?.prs || {}) };
+  const prAt = {};
+  for (const [k, at] of Object.entries(prev?.prAt || {})) if (pass - at <= PR_PASSES) prAt[k] = at;
+  const ci = {};
+  const prs = {};
+  for (const k of Object.keys(prAt)) {
+    if (k in (prev?.ci || {})) ci[k] = prev.ci[k];
+    if (k in (prev?.prs || {})) prs[k] = prev.prs[k];
+  }
   const byPr = new Map();
   for (const w of windows) {
     if (!w.pr) continue;
@@ -116,6 +128,7 @@ export function detect(prev, snap, nowSec) {
     if (!byPr.has(k) || (w.pr_state && !byPr.get(k).pr_state)) byPr.set(k, w);
   }
   for (const [k, w] of byPr) {
+    prAt[k] = pass;
     const open = !w.pr_state || w.pr_state === "open";
     const glyph = open ? w.ci || null : null;
     if (!seeding && k in ci && ci[k] !== "✗" && glyph === "✗") events.push({ key: `ci:${k}`, kind: "ci_failed", w });
@@ -158,5 +171,5 @@ export function detect(prev, snap, nowSec) {
     if (!(key in seen) && pass - prevSeen[key] <= GRACE_PASSES) seen[key] = prevSeen[key];
   }
 
-  return { state: { pass, seen, ci, prs, meters }, events };
+  return { state: { pass, seen, ci, prs, prAt, meters }, events };
 }
