@@ -74,6 +74,14 @@ EYE = (
     '<rect x="6" y="9" width="2" height="2" fill="#111111">'
     '<animate attributeName="height" values="2;0.4;2" dur="4s" repeatCount="indefinite"/></rect>'
 )
+EYE_NO_FILL = (
+    '<rect x="6" y="9" width="2" height="2">'
+    '<animate attributeName="height" values="2;0.4;2" dur="4s" repeatCount="indefinite"/></rect>'
+)
+EYE_FILL_NONE = (
+    '<rect x="6" y="9" width="2" height="2" fill="none">'
+    '<animate attributeName="height" values="2;0.4;2" dur="4s" repeatCount="indefinite"/></rect>'
+)
 LID = (
     '<rect x="6" y="6" width="3" height="0" fill="#222222">'
     '<animate attributeName="height" values="0;3;0" dur="5s" repeatCount="indefinite"/></rect>'
@@ -94,6 +102,20 @@ def test_anchors_list_each_critters_eyes():
 def test_anchors_head_is_the_top_right_of_the_sprite_box():
     # Jelly's always-drawn box is x 4, y 3, w 12, h 15 (critters.test.js pins the same box).
     assert _sprite("jelly")["anchors"]["head"] == {"top": 3, "right": 16}
+
+
+def test_anchors_head_is_fractional_for_nox():
+    # x1 - x0 (1.8 + 16.4) drifts off 18.2 in raw float; clean() rounds it back.
+    assert _sprite("nox")["anchors"]["head"] == {"top": 3, "right": 18.2}
+
+
+def test_mixed_lid_then_eye_keeps_document_order_and_inks_from_the_eye(tmp_path):
+    s = build_critters.convert("t", _svg(tmp_path, BODY + LID + EYE), build_critters.Sheet())
+    assert s["anchors"]["eyes"] == [
+        {"x": 6, "y": 6, "w": 3, "h": 3, "role": "lid"},
+        {"x": 6, "y": 9, "w": 2, "h": 2, "role": "eye"},
+    ]
+    assert s["ink"] == "#111111"
 
 
 def test_ink_is_the_eye_fill_or_the_declared_colour():
@@ -118,8 +140,25 @@ def test_a_lid_critter_must_declare_its_ink(tmp_path):
 
 
 def test_data_ink_must_be_a_hex_colour(tmp_path):
-    with pytest.raises(ValueError, match="data-ink"):
+    with pytest.raises(ValueError, match="#rrggbb, got"):
         build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=' data-ink="green"'), build_critters.Sheet())
+
+
+def test_an_eye_painted_by_a_parent_g_raises(tmp_path):
+    # node() only ever records paint on the eye's own rect; a parent <g>'s fill never reaches it.
+    body = f'<g fill="#123456">{EYE_NO_FILL}</g>'
+    with pytest.raises(ValueError, match="data-ink"):
+        build_critters.convert("t", _svg(tmp_path, BODY + body), build_critters.Sheet())
+
+
+def test_a_derived_eye_fill_that_is_not_hex_raises(tmp_path):
+    with pytest.raises(ValueError, match="data-ink"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE_FILL_NONE), build_critters.Sheet())
+
+
+def test_no_eye_or_lid_raises(tmp_path):
+    with pytest.raises(ValueError, match="nothing to sit on"):
+        build_critters.convert("t", _svg(tmp_path, BODY), build_critters.Sheet())
 
 
 def test_raises_on_an_element_it_does_not_know(tmp_path):

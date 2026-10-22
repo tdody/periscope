@@ -45,7 +45,6 @@ CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
-INK_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def tag(el: ET.Element) -> str:
@@ -223,7 +222,7 @@ def drawn(n: dict) -> bool:
 
 
 def clean(v: float) -> float:
-    """A coordinate as the generated JS should print it: 4 decimals, "16" not "16.0"."""
+    """Round off the drift x1 - x0 picks up (Nox's head: 1.8 + 16.4 lands a hair short of 18.2); "16" not "16.0"."""
     v = round(v, 4)
     return int(v) if float(v).is_integer() else v
 
@@ -252,6 +251,8 @@ def sprite_box(root: list[dict]) -> list[float]:
 def shutters(nodes: list[dict]):
     """Every eye and lid node (the roles _convert assigns), depth first."""
     for n in nodes:
+        if "mood" in n:
+            continue
         if n.get("role") in ("eye", "lid"):
             yield n
         yield from shutters(n.get("g", []))
@@ -264,19 +265,26 @@ def anchors_of(root: list[dict]) -> dict:
     return {"eyes": eyes, "head": {"top": clean(y), "right": clean(x + w)}}
 
 
-def ink_of(svg_name: str, doc: ET.Element, root: list[dict]) -> str | None:
+INK_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def ink_of(svg_name: str, doc: ET.Element, root: list[dict]) -> str:
     """The faces' glyph colour: the eyes' own fill, or data-ink on the <svg> where it can't be read."""
     declared = doc.get("data-ink")
     if declared is not None:
-        if not INK_RE.match(declared):
+        if not INK_RE.fullmatch(declared):
             raise ValueError(f"{svg_name}: data-ink must be #rrggbb, got {declared!r}")
         return declared
     found = list(shutters(root))
+    if not found:
+        raise ValueError(f"{svg_name}: no eye or lid, so the duty faces have nothing to sit on")
     eye = next((n for n in found if n["role"] == "eye"), None)
-    fill = eye and (eye["g"][0].get("a", {}).get("fill") or eye.get("a", {}).get("fill"))
-    if found and not fill:
-        # A lid covers the eye it shuts, so the colour under it isn't in the drawing.
-        raise ValueError(f'{svg_name}: its eyes are lids or unpainted; declare the face colour with data-ink="#rrggbb"')
+    fill = eye and eye["g"][0].get("a", {}).get("fill")
+    if not fill or not INK_RE.fullmatch(fill):
+        # A lid covers the eye it shuts; a parent <g>'s fill never lands on the rect node() reads.
+        raise ValueError(
+            f'{svg_name}: its eyes are lids, or painted by a parent <g>; declare the face colour with data-ink="#rrggbb"'
+        )
     return fill
 
 
