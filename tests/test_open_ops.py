@@ -387,9 +387,9 @@ def test_repeat_open_mid_rc_focuses_instead_of_duplicating(
     tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
 ):
     """Create-or-focus read the same untrustworthy cwd the tag loop did: a
-    second open (a double submit, or the MCP `open` tool alongside ⌘K) landing
-    while the first pair's shells were still in their rc saw nothing at the
-    repo and spawned another agent+shell pair."""
+    second open of the dir, a moment after the first returned, landing while
+    the first pair's shells were still in their rc saw nothing at the repo and
+    spawned another agent+shell pair. (Concurrent opens: next test.)"""
     real = open_ops.list_windows
     monkeypatch.setattr(open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh"} for w in real()])
     repo = str(tmp_git_repo)
@@ -397,6 +397,61 @@ def test_repeat_open_mid_rc_focuses_instead_of_duplicating(
     r2 = open_ops.open_target(open_ops.PathTarget(path=repo))
     assert r2.agent_pid == r1.agent_pid
     assert len([w for w in real() if w.get("pid_raw")]) == 2  # still one agent + one shell
+
+
+@needs_tmux
+def test_concurrent_repeat_open_focuses_instead_of_duplicating(
+    tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """A double submit is two POSTs on two threadpool threads (the MCP `open`
+    tool races ⌘K the same way), so the second open's check can land while
+    the first is still inside _layout_two_window: shell stamped, agent window
+    not yet. It saw no agent at the repo and built a second pair. Here the
+    second open starts right before the first stamps its agent window."""
+    import threading
+
+    from periscope import pids
+
+    repo = str(tmp_git_repo)
+    real_stamp, real_layout = pids.stamp_new_window, open_ops._layout_two_window
+    first = threading.current_thread()
+    first_stamps: list[str] = []
+    second_built = threading.Event()
+    second: dict = {}
+
+    def second_open():
+        try:
+            second["res"] = open_ops.open_target(open_ops.PathTarget(path=repo))
+        except Exception as e:  # noqa: BLE001 — surfaced by the assert below
+            second["err"] = e
+
+    t2 = threading.Thread(target=second_open)
+
+    def stamp(target, opened_dir=""):
+        if threading.current_thread() is first:
+            first_stamps.append(target)
+            if len(first_stamps) == 2:  # the agent window, after the shell
+                t2.start()
+                # Unserialised, the second open builds its pair now; serialised,
+                # it waits for this one to return, and this times out.
+                second_built.wait(timeout=1.0)
+        return real_stamp(target, opened_dir=opened_dir)
+
+    def layout(*a, **kw):
+        try:
+            return real_layout(*a, **kw)
+        finally:
+            if threading.current_thread() is not first:
+                second_built.set()
+
+    monkeypatch.setattr(pids, "stamp_new_window", stamp)
+    monkeypatch.setattr(open_ops, "_layout_two_window", layout)
+    r1 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    t2.join(timeout=10)
+    assert not t2.is_alive()
+    assert "err" not in second, second.get("err")
+    assert second["res"].agent_pid == r1.agent_pid
+    assert len([w for w in open_ops.list_windows() if w.get("pid_raw")]) == 2  # one agent + one shell
 
 
 def test_recorded_open_dir_counts_only_while_the_pane_is_fresh(monkeypatch):

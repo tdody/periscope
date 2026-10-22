@@ -17,6 +17,7 @@ from periscope.gitutil import (
     resolve_repo_and_branch,
 )
 from periscope.panes import list_windows
+from periscope.repo_locks import open_lock
 from periscope.tmux import _run, _tmux_mutate
 from periscope.worktree_spawn import _layout_two_window, spawn_worktree
 
@@ -129,10 +130,10 @@ def _session_owns_dir(name: str, pinned_dir: str) -> bool:
 
 
 def _agent_pid_for_dir(session: str, pinned_dir: str, agent: str) -> str:
-    """The @periscope_id (pid_raw) of the claude window in `session` that sits
+    """The @periscope_id (pid_raw) of the `agent` window in `session` that sits
     at `pinned_dir` (`_sits_at`). Under one shared session many claude windows
     coexist, so a session-wide "first claude" match is wrong here — filter by
-    dir. Falls back to the first window at `pinned_dir`. '' if none."""
+    dir. '' if no window there is the agent's, or it isn't stamped yet."""
     wins = [w for w in list_windows() if w["session"] == session and _sits_at(w, pinned_dir)]
     if not wins:
         return ""
@@ -219,7 +220,10 @@ def ensure_session(
 
     `created_pids` are the panes this call made (empty on the focus path): the
     caller tags them by pid, because a fresh pane's live cwd can't be trusted
-    yet (see `_open_path`)."""
+    yet (see `_open_path`).
+
+    Check-then-create, so not safe to race: hold `open_lock(pinned_dir)`
+    across it, as `_open_path` does."""
     session = config.MANAGED_SESSION
     if _session_live(session) and _session_owns_dir(session, pinned_dir):
         existing = _agent_pid_for_dir(session, pinned_dir, agent)
@@ -287,8 +291,15 @@ def _open_path(
         raise ValueError(f"no such directory: {path}")
     toplevel = _git_toplevel(path)  # ValueError if non-git
     repo = resolve_repo(toplevel)  # --git-common-dir → parent
-    project = ensure_project(toplevel, repo)
-    session, agent_pid, created = ensure_session(project, toplevel, agent)
+    # Check-then-create under a per-dir lock. A double submit is two POSTs on
+    # two threadpool threads, and the MCP `open` tool races ⌘K the same way;
+    # the agent window gets its @periscope_id only as _layout_two_window's last
+    # step, so a second check landing mid-layout saw no agent here and built a
+    # second pair. ensure_project is inside too: two first opens of a dir both
+    # inserted, and the loser's "project already exists" surfaced as a 400.
+    with open_lock(toplevel):
+        project = ensure_project(toplevel, repo)
+        session, agent_pid, created = ensure_session(project, toplevel, agent)
     # Rebuild the full pane list from the now-live session. list_windows()
     # is a live shell-out, so freshly-stamped windows are visible
     # synchronously; pid_raw is the @periscope_id, "" for unmanaged.

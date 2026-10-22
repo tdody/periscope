@@ -37,13 +37,25 @@ Invariants worth knowing before touching it:
   as `""`). Two readers got bitten. The open's tag loop left the new shell (and
   under load the agent pane) untagged, so `ensure_session` returns the pids it
   created and `_open_path` tags those by pid. And create-or-focus missed the
-  pair it had just made, so a repeat open in that window (a double submit, or
-  the MCP `open` tool alongside ⌘K) spawned a second pair; `_layout_two_window`
+  pair it had just made, so a repeat open in that window (opening the same
+  dir again a moment later) spawned a second pair; `_layout_two_window`
   now stamps `@periscope_opened` (`"<epoch> <dir>"`) next to `@periscope_id`,
   and `_sits_at` counts it as the window's dir for `_OPENED_TRUST_S` (60s).
   Only that long: the agent window outlives its agent (quit claude, `cd`
   elsewhere, start another), and a record trusted forever would focus that
   pane on every later open of the first dir.
+- **Create-or-focus is check-then-create, so it runs under a per-dir lock.**
+  The record only helps a repeat that starts after the first open returned.
+  A double submit is two concurrent POSTs (`open_endpoint` is a sync `def`, so
+  each runs on its own threadpool thread), and the MCP `open` tool races ⌘K
+  the same way. The agent window gets its `@periscope_id` only as
+  `_layout_two_window`'s last step, so a second check landing mid-layout saw
+  no agent at the dir and built a second pair. `_open_path` holds
+  `repo_locks.open_lock(toplevel)` across `ensure_project` + `ensure_session`.
+  It is its own namespace, not `repo_lock(toplevel)`: a main checkout's
+  toplevel IS its repo, and the open must not queue behind (or, being
+  non-reentrant, deadlock with) the repo's git lock. `OpenOmnibox.post()`
+  also drops a pick while one is in flight.
 - **A focus that isn't visible reads as a no-op.** Because of the above, the
   client MUST select the returned `claude_pid`; `OpenOmnibox.post()` sets
   `railSelection` + `prefs.setLastSelected`. Without it, opening something
