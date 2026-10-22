@@ -199,6 +199,34 @@ describe("the evening's rules", () => {
     expect(covered).toBeGreaterThan(0);
   });
 
+  it("books a verdict from the very minute it was noted, a half hour boundary included", () => {
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    const year = Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => occasionShown(x)?.id !== "halloween");
+    // noteKey keeps the minute: a merge from 5:30:00 on is 17.5, the half
+    // under way; 5:00 is over, and 6pm has nothing left to book.
+    for (const d of year.filter((x) => x.getDay() % 6 && x.getDay() !== 5)) {
+      const plain = evening(d);
+      const [early, late] = evening(d, { merged: 17.5 });
+      expect(late.id, d.toDateString()).toBe("beer");
+      if (plain[0].id !== "beer") expect(early.id, d.toDateString()).toBe(plain[0].id);
+      expect(evening(d, { merged: 18 }), d.toDateString()).toEqual(plain);
+    }
+    // Where 4:30 rolled a pint (weekends, walled weekdays): a morning merge
+    // still books 5:00, as does one noted at 5:00 sharp, after the 4:30 pint
+    // is over: only a pint under way covers it.
+    let pints = 0;
+    for (const d of year) {
+      const days = d.getDay() % 6 ? (d.getDay() === 5 ? [] : [{ walled: true }]) : [{}];
+      for (const day of days) {
+        if (activityAt(at(d, 16, 30), day).id !== "beer") continue;
+        pints += 1;
+        expect(activityAt(at(d, 17, 0), { ...day, merged: 9 }).id, d.toDateString()).toBe("beer");
+        expect(activityAt(at(d, 17, 0), { ...day, merged: 17 }).id, d.toDateString()).toBe("beer");
+      }
+    }
+    expect(pints).toBeGreaterThan(0);
+  });
+
   it("books the verdicts in the order they were noted", () => {
     for (const d of weekdays.filter((x) => x.getDay() !== 5)) {
       expect(evening(d, { merged: 9, furious: MORNING }).map((x) => x.id), d.toDateString()).toEqual(["beer", "run"]);
