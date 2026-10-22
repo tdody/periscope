@@ -5,6 +5,7 @@ dispatch function is `open_target`, never `open`.
 """
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -98,17 +99,41 @@ def _session_live(name: str) -> bool:
     return _tmux_mutate("has-session", "-t", name)[0]  # socket-aware; False when missing
 
 
+# How long the dir an open recorded on a window (`@periscope_opened`) stands in
+# for its live cwd. A fresh pane's pane_current_path is its foreground
+# process's, and while its shell runs its rc that can be a subshell elsewhere
+# (~/.oh-my-zsh, or ""), so a repeat open in that window missed the pair the
+# first had just made and spawned a second. Bounded because the agent window
+# outlives the agent: quit claude, cd elsewhere, start another, and a record
+# trusted forever would focus that pane on every later open of the first dir.
+_OPENED_TRUST_S = 60
+
+
+def _sits_at(w: dict, pinned_dir: str) -> bool:
+    """True if window row `w` is at `pinned_dir` (realpath): by its live cwd,
+    or, while it is fresh, by the dir the open that created it recorded."""
+    if os.path.realpath(w.get("cwd") or "") == pinned_dir:
+        return True
+    at, _, opened = (w.get("opened") or "").partition(" ")
+    return (
+        bool(opened)
+        and at.isdigit()
+        and time.time() - int(at) < _OPENED_TRUST_S
+        and os.path.realpath(opened) == pinned_dir
+    )
+
+
 def _session_owns_dir(name: str, pinned_dir: str) -> bool:
-    """True if any window of session `name` sits at `pinned_dir` (realpath)."""
-    return any(w["session"] == name and os.path.realpath(w.get("cwd") or "") == pinned_dir for w in list_windows())
+    """True if any window of session `name` sits at `pinned_dir` (`_sits_at`)."""
+    return any(w["session"] == name and _sits_at(w, pinned_dir) for w in list_windows())
 
 
 def _agent_pid_for_dir(session: str, pinned_dir: str, agent: str) -> str:
-    """The @periscope_id (pid_raw) of the claude window in `session` whose cwd
-    is `pinned_dir`. Under one shared session many claude windows coexist, so
-    a session-wide "first claude" match is wrong here — filter by realpath'd
-    cwd. Falls back to the first window at `pinned_dir`. '' if none."""
-    wins = [w for w in list_windows() if w["session"] == session and os.path.realpath(w.get("cwd") or "") == pinned_dir]
+    """The @periscope_id (pid_raw) of the claude window in `session` that sits
+    at `pinned_dir` (`_sits_at`). Under one shared session many claude windows
+    coexist, so a session-wide "first claude" match is wrong here — filter by
+    dir. Falls back to the first window at `pinned_dir`. '' if none."""
+    wins = [w for w in list_windows() if w["session"] == session and _sits_at(w, pinned_dir)]
     if not wins:
         return ""
     match = next(

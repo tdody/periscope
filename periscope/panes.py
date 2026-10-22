@@ -336,7 +336,7 @@ def list_windows() -> list[dict]:
         "list-windows",
         "-a",
         "-F",
-        "#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_path}\t#{@periscope_id}\t#{pane_id}\t#{window_activity}\t#{window_id}\t#{pane_pid}\t#{pane_current_command}",
+        "#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_path}\t#{@periscope_id}\t#{pane_id}\t#{window_activity}\t#{window_id}\t#{pane_pid}\t#{pane_current_command}\t#{@periscope_opened}",
     )
     rows = []
     for line in out.strip().split("\n"):
@@ -367,6 +367,9 @@ def list_windows() -> list[dict]:
         window_id = parts[8] if len(parts) > 8 else ""
         pane_pid = parts[9] if len(parts) > 9 else ""
         current_command = parts[10] if len(parts) > 10 else ""
+        # "<epoch> <dir>" on windows an open created (pids.stamp_new_window);
+        # open_ops trusts it over the live cwd while the pane is fresh.
+        opened = parts[11] if len(parts) > 11 else ""
         rows.append(
             {
                 "session": s,
@@ -380,6 +383,7 @@ def list_windows() -> list[dict]:
                 "window_id": window_id,
                 "pane_pid": pane_pid,
                 "current_command": current_command,
+                "opened": opened,
             }
         )
     return rows

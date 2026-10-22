@@ -57,7 +57,7 @@ def _stamp_pid(target: str, pid: str) -> None:
     tmux("set-option", "-w", "-t", target, "@periscope_id", pid)
 
 
-def stamp_new_window(target: str) -> str:
+def stamp_new_window(target: str, opened_dir: str = "") -> str:
     """Mint a fresh periscope id, stamp it onto the tmux window at `target`,
     and return it. Used by handlers that need to write `state.windows[pid]`
     fields synchronously after creating a window — without this, the pid
@@ -67,9 +67,15 @@ def stamp_new_window(target: str) -> str:
     (this function unconditionally mints + stamps), but resolve_pids will
     accept either id on the next poll. Callers should only invoke this on
     freshly-created windows.
+
+    `opened_dir` also records `@periscope_opened` ("<epoch> <dir>"): while a
+    fresh pane's shell runs its rc its live cwd reads wrong, so open_ops'
+    create-or-focus needs to know where the window was opened, and since when.
     """
     pid = _mint_pid()
     _stamp_pid(target, pid)
+    if opened_dir:
+        tmux("set-option", "-w", "-t", target, "@periscope_opened", f"{int(time.time())} {opened_dir}")
     return pid
 
 

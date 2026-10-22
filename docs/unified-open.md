@@ -31,6 +31,19 @@ Invariants worth knowing before touching it:
   *within* the shared session. cwd collides (multiple panes per dir), which the
   pre-tracks design deliberately avoided. Consequence: when a pane already owns
   the target cwd, **no window is created** — the call is a pure focus.
+- **A fresh pane's cwd lies.** `pane_current_path` is the FOREGROUND process's
+  cwd, and while a new pane's shell runs its rc that can be a subshell
+  elsewhere (oh-my-zsh's `cd $ZSH` reads as `~/.oh-my-zsh` ~60ms in, sometimes
+  as `""`). Two readers got bitten. The open's tag loop left the new shell (and
+  under load the agent pane) untagged, so `ensure_session` returns the pids it
+  created and `_open_path` tags those by pid. And create-or-focus missed the
+  pair it had just made, so a repeat open in that window (a double submit, or
+  the MCP `open` tool alongside ⌘K) spawned a second pair; `_layout_two_window`
+  now stamps `@periscope_opened` (`"<epoch> <dir>"`) next to `@periscope_id`,
+  and `_sits_at` counts it as the window's dir for `_OPENED_TRUST_S` (60s).
+  Only that long: the agent window outlives its agent (quit claude, `cd`
+  elsewhere, start another), and a record trusted forever would focus that
+  pane on every later open of the first dir.
 - **A focus that isn't visible reads as a no-op.** Because of the above, the
   client MUST select the returned `claude_pid`; `OpenOmnibox.post()` sets
   `railSelection` + `prefs.setLastSelected`. Without it, opening something
@@ -71,7 +84,7 @@ Invariants worth knowing before touching it:
   onto it. The cache stays for the 3s poll's affiliation chips.
 - **`_layout_two_window` stamps BOTH windows** (claude + shell) so the full
   pane list is known synchronously — `place_in_rail` needs it without waiting
-  for the next poll's `resolve_pids`.
+  for the next poll's `resolve_pids` — and the open tags them by those pids.
 - **The catalog is repo/worktree-scoped (v1).** `discover_repos` scans each
   `settings.repo_roots` entry one level deep (`~/dev` when unset) and unions
   the registered projects, so a repo opened once by path stays listed

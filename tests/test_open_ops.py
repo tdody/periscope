@@ -383,6 +383,39 @@ def test_open_tags_new_panes_mid_rc(tmp_git_repo, clean_state, fresh_activity_db
 
 
 @needs_tmux
+def test_repeat_open_mid_rc_focuses_instead_of_duplicating(
+    tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """Create-or-focus read the same untrustworthy cwd the tag loop did: a
+    second open (a double submit, or the MCP `open` tool alongside ⌘K) landing
+    while the first pair's shells were still in their rc saw nothing at the
+    repo and spawned another agent+shell pair."""
+    real = open_ops.list_windows
+    monkeypatch.setattr(open_ops, "list_windows", lambda: [{**w, "cwd": "/Users/x/.oh-my-zsh"} for w in real()])
+    repo = str(tmp_git_repo)
+    r1 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    r2 = open_ops.open_target(open_ops.PathTarget(path=repo))
+    assert r2.agent_pid == r1.agent_pid
+    assert len([w for w in real() if w.get("pid_raw")]) == 2  # still one agent + one shell
+
+
+def test_recorded_open_dir_counts_only_while_the_pane_is_fresh(monkeypatch):
+    """The agent window outlives its agent: quit claude, cd elsewhere, start
+    another, and a record trusted forever would focus that pane on every later
+    open of the dir it was first opened at."""
+    import time
+
+    row = {"session": "s", "name": "claude", "pid_raw": "aaaa1111", "cwd": "/elsewhere"}
+    monkeypatch.setattr(open_ops, "list_windows", lambda: [row])
+    row["opened"] = f"{int(time.time())} /repo"
+    assert open_ops._session_owns_dir("s", "/repo")
+    assert open_ops._agent_pid_for_dir("s", "/repo", "claude") == "aaaa1111"
+    row["opened"] = f"{int(time.time()) - open_ops._OPENED_TRUST_S - 5} /repo"
+    assert not open_ops._session_owns_dir("s", "/repo")
+    assert open_ops._agent_pid_for_dir("s", "/repo", "claude") == ""
+
+
+@needs_tmux
 def test_open_claims_untagged_panes_at_its_toplevel_only(
     tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server
 ):
