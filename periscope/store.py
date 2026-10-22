@@ -542,9 +542,12 @@ def get_ui() -> dict:
         return dict(_STATE.get("ui", {}))
 
 
-def update_ui(patch: dict, writer: str = "") -> None:
+def update_ui(patch: dict, writer: str = "", first_of_day: tuple[str, ...] = ()) -> None:
     """Merge `patch` into ui and persist. Keys with `None` value are removed.
-    `writer` labels the caller in the track_order change log."""
+    `writer` labels the caller in the track_order change log. `first_of_day`
+    names keys holding a local "YYYY-MM-DDTHH:MM" whose stored value stands
+    against a later one from the same day; checked under the lock, so two
+    windows writing at once can't both see the day unnoted."""
     with _STATE_LOCK:
         ui = _STATE.setdefault("ui", {})
         # Diagnostic: tracks jump to the bottom of the rail with no user action,
@@ -552,9 +555,10 @@ def update_ui(patch: dict, writer: str = "") -> None:
         if "track_order" in patch and patch["track_order"] != ui.get("track_order"):
             log.info("track_order change by %s: %s -> %s", writer or "?", ui.get("track_order"), patch["track_order"])
         for k, v in patch.items():
+            old = ui.get(k)
             if v is None:
                 ui.pop(k, None)
-            else:
+            elif not (k in first_of_day and isinstance(old, str) and old[:10] == v[:10] and old <= v):
                 ui[k] = v
         _write_state(_STATE)
 

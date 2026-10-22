@@ -47,6 +47,21 @@ describe("noteClawdDay", () => {
     expect(prefs.getClawdDay().merged).toBe("2026-10-22T09:10");
   });
 
+  it("adopts the day's first note the server kept, when another window noted it first", async () => {
+    await prefs.loadPrefs();
+    // Another window notes 17:29 after this one loaded; the server keeps the
+    // day's first (routes/prefs.py).
+    server.clawd_furious = "2026-10-21T17:29";
+    apiCall.mockImplementation(async (_label, _path, opts) => {
+      for (const [k, v] of Object.entries(JSON.parse(opts.body))) {
+        if (!(server[k]?.slice(0, 10) === v.slice(0, 10) && server[k] <= v)) server[k] = v;
+      }
+      return { ok: true, ui: { ...server } };
+    });
+    expect(await prefs.noteClawdDay("furious", "2026-10-21T17:31")).toBe(true);
+    expect(prefs.getClawdDay().furious).toBe("2026-10-21T17:29");
+  });
+
   it("loads first, so a note before the boot load can't rewrite today's", async () => {
     expect(await prefs.noteClawdDay("merged", "2026-10-21T17:40")).toBe(false);
     expect(apiCall).not.toHaveBeenCalled();

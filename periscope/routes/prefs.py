@@ -103,7 +103,10 @@ def patch_prefs_ui(body: UIPatch):
     for key in ("rail_width", "side_width"):
         if key in patch and not 100 <= patch[key] <= 4000:
             raise HTTPException(400, f"invalid {key}: {patch[key]!r}")
-    update_ui(patch, writer=writer)
+    # Every open window notes Clawd's day from its own prefs cache, loaded at
+    # boot: the day's first note stands, so one that missed it can't move the
+    # minute the evening was booked from; it adopts it from the reply.
+    update_ui(patch, writer=writer, first_of_day=("clawd_merged", "clawd_furious"))
     from periscope.store import get_ui
 
     return {"ok": True, "ui": get_ui()}
