@@ -232,11 +232,19 @@ def heal(repo: Path) -> bool:
     next reboot, silently); add one and it is declared twice. Never creates
     the file — that is install's opt-in — and never re-sources: plugins load
     at server start, the only time the list matters. True if written."""
-    conf = owned_conf()
-    if not conf.exists() or all(n == 1 for n in plugin_declarations().values()):
+    if not owned_conf().exists() or all(n == 1 for n in plugin_declarations().values()):
         return False
+    return _write_owned(repo)
+
+
+def _write_owned(repo: Path) -> bool:
+    """Regenerate the owned file from what the other conf files declare —
+    install's step and heal's, one copy. Writes only when the text differs, so
+    a count regenerating can't fix doesn't rewrite it every tick. True if
+    written."""
+    conf = owned_conf()
     text = owned_conf_text(repo, plugins_declared_elsewhere())
-    if _scan_text(conf) == text:
+    if conf.exists() and _scan_text(conf) == text:
         return False
     conf.write_text(text)
     return True
@@ -347,12 +355,9 @@ def install(repo: Path) -> list[str]:
     """Provision everything; returns the actions taken, for the verb to print.
     Raises on a failure that leaves continuation broken."""
     actions: list[str] = []
-    conf = owned_conf()
-    conf.parent.mkdir(parents=True, exist_ok=True)
-    text = owned_conf_text(repo, plugins_declared_elsewhere())
-    if not conf.exists() or _scan_text(conf) != text:
-        conf.write_text(text)
-        actions.append(f"wrote {conf}")
+    owned_conf().parent.mkdir(parents=True, exist_ok=True)
+    if _write_owned(repo):
+        actions.append(f"wrote {owned_conf()}")
     # Every install before XDG support appended source + run to ~/.tmux.conf.
     # TPM ignores that file once the XDG one exists, but tmux still executes
     # it: left there, TPM (and continuum's racing restores) ran twice. A user's

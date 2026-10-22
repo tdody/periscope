@@ -18,8 +18,6 @@ from pathlib import Path
 from periscope import config
 from periscope.log import log
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
 # Hourly. The check forks a `git fetch`, so it is not free, and a checkout
 # that is 40 commits behind does not become urgent within the hour.
 CHECK_INTERVAL_S = 3600
@@ -53,7 +51,7 @@ def _git(*args: str, timeout: float = 10.0) -> str | None:
     failed probe as 'no update information', never as an error worth raising."""
     try:
         out = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), *args],
+            ["git", "-C", str(config.REPO_ROOT), *args],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -184,7 +182,7 @@ def start() -> None:
         if _proc is not None and _proc.poll() is None:
             log.warning("killing wedged updater (pid %d)", _proc.pid)
             _proc.kill()
-        script = REPO_ROOT / "bin" / "periscope"
+        script = config.REPO_ROOT / "bin" / "periscope"
         log_path().parent.mkdir(parents=True, exist_ok=True)
         # Truncate: the log is the CURRENT run's transcript, which is what
         # status() reports back to a dashboard asking "why did that fail?".
@@ -192,7 +190,7 @@ def start() -> None:
         try:
             _proc = subprocess.Popen(
                 [str(script), "update"],
-                cwd=str(REPO_ROOT),
+                cwd=str(config.REPO_ROOT),
                 stdout=handle,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,

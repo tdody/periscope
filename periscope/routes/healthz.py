@@ -29,7 +29,7 @@ def _git_short_sha() -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=Path(__file__).resolve().parent.parent.parent,
+            cwd=config.REPO_ROOT,
             capture_output=True,
             text=True,
             timeout=2.0,
@@ -42,7 +42,6 @@ def _git_short_sha() -> str:
 
 
 _BOOT_TS = time.time()
-_REPO = Path(__file__).resolve().parent.parent.parent
 _VERSION = _git_short_sha()
 CODEX_HOOK_STALE_S = 7 * 24 * 60 * 60
 
@@ -50,7 +49,7 @@ CODEX_HOOK_STALE_S = 7 * 24 * 60 * 60
 def _codex_hook_health() -> dict:
     home = codex_home()
     hook_file = home / "hooks.json"
-    expected = command_for(Path(__file__).resolve().parent.parent.parent)
+    expected = command_for(config.REPO_ROOT)
     definitions = {event: {"present": False, "target_exists": False} for event in EVENTS}
     try:
         with hook_file.open() as stream:
@@ -124,5 +123,5 @@ def healthz():
         "uptime_s": round(time.time() - _BOOT_TS, 1),
         "version": _VERSION,
         "codex_hook": _codex_hook_health(),
-        "resurrect": resurrect_status(_REPO),
+        "resurrect": resurrect_status(config.REPO_ROOT),
     }

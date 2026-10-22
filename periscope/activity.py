@@ -974,16 +974,13 @@ def _fd_count() -> int | None:
         return None
 
 
-_REPO = Path(__file__).resolve().parent.parent
-
-
 def _heal_tmux_conf() -> None:
     """Re-derive the owned tmux conf's plugin list when the user's conf files
     moved under it (tmux_persist.heal). Prod-only like save_now: it writes the
     real ~/.config/periscope/tmux.conf with THIS checkout's hook path."""
     if not config.is_prod():
         return
-    if tmux_persist.heal(_REPO):
+    if tmux_persist.heal(config.REPO_ROOT):
         log.warning("tmux plugin declarations drifted; regenerated %s", tmux_persist.owned_conf())
 
 
