@@ -47,6 +47,13 @@ describe("openFromBanner", () => {
     openFromBanner({ target: "x:9", data: {} });
     expect(railSelection.value).toBeNull();
   });
+
+  it("reveals the target when the shell sends data as null", () => {
+    windows.value = [{ pid: "p2", target: "s:1" }];
+    railSelection.value = null;
+    openFromBanner({ target: "s:1", data: null });
+    expect(railSelection.value).toBe("pane:p2");
+  });
 });
 
 describe("enabled", () => {

@@ -48,7 +48,9 @@ export const enabled = (prefs, kind) => prefs[TOGGLE[kind] || kind] !== false;
 // A click on a banner that carries a kind (notifications.rs emits
 // periscope:notification-opened). An older shell sends only the pane target,
 // to alertFeed's onNotificationClick listener, which reveals it.
-export function openFromBanner({ target, data = {} } = {}) {
+export function openFromBanner({ target, data } = {}) {
+  // A default covers only a missing data; the shell's Info defaults it to null.
+  data ||= {};
   if (data.open === "url" && data.url) {
     openExternal(data.url);
     return;
