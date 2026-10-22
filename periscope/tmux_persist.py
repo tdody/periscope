@@ -15,8 +15,9 @@ reads (`${XDG_CONFIG_HOME:-~/.config}/tmux/tmux.conf` when it exists, else
 list lives in the owned file too. The source line goes directly above the line
 that runs TPM (directly, or by sourcing a file that does), else at the end,
 with TPM's run line after it when nothing tmux executes runs TPM. tmux itself
-executes EVERY user conf that exists, so install moves periscope's source line,
-and a verbatim TPM run line directly under it, out of the ones TPM ignores. It counts the result on its planned edits before writing any
+executes EVERY user conf that exists, so install moves periscope's source
+line, and a verbatim TPM run line directly under it, out of the ones TPM
+ignores. It counts the result on its planned edits before writing any
 (writing nothing when tmux would run TPM twice), and again after.
 
 Each plugin must be declared EXACTLY ONCE across everything TPM reads. TPM
@@ -148,10 +149,10 @@ def _source_targets(line: str) -> list[Path]:
     return [Path(p) for w in _source_words(line) for p in (sorted(glob.glob(w)) or [w])]
 
 
-Via = tuple[Path, int] | None  # the line that sourced a file TPM reads; None for a root
+_Via = tuple[Path, int] | None  # the line that sourced a file TPM reads; None for a root
 
 
-def _tpm_reads() -> list[tuple[Path, Via]]:
+def _tpm_reads() -> list[tuple[Path, _Via]]:
     """Every file TPM reads for `@plugin` (_tmux_conf_contents "full"), repeats
     included, with the line that sourced it (None for a root): /etc/tmux.conf,
     the user conf, and every file either of those sources, one level deep as
@@ -160,7 +161,7 @@ def _tpm_reads() -> list[tuple[Path, Via]]:
     source read as a literal path hid the user's continuum, and install
     declared it a second time."""
     roots = [SYSTEM_CONF, user_conf()]
-    reads: list[tuple[Path, Via]] = [(root, None) for root in roots]
+    reads: list[tuple[Path, _Via]] = [(root, None) for root in roots]
     for root in roots:
         for n, line in enumerate(_scan_text(root).splitlines(), 1):
             reads += [(f, (root, n)) for f in _source_targets(line)]
@@ -207,10 +208,10 @@ def _tmux_words(text: str) -> list[tuple[str, bool]]:
     return words
 
 
-Env = Callable[[str], str | None]
+_Env = Callable[[str], str | None]
 
 
-def _conf_env() -> Env:
+def _conf_env() -> _Env:
     """What a conf's `$VAR` expands to at the next server start, as far as
     periscope can know: its own environment (install run from a shell), else
     the running server's global one, which tmux expands from. A dashboard
@@ -227,7 +228,7 @@ def _conf_env() -> Env:
 _VAR_RE = re.compile(r"\$(?:\{([A-Za-z0-9_]+)\}|([A-Za-z0-9_]+))")
 
 
-def _expanded(word: str, env: Env) -> tuple[str, list[str]]:
+def _expanded(word: str, env: _Env) -> tuple[str, list[str]]:
     """`word` with a leading `~` and each `$VAR` expanded, and the variables
     `env` can't."""
     unknown: list[str] = []
@@ -244,7 +245,7 @@ def _expanded(word: str, env: Env) -> tuple[str, list[str]]:
 _TMUX_SOURCE_RE = re.compile(r"\s*source(-file)?\s")
 
 
-def _tmux_sources(line: str, current: Path, env: Env) -> tuple[list[Path], list[str]]:
+def _tmux_sources(line: str, current: Path, env: _Env) -> tuple[list[Path], list[str]]:
     """The files a `source-file [-Fnqv] [-t pane] path …` line makes tmux
     execute (cmd-source-file.c), and the variables naming a path that `env`
     can't expand (that path's files unknown): none with `-n` (parse only);
@@ -302,7 +303,7 @@ class _Executed(NamedTuple):
         return f"sourced by {f}:{n}" + (f" via {f0}:{n0}" if len(self.via) > 1 and (f0, n0) != (f, n) else "")
 
 
-def _executed(files: Iterable[Path], env: Env, depth: int = 0, via: tuple = ()) -> Iterator[_Executed]:
+def _executed(files: Iterable[Path], env: _Env, depth: int = 0, via: tuple = ()) -> Iterator[_Executed]:
     """Each line tmux executes from `files`, in its order: a `source-file`
     line's targets run at that line. A file is counted once per path it runs
     under, repeats included."""
@@ -314,7 +315,7 @@ def _executed(files: Iterable[Path], env: Env, depth: int = 0, via: tuple = ()) 
                 yield from _executed(targets, env, depth + 1, (*via, (f, n)))
 
 
-def _declarations(reads: Iterable[tuple[Path, Via]]) -> list[tuple[str, Path, int, Via]]:
+def _declarations(reads: Iterable[tuple[Path, _Via]]) -> list[tuple[str, Path, int, _Via]]:
     """(plugin, file, line number, via) for each `@plugin` line TPM will see
     in `reads`, repeats included."""
     return [
@@ -340,11 +341,11 @@ def plugin_declarations() -> dict[str, int]:
     return {p: counts[p] for p in REQUIRED_PLUGINS}
 
 
-def _run_scan() -> tuple[list[_Executed], list[_Executed]]:
+def _run_scan(env: _Env | None = None) -> tuple[list[_Executed], list[_Executed]]:
     """The `run … tpm/tpm` lines tmux executes at server start, in its order;
     and the `source-file` lines among what it executes whose files periscope
     can't know (_conf_env), so that count is a floor."""
-    lines = list(_executed(_tmux_roots(), _conf_env()))
+    lines = list(_executed(_tmux_roots(), env or _conf_env()))
     return [x for x in lines if _TPM_RUN_RE.match(x.text)], [x for x in lines if x.unknown]
 
 
@@ -563,7 +564,7 @@ def is_sourced(path: Path) -> bool:
     return any(_sources_owned(line) for line in _scan_text(path).splitlines())
 
 
-def _runs_tpm(line: str, current: Path, env: Env) -> bool:
+def _runs_tpm(line: str, current: Path, env: _Env) -> bool:
     """`line`, read from `current`, runs TPM — or may: it is TPM's run line, or
     a source of a file holding one, at any depth (_executed), or of files
     periscope can't know (_conf_env). Matching the conf's own lines only
@@ -592,7 +593,7 @@ def _with_source(path: Path, lines: list[str]) -> tuple[list[str], list[str]]:
     # `path`'s own run line counts too: when tmux doesn't execute `path` (a
     # server started with -f), the count stays 0 and every install appended one.
     # A file periscope can't know may hold the run line: no second one then.
-    runs, unresolved = _run_scan()
+    runs, unresolved = _run_scan(env)
     if not runs and not unresolved and not any(_runs_tpm(line, path, env) for line in lines):
         lines.append(TPM_RUN_LINE)
         added.append(TPM_RUN_LINE)
