@@ -141,10 +141,11 @@ changes. For any other critter, inside the existing `.tama-creature` group:
   covers the creature whatever it is), and the pastimes' scenes and held props
   (`Behind`, `Front`, the bass, pint, controller, watering can, spoon). The bike's
   `lift` wrapper sits outside the creature group, so it raises a critter too.
-- **Head-anchored props** — `SantaHat`, `PartyHat`, `Stars`, `Startle`, the
-  winter snowcap, a pastime's `Headwear` (helmet, toque), and `MoodDesk`'s
-  furious heat shimmer — are drawn at Clawd's
-  head (top at `Y0 = 9`). For a critter they get an extra
+- **Head-anchored props** — `SantaHat`, `PartyHat`, `Stars`, the winter
+  snowcap, a pastime's `Headwear` (helmet, toque), and `MoodDesk`'s furious
+  heat shimmer — are drawn at Clawd's
+  head (top at `Y0 = 9`; `Startle` isn't among them — a critter draws its own
+  "!" inside its own group, THI-415 part 1). For a critter they get an extra
   `translate(0, critterTop − Y0)` so they sit on its actual top (a sitting
   critter's top is ~2 units higher than Clawd's).
 - **Mood:** the critter gets `moody ? mood : "calm"`, with `moody` exactly as today
