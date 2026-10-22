@@ -201,9 +201,11 @@ def resolve_worktree_session(path: str) -> tuple[str, projects.Project] | None:
         return None
     repo = resolve_repo(toplevel)
     # The same lock as _open_path: MCP spawn_claude (workspace="new", every
-    # commander spawn) registers here too, and two first registrations of one
-    # dir both passed ensure_project's check, so the loser's insert raised
-    # "project already exists" (a 400 when the loser was ⌘K's open). Safe to
+    # commander spawn) registers here too, and a spawn and a threadpool open
+    # (⌘K's POST /api/open, /api/workspaces/spawn) of one dir both passed
+    # ensure_project's check, so the loser's insert raised "project already
+    # exists" (a 400 when the loser was the open). Two spawns can't race here:
+    # MCP handlers run one at a time on the event loop. Safe to
     # take: no caller holds a lock (spawn_claude's worktree create has dropped
     # repo_lock by now), and the body only shells out and takes _STATE_LOCK.
     with open_lock(toplevel):

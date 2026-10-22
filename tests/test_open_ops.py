@@ -262,11 +262,14 @@ def test_concurrent_first_registrations_of_a_dir_both_succeed(
 ):
     """ensure_project is check-then-insert, and create_project raises on an
     existing row. MCP spawn_claude (workspace="new", and every commander spawn)
-    registers through resolve_worktree_session, which raced ⌘K's open (and
-    another spawn) on a dir neither had registered: both saw no project, and
-    the loser died "project already exists" (a 400 from POST /api/open). Here
-    the second registration starts while the first sits between its check and
-    its insert."""
+    registers through resolve_worktree_session on the event loop, which raced a
+    threadpool open (⌘K's POST /api/open, /api/workspaces/spawn) on a dir
+    neither had registered: both saw no project, and the loser died "project
+    already exists" (a 400 when it was the open). Here the second registration
+    starts while the first sits between its check and its insert. [open] is
+    that production pairing; [spawn] runs two resolve_worktree_session calls on
+    threads, which production can't (MCP handlers run one at a time on the
+    loop), so it tests that function's lock on its own."""
     import threading
 
     repo = str(tmp_git_repo)
