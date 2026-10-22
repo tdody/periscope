@@ -87,11 +87,12 @@ describe("resizeAsk", () => {
   });
 
   it("sends a pane announced taller than the container back down to it", () => {
-    // The size handler's test. A 40-row window split to 20, the container
-    // then shrunk to 30 (the pane still fit: nothing sent). A sibling closed
-    // (or a zoom) and the pane is all 40: the xterm capped at 30, every row
-    // past it painted onto the last, the prompt hidden. Asked back to 30 —
-    // a shrink of ours below the 40 asked before, regrown if the container is.
+    // The rule the size handler applies (its call site: terminalCore.test.js).
+    // A 40-row window split to 20, the container then shrunk to 30 (the pane
+    // still fit: nothing sent). A sibling closed (or a zoom) and the pane is
+    // all 40: the xterm capped at 30, every row past it painted onto the
+    // last, the prompt hidden. Asked back to 30 — a shrink of ours below the
+    // 40 asked before, regrown if the container is.
     expect(resizeAsk({ cols: 100, rows: 30 }, sent(100, 40), 40)).toStrictEqual({ rows: 30 });
     expect(afterSend(sent(100, 40), { rows: 30 })).toEqual({ cols: 100, rows: 30, shrunkFrom: 40 });
   });
