@@ -377,6 +377,39 @@ def test_tpm_runs_counts_every_conf_tmux_loads(home, monkeypatch):
     sysconf.write_text(tp.TPM_RUN_LINE + "\n")
     monkeypatch.setattr(tp, "_live_config_files", lambda: [sysconf, home / ".tmux.conf", xdg])
     assert tp.tpm_runs() == 3
+    # The live list REPLACES tmux's default one: a server started with -f ran
+    # only that file, and a build that listed resolved paths would count twice.
+    monkeypatch.setattr(tp, "_live_config_files", lambda: [home / ".tmux.conf"])
+    assert tp.tpm_runs() == 1
+
+
+@pytest.mark.parametrize("link", ["home-to-xdg", "xdg-to-home"])
+def test_a_conf_symlinked_to_the_other_runs_once_per_path(home, monkeypatch, link):
+    # tmux 3.6a drops a repeat of the same path STRING only, so ~/.tmux.conf
+    # and the XDG conf as one file through a symlink run twice. A realpath
+    # dedupe counted 1: healthz said ok while TPM, and continuum, ran twice.
+    dot, xdg = home / ".tmux.conf", home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    target, link_path = (xdg, dot) if link == "home-to-xdg" else (dot, xdg)
+    target.write_text("set -g mouse on\n")
+    link_path.symlink_to(target)
+    _install(home, monkeypatch)
+    assert link_path.is_symlink() and tp.is_sourced(target)
+    assert tp.tpm_runs() == 2
+    _stub_live(monkeypatch, HEALTHY)
+    assert tp.status(REPO)["ok"] is False
+    # One file, not two: install never moves its lines out of it as the other.
+    assert not any(a.startswith(("wrote", "moved", "added")) for a in _install(home, monkeypatch))
+
+
+def test_a_dotfiles_symlink_runs_once(home, monkeypatch):
+    real = home / "dotfiles/tmux.conf"
+    real.parent.mkdir()
+    real.write_text("set -g mouse on\n")
+    (home / ".tmux.conf").symlink_to(real)
+    _install(home, monkeypatch)
+    assert real.read_text() == f"set -g mouse on\n{tp.source_line()}\n{tp.TPM_RUN_LINE}\n"
+    assert tp.tpm_runs() == 1
 
 
 @pytest.mark.parametrize(

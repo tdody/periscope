@@ -78,26 +78,14 @@ def user_conf() -> Path:
 
 
 def _user_confs() -> list[Path]:
-    """Every user conf tmux executes at server start, in its order: its default
-    list is ~/.tmux.conf, $XDG_CONFIG_HOME/tmux/tmux.conf, then
-    ~/.config/tmux/tmux.conf, each that exists. TPM reads just one of them."""
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    return _distinct(
-        [
-            Path.home() / ".tmux.conf",
-            *([Path(xdg) / "tmux/tmux.conf"] if xdg else []),
-            Path.home() / ".config/tmux/tmux.conf",
-        ]
-    )
-
-
-def _distinct(paths: Iterable[Path]) -> list[Path]:
-    """`paths` with later repeats of one file dropped, as tmux drops them from
-    its default list."""
-    seen: dict[str, Path] = {}
-    for p in paths:
-        seen.setdefault(os.path.realpath(p), p)
-    return list(seen.values())
+    """The user confs in tmux's default list, in its order: ~/.tmux.conf,
+    $XDG_CONFIG_HOME/tmux/tmux.conf, ~/.config/tmux/tmux.conf. tmux (3.6a)
+    drops a repeat of the same path STRING only, so one file reached by two
+    paths (~/.tmux.conf symlinked to the XDG conf) runs twice — a realpath
+    dedupe counted it once while TPM ran twice. TPM reads just one of them."""
+    home, xdg = Path.home(), os.environ.get("XDG_CONFIG_HOME")
+    paths = [f"{home}/.tmux.conf", *([f"{xdg}/tmux/tmux.conf"] if xdg else []), f"{home}/.config/tmux/tmux.conf"]
+    return [Path(p) for p in dict.fromkeys(paths)]
 
 
 def owned_conf() -> Path:
@@ -167,13 +155,21 @@ def _tpm_conf_files() -> list[Path]:
     return _with_sources([SYSTEM_CONF, user_conf()])
 
 
+def _tmux_roots() -> list[Path]:
+    """The conf files tmux loads at server start, before what they source —
+    not TPM's set: tmux runs every user conf where TPM reads one, so a run
+    line in ~/.tmux.conf next to an XDG conf ran TPM a second time that a
+    count over TPM's files never saw. The live server's `#{config_files}`
+    when one answers (the system conf tmux was built with — Homebrew's
+    /opt/homebrew/etc/tmux.conf, not TPM's /etc — or `-f`'s file), instead of
+    tmux's default list, not added to it: a `-f` server never ran the user
+    confs."""
+    return _live_config_files() or [SYSTEM_CONF, *_user_confs()]
+
+
 def _tmux_conf_files() -> list[Path]:
-    """Every file tmux EXECUTES at server start — not TPM's set: tmux runs both
-    user confs where TPM reads one, so a run line in ~/.tmux.conf next to an
-    XDG conf ran TPM a second time that a count over TPM's files never saw.
-    The live server's list adds the system conf tmux was built with
-    (Homebrew's /opt/homebrew/etc/tmux.conf, not TPM's /etc)."""
-    return _with_sources(_distinct([SYSTEM_CONF, *_live_config_files(), *_user_confs()]))
+    """Every file tmux EXECUTES at server start."""
+    return _with_sources(_tmux_roots())
 
 
 def _declarations(files: Iterable[Path]) -> list[tuple[str, Path]]:
