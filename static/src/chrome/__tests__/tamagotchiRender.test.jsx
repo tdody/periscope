@@ -100,6 +100,16 @@ describe("pastimes and meals", () => {
     expect(render(<TamaScene activity="cook" occasion="yearend" />)).not.toContain("tama-toque");
   });
 
+  it("keeps the oven's and the fire's glow faint with the motion off", () => {
+    // Under prefers-reduced-motion the keyframes that fade the glow stop, so
+    // the attribute is all that keeps it from a solid bright bar.
+    for (const id of ["cook", "read"]) {
+      const glows = [...render(<TamaScene activity={id} />).matchAll(/<[^>]*class="tama-glow"[^>]*>/g)];
+      expect(glows.length, id).toBeGreaterThan(0);
+      for (const [tag] of glows) expect(tag, id).toMatch(/ opacity="0\.\d+"/);
+    }
+  });
+
   it("walks the dog on a leash, both of them striding", () => {
     const html = render(<TamaScene activity="dog" />);
     expect(html).toContain("tama-dog");

@@ -338,7 +338,8 @@ export function Stove() {
         {[23, 25, 29.8, 31.8].map((x) => <circle key={x} cx={x} cy="13.6" r="0.35" />)}
       </g>
       <rect x="22.4" y="14.8" width="10" height="2.8" rx="0.3" fill="#2b2f36" />
-      <rect class="tama-glow" x="23" y="15.4" width="8.8" height="1.6" fill="#ef8a2c" />
+      {/* The opacity is the glow with the motion off; the keyframes override it. */}
+      <rect class="tama-glow" x="23" y="15.4" width="8.8" height="1.6" fill="#ef8a2c" opacity="0.18" />
       <rect x="21.6" y="9.4" width="4.8" height="2.8" rx="0.3" fill="#8a93a1" />
       <rect x="21" y="9.8" width="0.6" height="0.4" fill="#5a6472" />
       <rect x="26.4" y="9.8" width="0.6" height="0.4" fill="#5a6472" />
