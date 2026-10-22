@@ -111,6 +111,27 @@ def test_tama_critters_match_the_generated_sprites():
     assert ("clawd", *build_critters.CRITTERS) == TAMA_CRITTERS
 
 
+def test_patch_prefs_ui_notify_round_trips(client, clean_state):
+    prefs = {
+        "needs_input": True,
+        "done": False,
+        "ci_failed": True,
+        "pr_merged": True,
+        "usage": False,
+        "quiet_when_focused": True,
+        "group": True,
+        "badge": False,
+    }
+    r = client.patch("/api/prefs/ui", json={"notify": prefs})
+    assert r.status_code == 200
+    assert r.json()["ui"]["notify"] == prefs
+
+
+def test_patch_prefs_ui_notify_rejects_a_non_bool(client, clean_state):
+    r = client.patch("/api/prefs/ui", json={"notify": {"done": "sometimes"}})
+    assert r.status_code == 422
+
+
 def test_put_window_annotation(client, clean_state):
     r = client.put("/api/prefs/windows/abc123", json={"notes": "hi", "tags": ["a", "b", "a"]})
     assert r.status_code == 200

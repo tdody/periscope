@@ -42,6 +42,21 @@ def get_prefs():
     return snapshot()
 
 
+class NotifyPrefs(BaseModel):
+    """Settings → Notifications: which native macOS banners fire (the Tauri
+    shell only). Every field optional; the client always sends the whole set,
+    because update_ui merges only top-level keys."""
+
+    needs_input: bool | None = None
+    done: bool | None = None
+    ci_failed: bool | None = None
+    pr_merged: bool | None = None
+    usage: bool | None = None
+    quiet_when_focused: bool | None = None
+    group: bool | None = None
+    badge: bool | None = None
+
+
 class UIPatch(BaseModel):
     session_order: list[str] | None = None
     collapsed_sessions: list[str] | None = None
@@ -87,6 +102,8 @@ class UIPatch(BaseModel):
     # Settings → Tamagotchi: one of TAMA_CRITTERS. Declared, or Pydantic drops
     # it and the client's optimistic pick reverts on the echo.
     tama_critter: str | None = None
+    # Settings → Notifications (NotifyPrefs). Declared for the same reason.
+    notify: NotifyPrefs | None = None
     # Diagnostic label for the track_order change log (which client path wrote
     # it, and what it saw); never persisted.
     writer: str | None = None
