@@ -688,6 +688,75 @@ describe("critters", () => {
   });
 });
 
+describe("critter faces follow Clawd's in every scene", () => {
+  // Clawd's face chain (TamaDuty.jsx: HappyEyes/XEyes/Worried/LookDown/Startle)
+  // and critterFace (Tamagotchi.jsx's pose logic, drawn by Critter.jsx's
+  // faceGlyphs) decide the same thing twice, from the same scene inputs.
+  // Nothing ties them together, so a change to one chain without the other
+  // would silently desync a critter from Clawd. This walks the full matrix
+  // and checks they agree on every scene, scene by scene.
+
+  // Each marker is unique to its component's markup (TamaDuty.jsx) and
+  // doesn't collide with another face or with a critter's own faceGlyphs
+  // markup (different units, different shapes).
+  const clawdFace = (html) => {
+    if (html.includes('class="tama-happy-eyes"')) return "happy";
+    if (/l1\.2 1\.5 M/.test(html)) return "x";
+    if (/<g fill="none" stroke="[^"]+" stroke-width="0\.4"><path/.test(html)) return "worried";
+    if (/<g fill="[^"]+"><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><\/g>/.test(html)) return "down";
+    return null;
+  };
+  const critterFace = (html) => (html.match(/<g class="critter"(?: data-face="(\w+)")?/) || [])[1] ?? null;
+
+  it("matches Clawd's face and startle on every activity × duty × mood × occasion × trick × party", () => {
+    const scope = critterById("scope");
+    const KINDS = [null, "bell", "done", "merged", "ci", "api", "ctx", "update"];
+    const mismatches = [];
+    const faceCounts = {};
+    let startleCount = 0;
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of KINDS) {
+        for (const mood of ["calm", "grumpy", "furious"]) {
+          for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+            for (const trick of [false, true]) {
+              for (const party of [false, true]) {
+                const props = {
+                  activity, mood, occasion, trick, party, working: 2,
+                  duty: kind && { kind, label: "1", more: 0 },
+                  walled: activity === "nap" ? { day: null, time: "3pm" } : null,
+                };
+                const clawd = render(<TamaScene {...props} />);
+                const critter = render(<TamaScene {...props} critter={scope} />);
+                const cFace = clawdFace(clawd);
+                const cStartle = clawd.includes("tama-startle");
+                const sFace = critterFace(critter);
+                const sStartle = critter.includes("tama-startle");
+                n += 1;
+                faceCounts[String(cFace)] = (faceCounts[String(cFace)] || 0) + 1;
+                if (cStartle) startleCount += 1;
+                if (cFace !== sFace || cStartle !== sStartle) {
+                  mismatches.push({ activity, kind, mood, occasion, trick, party, clawd: [cFace, cStartle], critter: [sFace, sStartle] });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (mismatches.length) {
+      throw new Error(
+        `${mismatches.length}/${n} scenes disagree (first 5):\n${mismatches.slice(0, 5).map((m) => JSON.stringify(m)).join("\n")}`,
+      );
+    }
+    // The matrix only proves something if it actually exercises every face.
+    for (const face of ["happy", "x", "worried", "down"]) {
+      expect(faceCounts[face], face).toBeGreaterThan(0);
+    }
+    expect(startleCount).toBeGreaterThan(0);
+  });
+});
+
 describe("critters at their pastimes", () => {
   const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
   const nox = critterById("nox");
