@@ -59,8 +59,12 @@ describe("hintDims", () => {
     expect(hintDims({ pinnedCols: 200, fitRows: 62, termCols: 100, termRows: 32 })).toEqual({ cols: 200, rows: 62 });
   });
 
-  it("falls back to the xterm's dims before a fit has measured the container", () => {
-    expect(hintDims({ pinnedCols: 0, fitRows: 0, termCols: 80, termRows: 24 })).toEqual({ cols: 80, rows: 24 });
+  it("sends no hint before a fit has measured the container, never the xterm's dims", () => {
+    // Regression: a left/right split viewed only in transcript mode since page
+    // load — nothing measured, the xterm at the pane's 100 cols. Hinted on a
+    // reconnect, those resized the 200-col window to 100, then 50 on the next.
+    // 0 makes connectTerminalWs omit the hint, and tmux's view stands.
+    expect(hintDims({ pinnedCols: 0, fitRows: 0, termCols: 100, termRows: 32 })).toEqual({ cols: 0, rows: 0 });
   });
 });
 

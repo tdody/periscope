@@ -157,9 +157,9 @@ export function xtermDims(knownPaneCols, knownPaneRows, containerCols, container
 // (the pinned width, the fitted rows), never the xterm's. Those are the pane's,
 // a slice of the window on a split, and resize-window applies the hint to the
 // whole window: echoing them back shrank a split window on every reconnect.
-// The xterm's dims stand in only until a fit has measured the container.
-export function hintDims({ pinnedCols, fitRows, termCols, termRows }) {
-  return { cols: pinnedCols || termCols, rows: fitRows || termRows };
+// Nothing measured yet (a pane only ever shown hidden): 0, no hint at all.
+export function hintDims({ pinnedCols, fitRows }) {
+  return { cols: pinnedCols, rows: fitRows };
 }
 
 // Pure: whether a fit's ask (hintDims) must go to tmux. A width change always;
@@ -705,8 +705,7 @@ export function startLiveTerminal(target) {
   // the handshake's size message.
   measureContainer();
   syncXtermSize();
-  const initialCols = pinnedCols;
-  const initialRows = fitRows;
+  const hint = hintDims({ pinnedCols, fitRows });
 
   // ResizeObserver: refit + tell tmux when the modal/window changes size.
   // Debounced so a window-drag doesn't spam tmux with subprocess calls.
@@ -725,8 +724,8 @@ export function startLiveTerminal(target) {
   // Seed the "last sent" memo with the dims we're about to give the server
   // via the WS query params. Without this, the first ResizeObserver fire
   // would send a redundant resize message.
-  lastSentCols = initialCols;
-  connectTerminalWs(target, initialCols, initialRows);
+  lastSentCols = hint.cols;
+  connectTerminalWs(target, hint.cols, hint.rows);
 }
 
 function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
@@ -799,7 +798,7 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
       // Re-send current dims so the reconnected server resizes tmux before
       // its initial paint — same reasoning as the first connect. The
       // container's, not term's: those are the pane's (hintDims).
-      const hint = hintDims({ pinnedCols, fitRows, termCols: term.cols, termRows: term.rows });
+      const hint = hintDims({ pinnedCols, fitRows });
       connectTerminalWs(target, hint.cols, hint.rows);
     }, delay);
   };
@@ -843,7 +842,7 @@ function scheduleFit() {
     // on release — holdTerminalFit.)
     // Compared and sent as the container's dims (hintDims): term.cols is the
     // pane's, which on a left/right split never equals what we last sent.
-    const ask = hintDims({ pinnedCols, fitRows, termCols: term.cols, termRows: term.rows });
+    const ask = hintDims({ pinnedCols, fitRows });
     if (!resizeNeeded(ask, lastSentCols, paneRows)) return;
     if (termWs && termWs.readyState === WebSocket.OPEN) {
       lastSentCols = ask.cols;
