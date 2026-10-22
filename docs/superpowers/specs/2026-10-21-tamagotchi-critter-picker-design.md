@@ -253,3 +253,51 @@ SVG's name.
   closed, and stop moving under reduced motion.
 - A default install still shows Clawd.
 - `npm run build` + `static/dist/` committed; `bin/check` clean.
+
+## Follow-ups
+
+### Critters as expressive as Clawd
+
+Today a critter stands in Clawd's spot with its own three mood layers and shut
+eyes, and every *scene* prop stays. But everything drawn on Clawd's *body* is
+either dropped or still positioned for Clawd. Clawd has far more range than a
+critter. To match it:
+
+- **Duty poses.** Clawd acts out what it's on duty for. A critter shows calm for
+  all of them. Each pose needs a critter equivalent:
+  - `HappyEyes` for done, merged, and the smiling pastimes;
+  - `XEyes` for API errors;
+  - `Worried` brows for context;
+  - `LookDown` for an update;
+  - `Startle` for the bell (currently drawn at Clawd's right edge, not the
+    critter's).
+- **Arms and hands.** The desk scenes animate Clawd's skin-coloured hands:
+  - typing and key clacks while coding (`MoodFace`);
+  - `ArmsUp` when celebrating;
+  - `SlapHand` on the service bell.
+
+  None of these exist for critters.
+- **Activity and motion.** Clawd's legs stride on the run and the bike (`legs-a`
+  / `legs-b`). A critter only bobs with the creature group. Furious Clawd adds a
+  flush and a scowl on top of the mood; a critter has only its furious layer.
+- **Worn pastime props.** `Goggles` (swim) and `Scarf` (sled) are dropped for
+  critters, because they sit on Clawd's eyes and neck.
+- **Held pastime props** (bass, pint, controller, watering can, spoon) are drawn
+  at Clawd's hand position, so on a narrower critter they float beside it.
+- **Hats** (Santa, party, helmet, toque, the snowcap) are lifted to the critter's
+  head height but keep Clawd's 12-unit width and x position, so they don't fit
+  narrow or off-centre heads.
+
+**Likely approach:** give each critter *anchors* in its sprite data (head top and
+width, eye boxes, hand points). Author the face kinds as extra SVG layers, e.g.
+`class="face-happy"`, `face-x`, `face-worried`, the same way the mood layers are
+done today. Teach `build_critters.py` to read both. Then:
+- the anatomy overlays read the anchors instead of Clawd's `x0` constants;
+- `Critter` renders the face layer for the current pose;
+- hats and held props are positioned from the anchors.
+
+**Constraints:**
+- Clawd's rendering must stay byte-identical. Keep the 6,528-combination
+  render-matrix check.
+- A new critter still needs only its SVG, a line in each id list, and now its
+  anchors.
