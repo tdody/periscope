@@ -2597,31 +2597,6 @@ body.col-resizing iframe { pointer-events: none; }
    (flex-basis 100% forces the wrap in the flex-wrap header). */
 .detail-pane-header .header-status { flex-basis: 100%; color: var(--fg-3); }
 
-/* Auto-rename button inline at the left of the detail-pane-header, before
-   the session name. Mirrors the modal-title-rename behavior (POST
-   /api/auto-rename-window then let the next /api/state poll surface the new
-   window name in the rail). */
-.detail-pane-header .header-rename {
-  align-self: center;
-  padding: 0 4px;
-  font-size: 13px;
-  line-height: 1;
-  background: transparent;
-  border: none;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.12s, background 0.12s;
-}
-.detail-pane-header .header-rename:hover:not(:disabled) {
-  opacity: 1;
-  background: var(--bg-1);
-}
-.detail-pane-header .header-rename:disabled,
-.detail-pane-header .header-rename.busy {
-  cursor: progress;
-  animation: modal-rename-pulse 1.1s ease-in-out infinite;
-}
 .side-section { margin-bottom: 10px; }
 .side-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; opacity: .5; margin-bottom: 3px; }
 .side-mono { font-family: var(--mono); font-size: 11px; opacity: .85; }
