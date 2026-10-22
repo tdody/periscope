@@ -516,7 +516,7 @@ function MoodFace({ x0, mood }) {
 // Furious only, and only what has to draw over Clawd and the desk: flying
 // keys, smoke off the keyboard, heat shimmer, the spilling mug. (The screens
 // are CodeScreen's, inside the desk.)
-function MoodDesk({ mood, x0, coffee, hat }) {
+function MoodDesk({ mood, x0, coffee, hat, headDy }) {
   if (mood !== "furious") return null;
   return (
     <g>
@@ -530,12 +530,17 @@ function MoodDesk({ mood, x0, coffee, hat }) {
         <circle class="tama-smoke tama-smoke2" cx="23.4" cy="12.2" r="0.45" />
       </g>
       {!hat && (
-        <g class="tama-shimmer" fill="none" stroke="#ff8a5c" stroke-width="0.3" opacity="0.8" shape-rendering="geometricPrecision">
-          {[6, 9, 12].map((dx, i) => (
-            <path key={dx} class={i === 1 ? "tama-shimmer2" : undefined}
-                  d={`M${x0 + dx} ${i === 1 ? 7.2 : 7.6} q0.5 -0.7 0 -1.4 q-0.5 -0.7 0 -1.4`} />
-          ))}
-        </g>
+        // Rises off the head (Clawd's top is Y0=9); a seated critter's head
+        // top is higher, so the shimmer rides it up through Head instead of
+        // starting inside the critter's head.
+        <Head dy={headDy}>
+          <g class="tama-shimmer" fill="none" stroke="#ff8a5c" stroke-width="0.3" opacity="0.8" shape-rendering="geometricPrecision">
+            {[6, 9, 12].map((dx, i) => (
+              <path key={dx} class={i === 1 ? "tama-shimmer2" : undefined}
+                    d={`M${x0 + dx} ${i === 1 ? 7.2 : 7.6} q0.5 -0.7 0 -1.4 q-0.5 -0.7 0 -1.4`} />
+            ))}
+          </g>
+        </Head>
       )}
       {coffee && (
         <g class="tama-spill" fill="#7a4e2d" shape-rendering="geometricPrecision">
@@ -648,7 +653,11 @@ export function TamaScene({
         {sprite ? (
           // Placement is an attribute on a wrapper no animation targets: a CSS
           // transform (the creature's bob, shake, hop) would override it.
-          <g class="tama-critter" transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
+          // transform-box: view-box overrides styles.css's `.tama g { transform-box:
+          // fill-box }`, which would otherwise pivot scale() around this group's
+          // own (mood- and animation-dependent) bounding box instead of 0,0.
+          <g class="tama-critter" style="transform-box: view-box"
+             transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} />
           </g>
         ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
@@ -679,7 +688,7 @@ export function TamaScene({
       {activity === "nap" && !ringing && <DeskZs />}
       {ringing && activity === "sleep" && <AlarmClock />}
       {celebrating && <Sparkles />}
-      {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} />}
+      {moody && <MoodDesk mood={mood} x0={x0} coffee={coffee} hat={hat} headDy={headDy} />}
       {(occasion === "newyear" || fullParty) && <Confetti />}
       {duty && <Bubble kind={kind} label={duty.label} urgent={duty.urgent} more={duty.more} x0={x0} />}
       {petted && (

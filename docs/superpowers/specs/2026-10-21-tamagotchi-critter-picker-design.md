@@ -119,7 +119,10 @@ changes. For any other critter, inside the existing `.tama-creature` group:
   animation targets.** A CSS `transform` (the creature's bob, shake, hop)
   overrides a `transform` attribute on the same element — the trap the heart's
   comment at `Tamagotchi.jsx:640` records. The creature group animates; the
-  wrapper inside it doesn't.
+  wrapper inside it doesn't. The wrapper also sets `transform-box: view-box`,
+  because `styles.css`'s `.tama g { transform-box: fill-box }` would otherwise
+  pivot the `scale()` around the group's own bounding box, which shifts with
+  its mood and animated children.
 - **Replaced for critters:** Clawd's body and leg `Cells`, and the overlays drawn
   for Clawd's body only — `Eyes`, `MoodFace` (brows, flush, scowl,
   skin-coloured typing hands and key clacks), `HappyEyes`, `XEyes`, `LookDown`,
@@ -131,9 +134,10 @@ changes. For any other critter, inside the existing `.tama-creature` group:
   shimmer, spill), the bubble, the heart, `GhostSheet` + `Pail` (the sheet
   covers the creature whatever it is).
 - **Head-anchored props** — `SantaHat`, `PartyHat`, `Stars`, `Startle`, the
-  winter snowcap — are drawn at Clawd's head (top at `Y0 = 9`). For a critter
-  they get an extra `translate(0, critterTop − Y0)` so they sit on its actual
-  top (a sitting critter's top is ~2 units higher than Clawd's).
+  winter snowcap, and `MoodDesk`'s furious heat shimmer — are drawn at Clawd's
+  head (top at `Y0 = 9`). For a critter they get an extra
+  `translate(0, critterTop − Y0)` so they sit on its actual top (a sitting
+  critter's top is ~2 units higher than Clawd's).
 - **Mood:** `shownMood = moody ? mood : "calm"`, with `moody` exactly as today
   (`view.moodShown && MOODS[mood].rank > 0`) — a critter shows grumpy / furious
   in the same moments Clawd does. Celebrating, API-error and other duty poses
