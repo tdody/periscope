@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use block2::{DynBlock, RcBlock};
 use objc2::rc::{autoreleasepool, Retained};
-use objc2::runtime::{Bool, ProtocolObject};
+use objc2::runtime::{AnyObject, Bool, ProtocolObject};
 use objc2::{define_class, msg_send, AnyThread, DefinedClass};
 use objc2_foundation::{NSDictionary, NSError, NSObject, NSObjectProtocol, NSString};
 use objc2_user_notifications::{
@@ -51,25 +51,38 @@ const INFO_KEY: &str = "periscope";
 static SEQ: AtomicUsize = AtomicUsize::new(0);
 
 /// Whether the dashboard window has focus, kept by main.rs's window events.
-/// will_present reads this rather than asking the window: it runs on the main
-/// thread, where a synchronous window query can deadlock.
+/// will_present runs on a thread UNUserNotificationCenter chooses, and only
+/// while the app is frontmost; an atomic kept from window events answers
+/// without a round trip to the main thread.
 static FOCUSED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_focused(focused: bool) {
     FOCUSED.store(focused, Ordering::Relaxed);
 }
 
+/// `#[serde(default)]` alone only covers a *missing* field — `"subtitle":
+/// null` still deserializes to `None`/unit and fails the `String` field,
+/// dropping the whole banner. This shell outlives the JS it talks to, so a
+/// null from an older or newer webview must still parse. Missing keeps using
+/// `default` (the empty string); present-but-null is mapped here.
+fn null_to_default<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(<Option<String> as serde::Deserialize>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(serde::Deserialize, Debug)]
 struct NotifyRequest {
     title: String,
     body: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     target: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     subtitle: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     thread: String,
     #[serde(default)]
     data: serde_json::Value,
@@ -99,11 +112,33 @@ fn info_json(req: &NotifyRequest) -> String {
         data: req.data.clone(),
         quiet_when_focused: req.quiet_when_focused,
     })
-    .unwrap_or_default()
+    .expect("Info always serializes")
 }
 
 fn parse_info(json: &str) -> Option<Info> {
-    serde_json::from_str::<Info>(json).ok().filter(|i| !i.kind.is_empty())
+    serde_json::from_str::<Info>(json)
+        .ok()
+        .filter(|i| !i.kind.is_empty())
+}
+
+/// `send()`'s userInfo: `None` for a plain banner (no `kind`), which keeps an
+/// old webview's click on the legacy `CLICK_EVENT` with just the target;
+/// `Some` for a kinded banner, which rides `OPENED_EVENT` instead.
+fn user_info_json(req: &NotifyRequest) -> Option<String> {
+    if req.kind.is_empty() {
+        None
+    } else {
+        Some(info_json(req))
+    }
+}
+
+/// The pane target out of a notification identifier (`ID_PREFIX + seq + "|" +
+/// target`), keeping any '|' inside the target itself. `None` for an id this
+/// shell never minted.
+fn target_from_id(id: &str) -> Option<&str> {
+    id.strip_prefix(ID_PREFIX)
+        .and_then(|rest| rest.split_once('|'))
+        .map(|(_seq, target)| target)
 }
 
 /// Banner and sound, unless the banner asked to stay quiet while the dashboard
@@ -113,7 +148,9 @@ fn should_present(quiet_when_focused: bool, focused: bool) -> bool {
 }
 
 fn info_of(content: &UNNotificationContent) -> Option<Info> {
-    let value = content.userInfo().objectForKey(&NSString::from_str(INFO_KEY))?;
+    let value = content
+        .userInfo()
+        .objectForKey(&NSString::from_str(INFO_KEY))?;
     parse_info(&value.downcast::<NSString>().ok()?.to_string())
 }
 
@@ -144,16 +181,14 @@ define_class!(
                 if response.actionIdentifier().isEqualToString(default) {
                     let _ = self.ivars().app.emit(
                         OPENED_EVENT,
-                        serde_json::json!({ "target": info.target, "kind": info.kind, "data": info.data }),
+                        serde_json::json!({
+                            "target": info.target, "kind": info.kind, "data": info.data
+                        }),
                     );
                 }
             } else {
                 let id = request.identifier().to_string();
-                if let Some(target) = id
-                    .strip_prefix(ID_PREFIX)
-                    .and_then(|rest| rest.split_once('|'))
-                    .map(|(_seq, target)| target)
-                {
+                if let Some(target) = target_from_id(&id) {
                     let _ = self.ivars().app.emit(CLICK_EVENT, target);
                 }
             }
@@ -169,7 +204,8 @@ define_class!(
             notification: &UNNotification,
             completion_handler: &DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
         ) {
-            let quiet = info_of(&notification.request().content()).is_some_and(|i| i.quiet_when_focused);
+            let quiet =
+                info_of(&notification.request().content()).is_some_and(|i| i.quiet_when_focused);
             let options = if should_present(quiet, FOCUSED.load(Ordering::Relaxed)) {
                 UNNotificationPresentationOptions::Banner | UNNotificationPresentationOptions::Sound
             } else {
@@ -202,7 +238,7 @@ pub fn init(app: &AppHandle) {
 
     let auth = RcBlock::new(|granted: Bool, _err: *mut NSError| {
         if !granted.as_bool() {
-            eprintln!("periscope: notification permission not granted");
+            crate::recycle::shell_log("periscope: notification permission not granted");
         }
     });
     center.requestAuthorizationWithOptions_completionHandler(
@@ -212,7 +248,7 @@ pub fn init(app: &AppHandle) {
 
     app.listen(NOTIFY_EVENT, |event| match parse_request(event.payload()) {
         Ok(req) => send(&req),
-        Err(e) => eprintln!("periscope: bad notify payload: {e}"),
+        Err(e) => crate::recycle::shell_log(&format!("periscope: bad notify payload: {e}")),
     });
 }
 
@@ -230,12 +266,12 @@ fn send(req: &NotifyRequest) {
         if !req.thread.is_empty() {
             content.setThreadIdentifier(&NSString::from_str(&req.thread));
         }
-        if !req.kind.is_empty() {
+        if let Some(json) = user_info_json(req) {
             let key = NSString::from_str(INFO_KEY);
-            let value = NSString::from_str(&info_json(req));
+            let value = NSString::from_str(&json);
             let info = NSDictionary::from_slices(&[&*key], &[&*value]);
             // userInfo is an untyped NSDictionary; ours holds one string under one string key.
-            unsafe { content.setUserInfo(&Retained::cast_unchecked::<NSDictionary>(info)) };
+            unsafe { content.setUserInfo(info.cast_unchecked::<AnyObject, AnyObject>()) };
         }
 
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
@@ -245,7 +281,7 @@ fn send(req: &NotifyRequest) {
 
         let done = RcBlock::new(|err: *mut NSError| {
             if !err.is_null() {
-                eprintln!("periscope: notification delivery failed");
+                crate::recycle::shell_log("periscope: notification delivery failed");
             }
         });
         center.addNotificationRequest_withCompletionHandler(&request, Some(&done));
@@ -312,5 +348,67 @@ mod tests {
         assert!(should_present(false, true));
         assert!(should_present(true, false));
         assert!(!should_present(true, true));
+    }
+
+    #[test]
+    fn tolerates_null_for_fields_that_default_to_empty() {
+        // `#[serde(default)]` alone only covers a missing field — an explicit
+        // null (an older or newer webview sending one) must not drop the banner.
+        let req = parse_request(
+            r#"{"title":"t","body":"b","target":null,"subtitle":null,"kind":null,"thread":null}"#,
+        )
+        .unwrap();
+        assert_eq!(req.target, "");
+        assert_eq!(req.kind, "");
+        assert_eq!(req.subtitle, "");
+        assert_eq!(req.thread, "");
+    }
+
+    #[test]
+    fn parses_a_banner_with_fields_this_shell_does_not_know() {
+        // The forward-compatibility half of the version-skew contract: a newer
+        // webview's 2b fields (reply, actions) must not fail an older shell.
+        let req = parse_request(
+            r#"{"title":"t","body":"b","target":"s:1",
+                "reply":true,"actions":[{"id":"allow","title":"Allow"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(req.target, "s:1");
+    }
+
+    #[test]
+    fn parse_info_defaults_missing_data_and_quiet_when_focused() {
+        let info = parse_info(r#"{"target":"s:1","kind":"done"}"#).unwrap();
+        assert_eq!(info.data, serde_json::Value::Null);
+        assert!(!info.quiet_when_focused);
+    }
+
+    #[test]
+    fn user_info_json_is_none_without_a_kind() {
+        let req = parse_request(r#"{"title":"t","body":"b","target":"s:1"}"#).unwrap();
+        assert!(user_info_json(&req).is_none());
+    }
+
+    #[test]
+    fn user_info_json_carries_the_info_with_a_kind() {
+        let req = parse_request(FULL).unwrap();
+        let info = parse_info(&user_info_json(&req).unwrap()).unwrap();
+        assert_eq!(info.kind, "ci_failed");
+    }
+
+    #[test]
+    fn target_from_id_keeps_a_pipe_inside_the_target() {
+        assert_eq!(
+            target_from_id("periscope-route|3|s:1|extra"),
+            Some("s:1|extra")
+        );
+    }
+
+    #[test]
+    fn target_from_id_rejects_a_foreign_id() {
+        assert_eq!(
+            target_from_id("com.apple.UNNotificationDefaultActionIdentifier"),
+            None
+        );
     }
 }

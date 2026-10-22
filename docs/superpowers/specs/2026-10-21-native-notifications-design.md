@@ -37,10 +37,11 @@ where those disagree. The plan is `docs/superpowers/plans/2026-10-22-native-noti
 
   So an old webview never receives a payload shape it can't read, and a new
   webview still reveals the pane from an old shell's click.
-- **Focus.** `will_present` reads an atomic that `main.rs`'s
-  `on_window_event(Focused)` keeps; it doesn't call `is_focused()`. That
-  callback runs on the main thread, where a synchronous window query can
-  deadlock.
+- **Focus.** `will_present` reads an atomic that `main.rs`'s `on_window_event`
+  keeps, rather than calling `is_focused()`: `will_present` runs on a thread
+  UNUserNotificationCenter chooses, and only while the app is frontmost, so an
+  atomic kept from window events answers without a round trip to the main
+  thread.
 - **Modules.** The JS lives in `static/src/notify/`:
   - `detect.js`: the pure what's-news rules (`detect(prev, snapshot, nowSec)`);
   - `copy.js`: the banner text;

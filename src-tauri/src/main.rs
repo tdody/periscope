@@ -131,13 +131,20 @@ fn main() {
                 _ => {}
             }
         })
-        // will_present can't ask the window whether it's focused from the
-        // main thread, so the focus is kept here for it.
+        // will_present runs on a thread UNUserNotificationCenter chooses, and
+        // only while the app is frontmost; an atomic kept from window events
+        // answers without a round trip to the main thread. A webview recycle
+        // destroys the focused window without a Focused(false) first — tao's
+        // windowWillClose drops its delegate before that fires — so Destroyed
+        // resets it too.
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Focused(focused) = event {
-                if window.label() == "main" {
-                    notifications::set_focused(*focused);
-                }
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::Focused(focused) => notifications::set_focused(*focused),
+                tauri::WindowEvent::Destroyed => notifications::set_focused(false),
+                _ => {}
             }
         })
         .build(tauri::generate_context!())

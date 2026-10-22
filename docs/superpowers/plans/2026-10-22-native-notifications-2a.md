@@ -2286,7 +2286,7 @@ index 5cd35fc..7bfe84b 100644
          .run(|_app, event| {
 ```
 
-- [ ] **Step 3: Build and test.** Run `cd src-tauri && cargo test`. The first build is cold and takes a few minutes. Expected: `10 passed`. The six new tests are `parses_an_older_webviews_banner`, `parses_a_full_banner`, `rejects_a_banner_without_a_title`, `keeps_what_a_click_needs_in_user_info`, `treats_user_info_without_a_kind_as_a_plain_banner` and `stays_quiet_only_when_asked_and_focused`. Then run `cargo build` (expect no warnings) and `cargo fmt --check -- src/notifications.rs`. `main.rs` has existing `rustfmt` diffs; leave them.
+- [ ] **Step 3: Build and test.** Run `cd src-tauri && cargo test`. The first build is cold and takes a few minutes. Expected: `10 passed`. The six new tests are `parses_an_older_webviews_banner`, `parses_a_full_banner`, `rejects_a_banner_without_a_title`, `keeps_what_a_click_needs_in_user_info`, `treats_user_info_without_a_kind_as_a_plain_banner` and `stays_quiet_only_when_asked_and_focused`. Then run `cargo build` (expect no warnings) and `rustfmt --check --edition 2021 src/notifications.rs`. `main.rs` has existing `rustfmt` diffs; leave them.
 
 - [ ] **Step 4: Commit:** `shell: banners carry subtitle, thread and what a click opens (userInfo); kinded clicks go out on notification-opened, plain ones as before; quiet while the dashboard is focused`.
 
