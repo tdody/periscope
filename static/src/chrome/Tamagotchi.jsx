@@ -633,6 +633,15 @@ export function TamaScene({
     : pose === "update" ? <LookDown x0={x0} />
     : !pose && p?.smile ? <HappyEyes x0={x0} />
     : <Eyes x0={x0} />;
+  // A critter's duty face (Critter.jsx draws it over its eyes): Clawd's rules
+  // above, with the moods left to the critter's own layers.
+  const critterFace = !sprite || ghost || asleep || moody ? null
+    : celebrating ? "happy"
+    : pose === "api" ? "x"
+    : pose === "update" ? "down"
+    : pose === "ctx" ? "worried"
+    : !pose && p?.smile ? "happy"
+    : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -658,7 +667,8 @@ export function TamaScene({
           // own (mood- and animation-dependent) bounding box instead of 0,0.
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
-            <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} />
+            <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
+                     startle={pose === "bell" && !deskBell} />
           </g>
         ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
@@ -669,7 +679,7 @@ export function TamaScene({
         {!sprite && atDesk && celebrating && <ArmsUp x0={x0} />}
         {atDesk && pose === "ci" && <Extinguisher />}
         {!sprite && deskBell && <SlapHand />}
-        <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>
+        {!sprite && <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>}
         {!sprite && !sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {!sprite && p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && p?.pail && <Pail x0={x0} />}

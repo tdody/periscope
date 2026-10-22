@@ -577,6 +577,7 @@ describe("critters", () => {
   const scene = (critter, activity, extra = {}) =>
     render(<TamaScene activity={activity} walled={activity === "nap" ? { day: null, time: "3pm" } : null}
                       critter={critter} {...extra} />);
+  const count = (html, needle) => html.split(needle).length - 1;
 
   it.each(critters.map((c) => [c.id, c]))("%s takes Clawd's place in every scene", (_id, c) => {
     for (const id of scenes) {
@@ -654,6 +655,36 @@ describe("critters", () => {
     const nox = critterById("nox");
     expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
     expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
+  });
+
+  const faceOf = (html) => html.match(/<g class="critter"(?: data-face="(\w+)")?/)[1] ?? null;
+  const duty = (kind) => ({ duty: { kind, label: "1", more: 0 } });
+
+  it.each(critters.map((c) => [c.id, c]))("%s makes Clawd's duty faces when he would", (_id, c) => {
+    expect(faceOf(scene(c, "code", duty("done")))).toBe("happy");
+    expect(faceOf(scene(c, "code", { ...duty("merged"), party: true }))).toBe("happy");
+    expect(faceOf(scene(c, "eat", duty("done")))).toBe("happy"); // a face kind, away from the desk
+    expect(faceOf(scene(c, "code", duty("api")))).toBe("x");
+    expect(faceOf(scene(c, "code", duty("ctx")))).toBe("worried");
+    expect(faceOf(scene(c, "code", duty("update")))).toBe("down");
+    expect(faceOf(scene(c, "beer"))).toBe("happy"); // a smiling pastime
+  });
+
+  it.each(critters.map((c) => [c.id, c]))("%s keeps its own face otherwise", (_id, c) => {
+    expect(faceOf(scene(c, "code"))).toBeNull();
+    expect(faceOf(scene(c, "code", { mood: "furious" }))).toBeNull(); // the mood stays its own layers
+    expect(faceOf(scene(c, "code", duty("ci")))).toBeNull();
+    expect(faceOf(scene(c, "eat", duty("update")))).toBeNull(); // update only shows at the desk
+    expect(faceOf(scene(c, "sleep"))).toBeNull();
+    expect(faceOf(scene(c, "beer", duty("api")))).toBe("x"); // on duty, the smile gives way
+  });
+
+  it("puts the bell's \"!\" on the critter's own head, and only away from the desk", () => {
+    const nox = critterById("nox");
+    const away = scene(nox, "beer", duty("bell"));
+    expect(count(away, "tama-startle")).toBe(1);
+    expect(away.slice(away.indexOf('class="critter"'))).toContain("tama-startle");
+    expect(scene(nox, "code", duty("bell"))).not.toContain("tama-startle");
   });
 });
 
