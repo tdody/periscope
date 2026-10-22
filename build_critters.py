@@ -37,7 +37,8 @@ SRC = ROOT / "docs" / "specs" / "assets" / "critters"
 OUT_JS = ROOT / "static" / "src" / "chrome" / "critterSprites.js"
 OUT_CSS = ROOT / "static" / "critters.css"
 
-# Display order in Settings, after Clawd. A new critter is an SVG plus a line here.
+# Display order in Settings, after Clawd. A new critter is an SVG plus a line here and in
+# periscope/routes/prefs.py's TAMA_CRITTERS (tests/routes/test_prefs.py keeps the two in step).
 CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")

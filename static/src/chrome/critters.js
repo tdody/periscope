@@ -10,7 +10,6 @@ export const CRITTERS = [
   { id: "clawd", name: "Clawd", sprite: null },
   ...Object.entries(SPRITES).map(([id, sprite]) => ({ id, name: sprite.name, sprite })),
 ];
-export const CRITTER_IDS = CRITTERS.map((c) => c.id);
 
 // An id nobody knows (unset, or a critter since removed) is Clawd.
 export function critterById(id) {
