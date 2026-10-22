@@ -779,8 +779,8 @@ function connectTerminalWs(target, hintCols = 0, hintRows = 0) {
         if (msg.type === "size") {
           paneCols = msg.cols;
           paneRows = msg.rows;
-          // Capped like any fit: the pane can outgrow this container without
-          // our asking (another viewer's resize).
+          // Through the fit's rule (xtermDims): the pane can outgrow this
+          // container without our asking (another viewer's resize).
           syncXtermSize();
           // A pane announced taller than the container (a sibling closed, a
           // zoom, a taller viewer's resize) is asked back down exactly like a
