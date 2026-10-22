@@ -414,13 +414,17 @@ def test_duplicate_resume_grouped_by_the_session_each_line_renders_with():
         (f"claude {SYS}", None),  # "--resume not-a-flag" is prompt text
     ],
 )
-def test_a_line_renders_the_session_it_is_grouped_by(cmd, row):
+# A pane with an account, profile or spawn model leaves _rewrite_line by the
+# env-prefix route, not the early return — the usual periscope-spawned pane,
+# and a row-less one keeps its captured --resume there too.
+@pytest.mark.parametrize("envs", [({}, {}, {}), ({"%56": ALT}, {"%56": "lab"}, {"%56": "opus"})], ids=["bare", "env"])
+def test_a_line_renders_the_session_it_is_grouped_by(cmd, row, envs):
     # _duplicate_resumes groups by _line_session; _rewrite_line renders by its
     # own route. Let them disagree and a duplicate escapes the grouping, or a
     # line that is not one loses its session.
     line = _pane_line("s", "1", "1", cmd)
     pane_map, sess_map = {"s:1.1": "%56"}, ({"%56": row} if row else {})
-    out, _ = resurrect._rewrite_line(line, pane_map, sess_map)
+    out, _ = resurrect._rewrite_line(line, pane_map, sess_map, *envs)
     m = resurrect._RESUME_ARG_RE.search(out.split("\t")[10])
     assert (m.group(1) if m else None) == resurrect._line_session(resurrect._claude_pane(line), "%56", sess_map)
 
