@@ -132,8 +132,33 @@ describe("faceGlyphs", () => {
     happy.g.forEach(({ p }, i) => { expect(p.startsWith(`M${scope.anchors.eyes[i].x} `)).toBe(true); });
   });
 
-  it("moves the happy face like Clawd's", () => {
+  it("marks the happy face with Clawd's class", () => {
     expect(faceGlyphs(scope, "happy")[0].cls).toBe("tama-happy-eyes");
+  });
+
+  it("peaks the happy face at the eye's centre", () => {
+    const nums = (p) => p.match(/-?[\d.]+/g).map(Number);
+    const [happy] = faceGlyphs(scope, "happy");
+    happy.g.forEach(({ p }, i) => {
+      const e = scope.anchors.eyes[i];
+      const [x0, y0, dx0, dy0] = nums(p);
+      expect(x0 + dx0).toBeCloseTo(e.x + e.w / 2);
+      expect(y0 + dy0).toBeCloseTo(e.y + 0.25 * e.h);
+    });
+  });
+
+  it("keeps the x inside each eye box", () => {
+    const [x] = faceGlyphs(scope, "x");
+    x.g.forEach(({ p }, i) => {
+      const e = scope.anchors.eyes[i];
+      const nums = p.match(/-?[\d.]+/g).map(Number);
+      for (let j = 0; j < nums.length; j += 2) {
+        expect(nums[j]).toBeGreaterThanOrEqual(e.x);
+        expect(nums[j]).toBeLessThanOrEqual(e.x + e.w);
+        expect(nums[j + 1]).toBeGreaterThanOrEqual(e.y);
+        expect(nums[j + 1]).toBeLessThanOrEqual(e.y + e.h);
+      }
+    });
   });
 
   it("adds a brow per eye and one sweat drop when worried", () => {
@@ -143,15 +168,28 @@ describe("faceGlyphs", () => {
     expect(faceGlyphs(moss, "worried")[0].g).toHaveLength(1);
   });
 
+  it("raises each brow's inner end", () => {
+    const nums = (p) => p.match(/-?[\d.]+/g).map(Number);
+    const [left, right] = faceGlyphs(scope, "worried")[0].g;
+    expect(nums(left.p).at(-1)).toBeLessThan(0);
+    expect(nums(right.p).at(-1)).toBeGreaterThan(0);
+
+    const [tent] = faceGlyphs(moss, "worried")[0].g;
+    const [x0, , dx0] = nums(tent.p);
+    expect(x0 + dx0).toBeCloseTo(moss.anchors.eyes[0].x + moss.anchors.eyes[0].w / 2);
+  });
+
   it("uses a critter's own face layer over the generated glyph", () => {
     const own = [{ g: [{ r: [1, 1, 1, 1] }] }];
     expect(faceGlyphs({ ...scope, faces: { happy: own } }, "happy")).toEqual(own);
   });
 
   it("keeps the sweat drop under a critter's own worried brows", () => {
-    const worried = faceGlyphs(nox, "worried");
-    expect(worried[0]).toBe(nox.faces.worried[0]);
+    const own = [{ g: [{ r: [1, 1, 1, 1] }] }];
+    const worried = faceGlyphs({ ...scope, faces: { worried: own } }, "worried");
+    expect(worried[0]).toEqual(own[0]);
     expect(worried.at(-1).cls).toBe("tama-sweat");
+    expect(nox.faces.worried).toBeDefined();
   });
 
   it("draws nothing for a face it doesn't know", () => {

@@ -59,8 +59,10 @@ export function placement(sprite, { x0, sitting }) {
 // with Clawd's rules), as nodes in the sprite tree's own format, in sprite
 // units: generated from the eye boxes build_critters.py found
 // (`sprite.anchors`), in the critter's `ink`, unless its SVG drew its own
-// (`sprite.faces`). The worried face's sweat drop is always generated: it's
-// the head's, not the eyes'.
+// (`sprite.faces`). Two node fields ride alongside the tree's `r` rects and
+// `g` groups, for Critter.jsx to draw the same way: `p` (an SVG path's `d`)
+// and `cls` (a CSS class). The worried face's sweat drop is always generated:
+// it's the head's, not the eyes'.
 const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
@@ -68,6 +70,8 @@ const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-w
 // Inner ends raised, as Clawd's Worried. One eye (Moss) gets a single tent-shaped brow.
 function brows(eyes) {
   if (eyes.length === 1) {
+    // 0.7 above the eye, not the two-eyed brows' 1.1: Moss's eye fills most of
+    // its head, so 1.1 would push the tent's peak above the head row.
     const { x, y, w } = eyes[0];
     return [{ p: `M${r4(x - 0.3)} ${r4(y - 0.7)} l${r4(w / 2 + 0.3)} -0.8 l${r4(w / 2 + 0.3)} 0.8` }];
   }
@@ -83,12 +87,17 @@ export function faceGlyphs(sprite, face) {
   const own = sprite.faces?.[face];
   if (face === "worried") {
     const sweat = {
+      // A curve, unlike the eyes' and brows' straight strokes: those keep the
+      // scene's crispEdges (Tamagotchi.jsx's root svg), but crispEdges snaps a
+      // curve's control points to the pixel grid and shows as a visible kink.
       p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
       cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
     };
+    // 0.6, not the eyes' 0.75: Clawd's 0.4-unit brows at a critter's ~0.6
+    // scale come to ~0.67; a touch thinner reads better than the eyes' glyphs.
     return [...(own || [{ g: brows(eyes), a: stroked(ink, 0.6) }]), sweat];
   }
-  if (own) return own;
+  if (own) return [...own];
   if (face === "happy") {
     return [{
       cls: "tama-happy-eyes", a: stroked(ink),
