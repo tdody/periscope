@@ -22,7 +22,7 @@ export function TamaPicker() {
   return (
     <fieldset class="tama-picker">
       <legend>Tamagotchi</legend>
-      <div class="tama-picker-options" role="radiogroup" aria-label="Tamagotchi">
+      <div class="tama-picker-options">
         {CRITTERS.map((c) => (
           <label key={c.id} class="tama-picker-option">
             <input type="radio" name="tama-critter" value={c.id} checked={c.id === current}
