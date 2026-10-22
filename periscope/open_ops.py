@@ -81,7 +81,8 @@ def _git_toplevel(path: str) -> str:
 def ensure_project(toplevel: str, repo: str) -> projects.Project:
     """Return the project row pinned at `toplevel`, registering it if absent.
     Idempotent — never raises on an existing project (unlike the legacy
-    create/adopt routes' 409)."""
+    create/adopt routes' 409) — but check-then-insert, so callers hold
+    `open_lock(toplevel)` (`_open_path`, `resolve_worktree_session`)."""
     existing = projects.all_projects().get(os.path.realpath(toplevel))
     if existing:
         return existing
@@ -199,11 +200,18 @@ def resolve_worktree_session(path: str) -> tuple[str, projects.Project] | None:
     except ValueError:
         return None
     repo = resolve_repo(toplevel)
-    project = ensure_project(toplevel, repo)
-    name = project["tmux_session"]
-    if _session_live(name) and not _session_owns_dir(name, toplevel):
-        name = _dedupe_name(name)  # live but foreign
-        projects.update_project(toplevel, tmux_session=name)
+    # The same lock as _open_path: MCP spawn_claude (workspace="new", every
+    # commander spawn) registers here too, and two first registrations of one
+    # dir both passed ensure_project's check, so the loser's insert raised
+    # "project already exists" (a 400 when the loser was ⌘K's open). Safe to
+    # take: no caller holds a lock (spawn_claude's worktree create has dropped
+    # repo_lock by now), and the body only shells out and takes _STATE_LOCK.
+    with open_lock(toplevel):
+        project = ensure_project(toplevel, repo)
+        name = project["tmux_session"]
+        if _session_live(name) and not _session_owns_dir(name, toplevel):
+            name = _dedupe_name(name)  # live but foreign
+            projects.update_project(toplevel, tmux_session=name)
     return name, project
 
 
@@ -300,7 +308,8 @@ def _open_path(
     # the agent window gets its @periscope_id only as _layout_two_window's last
     # step, so a second check landing mid-layout saw no agent here and built a
     # second pair. ensure_project is inside too: two first opens of a dir both
-    # inserted, and the loser's "project already exists" surfaced as a 400.
+    # inserted, and the loser's "project already exists" surfaced as a 400
+    # (resolve_worktree_session takes the same lock for spawn_claude's insert).
     with open_lock(toplevel):
         project = ensure_project(toplevel, repo)
         session, agent_pid, created = ensure_session(project, toplevel, agent)

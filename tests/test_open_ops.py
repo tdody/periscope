@@ -255,6 +255,58 @@ def test_resolve_worktree_session_dedupes_foreign_name(tmp_git_repo, clean_state
     assert projects.get_project(repo)["tmux_session"] == name  # row updated
 
 
+@needs_tmux
+@pytest.mark.parametrize("racer", ["spawn", "open"])
+def test_concurrent_first_registrations_of_a_dir_both_succeed(
+    racer, tmp_git_repo, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """ensure_project is check-then-insert, and create_project raises on an
+    existing row. MCP spawn_claude (workspace="new", and every commander spawn)
+    registers through resolve_worktree_session, which raced ⌘K's open (and
+    another spawn) on a dir neither had registered: both saw no project, and
+    the loser died "project already exists" (a 400 from POST /api/open). Here
+    the second registration starts while the first sits between its check and
+    its insert."""
+    import threading
+
+    repo = str(tmp_git_repo)
+    real_branch = open_ops.resolve_repo_and_branch  # ensure_project's step between check and insert
+    first = threading.current_thread()
+    second_checked = threading.Event()
+    second: dict = {}
+
+    def second_registration():
+        try:
+            if racer == "spawn":
+                second["res"] = open_ops.resolve_worktree_session(repo)
+            else:
+                second["res"] = open_ops.open_target(open_ops.PathTarget(path=repo))
+        except Exception as e:  # noqa: BLE001 — surfaced by the assert below
+            second["err"] = e
+
+    t2 = threading.Thread(target=second_registration)
+
+    def branch(path):
+        if threading.current_thread() is first:
+            t2.start()
+            # Unserialised, the second passes its check now; serialised, it waits
+            # for this registration to return, and this times out.
+            second_checked.wait(timeout=1.0)
+        else:
+            second_checked.set()
+        return real_branch(path)
+
+    monkeypatch.setattr(open_ops, "resolve_repo_and_branch", branch)
+    try:
+        name, proj = open_ops.resolve_worktree_session(repo)
+    finally:
+        t2.join(timeout=10)
+    assert not t2.is_alive()
+    assert "err" not in second, second.get("err")
+    assert proj["repo"] == repo
+    assert projects.get_project(repo)["tmux_session"] == name
+
+
 def test_worktree_for_branch_matches_enumerated(tmp_git_repo, clean_state):
     repo = str(tmp_git_repo)
     from periscope.gitutil import detect_default_branch

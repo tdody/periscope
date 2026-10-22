@@ -54,7 +54,8 @@ def repo_lock(repo_path: str):
 
 @contextlib.contextmanager
 def open_lock(pinned_dir: str):
-    """Hold the create-or-focus lock for one dir (open_ops._open_path).
+    """Hold the create-or-focus lock for one dir (open_ops._open_path, and
+    open_ops.resolve_worktree_session for spawn_claude's project insert).
 
     Its own namespace rather than repo_lock(dir): a main checkout's dir IS
     its repo, so sharing would queue an open behind an unrelated `git

@@ -56,7 +56,13 @@ Invariants worth knowing before touching it:
   `_layout_two_window`'s last step, so a second check landing mid-layout saw
   no agent at the dir and built a second pair. `_open_path` holds
   `repo_locks.open_lock(toplevel)` across `ensure_project` + `ensure_session`.
-  It is its own namespace, not `repo_lock(toplevel)`: a main checkout's
+  `resolve_worktree_session` (MCP `spawn_claude` with `workspace="new"`, and
+  every commander spawn) takes it too, around its own `ensure_project` and
+  session-name dedupe: it inserts the same project row, so a spawn racing an
+  open of a dir neither had registered died "project already exists". Those
+  MCP handlers run on the event loop, so they can wait out a ⌘K open's
+  layout; nothing done under the lock waits on the loop, so they can't
+  deadlock. It is its own namespace, not `repo_lock(toplevel)`: a main checkout's
   toplevel IS its repo, and the open must not queue behind (or, being
   non-reentrant, deadlock with) the repo's git lock. `OpenOmnibox.post()`
   also drops a pick while one is in flight.
