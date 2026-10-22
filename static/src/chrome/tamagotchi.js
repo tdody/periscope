@@ -135,24 +135,23 @@ function dateAt(date, h) {
   return d;
 }
 
-// A half hour's plan is fixed when it starts: a knock-off pastime under way
-// when the walls lift runs to its end, then it's back to the desk. Walls
-// landing can't be dated (the server publishes only when they lift), so they
-// count from the start of the day.
-function windowsFor(date, day) {
-  if (isWeekend(date)) return WEEKEND;
-  const h = hours(date);
-  const asOf = windowAt(WALLED, h).pastime ? dateAt(date, Math.floor(h / HALF) * HALF) : date;
-  return walledAt(asOf, day) ? WALLED : SCHEDULE;
-}
-
 // When the plain day takes over from the walled one: at the reset, or at the
-// end of the knock-off half it falls in.
+// end of the knock-off half it falls in. A half hour's plan is fixed when it
+// starts, so a knock-off pastime under way when the walls lift runs to its
+// end, then it's back to the desk. Walls landing can't be dated (the server
+// publishes only when they lift), so they count from the start of the day.
+// The one switch time: the scene, the cover and the hover's range all read
+// it, so they can't drift apart.
 function plainFrom(day) {
   const lift = liftAt(day);
   if (!Number.isFinite(lift)) return lift;
   const h = hours(new Date(lift));
   return windowAt(WALLED, h).pastime ? dateAt(new Date(lift), Math.ceil(h / HALF) * HALF).getTime() : lift;
+}
+
+function windowsFor(date, day) {
+  if (isWeekend(date)) return WEEKEND;
+  return date.getTime() < plainFrom(day) ? WALLED : SCHEDULE;
 }
 
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
@@ -238,13 +237,13 @@ export function activityAt(date, day = {}) {
     return { ...span, ...pastimePlan(span, date, day)[i], from, to: from + HALF };
   }
   // The desk's hours follow the walls to the minute, so the hover's range
-  // agrees with its up-next: the nap ends at their reset, and the coding
-  // after it starts when the plain day took over.
-  if (slot.id === "nap" && liftAt(day) < dateAt(date, slot.to).getTime()) {
-    return { ...slot, to: hours(new Date(liftAt(day))) };
+  // agrees with its up-next: the nap ends when the plain day takes over, and
+  // the coding after it starts there.
+  const back = plainFrom(day);
+  if (slot.id === "nap" && back < dateAt(date, slot.to).getTime()) return { ...slot, to: hours(new Date(back)) };
+  if (slot.id === "code" && back > dateAt(date, slot.from).getTime() && back <= date.getTime()) {
+    return { ...slot, from: hours(new Date(back)) };
   }
-  const back = slot.id === "code" ? plainFrom(day) : -Infinity;
-  if (back > dateAt(date, slot.from).getTime() && back <= date.getTime()) return { ...slot, from: hours(new Date(back)) };
   return slot;
 }
 
