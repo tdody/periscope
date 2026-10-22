@@ -113,7 +113,11 @@ _OPENED_TRUST_S = 60
 def _sits_at(w: dict, pinned_dir: str) -> bool:
     """True if window row `w` is at `pinned_dir` (realpath): by its live cwd,
     or, while it is fresh, by the dir the open that created it recorded."""
-    if os.path.realpath(w.get("cwd") or "") == pinned_dir:
+    # "" is unknown, not a dir: realpath("") is the server's own cwd, and prod
+    # runs from the periscope checkout, so a pane of any project reading "" mid-rc
+    # sat "at" it, and an open of that checkout focused or claimed it.
+    cwd = w.get("cwd")
+    if cwd and os.path.realpath(cwd) == pinned_dir:
         return True
     at, _, opened = (w.get("opened") or "").partition(" ")
     return (
@@ -334,7 +338,7 @@ def _open_path(
         if (
             p
             and w.get("session") == session
-            and (p in created or os.path.realpath(w.get("cwd") or "") == toplevel)
+            and (p in created or _sits_at(w, toplevel))
             and activity.get_pane_track(p) is None
         ):
             tracks.move_pane(p, tid)

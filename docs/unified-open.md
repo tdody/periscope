@@ -43,7 +43,11 @@ Invariants worth knowing before touching it:
   and `_sits_at` counts it as the window's dir for `_OPENED_TRUST_S` (60s).
   Only that long: the agent window outlives its agent (quit claude, `cd`
   elsewhere, start another), and a record trusted forever would focus that
-  pane on every later open of the first dir.
+  pane on every later open of the first dir. `_sits_at` is the open's one
+  test of "at this dir" (the tag loop's cwd claim uses it too), and it reads
+  an empty cwd as unknown: `realpath("")` is the server's own cwd, and prod
+  runs from the periscope checkout, so opening that checkout focused or
+  claimed any project's fresh pane reading `""`.
 - **Create-or-focus is check-then-create, so it runs under a per-dir lock.**
   The record only helps a repeat that starts after the first open returned.
   A double submit is two concurrent POSTs (`open_endpoint` is a sync `def`, so

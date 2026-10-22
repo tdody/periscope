@@ -470,6 +470,48 @@ def test_recorded_open_dir_counts_only_while_the_pane_is_fresh(monkeypatch):
     assert open_ops._agent_pid_for_dir("s", "/repo", "claude") == ""
 
 
+def test_empty_cwd_sits_nowhere(tmp_path, monkeypatch):
+    """Mid-rc a pane's cwd can read "", and realpath("") is the server's own
+    cwd: prod runs from the periscope checkout, so a fresh pane of any project
+    sat "at" it."""
+    monkeypatch.chdir(tmp_path)
+    here = os.path.realpath(tmp_path)
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{"session": "s", "name": "claude", "pid_raw": "aaaa1111", "cwd": ""}]
+    )
+    assert not open_ops._session_owns_dir("s", here)
+    assert open_ops._agent_pid_for_dir("s", here, "claude") == ""
+
+
+@needs_tmux
+def test_open_of_the_server_cwd_leaves_a_pane_reading_empty_cwd_alone(
+    tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server, monkeypatch
+):
+    """Both readers of an empty cwd: opening the dir the server runs from
+    focused another project's fresh agent window instead of creating, and its
+    tag loop claimed that pane into this repo's track."""
+    from periscope import pids
+
+    (tmp_path / "other").mkdir()
+    ok, there_win = _tmux_mutate(
+        "new-session", "-d", "-s", config.MANAGED_SESSION, "-n", "claude", "-c", str(tmp_path / "other"),
+        "-P", "-F", "#{window_id}", "sleep 600",
+    )  # fmt: skip
+    assert ok, there_win
+    there = pids.stamp_new_window(there_win)
+    real = open_ops.list_windows
+    monkeypatch.setattr(
+        open_ops, "list_windows", lambda: [{**w, "cwd": ""} if w.get("pid_raw") == there else w for w in real()]
+    )
+    repo = str(tmp_git_repo)
+    monkeypatch.chdir(repo)
+
+    res = open_ops.open_target(open_ops.PathTarget(path=repo))
+
+    assert res.agent_pid != there
+    assert fresh_activity_db.get_pane_track(there) is None
+
+
 @needs_tmux
 def test_open_claims_untagged_panes_at_its_toplevel_only(
     tmp_git_repo, tmp_path, clean_state, fresh_activity_db, tmux_test_server
