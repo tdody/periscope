@@ -207,6 +207,31 @@ describe("the evening's rules", () => {
     expect(covered).toBeGreaterThan(0);
   });
 
+  it("lets no half but the one before the evening cover a verdict, nor one Clawd spent at the desk", () => {
+    // A weekend's 11:00 pint, or a walled weekday's 4:00, is over long before
+    // the evening: a merge noted ten minutes in still books 5:00. So does one
+    // noted at a plain weekday's 4:30, at the desk, whatever a walled day
+    // would have rolled there.
+    const at = (d, t) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(t), Math.round((t % 1) * 60));
+    let count = 0;
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n))) {
+      if (occasionShown(d)?.id === "halloween" || d.getDay() === 5) continue;
+      const weekend = !(d.getDay() % 6);
+      const halves = weekend ? [[{}, 11, 16.5]] : [[WALLED, 16, 16.5], [{}, 16.5, 17]];
+      for (const [wall, from, to] of halves) {
+        for (let t = from; t < to; t += 0.5) {
+          for (const [flag, id] of [["merged", "beer"], ["furious", "run"]]) {
+            if (activityAt(at(d, t), weekend ? {} : WALLED).id !== id) continue;
+            count += 1;
+            const what = `${d.toDateString()} ${flag} at ${t}+10min`;
+            expect(activityAt(at(d, 17), { ...wall, [flag]: t + 10 / 60 }).id, what).toBe(id);
+          }
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(0);
+  });
+
   it("books from the minute a verdict was noted: a half hour that began in that minute is already under way", () => {
     const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
     const year = Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => occasionShown(x)?.id !== "halloween");
