@@ -165,18 +165,6 @@ describe("resizeAsk", () => {
     expect(win).toEqual({ cols: 200, rows: 22 });
   });
 
-  it("keeps a split window's width through its own shrink and regrow", () => {
-    // A left/right split: the pane is 71 of the window's 143 cols. Asking
-    // for the pane's width instead of none halved the window on each ask.
-    let memo = afterSend(NOTHING_SENT, { cols: 143, rows: 36 });
-    for (const [rows, paneRows] of [[28, 36], [36, 28]]) {
-      const ask = resizeAsk({ cols: 143, rows }, memo, paneRows);
-      expect(ask).toStrictEqual({ rows });
-      memo = afterSend(memo, ask);
-    }
-    expect(memo).toEqual({ cols: 143, rows: 36, shrunkFrom: 0 });
-  });
-
   it("forgets the shrink once a width change resizes to the container", () => {
     const shrunk = afterSend(sent(239, 62), { cols: 239, rows: 40 });
     const widened = afterSend(shrunk, { cols: 200, rows: 40 });

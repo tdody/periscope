@@ -164,10 +164,23 @@ describe("terminal sizing glue", () => {
     await mount("%1");
     await announce(71, 36);
     expect(env.term.cols).toBe(71);
+    expect(env.sent).toEqual([]);
     await dropSocket();
     await dropSocket();
     expect(env.sockets.map((s) => s.hint)).toEqual([
       { cols: 143, rows: 36 }, { cols: 143, rows: 36 }, { cols: 143, rows: 36 },
     ]);
+  });
+
+  it("asks a left/right split's window for the container's width, never the pane's", async () => {
+    // Every size message runs the fit's ask, and term.cols is the pane's 71:
+    // compared against the 143 last asked, it read as a width change and sent
+    // the pane's width, halving the window on each announcement (71, 35, 17).
+    await mount("%1");
+    await announce(71, 36);
+    await resizeBox(143, 28);
+    expect(env.sent).toStrictEqual([{ type: "resize", rows: 28 }]);
+    await resizeBox(180, 28);
+    expect(env.sent.at(-1)).toStrictEqual({ type: "resize", cols: 180, rows: 28 });
   });
 });
