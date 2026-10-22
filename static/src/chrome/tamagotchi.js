@@ -46,6 +46,14 @@ const WALLED = SCHEDULE.map((s) => {
   return nap.to === EVENING ? { ...nap, to: KNOCK_OFF } : nap.from === EVENING ? { ...nap, from: KNOCK_OFF } : nap;
 });
 
+const isWeekend = (date) => date.getDay() === 0 || date.getDay() === 6;
+const windowAt = (windows, h) => windows.find((s) => h >= s.from && h < s.to);
+// The half hours a day's pastimes are planned over: a weekday's from the
+// knock-off, walled or not, so the walls coming or going don't re-plan the
+// evening; they decide only whether 4–5pm is spent at the desk (and a 4:30
+// at the desk covers no verdict).
+const pastimeSpan = (date) => windowAt(isWeekend(date) ? WEEKEND : WALLED, EVENING);
+
 // `seasons` keeps the outdoor ones to their weather: sledding stands in for
 // the ride on snow.
 export const PASTIMES = [
@@ -116,9 +124,22 @@ function rollFrom(list, date, salt, avoid = []) {
 // before then, so the forecast past the reset is the plain day's.
 const walledAt = (date, day) => date.getTime() < (day.walledUntil ?? -Infinity);
 
+// `date`'s day at hour `h` (17.5 → 5:30pm, 24 → the next midnight).
+function dateAt(date, h) {
+  const d = new Date(date);
+  d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
+  return d;
+}
+
+// A half hour's plan is fixed when it starts: a knock-off pastime under way
+// when the walls lift runs to its end, then it's back to the desk. Walls
+// landing can't be dated (the server publishes only when they lift), so they
+// count from the start of the day.
 function windowsFor(date, day) {
-  if (date.getDay() === 0 || date.getDay() === 6) return WEEKEND;
-  return walledAt(date, day) ? WALLED : SCHEDULE;
+  if (isWeekend(date)) return WEEKEND;
+  const h = hours(date);
+  const asOf = windowAt(WALLED, h).pastime ? dateAt(date, Math.floor(h / HALF) * HALF) : date;
+  return walledAt(asOf, day) ? WALLED : SCHEDULE;
 }
 
 const served = (slot, dish, course) => ({ ...slot, label: `having ${dish.label} for ${course}`, dish: dish.id });
@@ -138,17 +159,20 @@ function mealAt(slot, date) {
   return { ...served(slot, main, slot.meal), ...(dessert ? { to: half } : {}) };
 }
 
-// The pastime window's half hours, in order. Forced first: Halloween's
-// trick-or-treat rounds, Friday's pint, then the day's verdicts (Friday's
-// pint covers the toast). The rest roll from the season's pastimes, never the
-// same twice running, forced neighbours included (rollFrom), so forcing one
-// half leaves the others as they were.
+// The pastime span's half hours (pastimeSpan), in order. Forced first:
+// Halloween's trick-or-treat rounds, Friday's pint, then the day's verdicts
+// (Friday's pint covers the toast). The rest roll from the season's
+// pastimes, never the same twice running, forced neighbours included
+// (rollFrom), so forcing one half leaves the others as they were.
 function pastimePlan(slot, date, day) {
   const byId = (id) => PASTIMES.find((p) => p.id === id);
   const n = (slot.to - slot.from) / HALF;
   const at = (t) => (t - slot.from) / HALF;
   const start = (i) => slot.from + i * HALF;
-  const evening = [EVENING, EVENING + HALF].map(at).filter((i) => i >= 0 && i < n);
+  const evening = [EVENING, EVENING + HALF].map(at);
+  // Whether a half is drawn as its pastime: a weekday's 4–5pm only under
+  // the walls.
+  const drawn = (i) => !!windowAt(windowsFor(dateAt(date, start(i)), day), start(i)).pastime;
   const forced = [];
   const pool = PASTIMES.filter(inSeason(date));
   const rolled = () => {
@@ -170,51 +194,45 @@ function pastimePlan(slot, date, day) {
     });
   } else {
     if (date.getDay() === 5) forced[at(EVENING + HALF)] = byId("beer");
-    // Each verdict books the first free half hour still running or to come
-    // when it was noted, against the evening as it stood then: they're placed
-    // in the order they were noted (a run first within the same minute), so a
-    // later one can't take the half under way from an earlier one's pint or
-    // run. The stored time keeps every caller on the same plan whenever it's
-    // read.
+    // Each verdict books the first free evening half that starts after it
+    // was noted, against the evening as it stood then: they're placed in the
+    // order they were noted (a run first within the same minute), and the
+    // half under way, begun before the note, is never re-planned. Being the
+    // verdict's pastime, it covers it instead, if it's an evening half or the
+    // one just before (4:30, on a weekend or a walled weekday). The stored
+    // time keeps every caller on the same plan whenever it's read.
     const verdicts = [["furious", "run"], ["merged", "beer"]]
       .filter(([flag]) => day[flag] != null)
       .sort(([a], [b]) => day[a] - day[b]);
     for (const [flag, id] of verdicts) {
       if (evening.some((i) => forced[i]?.id === id)) continue;
       const underWay = Math.floor(at(day[flag]));
-      const free = evening.find((i) => !forced[i] && i >= underWay);
-      if (free === undefined) continue;
-      // Only the half before the evening (4:30 on a weekend or a walled
-      // weekday) can be under way with the booked half next: booking it would
-      // make that half step aside, so being the verdict, it covers it instead.
-      if (free === underWay + 1 && rolled()[underWay]?.id === id) continue;
-      forced[free] = byId(id);
+      if (underWay >= evening[0] - 1 && underWay < n && drawn(underWay) && rolled()[underWay].id === id) continue;
+      const free = evening.find((i) => !forced[i] && i > underWay);
+      if (free !== undefined) forced[free] = byId(id);
     }
   }
   return rolled();
 }
 
 export function activityAt(date, day = {}) {
-  const h = date.getHours();
-  const slot = windowsFor(date, day).find((s) => h >= s.from && h < s.to);
+  const slot = windowAt(windowsFor(date, day), date.getHours());
   if (slot.meal) return mealAt(slot, date);
   if (slot.pastime) {
-    const i = Math.floor((hours(date) - slot.from) / HALF);
-    const from = slot.from + i * HALF;
-    return { ...slot, ...pastimePlan(slot, date, day)[i], from, to: from + HALF };
+    const span = pastimeSpan(date);
+    const i = Math.floor((hours(date) - span.from) / HALF);
+    const from = span.from + i * HALF;
+    return { ...span, ...pastimePlan(span, date, day)[i], from, to: from + HALF };
   }
   return slot;
 }
 
 // Milliseconds until the current window ends, so the sprite changes on the
 // hour (or the half hour) rather than up to a minute late; the walls lifting
-// ends a walled one early (the nap goes back to coding). setHours(24) rolls to
-// next midnight.
+// ends a walled nap early (back to coding).
 export function msUntilNextChange(date, day = {}) {
   const { to } = activityAt(date, day);
-  const end = new Date(date);
-  end.setHours(Math.floor(to), (to % 1) * 60, 0, 0);
-  return Math.min(end.getTime(), walledAt(date, day) ? day.walledUntil : Infinity) - date.getTime();
+  return Math.min(dateAt(date, to).getTime(), walledAt(date, day) ? day.walledUntil : Infinity) - date.getTime();
 }
 
 // The hover's "up next": the first window after this one with another scene

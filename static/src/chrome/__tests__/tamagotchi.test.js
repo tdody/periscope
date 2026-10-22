@@ -166,19 +166,25 @@ describe("the evening's rules", () => {
     }
   });
 
-  it("books a verdict only into a half hour still running or to come, so the scene now never steps aside for it", () => {
-    const late = 17 + 40 / 60; // 5:40pm
-    let rolledBeer = 0;
+  it("books a verdict only into a half hour still to come: the one under way keeps its pastime", () => {
+    let covered = 0;
     for (const d of Array.from({ length: 120 }, (_, n) => new Date(2026, 0, 5 + n)).filter((x) => x.getDay() % 6 && x.getDay() !== 5)) {
       const plain = evening(d);
-      if (plain[1].id === "beer") rolledBeer += 1;
-      // 5:00 is over: the pint goes to 5:30, and a 5:30 already at the pub stays there.
-      expect(evening(d, { merged: late })[1].id, d.toDateString()).toBe("beer");
-      expect(evening(d, { furious: late })[1].id, d.toDateString()).toBe("run");
-      // Past 6pm the evening is over: nothing left to book.
+      // Noted at 5:10: 5:00 carries on, and the pint waits for 5:30, unless
+      // 5:00 already is one (it covers the toast).
+      const [early, late] = evening(d, { merged: 17 + 10 / 60 });
+      expect(early, d.toDateString()).toEqual(plain[0]);
+      if (plain[0].id === "beer") {
+        covered += 1;
+        expect(late, d.toDateString()).toEqual(plain[1]);
+      } else {
+        expect(late.id, d.toDateString()).toBe("beer");
+      }
+      // Noted at 5:40, or past 6pm, there's no half hour left to book.
+      expect(evening(d, { merged: 17 + 40 / 60, furious: 17 + 40 / 60 }), d.toDateString()).toEqual(plain);
       expect(evening(d, { merged: 18.2, furious: 18.2 }), d.toDateString()).toEqual(plain);
     }
-    expect(rolledBeer).toBeGreaterThan(0);
+    expect(covered).toBeGreaterThan(0);
   });
 
   it("lets a pastime already under way cover the verdict rather than step aside for it", () => {
@@ -201,21 +207,21 @@ describe("the evening's rules", () => {
     expect(covered).toBeGreaterThan(0);
   });
 
-  it("books a verdict from the very minute it was noted, a half hour boundary included", () => {
+  it("books from the minute a verdict was noted: a half hour that began in that minute is already under way", () => {
     const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
     const year = Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => occasionShown(x)?.id !== "halloween");
-    // noteKey keeps the minute: a merge from 5:30:00 on is 17.5, the half
-    // under way; 5:00 is over, and 6pm has nothing left to book.
+    // noteKey keeps the minute: a merge at 5:29 books 5:30; one from 5:30:00
+    // on is in the 5:30 half, too late for it.
     for (const d of year.filter((x) => x.getDay() % 6 && x.getDay() !== 5)) {
       const plain = evening(d);
-      const [early, late] = evening(d, { merged: 17.5 });
-      expect(late.id, d.toDateString()).toBe("beer");
-      if (plain[0].id !== "beer") expect(early.id, d.toDateString()).toBe(plain[0].id);
-      expect(evening(d, { merged: 18 }), d.toDateString()).toEqual(plain);
+      const [early, late] = evening(d, { merged: 17 + 29 / 60 });
+      expect(early, d.toDateString()).toEqual(plain[0]);
+      if (plain[0].id !== "beer") expect(late.id, d.toDateString()).toBe("beer");
+      expect(evening(d, { merged: 17.5 }), d.toDateString()).toEqual(plain);
     }
     // Where 4:30 rolled a pint (weekends, walled weekdays): a morning merge
-    // still books 5:00, as does one noted at 5:00 sharp, after the 4:30 pint
-    // is over: only a pint under way covers it.
+    // still books 5:00; one noted at 5:00 sharp, after the 4:30 pint is over,
+    // finds 5:00 under way and books 5:30.
     let pints = 0;
     for (const d of year) {
       const days = d.getDay() % 6 ? (d.getDay() === 5 ? [] : [WALLED]) : [{}];
@@ -223,10 +229,28 @@ describe("the evening's rules", () => {
         if (activityAt(at(d, 16, 30), day).id !== "beer") continue;
         pints += 1;
         expect(activityAt(at(d, 17, 0), { ...day, merged: 9 }).id, d.toDateString()).toBe("beer");
-        expect(activityAt(at(d, 17, 0), { ...day, merged: 17 }).id, d.toDateString()).toBe("beer");
+        expect(activityAt(at(d, 17, 0), { ...day, merged: 17 }), d.toDateString()).toEqual(activityAt(at(d, 17, 0), day));
+        expect(activityAt(at(d, 17, 30), { ...day, merged: 17 }).id, d.toDateString()).toBe("beer");
       }
     }
     expect(pints).toBeGreaterThan(0);
+  });
+
+  it("lets the half under way cover a verdict wherever the next free half falls", () => {
+    // A morning merge holds 5:00: a furious mood at 4:40, while the 4:30 half
+    // is a run, is covered all the same, not booked for 5:30 (run, pint, run).
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    let runs = 0;
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n))) {
+      if (occasionShown(d)?.id === "halloween") continue;
+      const wall = d.getDay() % 6 ? WALLED : {};
+      if (activityAt(at(d, 16, 30), wall).id !== "run") continue;
+      runs += 1;
+      const merged = { ...wall, merged: 9 };
+      const both = { ...merged, furious: 16 + 40 / 60 };
+      for (const m of [0, 30]) expect(activityAt(at(d, 17, m), both), d.toDateString()).toEqual(activityAt(at(d, 17, m), merged));
+    }
+    expect(runs).toBeGreaterThan(0);
   });
 
   it("books the verdicts in the order they were noted", () => {
@@ -253,32 +277,56 @@ describe("the evening's rules", () => {
     }
   });
 
-  it("changes the scene under way for a second verdict only to that verdict's pastime, and never from the first's", () => {
-    const PAST = { furious: "run", merged: "beer" };
+  it("never changes a half hour's pastime once it has started: not for a verdict noted in it, nor for the walls lifting in it", () => {
     const at = (d, t) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(t), Math.round((t % 1) * 60));
-    // Every kind of evening: weekdays, Friday, walled weekdays, weekends, in
-    // two seasons.
-    const sample = [0, 4].flatMap((month) => Array.from({ length: 14 }, (_, n) => new Date(2026, month, 5 + n)));
+    // Every kind of evening: weekdays, Friday, weekends, in two seasons; on
+    // weekdays, walls holding all day or lifting in and around the pastimes.
+    const sample = [0, 4].flatMap((month) => Array.from({ length: 7 }, (_, n) => new Date(2026, month, 5 + n)));
+    const noted = [9, 16 + 10 / 60, 16 + 40 / 60, 17, 17 + 10 / 60, 17 + 40 / 60];
+    const logs = [{}, ...noted.flatMap((t) => [{ merged: t }, { furious: t }]),
+      ...noted.flatMap((a) => noted.map((b) => ({ merged: a, furious: b })))];
+    const times = Array.from({ length: 18 }, (_, k) => 15 + k / 6); // 3pm to 5:50pm, every ten minutes
+    let moved = 0;
     for (const d of sample) {
-      for (const walled of d.getDay() % 6 ? [false, true] : [false]) {
-        const from = d.getDay() % 6 ? (walled ? 16 : 17) : 15;
-        const times = Array.from({ length: (18 - from) * 6 }, (_, k) => from + k / 6);
-        for (const [k1, k2] of [["merged", "furious"], ["furious", "merged"]]) {
-          for (const t1 of [9, ...times]) {
-            for (const t2 of times.filter((t) => t > t1)) {
-              const wall = walled ? WALLED : {};
-              const first = { ...wall, [k1]: t1 };
-              const plain = activityAt(at(d, t2), wall).id;
-              const before = activityAt(at(d, t2), first).id;
-              const after = activityAt(at(d, t2), { ...first, [k2]: t2 }).id;
-              const what = `${d.toDateString()} walled=${walled} ${k1}@${t1.toFixed(2)} ${k2}@${t2.toFixed(2)}: ${before} -> ${after}`;
-              // The first verdict's pastime, where it booked it (not the day's
-              // own roll), is never the one that moves.
-              const booked = before === PAST[k1] && before !== plain;
-              if (after !== before) expect([after, booked], what).toEqual([PAST[k2], false]);
-            }
+      const lifts = d.getDay() % 6 ? [14 + 20 / 60, 16.25, 16.75, 17.25, 17.75].map((t) => at(d, t).getTime()) : [];
+      for (const walledUntil of [undefined, ...(lifts.length ? [Infinity] : []), ...lifts]) {
+        for (const log of logs) {
+          // What's drawn at `t`, from the day log as it stood then.
+          const asOf = (t) => ({ walledUntil, ...Object.fromEntries(Object.entries(log).filter(([, v]) => v <= t)) });
+          const scene = (t) => activityAt(at(d, t), asOf(t));
+          for (const t of times) {
+            const start = Math.floor(t / 0.5) * 0.5;
+            const first = scene(start);
+            if (!first.pastime) continue;
+            const what = `${d.toDateString()} until=${walledUntil && new Date(walledUntil).toTimeString().slice(0, 5)} ${JSON.stringify(log)} at ${t.toFixed(2)}`;
+            expect(scene(t), what).toEqual(first);
+            const lifted = walledUntil > at(d, start).getTime() && walledUntil <= at(d, t).getTime();
+            if (lifted || JSON.stringify(asOf(t)) !== JSON.stringify(asOf(start))) moved += 1;
           }
         }
+      }
+    }
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it("keeps the half under way when the walls lift in it, booked verdicts and all", () => {
+    // Walled until 5:15 with a furious mood at 4:40: the 5:00 half runs to its
+    // end on the walled day's plan.
+    const at = (d, h, m) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => x.getDay() % 6)) {
+      for (const log of [{}, { furious: 16 + 40 / 60 }, { merged: 16 + 40 / 60 }]) {
+        const day = { ...log, walledUntil: at(d, 17, 15).getTime() };
+        expect(activityAt(at(d, 17, 20), day), d.toDateString()).toEqual(activityAt(at(d, 17, 10), day));
+      }
+    }
+  });
+
+  it("plans the evening the same with or without the walls, so they can't re-plan it as they come and go", () => {
+    // Bar a verdict noted in the 4:30 half: walled, Clawd is out and that
+    // half can cover it; at the desk, it can't.
+    for (const d of Array.from({ length: 365 }, (_, n) => new Date(2026, 0, 1 + n)).filter((x) => x.getDay() % 6)) {
+      for (const log of [{}, { merged: 9 }, { furious: 11, merged: 17 + 10 / 60 }, { merged: 16 + 10 / 60 }]) {
+        expect(evening(d, { ...log, ...WALLED }), d.toDateString()).toEqual(evening(d, log));
       }
     }
   });
@@ -400,6 +448,16 @@ describe("the walls lifting", () => {
     // Back at the desk until 5, not knocked off at 4.
     expect(activityAt(at(16, 0), until(15, 30)).id).toBe("code");
     expect(msUntilNextChange(at(12, 10), until(18, 0))).toBe(50 * 60 * 1000);
+  });
+
+  it("lets a knock-off pastime under way at the reset run to the half hour, then goes back to the desk", () => {
+    const pastime = activityAt(at(16, 10), until(16, 15));
+    expect(PASTIMES.map((p) => p.id)).toContain(pastime.id);
+    expect(activityAt(at(16, 20), until(16, 15))).toEqual(pastime);
+    expect(activityAt(at(16, 30), until(16, 15)).id).toBe("code");
+    expect(upNext(at(16, 10), until(16, 15))).toMatchObject({ at: at(16, 30), activity: { id: "code" } });
+    // Lifting in the 4:30 half, it's the evening by the end of it.
+    expect(activityAt(at(16, 50), until(16, 45))).toEqual(activityAt(at(16, 40), until(16, 45)));
   });
 
   it("forecasts the plain day past the reset time", () => {
