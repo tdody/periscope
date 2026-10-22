@@ -26,6 +26,14 @@ def _size_message(size: tmux_mirror.PaneSize) -> str:
     return json.dumps({"type": "size", "cols": size.cols, "rows": size.rows})
 
 
+# Every resize of a viewed window, as one tmux invocation's argv: callers may
+# chain more commands onto it. No cols resizes the height alone
+# (`resize-window -y`), keeping the window's width — see the resize message.
+def _resize_argv(target: str, cols: int | None, rows: int) -> list[str]:
+    width = ["-x", str(cols)] if cols else []
+    return ["setw", "-t", target, "window-size", "manual", ";", "resize-window", "-t", target, *width, "-y", str(rows)]
+
+
 @router.websocket("/ws/state")
 async def ws_state(websocket: WebSocket):
     """Push the dashboard state blob (the /api/state payload) on the hub's
@@ -85,13 +93,9 @@ async def ws_pane(
     # A tmux invocation runs its `;`-separated commands in order, so pairing
     # them costs one fork instead of two. Each fork is ~20ms — measurable on
     # the pane-switch path, where this runs on every connect.
-    # c == 0 resizes the height alone: see the resize message below.
-    def set_pane_size(c: int, r: int) -> None:
-        width = ["-x", str(c)] if c > 0 else []
+    def set_pane_size(c: int | None, r: int) -> None:
         with contextlib.suppress(Exception):
-            tmux(
-                "setw", "-t", target, "window-size", "manual", ";", "resize-window", "-t", target, *width, "-y", str(r)
-            )
+            tmux(*_resize_argv(target, c, r))
 
     # 1+2) One fork: resize to the client's hint, then read tmux's view of the
     #    pane back. The resize must land BEFORE the initial capture or box-
@@ -112,27 +116,7 @@ async def ws_pane(
 
     def size_then_meta(c: int, r: int) -> str:
         if c > 0 and r > 0:
-            out = tmux(
-                "setw",
-                "-t",
-                target,
-                "window-size",
-                "manual",
-                ";",
-                "resize-window",
-                "-t",
-                target,
-                "-x",
-                str(c),
-                "-y",
-                str(r),
-                ";",
-                "display-message",
-                "-t",
-                target,
-                "-p",
-                meta_fmt,
-            )
+            out = tmux(*_resize_argv(target, c, r), ";", "display-message", "-t", target, "-p", meta_fmt)
             # tmux aborts the chain at the first failing command. A resize
             # failure has always been non-fatal here, so don't let it take the
             # handshake down — re-ask for the meta on its own.
@@ -268,7 +252,7 @@ async def ws_pane(
                     # keeps the window's width. Our pin in it set a shared
                     # window's width from a shorter viewer's every shrink.
                     if isinstance(ctrl, dict) and ctrl.get("type") == "resize":
-                        rc = int(ctrl.get("cols") or 0)
+                        rc = int(ctrl.get("cols") or 0) or None
                         rr = int(ctrl.get("rows") or 0)
                         if rr > 0:
                             await loop.run_in_executor(None, lambda c=rc, r=rr: set_pane_size(c, r))
