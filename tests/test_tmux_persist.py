@@ -258,6 +258,22 @@ def test_user_conf_is_the_one_tpm_reads(home, monkeypatch):
     assert (home / ".tmux.conf").read_text() == "set -g mouse on\n"
 
 
+def test_user_conf_falls_back_to_dot_config_without_xdg_config_home(home, monkeypatch):
+    # The launchd job runs with no XDG_CONFIG_HOME, and TPM's
+    # ${XDG_CONFIG_HOME:-$HOME/.config} still picks ~/.config/tmux/tmux.conf: a
+    # source line put in ~/.tmux.conf instead is one TPM never reads.
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    xdg = home / ".config/tmux/tmux.conf"
+    xdg.parent.mkdir(parents=True)
+    xdg.write_text(USER_PLUGINS)
+    assert tp.user_conf() == xdg
+    _install(home, monkeypatch)
+    assert tp.owned_conf() == home / ".config/periscope/tmux.conf"
+    assert tp.is_sourced(xdg) and not (home / ".tmux.conf").exists()
+    assert tp.plugin_declarations() == dict.fromkeys(tp.REQUIRED_PLUGINS, 1)
+    assert tp.tpm_runs() == 1
+
+
 # Base's install appended exactly this pair to ~/.tmux.conf, XDG conf or not.
 LEGACY_HOME_CONF = "set -g mouse on\n{source}\n" + tp.TPM_RUN_LINE + "\nset -g status-left x\n"
 
