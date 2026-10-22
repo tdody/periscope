@@ -14,7 +14,7 @@
 // localStorage→server migration at boot.
 
 import { signal } from "@preact/signals";
-import { CRITTER_IDS } from "./chrome/critters.js";
+import { critterById } from "./chrome/critters.js";
 import { apiCall } from "./util.js";
 
 // The cache mirrors the server's state.json shape. `loaded` flips to true
@@ -330,8 +330,7 @@ export function setLaunchProfile(id) {
 // Unset, or an id no longer in the list, is Clawd — the default nobody has to
 // opt out of.
 export function getTamaCritter() {
-  const id = P().ui?.tama_critter;
-  return CRITTER_IDS.includes(id) ? id : "clawd";
+  return critterById(P().ui?.tama_critter).id;
 }
 
 export function setTamaCritter(id) {
