@@ -290,6 +290,42 @@ def test_timing_errors_name_the_svg_file(tmp_path):
         build_critters.convert("bad", _svg(tmp_path, body), build_critters.Sheet())
 
 
+def test_face_layers_are_parsed_out_of_the_drawn_tree(tmp_path):
+    face = '<g class="face-happy" fill="#123456"><rect x="1" y="1" width="2" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + face), build_critters.Sheet())
+    assert s["faces"] == {"happy": [{"g": [{"r": [1, 1, 2, 1]}], "a": {"fill": "#123456"}}]}
+    assert "[1,1,2,1]" not in json.dumps(s["root"], separators=(",", ":"))
+
+
+def test_no_faces_key_without_face_layers(tmp_path):
+    assert "faces" not in build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
+
+
+@pytest.mark.parametrize(
+    "layer,match",
+    [
+        ('<g class="face-wink"><rect x="1" y="1" width="1" height="1"/></g>', "face-wink"),
+        # A face layer nested inside another group would be drawn all the time instead.
+        ('<g><g class="face-happy"><rect x="1" y="1" width="1" height="1"/></g></g>', "directly under"),
+        ('<rect class="face-happy" x="1" y="1" width="1" height="1"/>', "face-happy"),
+        (
+            '<g class="face-x"><rect x="1" y="1" width="1" height="1"/></g>'
+            '<g class="face-x"><rect x="2" y="2" width="1" height="1"/></g>',
+            "twice",
+        ),
+    ],
+)
+def test_raises_on_a_bad_face_layer(tmp_path, layer, match):
+    with pytest.raises(ValueError, match=match):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def test_nox_draws_its_own_worried_brows():
+    worried = _sprite("nox")["faces"]["worried"]
+    assert worried[0]["a"] == {"fill": "#8f9397"}
+    assert len(worried[0]["g"]) == 4
+
+
 def test_raises_on_a_stray_top_level_element(tmp_path):
     # _svg nests everything inside the outer <g>; write this one by hand to put a
     # <rect> as a sibling of the outer <g> instead.

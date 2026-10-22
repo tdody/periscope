@@ -24,6 +24,8 @@ else, so a new SVG fails loudly instead of drawing wrong):
     one whose height starts at 0 and grows over the eye.
   - a critter whose eyes are lids declares its face colour with data-ink="#rrggbb"
     on the <svg> (the colour under a lid isn't in the drawing).
+  - a critter's own art for a duty face is a <g class="face-happy|face-x|face-worried|face-down">
+    directly under the outer <g>; it's drawn instead of the generated face, never as the critter.
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
+FACES = {"face-happy": "happy", "face-x": "x", "face-worried": "worried", "face-down": "down"}
 
 
 def tag(el: ET.Element) -> str:
@@ -67,7 +70,7 @@ def paint(el: ET.Element) -> dict:
 
 def mood_of(el: ET.Element) -> str | None:
     cls = el.get("class")
-    if cls is None:
+    if cls is None or cls in FACES:  # face layers are kept out of the tree by _convert, not drawn by mood
         return None
     if cls not in MOODS:
         raise ValueError(f"unknown class {cls!r}")
@@ -325,6 +328,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         mood = mood_of(el)
         if t == "rect":
             check_attrs(el, {"x", "y", "width", "height"})
+            if el.get("class") in FACES:
+                raise ValueError(f"{svg.name}: {el.get('class')} must be a <g>, not a <rect>")
             for c in el:
                 if tag(c) != "animate":
                     raise ValueError(f"{svg.name}: <rect> may only contain <animate>, found <{tag(c)}>")
@@ -363,6 +368,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             return g
         if t == "g":
             check_attrs(el, set())
+            if el.get("class") in FACES:
+                raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
             anims = []
             kids2 = []
             for c in el:
@@ -392,20 +399,37 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         raise AssertionError(f"unreachable: callers only pass rect/g, got <{t}>")
 
     root = []
+    faces: dict[str, list[dict]] = {}
     for c in kids[1:]:
         if tag(c) not in ("rect", "g"):
             raise ValueError(f"{svg.name}: unsupported element <{tag(c)}> directly under the outer <g>")
+        face_cls = c.get("class")
+        if tag(c) == "g" and face_cls in FACES:
+            # A critter's own art for one duty face, drawn instead of the generated glyph (critters.js
+            # faceGlyphs) and never as part of the critter itself.
+            name = FACES[face_cls]
+            if name in faces:
+                raise ValueError(f"{svg.name}: {face_cls} appears twice")
+            check_attrs(c, set())
+            layer = {"g": [node(k, False) for k in c]}
+            if paint(c):
+                layer["a"] = paint(c)
+            faces[name] = [layer]
+            continue
         root.append(node(c, False))
     if not any(drawn(n) for n in root):
         # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
         # so spriteBox is Infinity downstream. Also catches an empty root.
         raise ValueError(f"{svg.name}: every layer is inside a mood group, nothing is always drawn")
-    return {
+    out = {
         "name": doc.get("aria-label") or cid.title(),
         "root": root,
         "anchors": anchors_of(root),
         "ink": ink_of(svg.name, doc, root),
     }
+    if faces:
+        out["faces"] = faces
+    return out
 
 
 def render() -> tuple[str, str]:

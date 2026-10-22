@@ -38,5 +38,6 @@
           <rect x="9" y="9.8" width="0.5" height="0.6" fill="#f3f5f8"></rect><rect x="10.5" y="9.8" width="0.5" height="0.6" fill="#f3f5f8"></rect>
           <g fill="#5c626b"><rect x="7.5" y="3.6" width="1" height="1.2"><animate attributeName="opacity" values="1;0.3;1" dur="0.3s" repeatCount="indefinite"></animate></rect><rect x="9.5" y="3.2" width="1" height="1.6"><animate attributeName="opacity" values="0.3;1;0.3" dur="0.3s" repeatCount="indefinite"></animate></rect><rect x="11.5" y="3.6" width="1" height="1.2"><animate attributeName="opacity" values="1;0.3;1" dur="0.3s" repeatCount="indefinite"></animate></rect></g>
         </g>
+        <g class="face-worried" fill="#8f9397"><rect x="5.8" y="5.5" width="1.4" height="0.5"></rect><rect x="7.2" y="5" width="1.6" height="0.5"></rect><rect x="11.2" y="5" width="1.6" height="0.5"></rect><rect x="12.8" y="5.5" width="1.4" height="0.5"></rect></g>
       </g>
     </svg>
