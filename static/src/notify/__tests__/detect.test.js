@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { detect, GRACE_PASSES, prKey } from "../detect.js";
+import { detect, GRACE_PASSES, prKey, questionKey } from "../detect.js";
 
 const NOW = 1_000_000;
 const win = (over = {}) => ({
   pid: "p1", target: "s:1", session: "s", name: "pane", branch: "b", state: "idle",
   focused_at: 0, acted_at: 0, ...over,
 });
-const ask = (over = {}) => ({ id: "a1", kind: "need_human", target: "s:1", ts: NOW - 5, message: "which db?", ...over });
+const ask = (over = {}) => ({ id: "a1", kind: "need_human", pane_id: "%1", target: "s:1", ts: NOW - 5, message: "which db?", ...over });
 const meter = (over = {}) => ({ percent: 40, resets_at: NOW + 3600, hot: false, ...over });
 const plan = (meters, over = {}) => ({ default: { available: true, fetched_at: NOW - 60, meters, ...over } });
 
@@ -241,6 +241,24 @@ describe("detect", () => {
     let st = asked.state;
     st = passes(st, hidden, GRACE_PASSES + 5);
     expect(detect(st, { windows: [win()], alerts: [ask()] }, NOW + 999).events).toEqual([]);
+  });
+
+  it("doesn't replay a question when a server restart regenerates its id", () => {
+    const asked = step({ windows: [win()], alerts: [] }, { windows: [win()], alerts: [ask()] });
+    expect(kinds(asked)).toEqual(["question"]);
+    expect(detect(asked.state, { windows: [win()], alerts: [ask({ id: "rehydrated" })] }, NOW + 3).events).toEqual([]);
+    // A rename moves the target, not the pane id.
+    expect(detect(asked.state, { windows: [win({ target: "t:1" })], alerts: [ask({ target: "t:1" })] }, NOW + 3).events).toEqual([]);
+    // Dismissed, then restarted: still seen.
+    const q = step({ windows: [win()], alerts: [] }, { windows: [win()], alerts: [ask()], dismissedAlertIds: new Set(["a1"]) });
+    expect(detect(q.state, { windows: [win()], alerts: [ask({ id: "rehydrated" })] }, NOW + 3).events).toEqual([]);
+  });
+
+  it("keys a question by pane, time and message", () => {
+    expect(questionKey(ask())).toBe(questionKey(ask({ id: "other", target: "x:9" })));
+    expect(questionKey(ask())).not.toBe(questionKey(ask({ message: "which table?" })));
+    expect(questionKey(ask())).not.toBe(questionKey(ask({ pane_id: "%2" })));
+    expect(questionKey(ask())).not.toBe(questionKey(ask({ ts: NOW })));
   });
 
   it("keys a PR by repo and number", () => {

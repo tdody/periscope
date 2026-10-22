@@ -25,6 +25,17 @@ export const GRACE_PASSES = 120;
 // One PR, however many panes show it.
 export const prKey = (w) => `${w.repo_slug || w.repo_key || ""}#${w.pr}`;
 
+// One agent question, by what survives a server restart: the alert's id is
+// regenerated when channels rehydrates the feed, so keying on it re-announced
+// every question from the last 24 h on each restart. The pane id outlives a
+// rename and the restart (tmux lives on); the message hash tells apart two
+// questions sent in the same second.
+export function questionKey(a) {
+  let h = 0;
+  for (const c of a.message || "") h = (h * 31 + c.codePointAt(0)) | 0;
+  return `question:${a.pane_id || a.target}@${a.ts}:${(h >>> 0).toString(36)}`;
+}
+
 const MOOD_RANK = { calm: 0, grumpy: 1, furious: 2 };
 
 export function detect(prev, snap, nowSec) {
@@ -69,7 +80,7 @@ export function detect(prev, snap, nowSec) {
   }
   for (const r of rows) {
     if (r.kind !== "event") continue;
-    const key = `question:${r.id}`;
+    const key = questionKey(r);
     // Hidden behind its pane's dialog: not recorded, so it announces once the
     // dialog closes if still unanswered (engaging the pane acks it). One
     // already announced before the dialog opened stays seen past the grace.
@@ -78,7 +89,7 @@ export function detect(prev, snap, nowSec) {
     } else note(key, { kind: "question", w: r.w, alert: r });
   }
   for (const a of alerts) {
-    if (a.kind === "need_human" && dismissedAlertIds.has(a.id)) keep(`question:${a.id}`);
+    if (a.kind === "need_human" && dismissedAlertIds.has(a.id)) keep(questionKey(a));
   }
 
   // Done: each finished turn (completed_at), the rail's READY rule.

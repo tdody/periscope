@@ -44,6 +44,7 @@ export function buildNeedsYou(windows, alertItems, dismissedIds, dismissedNeedsP
     .map((r) => ({
       kind: "event",
       id: r.id,
+      pane_id: r.pane_id,
       target: r.target,
       w: byTarget[r.target] || null,
       message: r.message,
@@ -74,6 +75,7 @@ export function buildReady(windows, alertItems, dismissedIds, dismissedReadyPids
     .map((r) => ({
       kind: "event",
       id: r.id,
+      pane_id: r.pane_id,
       target: r.target,
       w: byTarget[r.target] || null,
       message: r.message,
