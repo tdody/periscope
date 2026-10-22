@@ -82,14 +82,29 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
     held = [];
     heldSince = null;
   }
-  const out = (extra) => ({ state, recent, held, heldSince, lastBadge, ...NO_NEWS, flush, ...extra });
+  const out = (extra) => ({
+    state, recent, held, heldSince, lastBadge, ...NO_NEWS, flush,
+    timerAt: held.length ? heldSince + BURST_MS : null,
+    ...extra,
+  });
   // null until the first /api/state: unknown, not empty. Seeding from it would
   // announce every waiting pane as new on the first real poll.
   if (snap.alerts === null) return out();
+  // Panes waiting on you, as the rail counts them, not alert rows. Computed
+  // before the seeding/editing skip below, so a fresh context that can't seed
+  // yet still sets the dock badge.
+  const waiting = waitingPanes(snap.windows, snap.alerts, snap.dismissedAlertIds, snap.dismissedNeedsPids, nowMs / 1000);
+  const count = prefs.badge ? waiting.size : 0;
+  // Only on change: it's a native call every pass otherwise (one a second on
+  // the WS push). lastBadge starts undefined, so a new JS context always sends.
+  const badge = count === lastBadge ? null : count;
+  lastBadge = count;
   // Seeding from a partial snapshot would announce the rest as new once it
-  // lands: the first state can be empty (tmux answering nothing) or have its
-  // windows held back by a rename/drag. Waiting only delays the seed.
-  if (!state && (!snap.windows.length || ctx.editing)) return out();
+  // lands: the first state can be empty (tmux answering nothing — with zero
+  // windows the feed doesn't seed, so usage and window-less question banners
+  // stay silent until a window exists; an accepted edge) or have its windows
+  // held back by a rename/drag. Waiting only delays the seed.
+  if (!state && (!snap.windows.length || ctx.editing)) return out({ badge });
   const sends = [];
   // Mid-rename/drag applyState freezes `windows` but still moves `alerts`;
   // detecting on that mix would pair new alerts with stale panes. The badge
@@ -117,13 +132,6 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
       heldSince ??= nowMs;
     }
   }
-  // Panes waiting on you, as the rail counts them, not alert rows.
-  const waiting = waitingPanes(snap.windows, snap.alerts, snap.dismissedAlertIds, snap.dismissedNeedsPids, nowMs / 1000);
-  const count = prefs.badge ? waiting.size : 0;
-  // Only on change: it's a native call every pass otherwise (one a second on
-  // the WS push). lastBadge starts undefined, so a new JS context always sends.
-  const badge = count === lastBadge ? null : count;
-  lastBadge = count;
   return out({ sends, badge });
 }
 
@@ -135,11 +143,17 @@ export function startNotifyFeed() {
   const storage = typeof localStorage === "undefined" ? null : localStorage;
   let ctx = { state: resumeState(storage, Date.now()), recent: [], held: [], heldSince: null, lastBadge: undefined };
   let timer = null;
+  // The heldSince + BURST_MS the live `timer` targets, so a pass that flushes
+  // the old batch and holds a new one in the same tick reschedules instead of
+  // firing on the stale deadline (which would fire ~3s early and split the
+  // new burst into two summaries).
+  let timerFor = null;
 
   // The backstop for a burst that ends with no further pass; runPass flushes
   // it first when a pass comes due, and either path empties `held`.
   const flushHeld = () => {
     timer = null;
+    timerFor = null;
     const batch = ctx.held;
     ctx = { ...ctx, held: [], heldSince: null };
     if (batch.length) notify({ ...summaryPayload(batch), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
@@ -160,14 +174,23 @@ export function startNotifyFeed() {
         const editing = !!(editingTarget.peek() || dragState.peek());
         const nowMs = Date.now();
         const prevState = ctx.state;
-        const { sends, flush, badge, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
+        const { sends, flush, badge, timerAt, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
         ctx = next;
         if (ctx.state !== prevState) saveState(storage, ctx.state, nowMs);
         for (const p of [...flush, ...sends]) notify(p);
-        if (!ctx.held.length && timer) {
-          clearTimeout(timer);
+        // Reschedule whenever the target deadline moves, not just when a
+        // timer is/isn't running — a pass that flushes the old batch and
+        // holds a new one in the same tick must drop the stale timer, or it
+        // fires on the old `heldSince` and sends the new batch ~3s early.
+        if (timerAt == null) {
+          if (timer) clearTimeout(timer);
           timer = null;
-        } else if (ctx.held.length && !timer) timer = setTimeout(flushHeld, Math.max(0, ctx.heldSince + BURST_MS - nowMs));
+          timerFor = null;
+        } else if (timerAt !== timerFor) {
+          if (timer) clearTimeout(timer);
+          timerFor = timerAt;
+          timer = setTimeout(flushHeld, Math.max(0, timerAt - nowMs));
+        }
         if (badge !== null) setBadgeCount(badge);
       } catch (e) {
         console.error("[notify] pass failed", e);

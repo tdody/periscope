@@ -160,4 +160,23 @@ describe("runPass", () => {
     const r = runPass(fresh(), snapOf([asks("p1")], { alerts: null }), PREFS, 0);
     expect(r).toMatchObject({ state: null, sends: [], flush: [], badge: null });
   });
+
+  it("computes the badge before the seeding/editing skip, even when it can't seed yet", () => {
+    const r1 = runPass(fresh(), snapOf([]), PREFS, 0);
+    expect(r1.state).toBeNull();
+    expect(r1.badge).toBe(0);
+    const r2 = runPass(fresh({ editing: true }), snapOf([asks("p1")]), PREFS, 0);
+    expect(r2.state).toBeNull();
+    expect(r2.badge).toBe(1);
+  });
+
+  it("reschedules the burst timer for a new batch flushed and held in the same pass", () => {
+    const oldHeld = [{ kind: "needs_input", w: asks("x") }, { kind: "needs_input", w: asks("y") }];
+    const ctx = seeded([win()], { held: oldHeld, heldSince: 1000 });
+    const r = runPass(ctx, snapOf([asks("a"), asks("b"), asks("c"), asks("d")]), PREFS, 1000 + BURST_MS);
+    expect(r.flush).toHaveLength(1);
+    expect(r.held).toHaveLength(2);
+    expect(r.heldSince).toBe(1000 + BURST_MS);
+    expect(r.timerAt).toBe(1000 + 2 * BURST_MS);
+  });
 });

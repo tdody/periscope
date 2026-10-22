@@ -24,7 +24,10 @@ describe("payloadFor", () => {
   });
 
   it("clips a pane name by code point, never splitting a surrogate pair", () => {
-    const p = payloadFor({ kind: "needs_input", w: w({ name: `${"a".repeat(25)}😀bbbb` }) });
+    // 26-char clip cuts after the 24 a's, right where the emoji (a surrogate
+    // pair) starts: a code-unit slice would take the a's plus the emoji's
+    // lone high surrogate, which is exactly the bug this guards against.
+    const p = payloadFor({ kind: "needs_input", w: w({ name: `${"a".repeat(24)}😀bbbb` }) });
     expect(LONE_SURROGATE.test(p.title)).toBe(false);
   });
 
