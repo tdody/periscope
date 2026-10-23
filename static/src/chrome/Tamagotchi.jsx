@@ -33,7 +33,7 @@ import { Critter } from "./Critter.jsx";
 import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
-import { CRITTERS, critterById, placement } from "./critters.js";
+import { CRITTERS, critterById, hatTransform, placement } from "./critters.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
@@ -69,7 +69,8 @@ export function ClawdSprite() {
 }
 
 // A pastime's held prop is a scene prop, except the ones Clawd wears on his own
-// face and neck: on a critter they'd float across its body.
+// face and neck: on a critter they'd float across its body, so it wears its
+// own instead (critters.js wornGlyphs, via the `worn` computed below).
 const WORN_ON_CLAWD = new Set([Goggles, Scarf]);
 
 // Props drawn on Clawd's head (top at Y0) move with a critter's head instead:
@@ -257,6 +258,24 @@ function PartyHat({ x0 }) {
       <rect x={x0 + 7.5} y="6.8" width="3" height="0.6" fill="#ffd166" />
       <rect x={x0 + 8.25} y="5.2" width="1.5" height="0.5" fill="#ffd166" />
       <circle cx={x0 + 9} cy="3.6" r="0.8" fill="#f28ab2" />
+    </g>
+  );
+}
+
+// A critter's hats: Clawd's own, drawn inside its group and fitted to its head
+// (critters.js hatTransform) rather than on Clawd's spot. Which hat shows
+// follows Clawd's rules (TamaScene). The wrapper carries the view-box pivot
+// for the same reason as the critter's own: `.tama g` pivots on its fill-box.
+function CritterHats({ sprite, p, hat, season, ghost }) {
+  const headwear = p?.Headwear && !hat;
+  const snowcap = p?.snowcap && season === "winter" && !hat && !ghost;
+  if (!headwear && !snowcap && !hat) return null;
+  return (
+    <g class="tama-hat-seat" style="transform-box: view-box" transform={hatTransform(sprite)}>
+      {headwear && <p.Headwear x0={0} />}
+      {snowcap && <rect class="tama-snowcap" x="3" y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />}
+      {hat === "santa" && <SantaHat x0={0} />}
+      {hat === "party" && <PartyHat x0={0} />}
     </g>
   );
 }
@@ -645,6 +664,9 @@ export function TamaScene({
     : pose === "ctx" ? "worried"
     : !pose && p?.smile ? "happy"
     : null;
+  // What a critter wears for the pastime, rebuilt on its own eyes and neck
+  // (critters.js wornGlyphs); Clawd's Goggles and Scarf fit only Clawd.
+  const worn = sprite && p?.Held === Goggles ? "goggles" : sprite && p?.Held === Scarf ? "scarf" : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -671,12 +693,13 @@ export function TamaScene({
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
-                     startle={pose === "bell" && !deskBell} />
+                     startle={pose === "bell" && !deskBell} worn={worn} />
+            <CritterHats sprite={sprite} p={p} hat={hat} season={season} ghost={ghost} />
           </g>
         ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
         {p?.Held && !(sprite && WORN_ON_CLAWD.has(p.Held)) && <p.Held x0={x0} />}
-        <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>
+        {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}
         {!sprite && atDesk && celebrating && <ArmsUp x0={x0} />}
@@ -686,13 +709,15 @@ export function TamaScene({
         {!sprite && !sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {!sprite && p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && p?.pail && <Pail x0={x0} />}
-        <Head dy={headDy}>
-          {p?.snowcap && season === "winter" && !hat && !ghost && (
-            <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
-          )}
-          {hat === "santa" && <SantaHat x0={x0} />}
-          {hat === "party" && <PartyHat x0={x0} />}
-        </Head>
+        {!sprite && (
+          <Head dy={headDy}>
+            {p?.snowcap && season === "winter" && !hat && !ghost && (
+              <rect class="tama-snowcap" x={x0 + 3} y="8.4" width="12" height="0.7" rx="0.3" fill="#f4f8fb" />
+            )}
+            {hat === "santa" && <SantaHat x0={x0} />}
+            {hat === "party" && <PartyHat x0={x0} />}
+          </Head>
+        )}
       </g>
       </g>
       {p?.Front && <p.Front />}

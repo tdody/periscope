@@ -6,7 +6,7 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hueRotate, spriteBox } from "../critters.js";
+import { CRITTERS, critterById, hatTransform, hueRotate, spriteBox } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -654,10 +654,16 @@ describe("critters", () => {
     expect(scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain("tama-slap");
   });
 
-  it("lifts the hats onto a seated critter's head, and leaves a standing one's alone", () => {
+  it("fits Clawd's hats to the critter's head, inside its own group", () => {
     const nox = critterById("nox");
-    expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
-    expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
+    const seat = `<g class="tama-hat-seat" style="transform-box: view-box" transform="${hatTransform(nox.sprite)}">`;
+    for (const activity of ["read", "eat"]) {
+      const html = scene(nox, activity, { occasion: "yearend" });
+      expect(html, activity).toContain(`${seat}<g class="tama-hat-santa"`);
+      expect(html.indexOf("tama-hat-santa"), activity).toBeGreaterThan(html.indexOf('class="tama-critter"'));
+      expect(html, activity).not.toMatch(/translate\(0 -2\)"><g class="tama-hat-santa"/);
+    }
+    expect(scene(nox, "code", { party: true, duty: { kind: "merged", label: "1", more: 0 } })).toContain(`${seat}<g class="tama-hat-party"`);
   });
 
   // The mascot's own critter, not a beer/kids scene's friend or kids: those
@@ -774,17 +780,22 @@ describe("critters at their pastimes", () => {
   const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
   const nox = critterById("nox");
 
-  it("keeps a pastime's props but drops what Clawd wears on his face and neck", () => {
+  it("wears the goggles and the scarf on its own eyes and neck, not Clawd's", () => {
     expect(render(<TamaScene activity="swim" />)).toContain("tama-goggles");
-    expect(scene(nox, "swim")).not.toContain("tama-goggles");
-    expect(render(<TamaScene activity="sled" season="winter" />)).toContain("tama-scarf");
-    expect(scene(nox, "sled", { season: "winter" })).not.toContain("tama-scarf");
-    expect(scene(nox, "cycle")).toContain("tama-helmet");
+    const swim = scene(nox, "swim");
+    expect(swim).toContain('data-worn="goggles"');
+    expect(swim.split("tama-goggles").length - 1).toBe(1); // the critter's, not Clawd's too
+    const sled = scene(nox, "sled", { season: "winter" });
+    expect(sled).toContain('data-worn="scarf"');
+    expect(sled.split('class="tama-scarf"').length - 1).toBe(1);
+    expect(scene(nox, "cycle")).toContain(`transform="${hatTransform(nox.sprite)}"><g class="tama-helmet"`);
   });
 
-  it("lifts the head props onto a seated critter's head at a pastime too", () => {
-    expect(scene(nox, "sled", { season: "winter" })).toMatch(/<g transform="translate\(0 -2\)"><rect class="tama-snowcap"/);
-    expect(scene(nox, "game", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+  it("seats the head props on the critter's head at a pastime too", () => {
+    const seat = `transform="${hatTransform(nox.sprite)}">`;
+    expect(scene(nox, "sled", { season: "winter" })).toContain(`${seat}<rect class="tama-snowcap"`);
+    expect(scene(nox, "game", { occasion: "yearend" })).toContain(`${seat}<g class="tama-hat-santa"`);
+    expect(scene(nox, "cook")).toContain(`${seat}<g class="tama-toque"`);
   });
 
   const count = (html, needle) => html.split(needle).length - 1;
