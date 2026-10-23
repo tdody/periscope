@@ -90,14 +90,14 @@ describe("placement", () => {
   // `lift` (TamaScene draws the creature inside a `translate(0 -lift)`
   // wrapper) carry that onto the scene.
   const HAT_TOPS = {
-    // SantaHat (Tamagotchi.jsx): its two highest brim rects, y 4.6.
+    // SantaHat (Tamagotchi.jsx): its two highest crown rects, y 4.6.
     santa: 4.6,
     // PartyHat (Tamagotchi.jsx): the pompom circle, cy 3.6 r 0.8 → top 2.8.
     party: 2.8,
     // Toque (TamaPastimes.jsx): its middle pouf, cy Y0-3=6 r 1.8 → top 4.2.
     toque: 4.2,
-    // Helmet (TamaPastimes.jsx): the dome's crown, the two Q curves' shared
-    // control point at Y0-1.6=7.4 — also the curves' true minimum y.
+    // Helmet (TamaPastimes.jsx): the dome's crown, where its two Q curves
+    // meet at Y0-1.6=7.4 — also the curves' true minimum y.
     helmet: 7.4,
   };
   const HAT_SCENES = [
