@@ -266,6 +266,10 @@ function PartyHat({ x0 }) {
 // (critters.js hatTransform) rather than on Clawd's spot. Which hat shows
 // follows Clawd's rules (TamaScene). The wrapper carries the view-box pivot
 // for the same reason as the critter's own: `.tama g` pivots on its fill-box.
+// The seat draws inside the critter's own wrapper, ahead of the siblings that
+// follow it in the creature group (api's Stars, a held prop); Clawd's hat
+// draws after those instead. So those paint over a critter's hat, under
+// Clawd's — cosmetic, nothing both holds a prop and wears a hat at once.
 function CritterHats({ sprite, p, hat, season, ghost }) {
   const headwear = p?.Headwear && !hat;
   const snowcap = p?.snowcap && season === "winter" && !hat && !ghost;
@@ -623,7 +627,7 @@ export function TamaScene({
   // Any creature but Clawd is a sprite (critters.js) standing in Clawd's spot,
   // showing its own moods and shutting its own eyes. Clawd's overlay
   // components stay Clawd's; a critter draws its own duty faces (`critterFace`
-  // → Critter.jsx); hands and props are still Clawd-only.
+  // → Critter.jsx); hands and held props are still Clawd-only.
   const sprite = critter.sprite;
   const place = sprite && placement(sprite, { x0, sitting });
   const headDy = place ? place.top - Y0 : 0;
