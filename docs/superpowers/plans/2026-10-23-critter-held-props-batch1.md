@@ -297,11 +297,14 @@ describe("holding", () => {
 
   it("maps the tip into the scene through the critter's placement", () => {
     const sprite = critterById("scope").sprite;
-    const { scale, tx, ty } = placement(sprite, { x0: 1, sitting: false });
+    const place = placement(sprite, { x0: 1, sitting: false });
     const [x, y] = holdTip(sprite, "leash");
-    const [sx, sy] = holdTipInScene(sprite, "leash", { x0: 1 });
-    expect(sx).toBeCloseTo(tx + scale * x);
-    expect(sy).toBeCloseTo(ty + scale * y);
+    const [sx, sy] = holdTipInScene(sprite, "leash", place);
+    expect(sx).toBeCloseTo(place.tx + place.scale * x);
+    expect(sy).toBeCloseTo(place.ty + place.scale * y);
+    // Whatever size the placement gives it: the tip follows a bigger critter too.
+    const big = placement(sprite, { x0: 1, sitting: false, height: 13 });
+    expect(holdTipInScene(sprite, "leash", big)[1]).toBeCloseTo(big.ty + big.scale * y);
   });
 
   it.each(sprites)("%s's appendage runs from its root to the tip, in its limb colour", (_id, sprite) => {
@@ -369,10 +372,11 @@ export function holdTip(sprite, prop) {
   return [r4(sprite.limb.root[0] + reach), r4(box.y + at * box.h)];
 }
 
-// The same tip in scene units, for what's drawn outside the critter's wrapper:
-// the spoon into the pot, the leash to the dog.
-export function holdTipInScene(sprite, prop, { x0, sitting = false }) {
-  const { scale, tx, ty } = placement(sprite, { x0, sitting });
+// The same tip in scene units, for what's drawn outside the critter's wrapper
+// (the spoon into the pot, the leash to the dog), through the very placement
+// the wrapper uses: handed it rather than recomputing one, so a scene that
+// sizes its critter differently moves the hold with it.
+export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
   const [x, y] = holdTip(sprite, prop);
   return [r4(tx + scale * x), r4(ty + scale * y)];
 }
@@ -448,7 +452,7 @@ git commit -m "critters: a holding pose per critter — its arm, tentacle or tai
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tamagotchiRender.test.jsx`, add `holdTipInScene` to the `../critters.js` import (keep it sorted). Inside `describe("critters at their pastimes", …)`, before its closing `});`, add the following. `count` and `nox` already exist in that block; if `count` is missing, define it the same way the block above does.
+In `tamagotchiRender.test.jsx`, add `holdTipInScene` and `placement` to the `../critters.js` import (keep it sorted). Inside `describe("critters at their pastimes", …)`, before its closing `});`, add the following. `count` and `nox` already exist in that block; if `count` is missing, define it the same way the block above does.
 
 ```js
   const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
@@ -483,10 +487,10 @@ In `tamagotchiRender.test.jsx`, add `holdTipInScene` to the `../critters.js` imp
 
   it.each(holders)("%s's spoon and leash start at its own tip", (_id, c) => {
     const cook = render(<TamaScene activity="cook" critter={c} />);
-    const [sx, sy] = holdTipInScene(c.sprite, "spoon", PASTIME_SCENES.cook.pose);
+    const [sx, sy] = holdTipInScene(c.sprite, "spoon", placement(c.sprite, PASTIME_SCENES.cook.pose));
     expect(cook).toContain(`<line class="tama-spoon" x1="${sx}" y1="${sy}"`);
     expect(count(cook, 'class="tama-spoon"')).toBe(1);
-    const [lx, ly] = holdTipInScene(c.sprite, "leash", PASTIME_SCENES.dog.pose);
+    const [lx, ly] = holdTipInScene(c.sprite, "leash", placement(c.sprite, PASTIME_SCENES.dog.pose));
     expect(render(<TamaScene activity="dog" critter={c} />)).toContain(`d="M${lx} ${ly} Q23 12.4 28.1 15"`);
   });
 
@@ -503,20 +507,20 @@ Expected: FAIL. There's no `data-holding`, and Clawd's props still float.
 
 - [ ] **Step 3: Implement in `TamaPastimes.jsx`**
 
-1. Change the `./critters.js` import to include `holdTip` and `holdTipInScene` (keep it sorted).
+1. Change the `./critters.js` import to include `holdTip` and `holdTipInScene` (keep it sorted). `CritterFriend` already destructures `scale` from its `placement(…)`.
 
 2. Before `function Pint`, add:
 
 ```jsx
 // What a critter holds at its appendage's tip (critters.js holdTip): Clawd's
-// own prop at Clawd's size (the wrapper's scale undone), drawn inside the
+// own prop at Clawd's size (`scale`, its wrapper's, undone), drawn inside the
 // critter's wrapper so it bobs with it. The view-box pivot for the same reason
 // as the wrapper's: `.tama g` pivots on its fill-box. The pint's clink is
 // Clawd's (toward the friend); the friend's mirror turns its own toward the
 // mascot, so it needs no tama-clink2.
-export function CritterHeld({ sprite, kind }) {
+export function CritterHeld({ sprite, kind, scale }) {
   const [x, y] = holdTip(sprite, kind);
-  const k = r4(1 / placement(sprite, { x0: 0, sitting: false }).scale);
+  const k = r4(1 / scale);
   const at = (fit, inner) => (
     <g style="transform-box: view-box" transform={`translate(${x} ${y}) scale(${k}) ${fit}`}>{inner}</g>
   );
@@ -532,7 +536,7 @@ export function CritterHeld({ sprite, kind }) {
 
 ```jsx
       <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} holding="pint" />
-      <CritterHeld sprite={sprite} kind="pint" />
+      <CritterHeld sprite={sprite} kind="pint" scale={scale} />
 ```
 
 4. In `Friend`, replace `<Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />` with:
@@ -565,11 +569,11 @@ export function CoffeeMug() {
 
 6. Change `Spoon` to `export function Spoon({ x0, from })`. Its line's `x1` becomes `{from ? from[0] : x0 + 16.8}` and its `y1` becomes `{from ? from[1] : "13.6"}`. Keep the rest byte-identical: for Clawd, `y1` must still render `13.6`. Add a comment: `` `from`: a critter's tip (TamaScene), in place of Clawd's hand. ``
 
-7. Change `Dog()` to `Dog({ critter })`. The leash path's `d` becomes:
+7. Change `Dog()` to `Dog({ critter, place })`, where `place` is the mascot's placement (TamaScene's, through `PastimeBehind`). The leash path's `d` becomes:
 
 ```jsx
 // The leash runs from the holder to the collar: Clawd's arm, or a critter's tip.
-const [lx, ly] = critter?.sprite ? holdTipInScene(critter.sprite, "leash", PASTIME_SCENES.dog.pose) : [18.2, 14.2];
+const [lx, ly] = place ? holdTipInScene(critter.sprite, "leash", place) : [18.2, 14.2];
 ```
 
 with `d={`M${lx} ${ly} Q23 12.4 28.1 15`}`. For Clawd this still renders `M18.2 14.2 Q23 12.4 28.1 15`.
@@ -601,12 +605,17 @@ const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog
   const holding = sprite ? HOLDING[activity] ?? null : null;
 ```
 
-5. Add `mugHeld={holding === "mug"}` to the `<Behind … />` call.
+5. Add `mugHeld={holding === "mug"}` to the `<Behind … />` call. Pass the mascot's placement to the pastimes' backdrops:
+   - `PastimeBehind({ p, season, trick, critter, place })`;
+   - its `<p.Behind … critter={critter} place={place} />`;
+   - TamaScene's `<PastimeBehind … critter={critter} place={place} />`.
+
+   Extend `PastimeBehind`'s comment: "`place` is the mascot's placement, for the leash from a critter's tip (Dog)." For Clawd, `place` is undefined, so nothing renders differently.
 
 6. Inside the critter wrapper, add `holding={holding}` to `<Critter … />`, and after `<CritterHats … />` add:
 
 ```jsx
-            {holding && <CritterHeld sprite={sprite} kind={holding} />}
+            {holding && <CritterHeld sprite={sprite} kind={holding} scale={place.scale} />}
 ```
 
 7. Replace:
@@ -619,7 +628,7 @@ with:
 
 ```jsx
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
-        {holding === "spoon" && <Spoon x0={x0} from={holdTipInScene(sprite, "spoon", { x0, sitting })} />}
+        {holding === "spoon" && <Spoon x0={x0} from={holdTipInScene(sprite, "spoon", place)} />}
 ```
 
 For Clawd, `sprite` is null, so his markup is unchanged. The hash pin proves it.

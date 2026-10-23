@@ -62,7 +62,7 @@ Values, taken from the draft:
 **`critters.js`:**
 - `HOLDS = { pint: {reach 2.6, at .42}, mug: {2.2, .55}, spoon: {2.4, .55}, can: {2.6, .45}, leash: {2.4, .65} }`.
 - `holdTip(sprite, prop)`: `[root.x + reach, box.y + at·box.h]`, in sprite units.
-- `holdTipInScene(sprite, prop, pose)`: that tip mapped through `placement`, in scene units.
+- `holdTipInScene(sprite, prop, place)`: that tip mapped through the placement the critter's wrapper uses, in scene units. It takes the placement rather than recomputing one, so a later change to the critters' size (THI-415's "increase the size when possible") moves every hold with the critter.
 - `limbGlyphs(sprite, prop)`: the limb's nodes, in the draft's exact geometry:
   - **arm:** a horizontal bar from the root, a vertical bar to the tip, and a hand nub;
   - **tentacle:** 0.95 cells stepped every ≤ 0.75 units from root to tip, plus a 0.8 curl;
@@ -72,9 +72,9 @@ Values, taken from the draft:
 
 **`TamaPastimes.jsx`:**
 - `CoffeeMug` is extracted from `Behind`'s coffee case, with byte-identical markup.
-- `CritterHeld({ sprite, kind })` draws the pint, the mug or the can at the tip, scaled back to Clawd's size.
+- `CritterHeld({ sprite, kind, scale })` draws the pint, the mug or the can at the tip, scaled back to Clawd's size by its wrapper's `scale`.
 - `Spoon` takes an optional `from`.
-- `Dog({ critter })` starts the leash at the critter's tip.
+- `Dog({ critter, place })` starts the leash at the critter's tip. `PastimeBehind` passes it the mascot's placement.
 - `CritterFriend` holds its own pint (`holding="pint"` plus `CritterHeld`). It keeps plain `tama-clink`: its mirror already turns the clink toward the mascot. `Friend` draws Clawd's pint only for Clawd.
 
 **`Tamagotchi.jsx`:**
