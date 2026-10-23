@@ -34,6 +34,7 @@ else, so a new SVG fails loudly instead of drawing wrong):
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -282,7 +283,7 @@ def numbers(svg_name: str, doc: ET.Element, attr: str, n: int) -> list[float] | 
         vals = [num(p) for p in raw.split()]
     except ValueError:
         vals = []
-    if len(vals) != n:
+    if len(vals) != n or not all(math.isfinite(v) for v in vals):
         raise ValueError(f"{svg_name}: {attr} must be {n} numbers, got {raw!r}")
     return vals
 

@@ -396,6 +396,10 @@ def test_convert_leaves_undeclared_anchors_out(tmp_path):
         (' data-hat="10 4 0"', "width"),
         (' data-neck="12 17 3"', "x0"),
         (' data-neck="12 3"', "3 numbers"),
+        (' data-neck="12 nan 3"', "numbers|finite"),
+        (' data-hat="10 4 inf"', "numbers|finite"),
+        (' data-neck="12 5 5"', "x0"),
+        (' data-hat="10 4 -2"', "width"),
     ],
 )
 def test_raises_on_a_malformed_anchor(tmp_path, attrs, match):
