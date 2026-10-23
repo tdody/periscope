@@ -569,7 +569,7 @@ export function CoffeeMug() {
 
 6. Change `Spoon` to `export function Spoon({ x0, from })`. Its line's `x1` becomes `{from ? from[0] : x0 + 16.8}` and its `y1` becomes `{from ? from[1] : "13.6"}`. Keep the rest byte-identical: for Clawd, `y1` must still render `13.6`. Add a comment: `` `from`: a critter's tip (TamaScene), in place of Clawd's hand. ``
 
-7. Change `Dog()` to `Dog({ critter, place })`, where `place` is the mascot's placement (TamaScene's, through `PastimeBehind`). The leash path's `d` becomes:
+7. (Superseded in review: `Dog({ from })`, with `from` computed once in `TamaScene`; see the spec.) Change `Dog()` to `Dog({ critter, place })`, where `place` is the mascot's placement (TamaScene's, through `PastimeBehind`). The leash path's `d` becomes:
 
 ```jsx
 // The leash runs from the holder to the collar: Clawd's arm, or a critter's tip.

@@ -74,7 +74,7 @@ Values, taken from the draft:
 - `CoffeeMug` is extracted from `Behind`'s coffee case, with byte-identical markup.
 - `CritterHeld({ sprite, kind, scale })` draws the pint, the mug or the can at the tip, scaled back to Clawd's size by its wrapper's `scale`.
 - `Spoon` takes an optional `from`.
-- `Dog({ critter, place })` starts the leash at the critter's tip. `PastimeBehind` passes it the mascot's placement.
+- `Dog({ from })` starts the leash at `from`: the tip in scene units, which `TamaScene` computes once (`holdTipInScene(sprite, "leash", place)`) and passes through `PastimeBehind`. `Spoon` takes the same `from`.
 - `CritterFriend` holds its own pint (`holding="pint"` plus `CritterHeld`). It keeps plain `tama-clink`: its mirror already turns the clink toward the mascot. `Friend` draws Clawd's pint only for Clawd.
 
 **`Tamagotchi.jsx`:**
@@ -120,3 +120,12 @@ The held prop sits at the right-hand tip, which is where the "!" is drawn (`head
 ## Hand check
 
 Re-render the batch-1 grid from the branch. It must match the approved draft.
+
+## Notes for batch 2 (the bass and the controller)
+
+None of these is wrong today; each is an assumption two-appendage poses will hit.
+- **The "!" side.** `startleGlyph(sprite, holding)` moves the "!" left because every held prop is on the right. A left-hand limb or prop lands there; make it take the side.
+- **Direction.** `limbGlyphs` assumes a reach to the right (the arm's bar is `x1 - x0` wide) and, for a tail, a tip above the root (the riser is `y0 - y1 + t` tall). A left reach or a low tip gives a negative rect. The "unbroken" test catches that.
+- **One limb.** `sprite.limb` is single and `HOLDS` gives one tip. A second appendage needs a schema addition, and `build_critters.py`'s stray `data-limb-*` check will reject it until then.
+- **`lift`.** `holdTipInScene` ignores `lift`: the spoon is drawn inside the lift wrapper, and the leash's scene has none. A prop drawn in `Behind` for a lifted pose would be off by `lift`.
+- **The one switch.** Adding `music` / `game` to `HOLDING` is what hides Clawd's floating `Bass` / `Controller`: `TamaScene` drops `p.Held` for any holding critter.

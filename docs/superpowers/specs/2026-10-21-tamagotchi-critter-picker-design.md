@@ -95,6 +95,11 @@ come out a device pixel wider than others. A fixed 0.5 scale would keep them
 uniform on Retina, at the cost of smaller critters (7.5–8.5 units); matching
 Clawd's height was chosen instead.
 
+**Superseded 2026-10-23:** critters now stand `CRITTER_HEIGHT` = 12 (scales
+0.71–0.80), Clawd's height only under a Halloween sheet; see the Size section of
+`2026-10-23-critter-held-props-batch1-design.md`. The uneven-columns trade-off
+above still applies at those scales, and is still accepted.
+
 ### `static/src/chrome/Critter.jsx`
 
 `<Critter sprite mood="calm" asleep={false} />` draws the layers, in sprite
