@@ -109,6 +109,8 @@ describe("<Critter>", () => {
         { g: [{ r: [5, 5, 2, 2], a: { fill: "#333" } }], role: "eye", shut: [5, 6, 2, 0.4] },
         { g: [{ r: [6, 6, 2, 2], a: { fill: "#444" } }], role: "lid", shut: [6, 7, 2, 0.4] },
         { g: [{ r: [7, 7, 0.7, 0.7] }], role: "glint", mood: "calm" },
+        // A resting tail (`rest`): drawn as any group when nothing is held.
+        { g: [{ r: [8, 8, 1, 1] }], rest: true },
       ],
     };
     const awake =
@@ -119,6 +121,7 @@ describe("<Critter>", () => {
       '<g data-role="eye"><rect x="5" y="5" width="2" height="2" fill="#333"></rect></g>' +
       '<g data-role="lid"><rect x="6" y="6" width="2" height="2" fill="#444"></rect></g>' +
       '<g data-mood="calm" data-role="glint"><rect x="7" y="7" width="0.7" height="0.7"></rect></g>' +
+      '<g><rect x="8" y="8" width="1" height="1"></rect></g>' +
       "</g></svg>";
     const asleep =
       '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
@@ -127,6 +130,7 @@ describe("<Critter>", () => {
       '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
       '<rect data-role="shut" x="5" y="6" width="2" height="0.4" fill="#333"></rect>' +
       '<rect data-role="shut" x="6" y="7" width="2" height="0.4" fill="#444"></rect>' +
+      '<g><rect x="8" y="8" width="1" height="1"></rect></g>' +
       "</g></svg>";
     expect(draw({ sprite })).toBe(awake);
     expect(draw({ sprite, asleep: true })).toBe(asleep);

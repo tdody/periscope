@@ -391,7 +391,7 @@ export function GardenBed() {
   );
 }
 
-// The morning mug: standing by Clawd's arm at x 25.5 (Tamagotchi.jsx Behind),
+// The coffee break's mug (`coffee`, not the desk mug): standing by Clawd's arm at x 25.5 (Tamagotchi.jsx Behind),
 // or held by its handle in a critter's appendage (CritterHeld). Here, not in
 // Tamagotchi.jsx: CritterHeld draws it, and Tamagotchi.jsx imports this file.
 export function CoffeeMug() {

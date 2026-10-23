@@ -20,7 +20,8 @@ export function critterById(id) {
 export const CLAWD_HEIGHT = 10;
 // A critter stands taller than Clawd: fit to his 10-unit height, a square-ish
 // sprite covers about half his 17-wide body. 12 fits every scene but two
-// (13.5 had the beer friends' heads touching): under the Halloween sheets,
+// (13.5 put Jelly's party hat off the top of the scene and the beer friends'
+// heads together): under the Halloween sheets,
 // cut for Clawd (Tamagotchi.jsx, CritterKid), a critter goes back to Clawd's
 // height; at the desk, the duty bubble's tail covers a seated critter's ear
 // tips. Everything else a critter wears or holds follows placement(), so it

@@ -73,7 +73,7 @@ export function ClawdSprite() {
 // own instead (critters.js wornGlyphs, via the `worn` computed below).
 const WORN_ON_CLAWD = new Set([Goggles, Scarf]);
 
-// What a critter holds for each pastime, in its own appendage (critters.js
+// What a critter holds for each activity, in its own appendage (critters.js
 // limbGlyphs, TamaPastimes CritterHeld): Clawd's held props sit at his hand and
 // would float beside a critter.
 const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog: "leash" };
@@ -673,8 +673,8 @@ export function TamaScene({
   const worn = sprite && p?.Held === Goggles ? "goggles" : sprite && p?.Held === Scarf ? "scarf" : null;
   const holding = sprite ? HOLDING[activity] ?? null : null;
   // Where a critter's tip is, for the props drawn outside its wrapper (the
-  // spoon into the pot, the leash to the dog): computed from what's held, not
-  // from `place` directly, so Dog decides nothing about placement itself.
+  // spoon into the pot, the leash to the dog): through the same `place` the
+  // wrapper uses, so Spoon and Dog get a point and never a placement.
   const holdFrom = holding === "spoon" || holding === "leash" ? holdTipInScene(sprite, holding, place) : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
