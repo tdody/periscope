@@ -651,6 +651,92 @@ git commit -m "tamagotchi: critters hold the pint, the mug, the spoon, the water
 
 ---
 
+### Task 3b: Critters stand taller (12, not Clawd's 10)
+
+**Decided with the user, from a size mock:**
+- A critter is fit to Clawd's height today (10 scene units), so a square-ish critter covers about half of Clawd's 17-wide body.
+- The mock tried 12 and 13.5 in ten scenes. At 13.5 the beer friends' heads nearly touch and tall critters' hats reach the top edge.
+- The user chose **12 everywhere**: one constant, applied in every scene.
+- A critter's kids stay half its height (6).
+- Clawd is untouched.
+
+**Why it's a one-constant change:** every critter piece follows `placement()`: the wrapper, hats, faces, worn props, the "!", the held props (batch 1), the friend and the kids.
+
+**Files:**
+- Modify: `static/src/chrome/critters.js`, `static/src/chrome/TamaPastimes.jsx` (`CritterKid`)
+- Test: `static/src/chrome/__tests__/critters.test.js`, `static/src/chrome/__tests__/tamagotchiRender.test.jsx`
+
+- [ ] **Step 1: Write the failing tests**
+
+In `critters.test.js`'s `describe("placement", …)`:
+- Replace the "stands %s as tall as Clawd, on Clawd's spot" test with:
+
+```js
+  it.each(sprites.map((c) => [c.id, c.sprite]))("stands %s taller than Clawd (CRITTER_HEIGHT), on Clawd's spot", (_id, sprite) => {
+    const box = spriteBox(sprite);
+    const p = placement(sprite, { x0: 8, sitting: false });
+    expect(p.scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
+    expect(bottomOf(p, box)).toBeCloseTo(19);
+    expect(centreOf(p, box)).toBeCloseTo(16.5);
+    expect(p.top).toBe(19 - CRITTER_HEIGHT);
+  });
+
+  it("stands a critter 12 tall: a fifth over Clawd, so a square one isn't half his size", () => {
+    expect(CRITTER_HEIGHT).toBe(12);
+    expect(CRITTER_HEIGHT).toBeGreaterThan(CLAWD_HEIGHT);
+  });
+
+  it("still fits any height it's given", () => {
+    const sprite = critterById("nox").sprite;
+    const p = placement(sprite, { x0: 8, sitting: false, height: CLAWD_HEIGHT });
+    expect(p.scale * spriteBox(sprite).h).toBeCloseTo(CLAWD_HEIGHT);
+    expect(p.top).toBe(9);
+  });
+```
+
+- In "seats a sitting critter on the seat, not through it", change `expect(p.top).toBe(7);` to `expect(p.top).toBe(17 - CRITTER_HEIGHT);`.
+- Add `CRITTER_HEIGHT` to the sorted `../critters.js` import.
+
+In `tamagotchiRender.test.jsx`:
+- "plays with two half-size kids of its own kind" also pins the kids' height. `mapBoxThrough` returns centre and feet, so compute the height from the transform's scale: `scale * box.h` must be close to `CRITTER_HEIGHT / 2`.
+- Add a test that the mascot's own wrapper scale gives `CRITTER_HEIGHT` for every critter in, say, `code` and `beer`. Use the existing helpers (`mapBoxThrough`, or the `drawnPlace` helper if Task 3's fixes added it).
+- Add `CRITTER_HEIGHT` to the import.
+
+- [ ] **Step 2: Run the tests and watch them fail.** Run `npx vitest run static/src/chrome`. Expected: FAIL, because `CRITTER_HEIGHT` isn't exported yet.
+
+- [ ] **Step 3: Implement**
+
+In `critters.js`, after `CLAWD_HEIGHT`:
+
+```js
+// A critter stands taller than Clawd: fit to his 10-unit height, a square-ish
+// sprite covers about half his 17-wide body. 12 fits every scene (13.5 had the
+// beer friends' heads touching); everything a critter wears or holds follows
+// placement(), so it all grows with it.
+export const CRITTER_HEIGHT = 12;
+```
+
+Then change `placement`'s default: `export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {`. Update any comment on `placement` that says the critter matches Clawd's height.
+
+In `TamaPastimes.jsx`'s `CritterKid`, change `height: CLAWD_HEIGHT / 2` to `height: CRITTER_HEIGHT / 2`, and fix the import: add `CRITTER_HEIGHT`, and drop `CLAWD_HEIGHT` if it's now unused. Update `CritterKid`'s comment: "the critter at half its height".
+
+Grep `static/src` for other `placement(` callers and for comments saying "Clawd's height" / "as tall as Clawd" about critters, and update them. Settings' `TamaPicker.jsx` draws a critter in its own viewBox; leave it alone.
+
+- [ ] **Step 4: Run the tests**
+
+`npx vitest run static/src/chrome static/src/overlays`: all pass. "Clawd's drawing, pinned" covers Clawd only, so it's unchanged. Batch 1's held-prop tests read the drawn placement, so they follow the bigger critter.
+
+Then `npm test`, `npx biome lint static/src/chrome` and `bin/check`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add static/src/chrome/critters.js static/src/chrome/TamaPastimes.jsx static/src/chrome/__tests__/critters.test.js static/src/chrome/__tests__/tamagotchiRender.test.jsx
+git commit -m "critters: stand 12 tall, a fifth over Clawd — a square critter was half his size; kids stay half"
+```
+
+---
+
 ### Task 4: Hand check, docs, bundle, gate
 
 - [ ] **Step 1: Render the five scenes from the branch, and compare with the approved draft**
