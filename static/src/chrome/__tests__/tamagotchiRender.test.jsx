@@ -6,10 +6,12 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, spriteBox } from "../critters.js";
+import {
+  CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, placement, spriteBox,
+} from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
-import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, Y0 } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
@@ -629,7 +631,10 @@ describe("critters", () => {
 
   it("rides the furious heat shimmer up onto a seated critter's head", () => {
     const html = scene(critterById("ember"), "code", { mood: "furious" });
-    expect(html).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-shimmer"/);
+    // code's pose is seated at x0 3 (Tamagotchi.jsx POSES); the shimmer rides
+    // up by however much higher the critter's own head sits than Clawd's (Y0).
+    const headDy = placement(critterById("ember").sprite, { x0: 3, sitting: true }).top - Y0;
+    expect(html).toContain(`<g transform="translate(0 ${headDy})"><g class="tama-shimmer"`);
   });
 
   it("stays calm in the critter while on duty, as Clawd does", () => {
@@ -887,7 +892,7 @@ describe("critters at their pastimes", () => {
     const ty = Number(m[2]);
     const sx = Number(m[3]);
     const sy = m[4] !== undefined ? Number(m[4]) : sx;
-    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h) };
+    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h), scale: sy };
   }
 
   it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
@@ -917,7 +922,11 @@ describe("critters at their pastimes", () => {
     const centres = transforms.map((t) => mapBoxThrough(t, box).centreX);
     expect(centres[0]).toBeCloseTo(21.65, 2); // kid x 17.4 + 4.25
     expect(centres[1]).toBeCloseTo(29.65, 2); // kid x 25.4 + 4.25
-    for (const t of transforms) expect(mapBoxThrough(t, box).feetY).toBeCloseTo(19, 2);
+    for (const t of transforms) {
+      const mapped = mapBoxThrough(t, box);
+      expect(mapped.feetY).toBeCloseTo(19, 2);
+      expect(mapped.scale * box.h).toBeCloseTo(CRITTER_HEIGHT / 2); // half its own height, not Clawd's
+    }
     expect(count(html, 'class="tama-kid')).toBe(2);
   });
 
@@ -950,6 +959,14 @@ describe("critters at their pastimes", () => {
       .exec(html.slice(html.indexOf('class="tama-creature')));
     return { tx: Number(tx), ty: Number(ty), scale: Number(scale) };
   };
+
+  it.each(holders)("%s's own wrapper stands it CRITTER_HEIGHT tall, however the scene seats it", (_id, c) => {
+    for (const activity of ["code", "beer"]) {
+      const html = render(<TamaScene activity={activity} critter={c} />);
+      const { scale } = drawnPlace(html);
+      expect(scale * spriteBox(c.sprite).h).toBeCloseTo(CRITTER_HEIGHT);
+    }
+  });
 
   it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {
     for (const [activity, kind] of HELD) {

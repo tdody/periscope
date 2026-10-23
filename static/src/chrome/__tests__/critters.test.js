@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getTamaCritter, prefsSignal } from "../../prefs.js";
 import {
   CLAWD_HEIGHT,
+  CRITTER_HEIGHT,
   CRITTERS,
   EYE_FACES,
   HOLDS,
@@ -72,12 +73,24 @@ describe("placement", () => {
   const bottomOf = (p, box) => p.ty + p.scale * (box.y + box.h);
   const centreOf = (p, box) => p.tx + p.scale * (box.x + box.w / 2);
 
-  it.each(sprites.map((c) => [c.id, c.sprite]))("stands %s as tall as Clawd, on Clawd's spot", (_id, sprite) => {
+  it.each(sprites.map((c) => [c.id, c.sprite]))("stands %s taller than Clawd (CRITTER_HEIGHT), on Clawd's spot", (_id, sprite) => {
     const box = spriteBox(sprite);
     const p = placement(sprite, { x0: 8, sitting: false });
-    expect(p.scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+    expect(p.scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
     expect(bottomOf(p, box)).toBeCloseTo(19);
     expect(centreOf(p, box)).toBeCloseTo(16.5);
+    expect(p.top).toBe(19 - CRITTER_HEIGHT);
+  });
+
+  it("stands a critter 12 tall: a fifth over Clawd, so a square one isn't half his size", () => {
+    expect(CRITTER_HEIGHT).toBe(12);
+    expect(CRITTER_HEIGHT).toBeGreaterThan(CLAWD_HEIGHT);
+  });
+
+  it("still fits any height it's given", () => {
+    const sprite = critterById("nox").sprite;
+    const p = placement(sprite, { x0: 8, sitting: false, height: CLAWD_HEIGHT });
+    expect(p.scale * spriteBox(sprite).h).toBeCloseTo(CLAWD_HEIGHT);
     expect(p.top).toBe(9);
   });
 
@@ -87,7 +100,7 @@ describe("placement", () => {
     const p = placement(sprite, { x0: 3, sitting: true });
     expect(bottomOf(p, box)).toBeCloseTo(17);
     expect(centreOf(p, box)).toBeCloseTo(11.5);
-    expect(p.top).toBe(7);
+    expect(p.top).toBe(17 - CRITTER_HEIGHT);
   });
 });
 

@@ -7,7 +7,7 @@
 // own tip instead, inside its wrapper (CritterHeld). Motion is CSS
 // (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CLAWD_HEIGHT, holdTip, placement } from "./critters.js";
+import { CRITTER_HEIGHT, holdTip, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -279,10 +279,10 @@ function KidSheet({ x }) {
   );
 }
 
-// A critter's kid: the critter at half height on a kid's spot (8.5 wide, so
-// centred at x + 4.25), feet on the floor.
+// A critter's kid: the critter at half its height on a kid's spot (8.5 wide,
+// so centred at x + 4.25), feet on the floor.
 function CritterKid({ x, sprite }) {
-  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: CLAWD_HEIGHT / 2 });
+  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: CRITTER_HEIGHT / 2 });
   return (
     <g class="tama-critter" style="transform-box: view-box" transform={`translate(${r4(tx)} ${r4(ty)}) scale(${r4(scale)})`}>
       <Critter sprite={sprite} />

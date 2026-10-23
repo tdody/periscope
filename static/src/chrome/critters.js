@@ -18,6 +18,11 @@ export function critterById(id) {
 
 // Clawd standing, in scene units: body 4 rows × 2 + legs 2.
 export const CLAWD_HEIGHT = 10;
+// A critter stands taller than Clawd: fit to his 10-unit height, a square-ish
+// sprite covers about half his 17-wide body. 12 fits every scene (13.5 had the
+// beer friends' heads touching); everything a critter wears or holds follows
+// placement(), so it all grows with it.
+export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
 
@@ -39,12 +44,12 @@ export function spriteBox(sprite) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// Where a critter stands in Clawd's spot: as tall as standing Clawd (or
-// `height`: the kids are half that), centred on Clawd's centre, on the floor
-// line standing and on the seat sitting (on the floor line it would sink
-// through the chair). `top` is its head, for the props that sit on one
-// (hats, stars, the "!").
-export function placement(sprite, { x0, sitting, height = CLAWD_HEIGHT }) {
+// Where a critter stands in Clawd's spot: CRITTER_HEIGHT tall (or `height`:
+// the kids are half that), centred on Clawd's centre, on the floor line
+// standing and on the seat sitting (on the floor line it would sink through
+// the chair). `top` is its head, for the props that sit on one (hats, stars,
+// the "!").
+export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
   const bottom = sitting ? SEAT : FEET;
