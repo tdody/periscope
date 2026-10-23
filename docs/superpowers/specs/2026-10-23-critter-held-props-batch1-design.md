@@ -89,6 +89,7 @@ THI-415 also asks to "increase the size of the Tamagotchis when possible". A cri
 - **The mock:** 12 and 13.5, across ten scenes. At 13.5 the beer friends' heads nearly touch, and tall critters' hats reach the top edge.
 - **The decision:** 12 everywhere. `critters.js` gets `CRITTER_HEIGHT = 12` as `placement()`'s default, and a critter's kids are half that.
 - **Clawd is untouched.**
+- **Two scenes where it doesn't fit, accepted anyway:** under the Halloween sheets, cut for Clawd, a critter goes back to `CLAWD_HEIGHT` (`Tamagotchi.jsx`'s ghost placement, `CritterKid`'s costume); at the desk, the duty bubble's tail covers a seated critter's ear tips (laid out for Clawd's head top at 9, not a critter's new top at 5).
 - **Why one constant is enough:** everything a critter wears or holds follows `placement()`, so it all grows with it. That covers its hats, faces, worn props, the "!", the held props, the friend and the kids. The spoon's and leash's ends come from the placement the wrapper is drawn with.
 
 ## The bell's "!" while holding

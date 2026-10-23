@@ -82,6 +82,40 @@ describe("placement", () => {
     expect(p.top).toBe(19 - CRITTER_HEIGHT);
   });
 
+  // The constraint that rejected 13.5 (docs/superpowers/specs/…-design.md):
+  // every hat stays inside the scene. hatTransform maps Clawd's head frame
+  // (top centre (9, 9), 12 wide) onto a critter's `anchors.hat`, so a hat
+  // point at Clawd-frame y `Y` lands at `hat.top + hat.w/12*(Y-9)` in the
+  // critter's own sprite units; `placement()`'s `ty`/`scale` and the pose's
+  // `lift` (TamaScene draws the creature inside a `translate(0 -lift)`
+  // wrapper) carry that onto the scene.
+  const HAT_TOPS = {
+    // SantaHat (Tamagotchi.jsx): its two highest brim rects, y 4.6.
+    santa: 4.6,
+    // PartyHat (Tamagotchi.jsx): the pompom circle, cy 3.6 r 0.8 → top 2.8.
+    party: 2.8,
+    // Toque (TamaPastimes.jsx): its middle pouf, cy Y0-3=6 r 1.8 → top 4.2.
+    toque: 4.2,
+    // Helmet (TamaPastimes.jsx): the dome's crown, the two Q curves' shared
+    // control point at Y0-1.6=7.4 — also the curves' true minimum y.
+    helmet: 7.4,
+  };
+  const HAT_SCENES = [
+    ["santa", { x0: 3, sitting: true }], // code's seated pose
+    ["party", { x0: 3, sitting: true }],
+    ["toque", { x0: 2 }], // cook, standing
+    ["helmet", { x0: 7, lift: 2 }], // cycle, lifted onto the saddle
+  ];
+  function hatTop(sprite, { x0, sitting = false, lift = 0 }, Y) {
+    const { hat } = sprite.anchors;
+    const { ty, scale } = placement(sprite, { x0, sitting });
+    return ty + scale * (hat.top + (hat.w / 12) * (Y - 9)) - lift;
+  }
+
+  it.each(sprites.map((c) => [c.id, c.sprite]))("keeps every hat's top on screen for %s, 12 tall (13.5 didn't)", (_id, sprite) => {
+    for (const [name, pose] of HAT_SCENES) expect(hatTop(sprite, pose, HAT_TOPS[name]), name).toBeGreaterThanOrEqual(0);
+  });
+
   it("stands a critter 12 tall: a fifth over Clawd, so a square one isn't half his size", () => {
     expect(CRITTER_HEIGHT).toBe(12);
     expect(CRITTER_HEIGHT).toBeGreaterThan(CLAWD_HEIGHT);

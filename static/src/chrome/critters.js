@@ -19,9 +19,12 @@ export function critterById(id) {
 // Clawd standing, in scene units: body 4 rows × 2 + legs 2.
 export const CLAWD_HEIGHT = 10;
 // A critter stands taller than Clawd: fit to his 10-unit height, a square-ish
-// sprite covers about half his 17-wide body. 12 fits every scene (13.5 had the
-// beer friends' heads touching); everything a critter wears or holds follows
-// placement(), so it all grows with it.
+// sprite covers about half his 17-wide body. 12 fits every scene but two
+// (13.5 had the beer friends' heads touching): under the Halloween sheets,
+// cut for Clawd (Tamagotchi.jsx, CritterKid), a critter goes back to Clawd's
+// height; at the desk, the duty bubble's tail covers a seated critter's ear
+// tips. Everything else a critter wears or holds follows placement(), so it
+// all grows with it.
 export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
@@ -61,7 +64,7 @@ export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   };
 }
 
-const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
+const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
 
@@ -103,8 +106,9 @@ export function faceGlyphs(sprite, face) {
       p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
       cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
     };
-    // 0.6, not the eyes' 0.75: Clawd's 0.4-unit brows at a critter's ~0.6
-    // scale come to ~0.67; a touch thinner reads better than the eyes' glyphs.
+    // 0.6, not the eyes' 0.75: also sprite units, ~0.45 scene units at
+    // CRITTER_HEIGHT against Clawd's fixed 0.4 — a touch thinner reads
+    // better than the eyes' glyphs.
     return [...(own || [{ g: brows(eyes), a: stroked(ink, 0.6) }]), sweat];
   }
   if (own) return [...own];

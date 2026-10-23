@@ -989,6 +989,8 @@ describe("critters at their pastimes", () => {
     const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
     expect(transforms).toHaveLength(2);
     for (const t of transforms) expect(mapBoxThrough(t, box).scale * box.h).toBeCloseTo(CLAWD_HEIGHT / 2);
+    // Both ghost scenes: the mascot's own wrapper too, same as the Halloween run.
+    expect(drawnPlace(html).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
   });
 
   it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {
