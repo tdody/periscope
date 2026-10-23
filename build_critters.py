@@ -350,7 +350,7 @@ def limb_of(svg_name: str, doc: ET.Element) -> dict | None:
     if raw is None:
         orphans = sorted(a for a in LIMB_ATTRS[1:] if doc.get(a) is not None)
         if orphans:
-            raise ValueError(f"{svg_name}: {orphans} set without data-limb, got {raw!r}")
+            raise ValueError(f"{svg_name}: {orphans} set without data-limb")
         return None
     style, *nums = raw.split() or [""]
     if style not in LIMB_STYLES:

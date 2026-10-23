@@ -455,8 +455,8 @@ def test_convert_leaves_an_undeclared_limb_out(tmp_path):
         (' data-limb="arm 17 10 0" data-limb-color="#2a86b3"', "width"),
         (' data-limb="arm 17 10"', "data-limb-color"),
         (' data-limb="arm 17 10" data-limb-color="blue"', "data-limb-color"),
-        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-outline="grey"', "data-limb-outline"),
-        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-tip="claw"', "data-limb-tip"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-outline="grey"', "must be #rrggbb"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-tip="claw"', "must be 'spade'"),
         # The outline copy and spade only draw on a tail (limbGlyphs) — an arm or tentacle would drop them.
         (
             ' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-tip="spade"',
