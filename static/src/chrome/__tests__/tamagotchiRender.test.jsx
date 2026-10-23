@@ -6,7 +6,7 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hueRotate, spriteBox } from "../critters.js";
+import { CRITTERS, critterById, hatTransform, hueRotate, spriteBox } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -654,10 +654,18 @@ describe("critters", () => {
     expect(scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain("tama-slap");
   });
 
-  it("lifts the hats onto a seated critter's head, and leaves a standing one's alone", () => {
+  it("fits Clawd's hats to the critter's head, inside its own group", () => {
     const nox = critterById("nox");
-    expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
-    expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
+    const seat = `<g class="tama-hat-seat" style="transform-box: view-box" transform="${hatTransform(nox.sprite)}">`;
+    for (const activity of ["read", "eat"]) {
+      const html = scene(nox, activity, { occasion: "yearend" });
+      expect(html, activity).toContain(`${seat}<g class="tama-hat-santa"`);
+      expect(html.indexOf("tama-hat-santa"), activity).toBeGreaterThan(html.indexOf('class="tama-critter"'));
+      // Once only: Clawd's own santa hat (TamaScene's `!sprite` branch) must
+      // not also draw for a critter, leaving two in the markup.
+      expect(count(html, "tama-hat-santa"), activity).toBe(1);
+    }
+    expect(scene(nox, "code", { party: true, duty: { kind: "merged", label: "1", more: 0 } })).toContain(`${seat}<g class="tama-hat-party"`);
   });
 
   // The mascot's own critter, not a beer/kids scene's friend or kids: those
@@ -770,21 +778,101 @@ describe("critter faces follow Clawd's in every scene", () => {
   });
 });
 
+describe("critter hats and worn props follow Clawd's in every scene", () => {
+  // CritterHats' headwear/snowcap rules and Clawd's own (TamaScene's
+  // `!sprite` head-prop block) decide the same thing twice from the same
+  // scene inputs, same risk as the face chain above: nothing ties them
+  // together, so dropping `!hat`/`!ghost` from CritterHats, or the
+  // `!sprite &&` guard on Clawd's Headwear <Head>, desyncs a critter from
+  // Clawd without any other test noticing.
+  const HAT_MARKS = ["tama-hat-santa", "tama-hat-party", "tama-toque", "tama-helmet", "tama-snowcap"];
+  const WORN_MARKS = ["tama-goggles", 'class="tama-scarf"']; // exact: not "…-tail"
+  const MARKS = [...HAT_MARKS, ...WORN_MARKS];
+
+  // Scoped to the mascot's own group, same reason as faceOf/critterFace
+  // above: a beer/kids scene's friend and kids are critters too, drawn ahead
+  // of the mascot (`tama-creature`) in Behind's markup.
+  const ownMarkup = (html) => html.slice(html.indexOf('class="tama-creature'));
+  const marksIn = (body) => new Set(MARKS.filter((m) => body.includes(m)));
+
+  it("draws the same set of hats/worn props for the critter as for Clawd, each inside its own seat", () => {
+    const scope = critterById("scope");
+    const mismatches = [];
+    const seen = new Set();
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of [null, "merged"]) {
+        for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+          for (const season of ["summer", "winter"]) {
+            for (const trick of [false, true]) {
+              for (const party of [false, true]) {
+                const props = {
+                  activity, season, occasion, trick, party, working: 2,
+                  duty: kind && { kind, label: "1", more: 0 },
+                  walled: activity === "nap" ? { day: null, time: "3pm" } : null,
+                };
+                const clawd = ownMarkup(render(<TamaScene {...props} />));
+                const critter = ownMarkup(render(<TamaScene {...props} critter={scope} />));
+                const cSet = marksIn(clawd);
+                const sSet = marksIn(critter);
+                n += 1;
+                for (const m of cSet) seen.add(m);
+                for (const m of sSet) seen.add(m);
+                const same = cSet.size === sSet.size && [...cSet].every((m) => sSet.has(m));
+                if (!same) {
+                  mismatches.push({ activity, kind, occasion, season, trick, party, clawd: [...cSet], critter: [...sSet] });
+                  continue;
+                }
+                const seatAt = critter.indexOf('class="tama-hat-seat"');
+                const seat = seatAt < 0 ? "" : critter.slice(seatAt);
+                for (const m of sSet) {
+                  // Present exactly once for the critter: twice would mean
+                  // Clawd's own prop leaked in alongside the critter's.
+                  if (critter.split(m).length - 1 !== 1) {
+                    mismatches.push({ activity, kind, occasion, season, trick, party, dup: m });
+                  }
+                  // Every hat/snowcap sits inside the critter's own hat seat
+                  // (the worn goggles/scarf don't: they sit on the eyes/neck).
+                  if (HAT_MARKS.includes(m) && !seat.includes(m)) {
+                    mismatches.push({ activity, kind, occasion, season, trick, party, unseated: m });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (mismatches.length) {
+      throw new Error(
+        `${mismatches.length}/${n} scenes disagree (first 5):\n${mismatches.slice(0, 5).map((m) => JSON.stringify(m)).join("\n")}`,
+      );
+    }
+    // The matrix only proves something if it actually exercises every marker.
+    for (const m of MARKS) expect(seen.has(m), m).toBe(true);
+  });
+});
+
 describe("critters at their pastimes", () => {
   const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
   const nox = critterById("nox");
 
-  it("keeps a pastime's props but drops what Clawd wears on his face and neck", () => {
+  it("wears the goggles and the scarf on its own eyes and neck, not Clawd's", () => {
     expect(render(<TamaScene activity="swim" />)).toContain("tama-goggles");
-    expect(scene(nox, "swim")).not.toContain("tama-goggles");
-    expect(render(<TamaScene activity="sled" season="winter" />)).toContain("tama-scarf");
-    expect(scene(nox, "sled", { season: "winter" })).not.toContain("tama-scarf");
-    expect(scene(nox, "cycle")).toContain("tama-helmet");
+    const swim = scene(nox, "swim");
+    expect(swim).toContain('data-worn="goggles"');
+    expect(swim.split("tama-goggles").length - 1).toBe(1); // the critter's, not Clawd's too
+    const sled = scene(nox, "sled", { season: "winter" });
+    expect(sled).toContain('data-worn="scarf"');
+    expect(sled.split('class="tama-scarf"').length - 1).toBe(1);
+    expect(scene(nox, "cycle")).toContain(`transform="${hatTransform(nox.sprite)}"><g class="tama-helmet"`);
   });
 
-  it("lifts the head props onto a seated critter's head at a pastime too", () => {
-    expect(scene(nox, "sled", { season: "winter" })).toMatch(/<g transform="translate\(0 -2\)"><rect class="tama-snowcap"/);
-    expect(scene(nox, "game", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+  it("seats the head props on the critter's head at a pastime too", () => {
+    const seat = `transform="${hatTransform(nox.sprite)}">`;
+    expect(scene(nox, "sled", { season: "winter" })).toContain(`${seat}<rect class="tama-snowcap"`);
+    expect(scene(nox, "game", { occasion: "yearend" })).toContain(`${seat}<g class="tama-hat-santa"`);
+    expect(scene(nox, "cook")).toContain(`${seat}<g class="tama-toque"`);
   });
 
   const count = (html, needle) => html.split(needle).length - 1;

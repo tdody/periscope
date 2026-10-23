@@ -134,6 +134,50 @@ export function startleGlyph(sprite) {
   }];
 }
 
+// Clawd's hats are drawn for his head: its top centre at (9, 9) with x0 = 0,
+// 12 wide (Tamagotchi.jsx's SantaHat/PartyHat, TamaPastimes' Toque/Helmet,
+// the snowcap). This maps that head onto a critter's hat seat (anchors.hat,
+// declared in its SVG), in sprite units, so a hat sizes to the head and bobs
+// with it.
+export function hatTransform(sprite) {
+  const { cx, top, w } = sprite.anchors.hat;
+  return `translate(${cx} ${top}) scale(${r4(w / 12)}) translate(-9 -9)`;
+}
+
+// What a critter wears for a pastime, rebuilt around its own eyes and neck:
+// Clawd's Goggles and Scarf (TamaPastimes.jsx) sit on his eyes and neck row.
+// Nodes in the sprite tree's format, in Clawd's colours and classes.
+export function wornGlyphs(sprite, kind) {
+  if (kind === "goggles") {
+    const { eyes } = sprite.anchors;
+    const y = eyes.reduce((s, e) => s + e.y + e.h / 2, 0) / eyes.length;
+    const x0 = Math.min(...eyes.map((e) => e.x)) - 2;
+    const x1 = Math.max(...eyes.map((e) => e.x + e.w)) + 2;
+    const lens = { rx: 1, fill: "#7fd1e6", "fill-opacity": 0.45, stroke: "#2b2f36", "stroke-width": 0.5 };
+    return [{
+      cls: "tama-goggles",
+      g: [
+        { r: [r4(x0), r4(y - 0.4), r4(x1 - x0), 0.8], a: { fill: "#2b2f36" } },
+        ...eyes.map((e) => ({ r: [r4(e.x - 0.6), r4(e.y - 0.6), r4(e.w + 1.2), r4(e.h + 1.2)], a: lens })),
+      ],
+    }];
+  }
+  if (kind === "scarf") {
+    const { y, x0, x1 } = sprite.anchors.neck;
+    const stripes = [];
+    for (let x = x0 + 2; x + 0.7 <= x1; x += 3) stripes.push({ r: [r4(x), y, 0.7, 1.6] });
+    return [{
+      cls: "tama-scarf",
+      g: [
+        { r: [x0, y, r4(x1 - x0), 1.6], a: { fill: "#d64541" } },
+        { g: stripes, a: { fill: "#f4f4f6" } },
+        { r: [r4(x0 - 3), r4(y + 0.3), 3.6, 1.1], cls: "tama-scarf-tail", a: { fill: "#d64541" } },
+      ],
+    }];
+  }
+  return [];
+}
+
 // A colour's hue turned by `deg` (HSL), for a critter's friend (TamaPastimes.jsx):
 // the same creature, another individual, as Clawd's friend is Clawd in blue.
 // Computed rather than a CSS filter, which WebKit applies unreliably to SVG

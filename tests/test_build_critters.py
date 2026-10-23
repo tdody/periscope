@@ -373,3 +373,49 @@ def test_raises_on_a_stray_top_level_element(tmp_path):
     )
     with pytest.raises(ValueError, match="rect"):
         build_critters.convert("bad", p, build_critters.Sheet())
+
+
+def test_declared_hat_and_neck_become_anchors(tmp_path):
+    s = build_critters.convert(
+        "t", _svg(tmp_path, BODY + EYE, svg_attrs=' data-hat="10 4 8" data-neck="12.5 3 17"'), build_critters.Sheet()
+    )
+    assert s["anchors"]["hat"] == {"cx": 10, "top": 4, "w": 8}
+    assert s["anchors"]["neck"] == {"y": 12.5, "x0": 3, "x1": 17}
+
+
+def test_convert_leaves_undeclared_anchors_out(tmp_path):
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
+    assert "hat" not in s["anchors"] and "neck" not in s["anchors"]
+
+
+@pytest.mark.parametrize(
+    "attrs,match",
+    [
+        (' data-hat="10 4"', "3 numbers"),
+        (' data-hat="10 4 wide"', "3 numbers"),
+        (' data-hat="10 4 0"', "width"),
+        (' data-neck="12 17 3"', "x0"),
+        (' data-neck="12 3"', "3 numbers"),
+        (' data-neck="12 nan 3"', "numbers|finite"),
+        (' data-hat="10 4 inf"', "numbers|finite"),
+        (' data-neck="12 5 5"', "x0"),
+        (' data-hat="10 4 -2"', "width"),
+    ],
+)
+def test_raises_on_a_malformed_anchor(tmp_path, attrs, match):
+    with pytest.raises(ValueError, match=match):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=attrs), build_critters.Sheet())
+
+
+def test_every_shipped_critter_declares_its_hat_and_neck():
+    for cid in build_critters.CRITTERS:
+        anchors = _sprite(cid)["anchors"]
+        assert "hat" in anchors and "neck" in anchors, cid
+
+
+def test_render_raises_for_a_critter_without_a_hat_or_neck(tmp_path, monkeypatch):
+    _svg(tmp_path, BODY + EYE)  # writes tmp_path/bad.svg, no data-hat / data-neck
+    monkeypatch.setattr(build_critters, "SRC", tmp_path)
+    monkeypatch.setattr(build_critters, "CRITTERS", ["bad"])
+    with pytest.raises(ValueError, match="data-hat"):
+        build_critters.render()

@@ -1,4 +1,4 @@
-<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" width="200" height="200" shape-rendering="crispEdges" role="img" aria-label="Octocat">
+<svg data-hat="10 4 12" data-neck="11.6 4 16" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" width="200" height="200" shape-rendering="crispEdges" role="img" aria-label="Octocat">
   <style>.mood-grumpy,.mood-furious{display:none}</style>
   <!-- Mood layers: show .mood-<current>; hide the others. Default shown: calm. An original pixel take on the octocat: cat head, octopus legs. -->
       <g>

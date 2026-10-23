@@ -2,7 +2,7 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { EYE_FACES, faceGlyphs, hueRotate, startleGlyph } from "./critters.js";
+import { EYE_FACES, faceGlyphs, hueRotate, startleGlyph, wornGlyphs } from "./critters.js";
 
 // A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
 // `tint` degrees. No tint draws the critter's own paint, untouched.
@@ -45,12 +45,14 @@ function Node({ n, mood, asleep, hide, tint }) {
 // bell's "!": both drawn inside the critter's own group, so they scale and bob
 // with it. An eye-replacing face wins over `asleep` if both were ever set
 // (TamaScene never sets both). `tint` turns its colours (a critter's friend).
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0 }) {
+// `worn` is what it wears for a pastime (critters.js wornGlyphs), drawn over its face.
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null }) {
   const hide = EYE_FACES.has(face);
   return (
-    <g class="critter" data-face={face || undefined}>
+    <g class="critter" data-face={face || undefined} data-worn={worn || undefined}>
       {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} />)}
       {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
+      {worn && wornGlyphs(sprite, worn).map((n, i) => <Node key={`worn-${i}`} n={n} mood={mood} tint={tint} />)}
       {startle && startleGlyph(sprite).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );
