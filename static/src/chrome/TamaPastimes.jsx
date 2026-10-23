@@ -3,9 +3,11 @@
 // the one record per pastime TamaScene draws from. The dishes are
 // TamaDishes.jsx's. Behind-the-mascot pieces take fixed positions, set against
 // the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
-// inside its group, so they bob with it. Motion is CSS (styles.css, `.tama`).
+// inside its group, so they bob with it. A critter's held pieces sit at its
+// own tip instead, inside its wrapper (CritterHeld). Motion is CSS
+// (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CLAWD_HEIGHT, holdTip, holdTipInScene, placement } from "./critters.js";
+import { CLAWD_HEIGHT, holdTip, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -203,9 +205,12 @@ export function CritterHeld({ sprite, kind, scale }) {
   const at = (fit, inner) => (
     <g style="transform-box: view-box" transform={`translate(${x} ${y}) scale(${k}) ${fit}`}>{inner}</g>
   );
+  // Each fit puts the prop's grip on the tip: the pint's left side at its mid-height (11.5).
   if (kind === "pint") return at("translate(0 -11.5)", <Pint x={0} cls="tama-pint tama-clink" />);
-  // Mirrored so the handle (on the mug's far side from Clawd) faces the critter.
+  // Mirrored so the handle (on the mug's far side from Clawd) faces the
+  // critter; its grip is the handle's outer edge (30.1, 14.2).
   if (kind === "mug") return at("scale(-1 1) translate(-30.1 -14.2)", <CoffeeMug />);
+  // The can's grip is the apex of its own handle (17.8, 11.7).
   if (kind === "can") return at("translate(-17.8 -11.7)", <WateringCan x0={0} />);
   return null;
 }
@@ -244,9 +249,9 @@ export function Friend({ critter }) {
               <path d={`M${FRIEND_X0 + 3.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
               <path d={`M${FRIEND_X0 + 10.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
             </g>
+            <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />
           </>
         )}
-        {!critter?.sprite && <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />}
       </g>
       <g class="tama-cheers" fill="#ffd166">
         <rect x="18.1" y="7.6" width="0.4" height="1.2" />
@@ -385,7 +390,8 @@ export function GardenBed() {
 }
 
 // The morning mug: standing by Clawd's arm at x 25.5 (Tamagotchi.jsx Behind),
-// or held by its handle in a critter's appendage (CritterHeld).
+// or held by its handle in a critter's appendage (CritterHeld). Here, not in
+// Tamagotchi.jsx: CritterHeld draws it, and Tamagotchi.jsx imports this file.
 export function CoffeeMug() {
   return (
     <>
@@ -468,9 +474,9 @@ export function Toque({ x0 }) {
 }
 
 // ---- walking the dog: outdoors, a leash from Clawd's arm (x0 1) -----------
-export function Dog({ critter, place }) {
+export function Dog({ from }) {
   // The leash runs from the holder to the collar: Clawd's arm, or a critter's tip.
-  const [lx, ly] = place ? holdTipInScene(critter.sprite, "leash", place) : [18.2, 14.2];
+  const [lx, ly] = from ?? [18.2, 14.2];
   return (
     <g shape-rendering={GEO}>
       <path class="tama-leash" d={`M${lx} ${ly} Q23 12.4 28.1 15`} fill="none" stroke="#e05252" stroke-width="0.25" />
@@ -592,7 +598,7 @@ export function Scarf({ x0 }) {
 //   outdoors  set in the season's Scenery (at night on a Halloween round)
 //   snowcap   snow on Clawd's head in winter, under no hat
 //   jack      the Halloween week's jack-o'-lantern spot; none if no floor for one
-//   Behind    behind Clawd, given { season, trick }
+//   Behind    behind Clawd, given { season, trick, critter, from }
 //   Held      held or worn, in Clawd's group so it bobs along, given { x0 }
 //   Headwear  on Clawd's head unless any hat outranks it, given { x0 }
 //   Front     drawn over Clawd

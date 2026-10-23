@@ -124,10 +124,13 @@ export function faceGlyphs(sprite, face) {
 }
 
 // The bell's "!" away from the desk, beside the critter's own head: Clawd's
-// Startle sits at his right edge, which floats off any narrower critter.
-export function startleGlyph(sprite) {
+// Startle sits at his right edge, which floats off any narrower critter. A
+// held prop sits at the right-hand tip (TamaPastimes.jsx CritterHeld), where
+// the "!" would otherwise land and be swallowed — `holding` moves it to the
+// body's left instead, since every held prop is on the right.
+export function startleGlyph(sprite, holding = false) {
   const { head } = sprite.anchors;
-  const x = r4(head.right + 0.4);
+  const x = holding ? r4(spriteBox(sprite).x - 1.4) : r4(head.right + 0.4);
   return [{
     cls: "tama-startle", a: { fill: "#f2c14e" },
     g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],

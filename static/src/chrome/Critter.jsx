@@ -56,7 +56,7 @@ export function Critter({ sprite, mood = "calm", asleep = false, face = null, st
       {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={!!holding} />)}
       {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
       {worn && wornGlyphs(sprite, worn).map((n, i) => <Node key={`worn-${i}`} n={n} mood={mood} tint={tint} />)}
-      {startle && startleGlyph(sprite).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
+      {startle && startleGlyph(sprite, !!holding).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
       {holding && limbGlyphs(sprite, holding).map((n, i) => <Node key={`hold-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );

@@ -229,6 +229,14 @@ describe("startleGlyph", () => {
     expect(bang.g[0].r[0]).toBeCloseTo(scope.anchors.head.right + 0.4);
     expect(bang.g[0].r[1]).toBeCloseTo(scope.anchors.head.top + 0.5);
   });
+
+  it.each(sprites.map((c) => [c.id, c]))("%s moves the \"!\" left of its body when holding, else it's unmoved", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const [free] = startleGlyph(c.sprite);
+    for (const r of free.g) expect(r.r[0]).toBeCloseTo(c.sprite.anchors.head.right + 0.4);
+    const [held] = startleGlyph(c.sprite, true);
+    for (const r of held.g) expect(r.r[0]).toBeLessThan(box.x);
+  });
 });
 
 describe("sprite paint", () => {

@@ -465,10 +465,9 @@ function Behind({
 // scenery, at night on a Halloween round. Scenery is drawn here, not in
 // TamaPastimes.jsx: importing it back from there would make an import cycle.
 // The critter goes to the friend and the kids (TamaPastimes.jsx), which match
-// the mascot; the other pastimes' props ignore it. `place` is the mascot's
-// placement, for the leash from a critter's tip (Dog).
-function PastimeBehind({ p, season, trick, critter, place }) {
-  const drawn = <p.Behind season={season} trick={trick} critter={critter} place={place} />;
+// the mascot; `from` is a critter's tip, for the leash's other end (Dog).
+function PastimeBehind({ p, season, trick, critter, from }) {
+  const drawn = <p.Behind season={season} trick={trick} critter={critter} from={from} />;
   return p.outdoors ? <g><Scenery season={season} night={trick} />{drawn}</g> : drawn;
 }
 
@@ -671,6 +670,10 @@ export function TamaScene({
   // (critters.js wornGlyphs); Clawd's Goggles and Scarf fit only Clawd.
   const worn = sprite && p?.Held === Goggles ? "goggles" : sprite && p?.Held === Scarf ? "scarf" : null;
   const holding = sprite ? HOLDING[activity] ?? null : null;
+  // Where a critter's tip is, for the props drawn outside its wrapper (the
+  // spoon into the pot, the leash to the dog): computed from what's held, not
+  // from `place` directly, so Dog decides nothing about placement itself.
+  const holdFrom = holding === "spoon" || holding === "leash" ? holdTipInScene(sprite, holding, place) : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -679,7 +682,7 @@ export function TamaScene({
          data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
-      {p ? <PastimeBehind p={p} season={season} trick={trick} critter={critter} place={place} /> : (
+      {p ? <PastimeBehind p={p} season={season} trick={trick} critter={critter} from={holdFrom} /> : (
         <Behind activity={activity === "nap" ? "code" : activity} occasion={occasion} coffee={coffee} ringing={ringing}
                 keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"} screen={screen}
                 dish={dish} mugHeld={holding === "mug"} />
@@ -704,7 +707,7 @@ export function TamaScene({
         ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
-        {holding === "spoon" && <Spoon x0={x0} from={holdTipInScene(sprite, "spoon", place)} />}
+        {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}
         {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}
