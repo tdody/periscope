@@ -39,18 +39,121 @@ export function spriteBox(sprite) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// Where a critter stands in Clawd's spot: as tall as standing Clawd, centred
-// on Clawd's centre, on the floor line standing and on the seat sitting (on
-// the floor line it would sink through the chair). `top` is its head, for the
-// props that sit on one (hats, stars, the "!").
-export function placement(sprite, { x0, sitting }) {
+// Where a critter stands in Clawd's spot: as tall as standing Clawd (or
+// `height`: the kids are half that), centred on Clawd's centre, on the floor
+// line standing and on the seat sitting (on the floor line it would sink
+// through the chair). `top` is its head, for the props that sit on one
+// (hats, stars, the "!").
+export function placement(sprite, { x0, sitting, height = CLAWD_HEIGHT }) {
   const box = spriteBox(sprite);
-  const scale = CLAWD_HEIGHT / box.h;
+  const scale = height / box.h;
   const bottom = sitting ? SEAT : FEET;
   return {
     scale,
     tx: x0 + 8.5 - scale * (box.x + box.w / 2),
     ty: bottom - scale * (box.y + box.h),
-    top: bottom - CLAWD_HEIGHT,
+    top: bottom - height,
   };
+}
+
+const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
+
+// The faces Critter.jsx draws in place of the eyes (lids shut over them).
+// Worried is the one duty face that keeps the eyes, drawing brows over them.
+export const EYE_FACES = new Set(["happy", "x", "down"]);
+
+// Inner ends raised, as Clawd's Worried. One eye (Moss) gets a single tent-shaped brow.
+function brows(eyes) {
+  if (eyes.length === 1) {
+    // 0.7 above the eye, not the two-eyed brows' 1.1: Moss's eye fills most of
+    // its head, so 1.1 would push the tent's peak above the head row.
+    const { x, y, w } = eyes[0];
+    return [{ p: `M${r4(x - 0.3)} ${r4(y - 0.7)} l${r4(w / 2 + 0.3)} -0.8 l${r4(w / 2 + 0.3)} 0.8` }];
+  }
+  const mid = eyes.reduce((s, e) => s + e.x + e.w / 2, 0) / eyes.length;
+  return eyes.map(({ x, y, w }) => (x + w / 2 < mid
+    ? { p: `M${r4(x - 0.3)} ${r4(y - 1.1)} l${r4(w + 0.4)} -0.8` }
+    : { p: `M${r4(x - 0.1)} ${r4(y - 1.9)} l${r4(w + 0.4)} 0.8` }));
+}
+
+// The duty faces Critter.jsx draws over a critter's eyes (TamaScene picks one
+// with Clawd's rules), as nodes in the sprite tree's own format, in sprite
+// units: generated from the eye boxes build_critters.py found
+// (`sprite.anchors`), in the critter's `ink`, unless its SVG drew its own
+// (`sprite.faces`). Two node fields ride alongside the tree's `r` rects and
+// `g` groups, for Critter.jsx to draw the same way: `p` (an SVG path's `d`)
+// and `cls` (a CSS class). The worried face's sweat drop is always generated:
+// it's the head's, not the eyes'.
+export function faceGlyphs(sprite, face) {
+  const { eyes, head } = sprite.anchors;
+  const ink = sprite.ink;
+  const own = sprite.faces?.[face];
+  if (face === "worried") {
+    const sweat = {
+      // A curve, unlike the eyes' and brows' straight strokes: those keep the
+      // scene's crispEdges (Tamagotchi.jsx's root svg), which drops the
+      // anti-aliasing a drop this small needs, leaving it stair-stepped.
+      p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
+      cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
+    };
+    // 0.6, not the eyes' 0.75: Clawd's 0.4-unit brows at a critter's ~0.6
+    // scale come to ~0.67; a touch thinner reads better than the eyes' glyphs.
+    return [...(own || [{ g: brows(eyes), a: stroked(ink, 0.6) }]), sweat];
+  }
+  if (own) return [...own];
+  if (face === "happy") {
+    return [{
+      cls: "tama-happy-eyes", a: stroked(ink),
+      g: eyes.map(({ x, y, w, h }) => ({ p: `M${x} ${r4(y + 0.75 * h)} l${r4(w / 2)} ${r4(-h / 2)} l${r4(w / 2)} ${r4(h / 2)}` })),
+    }];
+  }
+  if (face === "x") {
+    return [{
+      a: stroked(ink),
+      g: eyes.map(({ x, y, w, h }) => ({
+        p: `M${r4(x + 0.1)} ${r4(y + 0.1)} L${r4(x + w - 0.1)} ${r4(y + h - 0.1)} M${r4(x + w - 0.1)} ${r4(y + 0.1)} L${r4(x + 0.1)} ${r4(y + h - 0.1)}`,
+      })),
+    }];
+  }
+  if (face === "down") {
+    return [{ a: { fill: ink }, g: eyes.map(({ x, y, w, h }) => ({ r: [x, r4(y + 0.45 * h), w, r4(0.55 * h)] })) }];
+  }
+  return [];
+}
+
+// The bell's "!" away from the desk, beside the critter's own head: Clawd's
+// Startle sits at his right edge, which floats off any narrower critter.
+export function startleGlyph(sprite) {
+  const { head } = sprite.anchors;
+  const x = r4(head.right + 0.4);
+  return [{
+    cls: "tama-startle", a: { fill: "#f2c14e" },
+    g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],
+  }];
+}
+
+// A colour's hue turned by `deg` (HSL), for a critter's friend (TamaPastimes.jsx):
+// the same creature, another individual, as Clawd's friend is Clawd in blue.
+// Computed rather than a CSS filter, which WebKit applies unreliably to SVG
+// children. Anything but #rrggbb (none, var(--…)) passes through; greys have
+// no hue to turn.
+export function hueRotate(color, deg) {
+  const m = /^#([0-9a-f]{6})$/i.exec(color || "");
+  if (!m) return color;
+  const n = Number.parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return color.toLowerCase();
+  // HSL's chroma is max-min (`d`) and its lift (`l - c/2`) is just `min` —
+  // both fall out of l = (max+min)/2 and c = d algebraically, so skip l.
+  const h0 = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const h = (((h0 * 60 + deg) % 360) + 360) % 360;
+  const x = d * (1 - Math.abs(((h / 60) % 2) - 1));
+  const [r1, g1, b1] = h < 60 ? [d, x, 0] : h < 120 ? [x, d, 0] : h < 180 ? [0, d, x]
+    : h < 240 ? [0, x, d] : h < 300 ? [x, 0, d] : [d, 0, x];
+  return `#${[r1, g1, b1].map((v) => Math.round((v + min) * 255).toString(16).padStart(2, "0")).join("")}`;
 }

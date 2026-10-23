@@ -1,13 +1,14 @@
 // Render-path tests for the tamagotchi scene: the decisions the drawing
 // encodes (which pose shows what), not the inventory of props.
 
+import { createHash } from "node:crypto";
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, spriteBox } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
@@ -576,12 +577,16 @@ describe("critters", () => {
   const scene = (critter, activity, extra = {}) =>
     render(<TamaScene activity={activity} walled={activity === "nap" ? { day: null, time: "3pm" } : null}
                       critter={critter} {...extra} />);
+  const count = (html, needle) => html.split(needle).length - 1;
 
   it.each(critters.map((c) => [c.id, c]))("%s takes Clawd's place in every scene", (_id, c) => {
     for (const id of scenes) {
       const html = scene(c, id);
       expect(html, id).toContain(`data-critter="${c.id}"`);
-      expect(html, id).toContain('class="critter"');
+      // Scoped to the mascot's own group: a beer/kids scene's friend and kids
+      // carry `class="critter"` too now, so a check anywhere in the markup
+      // would pass even for a mascot that drew nothing of its own.
+      expect(html.slice(html.indexOf('class="tama-creature')), id).toContain('class="critter"');
       expect(html, id).not.toContain("tama-body");
       expect(html, id).not.toContain("tama-legs-a");
     }
@@ -654,6 +659,115 @@ describe("critters", () => {
     expect(scene(nox, "read", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
     expect(scene(nox, "eat", { occasion: "yearend" })).not.toContain('translate(0 -2)');
   });
+
+  // The mascot's own critter, not a beer/kids scene's friend or kids: those
+  // carry `class="critter"` too now, nested in Behind, ahead of the mascot's
+  // group (`tama-creature`) in the markup.
+  const faceOf = (html) => html.slice(html.indexOf('class="tama-creature')).match(/<g class="critter"(?: data-face="(\w+)")?/)[1] ?? null;
+  const duty = (kind) => ({ duty: { kind, label: "1", more: 0 } });
+
+  it.each(critters.map((c) => [c.id, c]))("%s makes Clawd's duty faces when he would", (_id, c) => {
+    expect(faceOf(scene(c, "code", duty("done")))).toBe("happy");
+    expect(faceOf(scene(c, "code", { ...duty("merged"), party: true }))).toBe("happy");
+    expect(faceOf(scene(c, "eat", duty("done")))).toBe("happy"); // a face kind, away from the desk
+    expect(faceOf(scene(c, "code", duty("api")))).toBe("x");
+    expect(faceOf(scene(c, "code", duty("ctx")))).toBe("worried");
+    expect(faceOf(scene(c, "code", duty("update")))).toBe("down");
+    expect(faceOf(scene(c, "beer"))).toBe("happy"); // a smiling pastime
+  });
+
+  it.each(critters.map((c) => [c.id, c]))("%s keeps its own face otherwise", (_id, c) => {
+    expect(faceOf(scene(c, "code"))).toBeNull();
+    expect(faceOf(scene(c, "code", { mood: "furious" }))).toBeNull(); // the mood stays its own layers
+    expect(faceOf(scene(c, "code", duty("ci")))).toBeNull();
+    expect(faceOf(scene(c, "eat", duty("update")))).toBeNull(); // update only shows at the desk
+    expect(faceOf(scene(c, "sleep"))).toBeNull();
+    expect(faceOf(scene(c, "beer", duty("api")))).toBe("x"); // on duty, the smile gives way
+  });
+
+  it("puts the bell's \"!\" on the critter's own head, and only away from the desk", () => {
+    const nox = critterById("nox");
+    const away = scene(nox, "beer", duty("bell"));
+    expect(count(away, "tama-startle")).toBe(1);
+    // Anchored on the mascot's own group: in a beer scene the first
+    // `class="critter"` in the markup belongs to the friend, not the mascot.
+    expect(away.slice(away.indexOf('class="tama-creature'))).toContain("tama-startle");
+    expect(scene(nox, "code", duty("bell"))).not.toContain("tama-startle");
+  });
+});
+
+describe("critter faces follow Clawd's in every scene", () => {
+  // Clawd's face chain (TamaDuty.jsx: HappyEyes/XEyes/Worried/LookDown/Startle)
+  // and critterFace (Tamagotchi.jsx's pose logic, drawn by Critter.jsx's
+  // faceGlyphs) decide the same thing twice, from the same scene inputs.
+  // Nothing ties them together, so a change to one chain without the other
+  // would silently desync a critter from Clawd. This walks the full matrix
+  // and checks they agree on every scene, scene by scene.
+
+  // Each marker is unique to its component's markup (TamaDuty.jsx) and
+  // doesn't collide with another face or with a critter's own faceGlyphs
+  // markup (different units, different shapes).
+  const clawdFace = (html) => {
+    if (html.includes('class="tama-happy-eyes"')) return "happy";
+    if (/l1\.2 1\.5 M/.test(html)) return "x";
+    if (/<g fill="none" stroke="[^"]+" stroke-width="0\.4"><path/.test(html)) return "worried";
+    if (/<g fill="[^"]+"><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><rect x="[\d.]+" y="[\d.]+" width="1" height="1\.6"><\/rect><\/g>/.test(html)) return "down";
+    return null;
+  };
+  // Scoped to the mascot's own group, same reason as faceOf above: a beer or
+  // kids scene's friend/kids are critters too, drawn ahead of it in Behind.
+  const critterFace = (html) => {
+    const from = html.indexOf('class="tama-creature');
+    return (html.slice(from).match(/<g class="critter"(?: data-face="(\w+)")?/) || [])[1] ?? null;
+  };
+
+  it("matches Clawd's face and startle on every activity × duty × mood × occasion × trick × party", () => {
+    const scope = critterById("scope");
+    const KINDS = [null, "bell", "done", "merged", "ci", "api", "ctx", "update"];
+    const mismatches = [];
+    const faceCounts = {};
+    let startleCount = 0;
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of KINDS) {
+        for (const mood of ["calm", "grumpy", "furious"]) {
+          for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+            for (const trick of [false, true]) {
+              for (const party of [false, true]) {
+                const props = {
+                  activity, mood, occasion, trick, party, working: 2,
+                  duty: kind && { kind, label: "1", more: 0 },
+                  walled: activity === "nap" ? { day: null, time: "3pm" } : null,
+                };
+                const clawd = render(<TamaScene {...props} />);
+                const critter = render(<TamaScene {...props} critter={scope} />);
+                const cFace = clawdFace(clawd);
+                const cStartle = clawd.includes("tama-startle");
+                const sFace = critterFace(critter);
+                const sStartle = critter.includes("tama-startle");
+                n += 1;
+                faceCounts[String(cFace)] = (faceCounts[String(cFace)] || 0) + 1;
+                if (cStartle) startleCount += 1;
+                if (cFace !== sFace || cStartle !== sStartle) {
+                  mismatches.push({ activity, kind, mood, occasion, trick, party, clawd: [cFace, cStartle], critter: [sFace, sStartle] });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (mismatches.length) {
+      throw new Error(
+        `${mismatches.length}/${n} scenes disagree (first 5):\n${mismatches.slice(0, 5).map((m) => JSON.stringify(m)).join("\n")}`,
+      );
+    }
+    // The matrix only proves something if it actually exercises every face.
+    for (const face of ["happy", "x", "worried", "down"]) {
+      expect(faceCounts[face], face).toBeGreaterThan(0);
+    }
+    expect(startleCount).toBeGreaterThan(0);
+  });
 });
 
 describe("critters at their pastimes", () => {
@@ -671,6 +785,62 @@ describe("critters at their pastimes", () => {
   it("lifts the head props onto a seated critter's head at a pastime too", () => {
     expect(scene(nox, "sled", { season: "winter" })).toMatch(/<g transform="translate\(0 -2\)"><rect class="tama-snowcap"/);
     expect(scene(nox, "game", { occasion: "yearend" })).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-hat-santa"/);
+  });
+
+  const count = (html, needle) => html.split(needle).length - 1;
+
+  // Parses a wrapper's `translate(a b) scale(sx[ sy])` and maps the sprite's
+  // own box (spriteBox) through it: pins the geometry itself, not just the
+  // placement() call that produced it, so a wrong x0 or a dropped mirror
+  // term in TamaPastimes.jsx fails here even if placement() stays correct.
+  function mapBoxThrough(transform, box) {
+    const m = /translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)(?: ([-\d.]+))?\)/.exec(transform);
+    const tx = Number(m[1]);
+    const ty = Number(m[2]);
+    const sx = Number(m[3]);
+    const sy = m[4] !== undefined ? Number(m[4]) : sx;
+    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h) };
+  }
+
+  it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
+    const html = scene(nox, "beer");
+    expect(count(html, 'class="critter"')).toBe(2);
+    const friend = html.slice(html.indexOf('class="tama-friend"'));
+    const transform = friend.match(/<g class="tama-critter"[^>]*transform="([^"]+)"/)[1];
+    expect(transform).toMatch(/^translate\([^)]*\) scale\(-/); // mirrored: a negative x scale
+    const { centreX, feetY } = mapBoxThrough(transform, spriteBox(nox.sprite));
+    expect(centreX).toBeCloseTo(26.5, 2); // FRIEND_X0 (18) + 8.5
+    expect(feetY).toBeCloseTo(19, 2); // the scene's floor line
+    expect(friend).toContain('data-face="happy"');
+    expect(friend).toContain(`fill="${hueRotate("#c6e05a", FRIEND_HUE)}"`);
+    expect(html).not.toContain('fill="#6f93d6"'); // no blue Clawd
+    expect(friend).toContain("tama-pint");
+  });
+
+  it("plays with two half-size kids of its own kind", () => {
+    const html = scene(nox, "kids");
+    expect(count(html, 'class="critter"')).toBe(3);
+    const box = spriteBox(nox.sprite);
+    // Scoped to Behind's markup, ahead of the mascot's own group: the mascot
+    // wraps itself in `tama-critter` too, which would otherwise be a third match.
+    const behind = html.slice(0, html.indexOf('class="tama-creature'));
+    const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(transforms).toHaveLength(2);
+    const centres = transforms.map((t) => mapBoxThrough(t, box).centreX);
+    expect(centres[0]).toBeCloseTo(21.65, 2); // kid x 17.4 + 4.25
+    expect(centres[1]).toBeCloseTo(29.65, 2); // kid x 25.4 + 4.25
+    for (const t of transforms) expect(mapBoxThrough(t, box).feetY).toBeCloseTo(19, 2);
+    expect(count(html, 'class="tama-kid')).toBe(2);
+  });
+
+  it("still dresses the kids in sheets on a Halloween evening", () => {
+    expect(count(scene(nox, "kids", { trick: true }), 'class="tama-kid-sheet"')).toBe(2);
+  });
+
+  it("keeps Clawd's own friend and kids for Clawd", () => {
+    expect(render(<TamaScene activity="beer" />)).toContain('fill="#6f93d6"');
+    expect(render(<TamaScene activity="beer" />)).not.toContain('class="critter"');
+    expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
   });
 });
 
@@ -695,5 +865,35 @@ describe("<Tamagotchi> with a critter", () => {
     const html = render(<Tamagotchi />);
     expect(html).not.toContain("data-critter");
     expect(html).toContain('title="Claude is coding (1pm–5pm)');
+  });
+});
+
+describe("Clawd's drawing, pinned", () => {
+  // Every activity × duty kind × mood × occasion × season, hashed. Critter work
+  // must never move a pixel of Clawd: a failure here means a change reached his
+  // drawing. Update the hash only for a change to Clawd that's meant.
+  it("renders every combination exactly as before", () => {
+    const KINDS = [null, "bell", "done", "merged", "ci", "api", "ctx", "update"];
+    const hash = createHash("sha256");
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of KINDS) {
+        for (const mood of ["calm", "grumpy", "furious"]) {
+          for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+            for (const season of ["summer", "winter"]) {
+              hash.update(render(
+                <TamaScene activity={activity} season={season} occasion={occasion} mood={mood} working={2}
+                           duty={kind && { kind, label: "1", more: 0 }} party={kind === "merged"}
+                           walled={activity === "nap" ? { day: null, time: "3pm" } : null} />,
+              ));
+              hash.update("\n");
+              n += 1;
+            }
+          }
+        }
+      }
+    }
+    expect(n).toBe(3264);
+    expect(hash.digest("hex")).toBe("355da01dc9d061fcadcececf89882f0b92f8aa96e78944ec91680969f22be094");
   });
 });

@@ -3,7 +3,7 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById } from "../critters.js";
+import { CRITTERS, critterById, hueRotate } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
@@ -49,5 +49,109 @@ describe("<Critter>", () => {
 
   it("keeps each animation's class on its group", () => {
     expect(draw({ sprite: critterById("jelly").sprite })).toMatch(/<g class="crit-jelly-\d+"/);
+  });
+
+  const shutters = (html) => count(html, 'data-role="eye"') + count(html, 'data-role="lid"');
+
+  it.each(sprites)("%s swaps its eyes for the happy, x and look-down glyphs", (_id, sprite) => {
+    const lids = count(draw({ sprite }), 'data-role="lid"');
+    for (const face of ["happy", "x", "down"]) {
+      const html = draw({ sprite, face });
+      expect(html, face).toContain(`data-face="${face}"`);
+      for (const role of ["eye", "lid", "glint"]) expect(html, `${face} ${role}`).not.toContain(`data-role="${role}"`);
+      // A lid is drawn shut over the eye it covers; an open eye just goes.
+      expect(count(html, 'data-role="shut"'), face).toBe(lids);
+    }
+  });
+
+  it.each(sprites)("%s keeps its eyes when worried, under brows and a sweat drop", (_id, sprite) => {
+    const html = draw({ sprite, face: "worried" });
+    expect(shutters(html)).toBe(shutters(draw({ sprite })));
+    expect(html).toContain('class="tama-sweat"');
+  });
+
+  // scope has no own worried face (critters.js falls back to generated brows)
+  // and keeps two eyes with a glint: the eyes never left, brows just sit over them.
+  it("draws the generated brows over scope's eyes, keeping the glint", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, face: "worried" });
+    expect(html).toContain('stroke-width="0.6"');
+    expect(html).toContain('data-role="glint"');
+  });
+
+  it("draws the happy glyphs with Clawd's class and in the critter's ink", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, face: "happy" });
+    expect(html).toContain('class="tama-happy-eyes"');
+    expect(html).toContain(`stroke="${sprite.ink}"`);
+  });
+
+  it("draws the bell's \"!\" only when startled", () => {
+    const sprite = critterById("volt").sprite;
+    expect(draw({ sprite, startle: true })).toContain('class="tama-startle"');
+    expect(draw({ sprite })).not.toContain("tama-startle");
+  });
+
+  // One of every node kind Node handled before the duty faces: a plain rect, a
+  // painted group, an anim group, a calm-only mood layer (furious sits beside
+  // it and must not show), an eye and a lid that can shut, and a glint. The
+  // expected strings came from rendering this same sprite through the Critter
+  // that predates the faces (git show 1011413:static/src/chrome/Critter.jsx),
+  // so a render without a face must still match it byte for byte.
+  it("draws a sprite exactly as before without a face", () => {
+    const sprite = {
+      root: [
+        { r: [0, 0, 1, 1], a: { fill: "#111" } },
+        { g: [{ r: [1, 1, 1, 1] }], a: { fill: "#222" } },
+        { g: [{ r: [2, 2, 1, 1] }], anim: "crit-x-1" },
+        { g: [{ r: [3, 3, 1, 1] }], mood: "calm" },
+        { g: [{ r: [4, 4, 1, 1] }], mood: "furious" },
+        { g: [{ r: [5, 5, 2, 2], a: { fill: "#333" } }], role: "eye", shut: [5, 6, 2, 0.4] },
+        { g: [{ r: [6, 6, 2, 2], a: { fill: "#444" } }], role: "lid", shut: [6, 7, 2, 0.4] },
+        { g: [{ r: [7, 7, 0.7, 0.7] }], role: "glint", mood: "calm" },
+      ],
+    };
+    const awake =
+      '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
+      '<g fill="#222"><rect x="1" y="1" width="1" height="1"></rect></g>' +
+      '<g class="crit-x-1"><rect x="2" y="2" width="1" height="1"></rect></g>' +
+      '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
+      '<g data-role="eye"><rect x="5" y="5" width="2" height="2" fill="#333"></rect></g>' +
+      '<g data-role="lid"><rect x="6" y="6" width="2" height="2" fill="#444"></rect></g>' +
+      '<g data-mood="calm" data-role="glint"><rect x="7" y="7" width="0.7" height="0.7"></rect></g>' +
+      "</g></svg>";
+    const asleep =
+      '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
+      '<g fill="#222"><rect x="1" y="1" width="1" height="1"></rect></g>' +
+      '<g class="crit-x-1"><rect x="2" y="2" width="1" height="1"></rect></g>' +
+      '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
+      '<rect data-role="shut" x="5" y="6" width="2" height="0.4" fill="#333"></rect>' +
+      '<rect data-role="shut" x="6" y="7" width="2" height="0.4" fill="#444"></rect>' +
+      "</g></svg>";
+    expect(draw({ sprite })).toBe(awake);
+    expect(draw({ sprite, asleep: true })).toBe(asleep);
+  });
+
+  it("turns every fill and stroke by `tint`, the face glyphs' ink too", () => {
+    const sprite = critterById("scope").sprite;
+    const html = draw({ sprite, tint: 150, face: "happy" });
+    expect(html).toContain(`fill="${hueRotate("#40b8ee", 150)}"`);
+    expect(html).not.toContain('fill="#40b8ee"');
+    expect(html).toContain(`stroke="${hueRotate(sprite.ink, 150)}"`);
+  });
+
+  it("tints a lid drawn shut, and strokes, the same way", () => {
+    // The shut rect itself: Moss's lid carries its own fill (#47cf79), drawn
+    // from `n.g[0].a` once the happy face shuts it over the eye — Nox's lid
+    // paints no colour of its own (its `g[0].a` is empty), so asserting on it
+    // would stay green even if `painted(n.g[0].a, tint)` were reverted.
+    const moss = critterById("moss").sprite;
+    const shutHtml = draw({ sprite: moss, tint: 150, face: "happy" });
+    expect(shutHtml).toMatch(new RegExp(`data-role="shut"[^>]*fill="${hueRotate("#47cf79", 150)}"`));
+    // A stroke tints the same way: Nox's body outline (#4a4f57) is gone, and
+    // its tinted form shows up instead.
+    const strokeHtml = draw({ sprite: critterById("nox").sprite, tint: 150, face: "x" });
+    expect(strokeHtml).not.toContain('stroke="#4a4f57"');
+    expect(strokeHtml).toContain(`stroke="${hueRotate("#4a4f57", 150)}"`);
   });
 });

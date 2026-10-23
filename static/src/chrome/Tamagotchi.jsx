@@ -445,8 +445,10 @@ function Behind({ activity, occasion, coffee, ringing, keyboard = true, mood = "
 // A pastime's backdrop (PASTIME_SCENES): the outdoor ones in the season's
 // scenery, at night on a Halloween round. Scenery is drawn here, not in
 // TamaPastimes.jsx: importing it back from there would make an import cycle.
-function PastimeBehind({ p, season, trick }) {
-  const drawn = <p.Behind season={season} trick={trick} />;
+// The critter goes to the friend and the kids (TamaPastimes.jsx), which match
+// the mascot; the other pastimes' props ignore it.
+function PastimeBehind({ p, season, trick, critter }) {
+  const drawn = <p.Behind season={season} trick={trick} critter={critter} />;
   return p.outdoors ? <g><Scenery season={season} night={trick} />{drawn}</g> : drawn;
 }
 
@@ -600,8 +602,9 @@ export function TamaScene({
   const { x0, sitting = false, lift = 0 } = p?.pose || POSES[activity] || STANDING;
   const jack = p ? p.jack : JACK_SPOTS[activity];
   // Any creature but Clawd is a sprite (critters.js) standing in Clawd's spot,
-  // showing its own moods and shutting its own eyes; the overlays drawn for
-  // Clawd's body (its face kinds, brows, hands) stay Clawd's.
+  // showing its own moods and shutting its own eyes. Clawd's overlay
+  // components stay Clawd's; a critter draws its own duty faces (`critterFace`
+  // → Critter.jsx); hands and props are still Clawd-only.
   const sprite = critter.sprite;
   const place = sprite && placement(sprite, { x0, sitting });
   const headDy = place ? place.top - Y0 : 0;
@@ -633,6 +636,15 @@ export function TamaScene({
     : pose === "update" ? <LookDown x0={x0} />
     : !pose && p?.smile ? <HappyEyes x0={x0} />
     : <Eyes x0={x0} />;
+  // A critter's duty face (Critter.jsx draws it over its eyes): Clawd's rules
+  // above, with the moods left to the critter's own layers.
+  const critterFace = !sprite || ghost || asleep || moody ? null
+    : celebrating ? "happy"
+    : pose === "api" ? "x"
+    : pose === "update" ? "down"
+    : pose === "ctx" ? "worried"
+    : !pose && p?.smile ? "happy"
+    : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -641,7 +653,7 @@ export function TamaScene({
          data-tempo={p?.tempo} data-stride={p?.stride ? "" : undefined} style={p && `--tama-tempo: ${p.tempo}s`}>
       <rect x="0" y="19" width="34" height="0.4" fill="var(--line)" />
       {(occasion === "newyear" || fullParty) && <Fireworks clear={!!duty} />}
-      {p ? <PastimeBehind p={p} season={season} trick={trick} /> : (
+      {p ? <PastimeBehind p={p} season={season} trick={trick} critter={critter} /> : (
         <Behind activity={activity === "nap" ? "code" : activity} occasion={occasion} coffee={coffee} ringing={ringing}
                 keyboard={!(deskBell || (atDesk && kind === "ctx"))} mood={moody ? mood : "calm"} screen={screen}
                 dish={dish} />
@@ -658,7 +670,8 @@ export function TamaScene({
           // own (mood- and animation-dependent) bounding box instead of 0,0.
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
-            <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} />
+            <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
+                     startle={pose === "bell" && !deskBell} />
           </g>
         ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
@@ -669,7 +682,7 @@ export function TamaScene({
         {!sprite && atDesk && celebrating && <ArmsUp x0={x0} />}
         {atDesk && pose === "ci" && <Extinguisher />}
         {!sprite && deskBell && <SlapHand />}
-        <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>
+        {!sprite && <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>}
         {!sprite && !sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {!sprite && p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}
         {ghost && p?.pail && <Pail x0={x0} />}

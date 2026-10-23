@@ -22,6 +22,11 @@ else, so a new SVG fails loudly instead of drawing wrong):
     translate <animateTransform> on a group;
   - a blinking eye is a rect outside any mood layer whose height dips; a lid is
     one whose height starts at 0 and grows over the eye.
+  - a critter whose eyes are lids declares its face colour with data-ink="#rrggbb"
+    on the <svg> (the colour under a lid isn't in the drawing).
+  - a critter's own art for a duty face is a <g class="face-happy|face-x|face-worried|face-down">
+    directly under the outer <g>; it's drawn instead of the generated face, never as the critter.
+    Static art: rects and groups only, no animation, no mood layers.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
+FACES = {"face-happy": "happy", "face-x": "x", "face-worried": "worried", "face-down": "down"}
 
 
 def tag(el: ET.Element) -> str:
@@ -65,10 +71,10 @@ def paint(el: ET.Element) -> dict:
 
 def mood_of(el: ET.Element) -> str | None:
     cls = el.get("class")
-    if cls is None:
+    if cls is None or cls in FACES:  # face layers are kept out of the tree by _convert, not drawn by mood
         return None
     if cls not in MOODS:
-        raise ValueError(f"unknown class {cls!r}")
+        raise ValueError(f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES})!r})")
     return MOODS[cls]
 
 
@@ -194,10 +200,12 @@ def shutter_kind(heights: list[float]) -> str | None:
 
 
 def eye_rects(root: ET.Element) -> list[list[float]]:
-    """Blinking eyes: rects outside any mood layer whose height dips."""
+    """Blinking eyes: rects outside any mood layer whose height dips, skipping face-* override layers."""
     out = []
 
     def walk(el: ET.Element, in_mood: bool) -> None:
+        if tag(el) == "g" and el.get("class") in FACES:
+            return  # a critter's own face art is never an eye box, however it happens to be drawn
         in_mood = in_mood or mood_of(el) is not None
         if tag(el) == "rect" and not in_mood:
             heights = [Anim(a).values for a in el if tag(a) == "animate" and a.get("attributeName") == "height"]
@@ -217,6 +225,73 @@ def inside(r: list[float], box: list[float]) -> bool:
 def drawn(n: dict) -> bool:
     """Would this converted node render outside its own mood layer, however deeply nested?"""
     return "mood" not in n and ("r" in n or any(drawn(c) for c in n.get("g", [])))
+
+
+def clean(v: float) -> float:
+    """Round off the drift x1 - x0 picks up (Nox's head: 1.8 + 16.4 lands a hair short of 18.2); "16" not "16.0"."""
+    v = round(v, 4)
+    return int(v) if float(v).is_integer() else v
+
+
+def sprite_box(root: list[dict]) -> list[float]:
+    """critters.js's spriteBox, in Python: the always-drawn layers' [x, y, w, h], mood layers left out."""
+    x0 = y0 = float("inf")
+    x1 = y1 = float("-inf")
+
+    def walk(n: dict) -> None:
+        nonlocal x0, y0, x1, y1
+        if "mood" in n:
+            return
+        if "r" in n:
+            x, y, w, h = n["r"]
+            x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x + w), max(y1, y + h)
+            return
+        for c in n.get("g", []):
+            walk(c)
+
+    for n in root:
+        walk(n)
+    return [x0, y0, x1 - x0, y1 - y0]
+
+
+def shutters(nodes: list[dict]):
+    """Every eye and lid node (the roles _convert assigns), depth first."""
+    for n in nodes:
+        if "mood" in n:
+            continue
+        if n.get("role") in ("eye", "lid"):
+            yield n
+        yield from shutters(n.get("g", []))
+
+
+def anchors_of(root: list[dict]) -> dict:
+    """Where the duty faces go (critters.js faceGlyphs): each eye's box, and the head's top-right corner."""
+    x, y, w, _ = sprite_box(root)
+    eyes = [dict(zip(("x", "y", "w", "h"), n["g"][0]["r"], strict=True), role=n["role"]) for n in shutters(root)]
+    return {"eyes": eyes, "head": {"top": clean(y), "right": clean(x + w)}}
+
+
+INK_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def ink_of(svg_name: str, doc: ET.Element, root: list[dict]) -> str:
+    """The faces' glyph colour: the eyes' own fill, or data-ink on the <svg> where it can't be read."""
+    declared = doc.get("data-ink")
+    if declared is not None:
+        if not INK_RE.fullmatch(declared):
+            raise ValueError(f"{svg_name}: data-ink must be #rrggbb, got {declared!r}")
+        return declared
+    found = list(shutters(root))
+    if not found:
+        raise ValueError(f"{svg_name}: no eye or lid, so the duty faces have nothing to sit on")
+    eye = next((n for n in found if n["role"] == "eye"), None)
+    fill = eye and eye["g"][0].get("a", {}).get("fill")
+    if not fill or not INK_RE.fullmatch(fill):
+        # A lid covers the eye it shuts; a parent <g>'s fill never lands on the rect node() reads.
+        raise ValueError(
+            f'{svg_name}: its eyes are lids, or painted by a parent <g>; declare the face colour with data-ink="#rrggbb"'
+        )
+    return fill
 
 
 def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
@@ -256,6 +331,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         mood = mood_of(el)
         if t == "rect":
             check_attrs(el, {"x", "y", "width", "height"})
+            if el.get("class") in FACES:
+                raise ValueError(f"{svg.name}: {el.get('class')} must be a <g>, not a <rect>")
             for c in el:
                 if tag(c) != "animate":
                     raise ValueError(f"{svg.name}: <rect> may only contain <animate>, found <{tag(c)}>")
@@ -294,6 +371,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             return g
         if t == "g":
             check_attrs(el, set())
+            if el.get("class") in FACES:
+                raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
             anims = []
             kids2 = []
             for c in el:
@@ -322,16 +401,59 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             return out
         raise AssertionError(f"unreachable: callers only pass rect/g, got <{t}>")
 
+    def face_layer(c: ET.Element) -> dict:
+        """A face-* layer is static art: rects and groups only, never animated, never moody, never empty."""
+        face_cls = c.get("class")
+
+        def check(el: ET.Element) -> None:
+            t = tag(el)
+            if t not in ("rect", "g"):
+                raise ValueError(f"{svg.name}: {face_cls} may only hold <rect> and <g>, found <{t}>")
+            if el.get("class") in MOODS:
+                raise ValueError(
+                    f"{svg.name}: {face_cls} can't hold a mood layer — a face always shows over the calm mood"
+                )
+            for sub in el:
+                check(sub)
+
+        for k in c:
+            check(k)
+        if not any(tag(d) == "rect" for d in c.iter() if d is not c):
+            raise ValueError(f"{svg.name}: {face_cls} draws nothing")
+        check_attrs(c, set())
+        layer = {"g": [node(k, False) for k in c]}
+        if paint(c):
+            layer["a"] = paint(c)
+        return layer
+
     root = []
+    faces: dict[str, list[dict]] = {}
     for c in kids[1:]:
         if tag(c) not in ("rect", "g"):
             raise ValueError(f"{svg.name}: unsupported element <{tag(c)}> directly under the outer <g>")
+        face_cls = c.get("class")
+        if tag(c) == "g" and face_cls in FACES:
+            # A critter's own art for one duty face, drawn instead of the generated glyph (critters.js
+            # faceGlyphs) and never as part of the critter itself.
+            name = FACES[face_cls]
+            if name in faces:
+                raise ValueError(f"{svg.name}: {face_cls} appears twice")
+            faces[name] = [face_layer(c)]
+            continue
         root.append(node(c, False))
     if not any(drawn(n) for n in root):
         # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
         # so spriteBox is Infinity downstream. Also catches an empty root.
         raise ValueError(f"{svg.name}: every layer is inside a mood group, nothing is always drawn")
-    return {"name": doc.get("aria-label") or cid.title(), "root": root}
+    out = {
+        "name": doc.get("aria-label") or cid.title(),
+        "root": root,
+        "anchors": anchors_of(root),
+        "ink": ink_of(svg.name, doc, root),
+    }
+    if faces:
+        out["faces"] = faces
+    return out
 
 
 def render() -> tuple[str, str]:
