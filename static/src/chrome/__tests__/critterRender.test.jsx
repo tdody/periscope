@@ -183,6 +183,24 @@ describe("<Critter>", () => {
     expect(draw({ sprite: scope })).not.toContain("data-holding");
   });
 
+  it("reaches a given tip, over a prop it plays (children), or holds with no limb at all", () => {
+    const nox = critterById("nox").sprite;
+    const tip = [22, 6];
+    const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
+      g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
+    const html = render(<svg aria-hidden="true"><Critter sprite={nox} holding="bass" tip={tip}><g class="the-bass"></g></Critter></svg>);
+    for (const n of limbGlyphs(nox, "bass", tip)) expect(html).toContain(markup(n));
+    expect(html).not.toContain("crit-nox-1"); // the tail frets, so it isn't resting
+    // The prop it plays sits over its body and under its limb.
+    expect(html.indexOf('class="the-bass"')).toBeGreaterThan(html.indexOf("crit-nox-2"));
+    expect(html.indexOf('class="the-bass"')).toBeLessThan(html.indexOf(markup(limbGlyphs(nox, "bass", tip).at(-1))));
+    // A prop held without the limb (the controller's paws): no limb drawn, the tail rests.
+    const paws = draw({ sprite: nox, holding: "controller" });
+    expect(paws).toContain('data-holding="controller"');
+    expect(paws).toContain("crit-nox-1");
+    expect(paws).not.toContain('stroke="#4a4f57" stroke-width="1"><rect x="15.2"');
+  });
+
   // A rest group nested inside another group (Nox's and Ember's own are
   // top-level): `rest` has to thread through Node's recursive call, not just
   // the first.

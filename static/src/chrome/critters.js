@@ -241,6 +241,13 @@ export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
   return [r4(tx + scale * x), r4(ty + scale * y)];
 }
 
+// A scene point in a critter's sprite units, through the placement its
+// wrapper is drawn with (placement's inverse): how a fixed spot on a prop
+// drawn in scene units, the fret on Clawd's bass neck, becomes a limb's tip.
+export function sceneToSprite({ scale, tx, ty }, [X, Y]) {
+  return [r4((X - tx) / scale), r4((Y - ty) / scale)];
+}
+
 // A critter's appendage from its limb's root (declared in its SVG) to a prop's
 // tip, as sprite nodes in its limb colour:
 // - arm: a bar out, a bar up or down to the tip, a hand;
@@ -249,9 +256,11 @@ export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
 //   spade when declared, and Nox's outline: a stroked copy under a plain one,
 //   as Nox's own tail is drawn — stroking the one group would outline every
 //   seam between its parts.
-export function limbGlyphs(sprite, prop) {
+// `tip` overrides the prop's (`holdTip`) for a reach to a fixed spot in the
+// scene: the fret on the bass's neck (sceneToSprite).
+export function limbGlyphs(sprite, prop, tip = holdTip(sprite, prop)) {
   const { style, root: [x0, y0], width: t, color, outline, spade } = sprite.limb;
-  const [x1, y1] = holdTip(sprite, prop);
+  const [x1, y1] = tip;
   const r = (x, y, w, h) => ({ r: [r4(x), r4(y), r4(w), r4(h)] });
   if (style === "arm") {
     return [{

@@ -14,6 +14,7 @@ import {
   hueRotate,
   limbGlyphs,
   placement,
+  sceneToSprite,
   spriteBox,
   startleGlyph,
   wornGlyphs,
@@ -508,5 +509,20 @@ describe("holding", () => {
     expect(ember).toHaveLength(1);
     expect(ember[0].g).toHaveLength(4); // base, riser, hook, spade
     expect(limbGlyphs(critterById("scope").sprite, "pint")[0].g).toHaveLength(3); // bar, upright, hand
+  });
+
+  it.each(sprites)("%s's limb reaches any tip it's given, not just a prop's", (_id, sprite) => {
+    const tip = [sprite.limb.root[0] + 4, sprite.limb.root[1] - 3];
+    const nodes = limbGlyphs(sprite, "bass", tip);
+    expect(covers(nodes, tip)).toBe(true);
+    expect(covers(nodes, [sprite.limb.root[0] + 0.1, sprite.limb.root[1] + 0.1])).toBe(true);
+  });
+
+  it("maps a scene point into a critter's sprite units, placement's inverse", () => {
+    const sprite = critterById("scope").sprite;
+    const place = placement(sprite, { x0: 6, sitting: false });
+    const [x, y] = sceneToSprite(place, [24, 11.7]);
+    expect(place.tx + place.scale * x).toBeCloseTo(24);
+    expect(place.ty + place.scale * y).toBeCloseTo(11.7);
   });
 });
