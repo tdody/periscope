@@ -165,7 +165,7 @@ export function wornGlyphs(sprite, kind) {
   if (kind === "scarf") {
     const { y, x0, x1 } = sprite.anchors.neck;
     const stripes = [];
-    for (let x = x0 + 2; x < x1; x += 3) stripes.push({ r: [r4(x), y, 0.7, 1.6] });
+    for (let x = x0 + 2; x + 0.7 <= x1; x += 3) stripes.push({ r: [r4(x), y, 0.7, 1.6] });
     return [{
       cls: "tama-scarf",
       g: [
