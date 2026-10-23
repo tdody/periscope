@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
 import {
-  CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, placement, spriteBox,
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, placement,
+  spriteBox,
 } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
@@ -966,6 +967,28 @@ describe("critters at their pastimes", () => {
       const { scale } = drawnPlace(html);
       expect(scale * spriteBox(c.sprite).h).toBeCloseTo(CRITTER_HEIGHT);
     }
+  });
+
+  // The Halloween sheet (GhostSheet) is cut for Clawd's body: at CRITTER_HEIGHT
+  // a tall critter's ears/horns/antenna poke through its top. Under a sheet a
+  // critter goes back to CLAWD_HEIGHT; a plain run (no sheet) is the control.
+  it.each(holders)("%s's own wrapper goes back to CLAWD_HEIGHT under a Halloween sheet", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const halloween = render(<TamaScene activity="run" trick season="autumn" occasion="halloween" critter={c} />);
+    expect(drawnPlace(halloween).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+    const plain = render(<TamaScene activity="run" critter={c} />);
+    expect(drawnPlace(plain).scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
+  });
+
+  // Same reasoning as the mascot's own sheet, for the kids' little sheets
+  // (KidSheet): both go back to half Clawd's height, not half the critter's.
+  it.each(holders)("%s's kids go back to half CLAWD_HEIGHT under their Halloween sheets", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const html = render(<TamaScene activity="kids" trick critter={c} />);
+    const behind = html.slice(0, html.indexOf('class="tama-creature'));
+    const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(transforms).toHaveLength(2);
+    for (const t of transforms) expect(mapBoxThrough(t, box).scale * box.h).toBeCloseTo(CLAWD_HEIGHT / 2);
   });
 
   it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {

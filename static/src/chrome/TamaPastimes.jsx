@@ -7,7 +7,7 @@
 // own tip instead, inside its wrapper (CritterHeld). Motion is CSS
 // (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CRITTER_HEIGHT, holdTip, placement } from "./critters.js";
+import { CLAWD_HEIGHT, CRITTER_HEIGHT, holdTip, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -280,9 +280,11 @@ function KidSheet({ x }) {
 }
 
 // A critter's kid: the critter at half its height on a kid's spot (8.5 wide,
-// so centred at x + 4.25), feet on the floor.
-function CritterKid({ x, sprite }) {
-  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: CRITTER_HEIGHT / 2 });
+// so centred at x + 4.25), feet on the floor. In a sheet it's half Clawd's
+// instead: the sheet is cut for Clawd, and at CRITTER_HEIGHT ears, horns and
+// antennas poke through it.
+function CritterKid({ x, sprite, costume }) {
+  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: (costume ? CLAWD_HEIGHT : CRITTER_HEIGHT) / 2 });
   return (
     <g class="tama-critter" style="transform-box: view-box" transform={`translate(${r4(tx)} ${r4(ty)}) scale(${r4(scale)})`}>
       <Critter sprite={sprite} />
@@ -293,7 +295,7 @@ function CritterKid({ x, sprite }) {
 function Kid({ x, cls, costume, sprite }) {
   return (
     <g class={cls}>
-      {sprite ? <CritterKid x={x} sprite={sprite} /> : (
+      {sprite ? <CritterKid x={x} sprite={sprite} costume={costume} /> : (
         <>
           <Sprite cells={KID_CELLS.body} x0={x} y0={14} w={0.5} h={1} />
           <Sprite cells={KID_CELLS.legs} x0={x} y0={18} w={0.5} h={1} />

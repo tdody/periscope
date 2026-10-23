@@ -33,7 +33,7 @@ import { Critter } from "./Critter.jsx";
 import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
-import { CRITTERS, critterById, hatTransform, holdTipInScene, placement } from "./critters.js";
+import { CLAWD_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement } from "./critters.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
@@ -627,7 +627,9 @@ export function TamaScene({
   // own appendage (`holding`); hands, the bass and the controller are still
   // Clawd-only.
   const sprite = critter.sprite;
-  const place = sprite && placement(sprite, { x0, sitting });
+  // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
+  // poke through it.
+  const place = sprite && placement(sprite, { x0, sitting, ...(ghost && { height: CLAWD_HEIGHT }) });
   const headDy = place ? place.top - Y0 : 0;
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
