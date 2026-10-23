@@ -162,4 +162,16 @@ describe("<Critter>", () => {
     expect(draw({ sprite, worn: "scarf" })).toContain('class="tama-scarf-tail"');
     expect(draw({ sprite })).not.toContain("data-worn");
   });
+
+  it("holds with its limb, and a tail that holds isn't also drawn resting", () => {
+    const nox = critterById("nox").sprite;
+    expect(draw({ sprite: nox })).toContain("crit-nox-1");
+    const holding = draw({ sprite: nox, holding: "pint" });
+    expect(holding).toContain('data-holding="pint"');
+    expect(holding).not.toContain("crit-nox-1");
+    expect(holding).toContain('stroke="#4a4f57"');
+    const scope = critterById("scope").sprite;
+    expect(draw({ sprite: scope, holding: "mug" })).toContain(`fill="${scope.limb.color}"`);
+    expect(draw({ sprite: scope })).not.toContain("data-holding");
+  });
 });

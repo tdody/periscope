@@ -4,10 +4,14 @@ import {
   CLAWD_HEIGHT,
   CRITTERS,
   EYE_FACES,
+  HOLDS,
   critterById,
   faceGlyphs,
   hatTransform,
+  holdTip,
+  holdTipInScene,
   hueRotate,
+  limbGlyphs,
   placement,
   spriteBox,
   startleGlyph,
@@ -390,5 +394,53 @@ describe("wornGlyphs", () => {
 
   it("draws nothing it doesn't know", () => {
     expect(wornGlyphs(scope, "monocle")).toEqual([]);
+  });
+});
+
+describe("holding", () => {
+  const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
+  // Does any rect among these nodes cover the point?
+  const covers = (nodes, [x, y]) => nodes.flatMap((n) => n.g).some(({ r: [rx, ry, rw, rh] }) =>
+    rx - 1e-6 <= x && x <= rx + rw + 1e-6 && ry - 1e-6 <= y && y <= ry + rh + 1e-6);
+
+  it.each(sprites)("%s reaches each prop's tip, a reach right of its limb's root", (_id, sprite) => {
+    const box = spriteBox(sprite);
+    for (const [prop, { reach, at }] of Object.entries(HOLDS)) {
+      const [x, y] = holdTip(sprite, prop);
+      expect(x, prop).toBeCloseTo(sprite.limb.root[0] + reach);
+      expect(y, prop).toBeCloseTo(box.y + at * box.h);
+    }
+  });
+
+  it("maps the tip into the scene through the critter's placement", () => {
+    const sprite = critterById("scope").sprite;
+    const place = placement(sprite, { x0: 1, sitting: false });
+    const [x, y] = holdTip(sprite, "leash");
+    const [sx, sy] = holdTipInScene(sprite, "leash", place);
+    expect(sx).toBeCloseTo(place.tx + place.scale * x);
+    expect(sy).toBeCloseTo(place.ty + place.scale * y);
+    // Whatever size the placement gives it: the tip follows a bigger critter too.
+    const big = placement(sprite, { x0: 1, sitting: false, height: 13 });
+    expect(holdTipInScene(sprite, "leash", big)[1]).toBeCloseTo(big.ty + big.scale * y);
+  });
+
+  it.each(sprites)("%s's appendage runs from its root to the tip, in its limb colour", (_id, sprite) => {
+    for (const prop of Object.keys(HOLDS)) {
+      const nodes = limbGlyphs(sprite, prop);
+      const [rx, ry] = sprite.limb.root;
+      expect(covers(nodes, [rx + 0.1, ry + 0.1]), `${prop} root`).toBe(true);
+      expect(covers(nodes, holdTip(sprite, prop)), `${prop} tip`).toBe(true);
+      expect(nodes.every((n) => n.a.fill === sprite.limb.color), prop).toBe(true);
+    }
+  });
+
+  it("draws a tail's outline copy and its spade when declared", () => {
+    const nox = limbGlyphs(critterById("nox").sprite, "pint");
+    expect(nox[0].a.stroke).toBe("#4a4f57");
+    expect(nox).toHaveLength(2);
+    const ember = limbGlyphs(critterById("ember").sprite, "pint");
+    expect(ember).toHaveLength(1);
+    expect(ember[0].g).toHaveLength(4); // base, riser, hook, spade
+    expect(limbGlyphs(critterById("scope").sprite, "pint")[0].g).toHaveLength(3); // bar, upright, hand
   });
 });
