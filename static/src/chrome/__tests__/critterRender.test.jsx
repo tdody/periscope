@@ -179,9 +179,9 @@ describe("<Critter>", () => {
     expect(draw({ sprite: scope })).not.toContain("data-holding");
   });
 
-  // A rest group nested inside another group (not top-level, like Nox's and
-  // Ember's own): `rest` has to thread through Node's recursive call, not
-  // just the first.
+  // A rest group nested inside another group (Nox's and Ember's own are
+  // top-level): `rest` has to thread through Node's recursive call, not just
+  // the first.
   it("hides a rest node nested inside another group", () => {
     const sprite = {
       root: [{ g: [{ g: [{ r: [1, 1, 1, 1] }], a: { fill: "#123456" }, rest: true }] }],
