@@ -288,11 +288,44 @@ describe("placement with a height", () => {
   });
 });
 
+// Applies an SVG transform list ("translate(…) scale(…) translate(…)", the
+// shape hatTransform emits) to a point, composing right-to-left as SVG does:
+// a generic matrix walk, not hatTransform's own formula restated.
+function applyTransform(transform, [x, y]) {
+  const ops = [...transform.matchAll(/(translate|scale)\(([^)]+)\)/g)];
+  let px = x;
+  let py = y;
+  for (let i = ops.length - 1; i >= 0; i--) {
+    const [, op, raw] = ops[i];
+    const args = raw.trim().split(/\s+/).map(Number);
+    if (op === "translate") {
+      const [dx, dy = 0] = args;
+      px += dx;
+      py += dy;
+    } else {
+      const [sx, sy = sx] = args;
+      px *= sx;
+      py *= sy;
+    }
+  }
+  return [px, py];
+}
+
 describe("hatTransform", () => {
-  it("maps Clawd's head top-centre onto the critter's hat seat, at its width", () => {
+  it("maps Clawd's brim corners onto the critter's hat seat, at its width", () => {
+    // Clawd's hats (Tamagotchi.jsx) are drawn for his head, top centred at
+    // (9, 9), 12 wide: the brim's left and right corners sit at (3, 9) and
+    // (15, 9). Mapping them through hatTransform should land them at the
+    // critter's seat edges, (cx − w/2, top) and (cx + w/2, top).
     const sprite = critterById("nox").sprite;
     const { cx, top, w } = sprite.anchors.hat;
-    expect(hatTransform(sprite)).toBe(`translate(${cx} ${top}) scale(${Math.round((w / 12) * 1e4) / 1e4}) translate(-9 -9)`);
+    const t = hatTransform(sprite);
+    const [leftX, leftY] = applyTransform(t, [3, 9]);
+    expect(leftX).toBeCloseTo(cx - w / 2);
+    expect(leftY).toBeCloseTo(top);
+    const [rightX, rightY] = applyTransform(t, [15, 9]);
+    expect(rightX).toBeCloseTo(cx + w / 2);
+    expect(rightY).toBeCloseTo(top);
   });
 });
 
@@ -312,9 +345,16 @@ describe("wornGlyphs", () => {
       expect(x + w).toBeGreaterThan(e.x + e.w);
       expect(y + h).toBeGreaterThan(e.y + e.h);
     });
-    const [sx, , sw] = strap.r;
+    const [sx, sy, sw, sh] = strap.r;
     expect(sx).toBeLessThan(Math.min(...scope.anchors.eyes.map((e) => e.x)));
     expect(sx + sw).toBeGreaterThan(Math.max(...scope.anchors.eyes.map((e) => e.x + e.w)));
+    // The strap is a horizontal band across the lenses: it has to cross every
+    // eye's own y-range, or it'd float above or below an eye instead of
+    // strapping across it.
+    scope.anchors.eyes.forEach((e) => {
+      expect(sy).toBeLessThan(e.y + e.h);
+      expect(sy + sh).toBeGreaterThan(e.y);
+    });
     expect(wornGlyphs(moss, "goggles")[0].g).toHaveLength(2); // one-eyed: a strap and one lens
   });
 
@@ -322,9 +362,30 @@ describe("wornGlyphs", () => {
     const [scarf] = wornGlyphs(scope, "scarf");
     const { y, x0, x1 } = scope.anchors.neck;
     expect(scarf.cls).toBe("tama-scarf");
-    const [band, , tail] = scarf.g;
+    const [band, stripes, tail] = scarf.g;
     expect(band.r).toEqual([x0, y, x1 - x0, 1.6]);
     expect(tail.cls).toBe("tama-scarf-tail");
+    // Every stripe sits inside the band, left to right and top to bottom.
+    expect(stripes.g.length).toBeGreaterThan(0);
+    for (const { r: [sx, sy, sw] } of stripes.g) {
+      expect(sx).toBeGreaterThanOrEqual(x0);
+      expect(sx + sw).toBeLessThanOrEqual(x1);
+      expect(sy).toBe(y);
+    }
+    // The tail hangs off the band's near end, not inside it.
+    expect(tail.r[0]).toBeLessThan(band.r[0]);
+  });
+
+  it("keeps a stripe's far edge inside the band even when it would just poke past the end", () => {
+    // A neck row whose width leaves the last 3-unit step's stripe just short
+    // of x1 under `x < x1`, but inside under `x + 0.7 <= x1`: none of the
+    // shipped critters' neck rows happen to land on this edge, so this pins
+    // the boundary with a crafted one instead of hoping a real sprite hits it.
+    const sprite = { anchors: { neck: { y: 0, x0: 0, x1: 5.3 } } };
+    const [scarf] = wornGlyphs(sprite, "scarf");
+    const [, stripes] = scarf.g;
+    expect(stripes.g.length).toBeGreaterThan(0);
+    for (const { r: [sx, , sw] } of stripes.g) expect(sx + sw).toBeLessThanOrEqual(5.3);
   });
 
   it("draws nothing it doesn't know", () => {
