@@ -232,8 +232,10 @@ export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
 // tip, as sprite nodes in its limb colour:
 // - arm: a bar out, a bar up or down to the tip, a hand;
 // - tentacle: cells stepped from root to tip, curled at the end;
-// - tail: along the floor, up to the tip, hooked over the prop, with Nox's
-//   outline copy and Ember's spade when declared.
+// - tail: along the floor, up to the tip, hooked over the prop, with Ember's
+//   spade when declared, and Nox's outline: a stroked copy under a plain one,
+//   as Nox's own tail is drawn — stroking the one group would outline every
+//   seam between its parts.
 export function limbGlyphs(sprite, prop) {
   const { style, root: [x0, y0], width: t, color, outline, spade } = sprite.limb;
   const [x1, y1] = holdTip(sprite, prop);
@@ -245,10 +247,10 @@ export function limbGlyphs(sprite, prop) {
     }];
   }
   if (style === "tentacle") {
-    const n = Math.max(2, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 0.75));
+    const n = Math.max(2, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / (0.75 * t)));
     const cells = [];
-    for (let i = 0; i <= n; i++) cells.push(r(x0 + ((x1 - x0) * i) / n - 0.45, y0 + ((y1 - y0) * i) / n - 0.45, 0.95, 0.95));
-    return [{ a: { fill: color }, g: [...cells, r(x1 + 0.3, y1 - 0.9, 0.8, 0.8)] }];
+    for (let i = 0; i <= n; i++) cells.push(r(x0 + ((x1 - x0) * i) / n - 0.45 * t, y0 + ((y1 - y0) * i) / n - 0.45 * t, 0.95 * t, 0.95 * t));
+    return [{ a: { fill: color }, g: [...cells, r(x1 + 0.3 * t, y1 - 0.9 * t, 0.8 * t, 0.8 * t)] }];
   }
   const parts = [r(x0, y0, x1 - x0, t), r(x1 - t, y1, t, y0 - y1 + t), r(x1 - t, y1 - t * 0.2, t * 1.6, t)];
   return [

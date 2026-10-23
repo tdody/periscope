@@ -3,7 +3,7 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById, hueRotate } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, limbGlyphs } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
@@ -169,9 +169,25 @@ describe("<Critter>", () => {
     const holding = draw({ sprite: nox, holding: "pint" });
     expect(holding).toContain('data-holding="pint"');
     expect(holding).not.toContain("crit-nox-1");
-    expect(holding).toContain('stroke="#4a4f57"');
+    // A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
+    const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
+      g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
+    for (const n of limbGlyphs(nox, "pint")) expect(holding).toContain(markup(n));
     const scope = critterById("scope").sprite;
-    expect(draw({ sprite: scope, holding: "mug" })).toContain(`fill="${scope.limb.color}"`);
+    const [arm] = limbGlyphs(scope, "mug");
+    expect(draw({ sprite: scope, holding: "mug", tint: 150 })).toContain(markup({ ...arm, a: { fill: hueRotate(arm.a.fill, 150) } }));
     expect(draw({ sprite: scope })).not.toContain("data-holding");
+  });
+
+  // A rest group nested inside another group (not top-level, like Nox's and
+  // Ember's own): `rest` has to thread through Node's recursive call, not
+  // just the first.
+  it("hides a rest node nested inside another group", () => {
+    const sprite = {
+      root: [{ g: [{ g: [{ r: [1, 1, 1, 1] }], a: { fill: "#123456" }, rest: true }] }],
+      limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+    };
+    expect(draw({ sprite })).toContain("#123456");
+    expect(draw({ sprite, holding: "pint" })).not.toContain("#123456");
   });
 });

@@ -403,6 +403,10 @@ describe("holding", () => {
   const covers = (nodes, [x, y]) => nodes.flatMap((n) => n.g).some(({ r: [rx, ry, rw, rh] }) =>
     rx - 1e-6 <= x && x <= rx + rw + 1e-6 && ry - 1e-6 <= y && y <= ry + rh + 1e-6);
 
+  // Do two rects overlap or touch?
+  const touch = ([ax, ay, aw, ah], [bx, by, bw, bh]) =>
+    ax <= bx + bw + 1e-6 && bx <= ax + aw + 1e-6 && ay <= by + bh + 1e-6 && by <= ay + ah + 1e-6;
+
   it.each(sprites)("%s reaches each prop's tip, a reach right of its limb's root", (_id, sprite) => {
     const box = spriteBox(sprite);
     for (const [prop, { reach, at }] of Object.entries(HOLDS)) {
@@ -431,6 +435,13 @@ describe("holding", () => {
       expect(covers(nodes, [rx + 0.1, ry + 0.1]), `${prop} root`).toBe(true);
       expect(covers(nodes, holdTip(sprite, prop)), `${prop} tip`).toBe(true);
       expect(nodes.every((n) => n.a.fill === sprite.limb.color), prop).toBe(true);
+      // Unbroken: each piece has area and touches the one before it. The ends
+      // alone miss a riser that skips its bar: the hand covers the tip by itself.
+      const pieces = nodes.at(-1).g.map((c) => c.r);
+      for (const [i, [, , w, h]] of pieces.entries()) {
+        expect(w > 0 && h > 0, `${prop} piece ${i} size`).toBe(true);
+        if (i) expect(touch(pieces[i - 1], pieces[i]), `${prop} piece ${i}`).toBe(true);
+      }
     }
   });
 
