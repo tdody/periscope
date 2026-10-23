@@ -330,6 +330,11 @@ def test_no_faces_key_without_face_layers(tmp_path):
             '<g class="face-happy"><g class="mood-grumpy"><rect x="1" y="1" width="1" height="1"/></g></g>',
             "can't hold a mood",
         ),
+        # A holding pose hides a resting tail elsewhere on the critter, never inside a duty face.
+        (
+            '<g class="face-happy"><g class="hold-rest"><rect x="1" y="1" width="1" height="1"/></g></g>',
+            "can't hold a hold-rest",
+        ),
         ('<g class="face-happy"></g>', "draws nothing"),
     ],
 )
@@ -450,8 +455,24 @@ def test_convert_leaves_an_undeclared_limb_out(tmp_path):
         (' data-limb="arm 17 10 0" data-limb-color="#2a86b3"', "width"),
         (' data-limb="arm 17 10"', "data-limb-color"),
         (' data-limb="arm 17 10" data-limb-color="blue"', "data-limb-color"),
-        (' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-outline="grey"', "data-limb-outline"),
-        (' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-tip="claw"', "data-limb-tip"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-outline="grey"', "data-limb-outline"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-tip="claw"', "data-limb-tip"),
+        # The outline copy and spade only draw on a tail (limbGlyphs) — an arm or tentacle would drop them.
+        (
+            ' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-tip="spade"',
+            "only draw on a tail",
+        ),
+        (
+            ' data-limb="tentacle 17 10" data-limb-color="#2a86b3" data-limb-outline="#000000"',
+            "only draw on a tail",
+        ),
+        # A misspelt data-limb-* attribute is silently ignored otherwise; name the stray instead.
+        (
+            ' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-outlne="#000000"',
+            "data-limb-outlne",
+        ),
+        # An orphan data-limb-* attribute without data-limb does nothing — raise, don't ignore it.
+        (' data-limb-color="#2a86b3"', "without data-limb"),
     ],
 )
 def test_raises_on_a_malformed_limb(tmp_path, attrs, match):
@@ -471,12 +492,17 @@ def test_a_hold_rest_group_is_marked_rest(tmp_path):
         )
 
 
+def _rests(ns):
+    return sum(bool(n.get("rest")) + _rests(n.get("g", [])) for n in ns)
+
+
 def test_every_shipped_critter_declares_a_limb_and_only_tails_rest():
     for cid in build_critters.CRITTERS:
         s = _sprite(cid)
         assert "limb" in s, cid
-        rests = [n for n in s["root"] if n.get("rest")]
-        assert len(rests) == (1 if s["limb"]["style"] == "tail" else 0), cid
+        assert _rests(s["root"]) == (1 if s["limb"]["style"] == "tail" else 0), cid
+    assert _sprite("nox")["limb"]["outline"] == "#4a4f57"
+    assert _sprite("ember")["limb"]["spade"] is True
 
 
 def test_render_raises_for_a_critter_without_a_limb(tmp_path, monkeypatch):

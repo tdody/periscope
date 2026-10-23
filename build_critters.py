@@ -57,6 +57,7 @@ MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"
 FACES = {"face-happy": "happy", "face-x": "x", "face-worried": "worried", "face-down": "down"}
 HOLD_REST = "hold-rest"  # what a holding pose hides: the resting tail it curls up instead
 LIMB_STYLES = ("arm", "tentacle", "tail")
+LIMB_ATTRS = ("data-limb", "data-limb-color", "data-limb-outline", "data-limb-tip")
 
 
 def tag(el: ET.Element) -> str:
@@ -340,14 +341,22 @@ def limb_of(svg_name: str, doc: ET.Element) -> dict | None:
     """The appendage a critter holds things with (critters.js limbGlyphs): data-limb="style x y [width]"
     (arm, tentacle or tail, from its root point), data-limb-color, and optionally data-limb-outline (an
     outline copy, as Nox's body has) and data-limb-tip="spade" (Ember's tail). None when undeclared."""
+    strays = sorted(a for a in doc.attrib if a.startswith("data-limb") and a not in LIMB_ATTRS)
+    if strays:
+        raise ValueError(
+            f"{svg_name}: unknown data-limb-* attribute(s), expected one of {list(LIMB_ATTRS)}, got {strays!r}"
+        )
     raw = doc.get("data-limb")
     if raw is None:
+        orphans = sorted(a for a in LIMB_ATTRS[1:] if doc.get(a) is not None)
+        if orphans:
+            raise ValueError(f"{svg_name}: {orphans} set without data-limb, got {raw!r}")
         return None
-    style, *rest = raw.split() or [""]
+    style, *nums = raw.split() or [""]
     if style not in LIMB_STYLES:
         raise ValueError(f"{svg_name}: data-limb style must be one of {list(LIMB_STYLES)}, got {style!r}")
     try:
-        vals = [num(v) for v in rest]
+        vals = [num(v) for v in nums]
     except ValueError:
         vals = []
     if len(vals) not in (2, 3) or not all(math.isfinite(v) for v in vals):
@@ -359,6 +368,10 @@ def limb_of(svg_name: str, doc: ET.Element) -> dict | None:
     if color is None or not INK_RE.fullmatch(color):
         raise ValueError(f"{svg_name}: data-limb-color must be #rrggbb, got {color!r}")
     out = {"style": style, "root": vals[:2], "width": width, "color": color}
+    extras = [a for a in ("data-limb-outline", "data-limb-tip") if doc.get(a) is not None]
+    if extras and style != "tail":
+        # limbGlyphs draws the outline copy and the spade on a tail only; on an arm or tentacle they'd vanish.
+        raise ValueError(f"{svg_name}: {' and '.join(extras)} only draw on a tail, got {style!r}")
     outline = doc.get("data-limb-outline")
     if outline is not None:
         if not INK_RE.fullmatch(outline):
@@ -495,6 +508,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                 raise ValueError(
                     f"{svg.name}: {face_cls} can't hold a mood layer — a face always shows over the calm mood"
                 )
+            if el.get("class") == HOLD_REST:
+                raise ValueError(f"{svg.name}: {face_cls} can't hold a {HOLD_REST} — a holding pose never hides a face")
             for sub in el:
                 check(sub)
 
@@ -546,7 +561,7 @@ def render() -> tuple[str, str]:
     sheet = Sheet()
     sprites = {cid: convert(cid, SRC / f"{cid}.svg", sheet) for cid in CRITTERS}
     for cid, s in sprites.items():
-        # Required for the shipped critters (a hat and a scarf need them), not by convert(),
+        # Required for the shipped critters (a hat, a scarf and a held prop need them), not by convert(),
         # so the synthetic test SVGs stay minimal.
         missing = [a for a in ("hat", "neck") if a not in s["anchors"]] + ([] if "limb" in s else ["limb"])
         if missing:
