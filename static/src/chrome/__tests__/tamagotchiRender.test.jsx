@@ -6,7 +6,7 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hatTransform, hueRotate, spriteBox } from "../critters.js";
+import { CRITTERS, critterById, hatTransform, holdTipInScene, hueRotate, placement, spriteBox } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
@@ -929,6 +929,50 @@ describe("critters at their pastimes", () => {
     expect(render(<TamaScene activity="beer" />)).toContain('fill="#6f93d6"');
     expect(render(<TamaScene activity="beer" />)).not.toContain('class="critter"');
     expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
+  });
+
+  const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
+  const HELD = [["beer", "pint"], ["coffee", "mug"], ["cook", "spoon"], ["garden", "can"], ["dog", "leash"]];
+
+  it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {
+    for (const [activity, kind] of HELD) {
+      const html = render(<TamaScene activity={activity} critter={c} season="summer" />);
+      expect(html.slice(html.indexOf('class="tama-creature')), activity).toContain(`data-holding="${kind}"`);
+    }
+  });
+
+  it.each(holders)("%s's pint, mug and can sit in its own wrapper, once, and Clawd's don't float beside it", (_id, c) => {
+    const beer = render(<TamaScene activity="beer" critter={c} />);
+    const mascot = beer.slice(beer.indexOf('class="tama-creature'));
+    const friend = beer.slice(beer.indexOf('class="tama-friend"'), beer.indexOf('class="tama-cheers"'));
+    const pint = 'class="tama-pint tama-clink"';
+    expect(count(mascot, pint)).toBe(1);
+    expect(mascot.indexOf(pint)).toBeGreaterThan(mascot.indexOf('class="tama-critter"'));
+    expect(count(friend, pint)).toBe(1); // its own, inside its mirrored wrapper
+    expect(friend.indexOf(pint)).toBeGreaterThan(friend.indexOf('class="tama-critter"'));
+    // The mirror already turns the friend's clink toward the mascot; tama-clink2 would turn it back.
+    expect(beer).not.toContain("tama-clink2");
+    const mugBody = 'x="25.5" y="12" width="3.4" height="4.6"';
+    const coffee = render(<TamaScene activity="coffee" critter={c} />);
+    expect(count(coffee, mugBody)).toBe(1);
+    expect(coffee.indexOf(mugBody)).toBeGreaterThan(coffee.indexOf('class="tama-critter"'));
+    const garden = render(<TamaScene activity="garden" critter={c} />);
+    expect(count(garden, 'class="tama-can"')).toBe(1);
+    expect(garden.indexOf('class="tama-can"')).toBeGreaterThan(garden.indexOf('class="tama-critter"'));
+  });
+
+  it.each(holders)("%s's spoon and leash start at its own tip", (_id, c) => {
+    const cook = render(<TamaScene activity="cook" critter={c} />);
+    const [sx, sy] = holdTipInScene(c.sprite, "spoon", placement(c.sprite, PASTIME_SCENES.cook.pose));
+    expect(cook).toContain(`<line class="tama-spoon" x1="${sx}" y1="${sy}"`);
+    expect(count(cook, 'class="tama-spoon"')).toBe(1);
+    const [lx, ly] = holdTipInScene(c.sprite, "leash", placement(c.sprite, PASTIME_SCENES.dog.pose));
+    expect(render(<TamaScene activity="dog" critter={c} />)).toContain(`d="M${lx} ${ly} Q23 12.4 28.1 15"`);
+  });
+
+  it("curls a tail up to hold, so the resting one goes, the friend's too", () => {
+    expect(render(<TamaScene activity="code" critter={nox} />)).toContain("crit-nox-1");
+    expect(render(<TamaScene activity="beer" critter={nox} />)).not.toContain("crit-nox-1");
   });
 });
 

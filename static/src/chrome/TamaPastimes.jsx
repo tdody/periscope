@@ -5,7 +5,7 @@
 // the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
 // inside its group, so they bob with it. Motion is CSS (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CLAWD_HEIGHT, placement } from "./critters.js";
+import { CLAWD_HEIGHT, holdTip, holdTipInScene, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -185,9 +185,29 @@ function CritterFriend({ sprite }) {
   return (
     <g class="tama-critter" style="transform-box: view-box"
        transform={`translate(${r4(2 * cx - tx)} ${r4(ty)}) scale(${r4(-scale)} ${r4(scale)})`}>
-      <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} />
+      <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} holding="pint" />
+      <CritterHeld sprite={sprite} kind="pint" scale={scale} />
     </g>
   );
+}
+
+// What a critter holds at its appendage's tip (critters.js holdTip): Clawd's
+// own prop at Clawd's size (`scale`, its wrapper's, undone), drawn inside the
+// critter's wrapper so it bobs with it. The view-box pivot for the same reason
+// as the wrapper's: `.tama g` pivots on its fill-box. The pint's clink is
+// Clawd's (toward the friend); the friend's mirror turns its own toward the
+// mascot, so it needs no tama-clink2.
+export function CritterHeld({ sprite, kind, scale }) {
+  const [x, y] = holdTip(sprite, kind);
+  const k = r4(1 / scale);
+  const at = (fit, inner) => (
+    <g style="transform-box: view-box" transform={`translate(${x} ${y}) scale(${k}) ${fit}`}>{inner}</g>
+  );
+  if (kind === "pint") return at("translate(0 -11.5)", <Pint x={0} cls="tama-pint tama-clink" />);
+  // Mirrored so the handle (on the mug's far side from Clawd) faces the critter.
+  if (kind === "mug") return at("scale(-1 1) translate(-30.1 -14.2)", <CoffeeMug />);
+  if (kind === "can") return at("translate(-17.8 -11.7)", <WateringCan x0={0} />);
+  return null;
 }
 
 function Pint({ x, cls }) {
@@ -226,7 +246,7 @@ export function Friend({ critter }) {
             </g>
           </>
         )}
-        <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />
+        {!critter?.sprite && <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />}
       </g>
       <g class="tama-cheers" fill="#ffd166">
         <rect x="18.1" y="7.6" width="0.4" height="1.2" />
@@ -364,6 +384,24 @@ export function GardenBed() {
   );
 }
 
+// The morning mug: standing by Clawd's arm at x 25.5 (Tamagotchi.jsx Behind),
+// or held by its handle in a critter's appendage (CritterHeld).
+export function CoffeeMug() {
+  return (
+    <>
+      <g fill="#efe6d8">
+        <rect x="25.5" y="12" width="3.4" height="4.6" rx="0.4" />
+        <rect x="28.9" y="12.9" width="1.2" height="0.6" />
+        <rect x="29.5" y="12.9" width="0.6" height="2.6" />
+        <rect x="28.9" y="14.9" width="1.2" height="0.6" />
+      </g>
+      <rect x="25.5" y="12" width="3.4" height="0.9" fill="#7a4e2d" />
+      <rect class="tama-steam" x="26.4" y="8.6" width="0.6" height="2" fill="var(--fg-3)" />
+      <rect class="tama-steam tama-steam2" x="27.7" y="7.8" width="0.6" height="2" fill="var(--fg-3)" />
+    </>
+  );
+}
+
 export function WateringCan({ x0 }) {
   return (
     <g class="tama-can" shape-rendering={GEO}>
@@ -402,8 +440,12 @@ export function Stove() {
   );
 }
 
-export function Spoon({ x0 }) {
-  return <line class="tama-spoon" x1={x0 + 16.8} y1="13.6" x2={x0 + 21.6} y2="9.6" stroke="#b07a4f" stroke-width="0.45" />;
+// `from`: a critter's tip (TamaScene), in place of Clawd's hand.
+export function Spoon({ x0, from }) {
+  return (
+    <line class="tama-spoon" x1={from ? from[0] : x0 + 16.8} y1={from ? from[1] : "13.6"} x2={x0 + 21.6} y2="9.6"
+          stroke="#b07a4f" stroke-width="0.45" />
+  );
 }
 
 // The pleated band sits on the head's top row; any hat takes its place.
@@ -426,10 +468,12 @@ export function Toque({ x0 }) {
 }
 
 // ---- walking the dog: outdoors, a leash from Clawd's arm (x0 1) -----------
-export function Dog() {
+export function Dog({ critter, place }) {
+  // The leash runs from the holder to the collar: Clawd's arm, or a critter's tip.
+  const [lx, ly] = place ? holdTipInScene(critter.sprite, "leash", place) : [18.2, 14.2];
   return (
     <g shape-rendering={GEO}>
-      <path class="tama-leash" d="M18.2 14.2 Q23 12.4 28.1 15" fill="none" stroke="#e05252" stroke-width="0.25" />
+      <path class="tama-leash" d={`M${lx} ${ly} Q23 12.4 28.1 15`} fill="none" stroke="#e05252" stroke-width="0.25" />
       <g class="tama-dog">
         <path class="tama-tail" d="M23 15.4 L21.8 13.4" stroke="#b07a4f" stroke-width="0.55" stroke-linecap="round" />
         <g fill="#b07a4f">
