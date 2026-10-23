@@ -18,6 +18,15 @@ export function critterById(id) {
 
 // Clawd standing, in scene units: body 4 rows × 2 + legs 2.
 export const CLAWD_HEIGHT = 10;
+// A critter stands taller than Clawd: fit to his 10-unit height, a square-ish
+// sprite covers about half his 17-wide body. 12 fits every scene but two
+// (13.5 put Jelly's party hat off the top of the scene and the beer friends'
+// heads together): under the Halloween sheets,
+// cut for Clawd (Tamagotchi.jsx, CritterKid), a critter goes back to Clawd's
+// height; at the desk, the duty bubble's tail covers a seated critter's ear
+// tips. Everything else a critter wears or holds follows placement(), so it
+// all grows with it.
+export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
 
@@ -39,12 +48,12 @@ export function spriteBox(sprite) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// Where a critter stands in Clawd's spot: as tall as standing Clawd (or
-// `height`: the kids are half that), centred on Clawd's centre, on the floor
-// line standing and on the seat sitting (on the floor line it would sink
-// through the chair). `top` is its head, for the props that sit on one
-// (hats, stars, the "!").
-export function placement(sprite, { x0, sitting, height = CLAWD_HEIGHT }) {
+// Where a critter stands in Clawd's spot: CRITTER_HEIGHT tall (or `height`:
+// the kids are half that), centred on Clawd's centre, on the floor line
+// standing and on the seat sitting (on the floor line it would sink through
+// the chair). `top` is its head, for the props that sit on one (hats, stars,
+// the "!").
+export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
   const bottom = sitting ? SEAT : FEET;
@@ -56,7 +65,7 @@ export function placement(sprite, { x0, sitting, height = CLAWD_HEIGHT }) {
   };
 }
 
-const STROKE = 0.75; // Clawd's 0.45-unit glyph stroke, at a critter's ~0.6 scale
+const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
 
@@ -98,8 +107,9 @@ export function faceGlyphs(sprite, face) {
       p: `M${r4(head.right - 0.4)} ${r4(head.top + 1)} q1.2 1.8 0 2.7 q-1.2 -0.9 0 -2.7z`,
       cls: "tama-sweat", a: { fill: "#7fb6e6", "shape-rendering": "geometricPrecision" },
     };
-    // 0.6, not the eyes' 0.75: Clawd's 0.4-unit brows at a critter's ~0.6
-    // scale come to ~0.67; a touch thinner reads better than the eyes' glyphs.
+    // 0.6, not the eyes' 0.75: also sprite units, ~0.45 scene units at
+    // CRITTER_HEIGHT against Clawd's fixed 0.4 — a touch thinner reads
+    // better than the eyes' glyphs.
     return [...(own || [{ g: brows(eyes), a: stroked(ink, 0.6) }]), sweat];
   }
   if (own) return [...own];
@@ -124,10 +134,13 @@ export function faceGlyphs(sprite, face) {
 }
 
 // The bell's "!" away from the desk, beside the critter's own head: Clawd's
-// Startle sits at his right edge, which floats off any narrower critter.
-export function startleGlyph(sprite) {
+// Startle sits at his right edge, which floats off any narrower critter. A
+// held prop sits at the right-hand tip (TamaPastimes.jsx CritterHeld), where
+// the "!" would otherwise land and be swallowed — `holding` moves it to the
+// body's left instead, since every held prop is on the right.
+export function startleGlyph(sprite, holding = false) {
   const { head } = sprite.anchors;
-  const x = r4(head.right + 0.4);
+  const x = holding ? r4(spriteBox(sprite).x - 1.4) : r4(head.right + 0.4);
   return [{
     cls: "tama-startle", a: { fill: "#f2c14e" },
     g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],
@@ -200,4 +213,61 @@ export function hueRotate(color, deg) {
   const [r1, g1, b1] = h < 60 ? [d, x, 0] : h < 120 ? [x, d, 0] : h < 180 ? [0, d, x]
     : h < 240 ? [0, x, d] : h < 300 ? [x, 0, d] : [d, 0, x];
   return `#${[r1, g1, b1].map((v) => Math.round((v + min) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// Where a critter's appendage reaches for each prop it holds (TamaPastimes.jsx
+// CritterHeld, Spoon, Dog): `reach` right of its limb's root and `at` down its
+// body, a fraction of its sprite box. The reviewed batch-1 draft's numbers.
+export const HOLDS = {
+  pint: { reach: 2.6, at: 0.42 },
+  mug: { reach: 2.2, at: 0.55 },
+  spoon: { reach: 2.4, at: 0.55 },
+  can: { reach: 2.6, at: 0.45 },
+  leash: { reach: 2.4, at: 0.65 },
+};
+
+export function holdTip(sprite, prop) {
+  const box = spriteBox(sprite);
+  const { reach, at } = HOLDS[prop];
+  return [r4(sprite.limb.root[0] + reach), r4(box.y + at * box.h)];
+}
+
+// The same tip in scene units, for what's drawn outside the critter's wrapper
+// (the spoon into the pot, the leash to the dog), through the very placement
+// the wrapper uses: handed it rather than recomputing one, so a scene that
+// sizes its critter differently moves the hold with it.
+export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
+  const [x, y] = holdTip(sprite, prop);
+  return [r4(tx + scale * x), r4(ty + scale * y)];
+}
+
+// A critter's appendage from its limb's root (declared in its SVG) to a prop's
+// tip, as sprite nodes in its limb colour:
+// - arm: a bar out, a bar up or down to the tip, a hand;
+// - tentacle: cells stepped from root to tip, curled at the end;
+// - tail: along the floor, up to the tip, hooked over the prop, with Ember's
+//   spade when declared, and Nox's outline: a stroked copy under a plain one,
+//   as Nox's own tail is drawn — stroking the one group would outline every
+//   seam between its parts.
+export function limbGlyphs(sprite, prop) {
+  const { style, root: [x0, y0], width: t, color, outline, spade } = sprite.limb;
+  const [x1, y1] = holdTip(sprite, prop);
+  const r = (x, y, w, h) => ({ r: [r4(x), r4(y), r4(w), r4(h)] });
+  if (style === "arm") {
+    return [{
+      a: { fill: color },
+      g: [r(x0, y0, x1 - x0, t), r(x1 - t, Math.min(y0, y1), t, Math.abs(y1 - y0) + t), r(x1 - t * 1.1, y1 - t * 0.4, t * 1.4, t)],
+    }];
+  }
+  if (style === "tentacle") {
+    const n = Math.max(2, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / (0.75 * t)));
+    const cells = [];
+    for (let i = 0; i <= n; i++) cells.push(r(x0 + ((x1 - x0) * i) / n - 0.45 * t, y0 + ((y1 - y0) * i) / n - 0.45 * t, 0.95 * t, 0.95 * t));
+    return [{ a: { fill: color }, g: [...cells, r(x1 + 0.3 * t, y1 - 0.9 * t, 0.8 * t, 0.8 * t)] }];
+  }
+  const parts = [r(x0, y0, x1 - x0, t), r(x1 - t, y1, t, y0 - y1 + t), r(x1 - t, y1 - t * 0.2, t * 1.6, t)];
+  return [
+    ...(outline ? [{ a: { fill: color, stroke: outline, "stroke-width": 1 }, g: parts }] : []),
+    { a: { fill: color }, g: [...parts, ...(spade ? [r(x1 + 0.4, y1 - 0.9, 1.2, 1.2)] : [])] },
+  ];
 }

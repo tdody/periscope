@@ -330,6 +330,11 @@ def test_no_faces_key_without_face_layers(tmp_path):
             '<g class="face-happy"><g class="mood-grumpy"><rect x="1" y="1" width="1" height="1"/></g></g>',
             "can't hold a mood",
         ),
+        # A holding pose hides a resting tail elsewhere on the critter, never inside a duty face.
+        (
+            '<g class="face-happy"><g class="hold-rest"><rect x="1" y="1" width="1" height="1"/></g></g>',
+            "can't hold a hold-rest",
+        ),
         ('<g class="face-happy"></g>', "draws nothing"),
     ],
 )
@@ -418,4 +423,91 @@ def test_render_raises_for_a_critter_without_a_hat_or_neck(tmp_path, monkeypatch
     monkeypatch.setattr(build_critters, "SRC", tmp_path)
     monkeypatch.setattr(build_critters, "CRITTERS", ["bad"])
     with pytest.raises(ValueError, match="data-hat"):
+        build_critters.render()
+
+
+def test_a_declared_limb_becomes_sprite_data(tmp_path):
+    arm = ' data-limb="arm 17 10.6 1.2" data-limb-color="#2a86b3"'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=arm), build_critters.Sheet())
+    assert s["limb"] == {"style": "arm", "root": [17, 10.6], "width": 1.2, "color": "#2a86b3"}
+    tail = ' data-limb="tail 15.2 16" data-limb-color="#1a1c20" data-limb-outline="#4a4f57" data-limb-tip="spade"'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=tail), build_critters.Sheet())
+    assert s["limb"] == {
+        "style": "tail",
+        "root": [15.2, 16],
+        "width": 1,
+        "color": "#1a1c20",
+        "outline": "#4a4f57",
+        "spade": True,
+    }
+
+
+def test_convert_leaves_an_undeclared_limb_out(tmp_path):
+    assert "limb" not in build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
+
+
+@pytest.mark.parametrize(
+    "attrs,match",
+    [
+        (' data-limb="wing 17 10" data-limb-color="#2a86b3"', "style"),
+        (' data-limb="arm 17" data-limb-color="#2a86b3"', "numbers"),
+        (' data-limb="arm 17 nan" data-limb-color="#2a86b3"', "numbers"),
+        (' data-limb="arm 17 10 0" data-limb-color="#2a86b3"', "width"),
+        (' data-limb="arm 17 10"', "data-limb-color"),
+        (' data-limb="arm 17 10" data-limb-color="blue"', "data-limb-color"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-outline="grey"', "must be #rrggbb"),
+        (' data-limb="tail 17 10" data-limb-color="#2a86b3" data-limb-tip="claw"', "must be 'spade'"),
+        # The outline copy and spade only draw on a tail (limbGlyphs) — an arm or tentacle would drop them.
+        (
+            ' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-tip="spade"',
+            "only draw on a tail",
+        ),
+        (
+            ' data-limb="tentacle 17 10" data-limb-color="#2a86b3" data-limb-outline="#000000"',
+            "only draw on a tail",
+        ),
+        # A misspelt data-limb-* attribute is silently ignored otherwise; name the stray instead.
+        (
+            ' data-limb="arm 17 10" data-limb-color="#2a86b3" data-limb-outlne="#000000"',
+            "data-limb-outlne",
+        ),
+        # An orphan data-limb-* attribute without data-limb does nothing — raise, don't ignore it.
+        (' data-limb-color="#2a86b3"', "without data-limb"),
+    ],
+)
+def test_raises_on_a_malformed_limb(tmp_path, attrs, match):
+    with pytest.raises(ValueError, match=match):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE, svg_attrs=attrs), build_critters.Sheet())
+
+
+def test_a_hold_rest_group_is_marked_rest(tmp_path):
+    rest = '<g class="hold-rest"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + rest), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("rest")] == [{"g": [{"r": [1, 1, 1, 1]}], "rest": True}]
+    with pytest.raises(ValueError, match="hold-rest"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="hold-rest" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def _rests(ns):
+    return sum(bool(n.get("rest")) + _rests(n.get("g", [])) for n in ns)
+
+
+def test_every_shipped_critter_declares_a_limb_and_only_tails_rest():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        assert "limb" in s, cid
+        assert _rests(s["root"]) == (1 if s["limb"]["style"] == "tail" else 0), cid
+    assert _sprite("nox")["limb"]["outline"] == "#4a4f57"
+    assert _sprite("ember")["limb"]["spade"] is True
+
+
+def test_render_raises_for_a_critter_without_a_limb(tmp_path, monkeypatch):
+    _svg(tmp_path, BODY + EYE, svg_attrs=' data-hat="10 4 8" data-neck="12 3 17"')
+    monkeypatch.setattr(build_critters, "SRC", tmp_path)
+    monkeypatch.setattr(build_critters, "CRITTERS", ["bad"])
+    with pytest.raises(ValueError, match="data-limb"):
         build_critters.render()

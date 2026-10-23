@@ -3,7 +3,7 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById, hueRotate } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, limbGlyphs } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
@@ -109,6 +109,8 @@ describe("<Critter>", () => {
         { g: [{ r: [5, 5, 2, 2], a: { fill: "#333" } }], role: "eye", shut: [5, 6, 2, 0.4] },
         { g: [{ r: [6, 6, 2, 2], a: { fill: "#444" } }], role: "lid", shut: [6, 7, 2, 0.4] },
         { g: [{ r: [7, 7, 0.7, 0.7] }], role: "glint", mood: "calm" },
+        // A resting tail (`rest`): drawn as any group when nothing is held.
+        { g: [{ r: [8, 8, 1, 1] }], rest: true },
       ],
     };
     const awake =
@@ -119,6 +121,7 @@ describe("<Critter>", () => {
       '<g data-role="eye"><rect x="5" y="5" width="2" height="2" fill="#333"></rect></g>' +
       '<g data-role="lid"><rect x="6" y="6" width="2" height="2" fill="#444"></rect></g>' +
       '<g data-mood="calm" data-role="glint"><rect x="7" y="7" width="0.7" height="0.7"></rect></g>' +
+      '<g><rect x="8" y="8" width="1" height="1"></rect></g>' +
       "</g></svg>";
     const asleep =
       '<svg aria-hidden="true"><g class="critter"><rect x="0" y="0" width="1" height="1" fill="#111"></rect>' +
@@ -127,6 +130,7 @@ describe("<Critter>", () => {
       '<g data-mood="calm"><rect x="3" y="3" width="1" height="1"></rect></g>' +
       '<rect data-role="shut" x="5" y="6" width="2" height="0.4" fill="#333"></rect>' +
       '<rect data-role="shut" x="6" y="7" width="2" height="0.4" fill="#444"></rect>' +
+      '<g><rect x="8" y="8" width="1" height="1"></rect></g>' +
       "</g></svg>";
     expect(draw({ sprite })).toBe(awake);
     expect(draw({ sprite, asleep: true })).toBe(asleep);
@@ -161,5 +165,33 @@ describe("<Critter>", () => {
     expect(draw({ sprite, worn: "goggles" })).toContain('class="tama-goggles"');
     expect(draw({ sprite, worn: "scarf" })).toContain('class="tama-scarf-tail"');
     expect(draw({ sprite })).not.toContain("data-worn");
+  });
+
+  it("holds with its limb, and a tail that holds isn't also drawn resting", () => {
+    const nox = critterById("nox").sprite;
+    expect(draw({ sprite: nox })).toContain("crit-nox-1");
+    const holding = draw({ sprite: nox, holding: "pint" });
+    expect(holding).toContain('data-holding="pint"');
+    expect(holding).not.toContain("crit-nox-1");
+    // A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
+    const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
+      g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
+    for (const n of limbGlyphs(nox, "pint")) expect(holding).toContain(markup(n));
+    const scope = critterById("scope").sprite;
+    const [arm] = limbGlyphs(scope, "mug");
+    expect(draw({ sprite: scope, holding: "mug", tint: 150 })).toContain(markup({ ...arm, a: { fill: hueRotate(arm.a.fill, 150) } }));
+    expect(draw({ sprite: scope })).not.toContain("data-holding");
+  });
+
+  // A rest group nested inside another group (Nox's and Ember's own are
+  // top-level): `rest` has to thread through Node's recursive call, not just
+  // the first.
+  it("hides a rest node nested inside another group", () => {
+    const sprite = {
+      root: [{ g: [{ g: [{ r: [1, 1, 1, 1] }], a: { fill: "#123456" }, rest: true }] }],
+      limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+    };
+    expect(draw({ sprite })).toContain("#123456");
+    expect(draw({ sprite, holding: "pint" })).not.toContain("#123456");
   });
 });

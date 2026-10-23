@@ -6,10 +6,13 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hatTransform, hueRotate, spriteBox } from "../critters.js";
+import {
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, placement,
+  spriteBox,
+} from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
-import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, Y0 } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
@@ -629,7 +632,10 @@ describe("critters", () => {
 
   it("rides the furious heat shimmer up onto a seated critter's head", () => {
     const html = scene(critterById("ember"), "code", { mood: "furious" });
-    expect(html).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-shimmer"/);
+    // code's pose is seated at x0 3 (Tamagotchi.jsx POSES); the shimmer rides
+    // up by however much higher the critter's own head sits than Clawd's (Y0).
+    const headDy = placement(critterById("ember").sprite, { x0: 3, sitting: true }).top - Y0;
+    expect(html).toContain(`<g transform="translate(0 ${headDy})"><g class="tama-shimmer"`);
   });
 
   it("stays calm in the critter while on duty, as Clawd does", () => {
@@ -887,7 +893,7 @@ describe("critters at their pastimes", () => {
     const ty = Number(m[2]);
     const sx = Number(m[3]);
     const sy = m[4] !== undefined ? Number(m[4]) : sx;
-    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h) };
+    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h), scale: sy };
   }
 
   it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
@@ -917,7 +923,11 @@ describe("critters at their pastimes", () => {
     const centres = transforms.map((t) => mapBoxThrough(t, box).centreX);
     expect(centres[0]).toBeCloseTo(21.65, 2); // kid x 17.4 + 4.25
     expect(centres[1]).toBeCloseTo(29.65, 2); // kid x 25.4 + 4.25
-    for (const t of transforms) expect(mapBoxThrough(t, box).feetY).toBeCloseTo(19, 2);
+    for (const t of transforms) {
+      const mapped = mapBoxThrough(t, box);
+      expect(mapped.feetY).toBeCloseTo(19, 2);
+      expect(mapped.scale * box.h).toBeCloseTo(CRITTER_HEIGHT / 2); // half its own height, not Clawd's
+    }
     expect(count(html, 'class="tama-kid')).toBe(2);
   });
 
@@ -929,6 +939,113 @@ describe("critters at their pastimes", () => {
     expect(render(<TamaScene activity="beer" />)).toContain('fill="#6f93d6"');
     expect(render(<TamaScene activity="beer" />)).not.toContain('class="critter"');
     expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
+  });
+
+  const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
+  const HELD = [["beer", "pint"], ["coffee", "mug"], ["cook", "spoon"], ["garden", "can"], ["dog", "leash"]];
+  const r4 = (v) => Math.round(v * 1e4) / 1e4;
+  // Whether `needle` lies inside the <g> that opens at `open`: that group never closes before it.
+  const inside = (html, open, needle) => {
+    const at = html.indexOf(needle, open);
+    let depth = 0;
+    for (const m of html.slice(open, at).matchAll(/<g[\s>]|<\/g>/g)) {
+      depth += m[0] === "</g>" ? -1 : 1;
+      if (depth === 0) return false;
+    }
+    return at > open;
+  };
+  // The placement the mascot's wrapper was actually drawn with.
+  const drawnPlace = (html) => {
+    const [, tx, ty, scale] = /<g class="tama-critter"[^>]*transform="translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)"/
+      .exec(html.slice(html.indexOf('class="tama-creature')));
+    return { tx: Number(tx), ty: Number(ty), scale: Number(scale) };
+  };
+
+  it.each(holders)("%s's own wrapper stands it CRITTER_HEIGHT tall, however the scene seats it", (_id, c) => {
+    for (const activity of ["code", "beer"]) {
+      const html = render(<TamaScene activity={activity} critter={c} />);
+      const { scale } = drawnPlace(html);
+      expect(scale * spriteBox(c.sprite).h).toBeCloseTo(CRITTER_HEIGHT);
+    }
+  });
+
+  // The Halloween sheet (GhostSheet) is cut for Clawd's body: at CRITTER_HEIGHT
+  // a tall critter's ears/horns/antenna poke through its top. Under a sheet a
+  // critter goes back to CLAWD_HEIGHT; a plain run (no sheet) is the control.
+  it.each(holders)("%s's own wrapper goes back to CLAWD_HEIGHT under a Halloween sheet", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const halloween = render(<TamaScene activity="run" trick season="autumn" occasion="halloween" critter={c} />);
+    expect(drawnPlace(halloween).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+    const plain = render(<TamaScene activity="run" critter={c} />);
+    expect(drawnPlace(plain).scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
+  });
+
+  // Same reasoning as the mascot's own sheet, for the kids' little sheets
+  // (KidSheet): both go back to half Clawd's height, not half the critter's.
+  it.each(holders)("%s's kids go back to half CLAWD_HEIGHT under their Halloween sheets", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const html = render(<TamaScene activity="kids" trick critter={c} />);
+    const behind = html.slice(0, html.indexOf('class="tama-creature'));
+    const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(transforms).toHaveLength(2);
+    for (const t of transforms) expect(mapBoxThrough(t, box).scale * box.h).toBeCloseTo(CLAWD_HEIGHT / 2);
+    // Both ghost scenes: the mascot's own wrapper too, same as the Halloween run.
+    expect(drawnPlace(html).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+  });
+
+  it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {
+    for (const [activity, kind] of HELD) {
+      const html = render(<TamaScene activity={activity} critter={c} season="summer" />);
+      expect(html.slice(html.indexOf('class="tama-creature')), activity).toContain(`data-holding="${kind}"`);
+    }
+  });
+
+  it.each(holders)("%s's pint, mug and can sit inside its own critter wrapper, once, and Clawd's don't float beside it", (_id, c) => {
+    const beer = render(<TamaScene activity="beer" critter={c} />);
+    const mascotOpen = beer.indexOf('<g class="tama-critter"', beer.indexOf('class="tama-creature'));
+    const friendOpen = beer.indexOf('<g class="tama-critter"', beer.indexOf('class="tama-friend"'));
+    const pint = 'class="tama-pint tama-clink"';
+    expect(count(beer, pint)).toBe(2); // the mascot's and the friend's, no Clawd float beside either
+    expect(inside(beer, mascotOpen, pint)).toBe(true);
+    expect(inside(beer, friendOpen, pint)).toBe(true);
+    // The mirror already turns the friend's clink toward the mascot; tama-clink2 would turn it back.
+    expect(beer).not.toContain("tama-clink2");
+    // The pint sits at Clawd's size: CritterHeld undoes the wrapper's own scale.
+    const [hx, hy] = holdTip(c.sprite, "pint");
+    expect(beer).toContain(`translate(${hx} ${hy}) scale(${r4(1 / drawnPlace(beer).scale)}) translate(0 -11.5)`);
+    const mugBody = 'x="25.5" y="12" width="3.4" height="4.6"';
+    const coffee = render(<TamaScene activity="coffee" critter={c} />);
+    const coffeeOpen = coffee.indexOf('<g class="tama-critter"', coffee.indexOf('class="tama-creature'));
+    expect(count(coffee, mugBody)).toBe(1);
+    expect(inside(coffee, coffeeOpen, mugBody)).toBe(true);
+    const garden = render(<TamaScene activity="garden" critter={c} />);
+    const gardenOpen = garden.indexOf('<g class="tama-critter"', garden.indexOf('class="tama-creature'));
+    expect(count(garden, 'class="tama-can"')).toBe(1);
+    expect(inside(garden, gardenOpen, 'class="tama-can"')).toBe(true);
+  });
+
+  it.each(holders)("%s's spoon and leash start at its own tip, wherever it was actually drawn", (_id, c) => {
+    const cook = render(<TamaScene activity="cook" critter={c} />);
+    // Inside .tama-creature, not just anywhere: it bobs with the critter's own group.
+    expect(inside(cook, cook.indexOf('<g class="tama-creature'), 'class="tama-spoon"')).toBe(true);
+    expect(count(cook, 'class="tama-spoon"')).toBe(1);
+    const [sx, sy] = holdTipInScene(c.sprite, "spoon", drawnPlace(cook));
+    expect(cook).toContain(`<line class="tama-spoon" x1="${sx}" y1="${sy}"`);
+    const dog = render(<TamaScene activity="dog" critter={c} />);
+    const [lx, ly] = holdTipInScene(c.sprite, "leash", drawnPlace(dog));
+    expect(dog).toContain(`d="M${lx} ${ly} Q23 12.4 28.1 15"`);
+  });
+
+  it("curls a tail up to hold, so the resting one goes, the friend's too", () => {
+    expect(render(<TamaScene activity="code" critter={nox} />)).toContain("crit-nox-1");
+    expect(render(<TamaScene activity="beer" critter={nox} />)).not.toContain("crit-nox-1");
+  });
+
+  it("moves a holding critter's startle glyph off its held prop, to the body's left", () => {
+    const c = critterById("ember");
+    const x = r4(spriteBox(c.sprite).x - 1.4);
+    const html = scene(c, "beer", { duty: { kind: "bell", label: "1", urgent: false, more: 0 } });
+    expect(html).toContain(`class="tama-startle" fill="#f2c14e"><rect x="${x}"`);
   });
 });
 

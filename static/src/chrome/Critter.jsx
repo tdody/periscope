@@ -2,7 +2,7 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { EYE_FACES, faceGlyphs, hueRotate, startleGlyph, wornGlyphs } from "./critters.js";
+import { EYE_FACES, faceGlyphs, hueRotate, limbGlyphs, startleGlyph, wornGlyphs } from "./critters.js";
 
 // A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
 // `tint` degrees. No tint draws the critter's own paint, untouched.
@@ -19,8 +19,9 @@ function painted(a, tint) {
 // face (`hide`), the face's glyph replaces the eye: the eye and its glint go,
 // and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
 // fields (faceGlyphs/startleGlyph): an SVG path's `d` and a CSS class.
-function Node({ n, mood, asleep, hide, tint }) {
+function Node({ n, mood, asleep, hide, tint, rest }) {
   if (n.mood && n.mood !== mood) return null;
+  if (rest && n.rest) return null;
   if ((asleep || hide) && n.role === "glint") return null;
   if (hide && n.role === "eye") return null;
   if (n.r) {
@@ -36,7 +37,7 @@ function Node({ n, mood, asleep, hide, tint }) {
   // and a face glyph is static art (critters.js), never animated.
   return (
     <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...painted(n.a, tint)}>
-      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} />)}
+      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} />)}
     </g>
   );
 }
@@ -46,14 +47,17 @@ function Node({ n, mood, asleep, hide, tint }) {
 // with it. An eye-replacing face wins over `asleep` if both were ever set
 // (TamaScene never sets both). `tint` turns its colours (a critter's friend).
 // `worn` is what it wears for a pastime (critters.js wornGlyphs), drawn over its face.
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null }) {
+// `holding` is the prop it holds (critters.js limbGlyphs): its appendage is
+// drawn to the prop, and a resting tail it holds with (`rest`) goes.
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null }) {
   const hide = EYE_FACES.has(face);
   return (
-    <g class="critter" data-face={face || undefined} data-worn={worn || undefined}>
-      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} />)}
+    <g class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>
+      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={!!holding} />)}
       {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
       {worn && wornGlyphs(sprite, worn).map((n, i) => <Node key={`worn-${i}`} n={n} mood={mood} tint={tint} />)}
-      {startle && startleGlyph(sprite).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
+      {startle && startleGlyph(sprite, !!holding).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
+      {holding && limbGlyphs(sprite, holding).map((n, i) => <Node key={`hold-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );
 }
