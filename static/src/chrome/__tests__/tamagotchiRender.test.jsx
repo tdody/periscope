@@ -661,7 +661,9 @@ describe("critters", () => {
       const html = scene(nox, activity, { occasion: "yearend" });
       expect(html, activity).toContain(`${seat}<g class="tama-hat-santa"`);
       expect(html.indexOf("tama-hat-santa"), activity).toBeGreaterThan(html.indexOf('class="tama-critter"'));
-      expect(html, activity).not.toMatch(/translate\(0 -2\)"><g class="tama-hat-santa"/);
+      // Once only: Clawd's own santa hat (TamaScene's `!sprite` branch) must
+      // not also draw for a critter, leaving two in the markup.
+      expect(count(html, "tama-hat-santa"), activity).toBe(1);
     }
     expect(scene(nox, "code", { party: true, duty: { kind: "merged", label: "1", more: 0 } })).toContain(`${seat}<g class="tama-hat-party"`);
   });
@@ -773,6 +775,81 @@ describe("critter faces follow Clawd's in every scene", () => {
       expect(faceCounts[face], face).toBeGreaterThan(0);
     }
     expect(startleCount).toBeGreaterThan(0);
+  });
+});
+
+describe("critter hats and worn props follow Clawd's in every scene", () => {
+  // CritterHats' headwear/snowcap rules and Clawd's own (TamaScene's
+  // `!sprite` head-prop block) decide the same thing twice from the same
+  // scene inputs, same risk as the face chain above: nothing ties them
+  // together, so dropping `!hat`/`!ghost` from CritterHats, or the
+  // `!sprite &&` guard on Clawd's Headwear <Head>, desyncs a critter from
+  // Clawd without any other test noticing.
+  const HAT_MARKS = ["tama-hat-santa", "tama-hat-party", "tama-toque", "tama-helmet", "tama-snowcap"];
+  const WORN_MARKS = ["tama-goggles", 'class="tama-scarf"']; // exact: not "…-tail"
+  const MARKS = [...HAT_MARKS, ...WORN_MARKS];
+
+  // Scoped to the mascot's own group, same reason as faceOf/critterFace
+  // above: a beer/kids scene's friend and kids are critters too, drawn ahead
+  // of the mascot (`tama-creature`) in Behind's markup.
+  const ownMarkup = (html) => html.slice(html.indexOf('class="tama-creature'));
+  const marksIn = (body) => new Set(MARKS.filter((m) => body.includes(m)));
+
+  it("draws the same set of hats/worn props for the critter as for Clawd, each inside its own seat", () => {
+    const scope = critterById("scope");
+    const mismatches = [];
+    const seen = new Set();
+    let n = 0;
+    for (const activity of [...ids, "nap"]) {
+      for (const kind of [null, "merged"]) {
+        for (const occasion of [null, "halloween", "yearend", "newyear"]) {
+          for (const season of ["summer", "winter"]) {
+            for (const trick of [false, true]) {
+              for (const party of [false, true]) {
+                const props = {
+                  activity, season, occasion, trick, party, working: 2,
+                  duty: kind && { kind, label: "1", more: 0 },
+                  walled: activity === "nap" ? { day: null, time: "3pm" } : null,
+                };
+                const clawd = ownMarkup(render(<TamaScene {...props} />));
+                const critter = ownMarkup(render(<TamaScene {...props} critter={scope} />));
+                const cSet = marksIn(clawd);
+                const sSet = marksIn(critter);
+                n += 1;
+                for (const m of cSet) seen.add(m);
+                for (const m of sSet) seen.add(m);
+                const same = cSet.size === sSet.size && [...cSet].every((m) => sSet.has(m));
+                if (!same) {
+                  mismatches.push({ activity, kind, occasion, season, trick, party, clawd: [...cSet], critter: [...sSet] });
+                  continue;
+                }
+                const seatAt = critter.indexOf('class="tama-hat-seat"');
+                const seat = seatAt < 0 ? "" : critter.slice(seatAt);
+                for (const m of sSet) {
+                  // Present exactly once for the critter: twice would mean
+                  // Clawd's own prop leaked in alongside the critter's.
+                  if (critter.split(m).length - 1 !== 1) {
+                    mismatches.push({ activity, kind, occasion, season, trick, party, dup: m });
+                  }
+                  // Every hat/snowcap sits inside the critter's own hat seat
+                  // (the worn goggles/scarf don't: they sit on the eyes/neck).
+                  if (HAT_MARKS.includes(m) && !seat.includes(m)) {
+                    mismatches.push({ activity, kind, occasion, season, trick, party, unseated: m });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (mismatches.length) {
+      throw new Error(
+        `${mismatches.length}/${n} scenes disagree (first 5):\n${mismatches.slice(0, 5).map((m) => JSON.stringify(m)).join("\n")}`,
+      );
+    }
+    // The matrix only proves something if it actually exercises every marker.
+    for (const m of MARKS) expect(seen.has(m), m).toBe(true);
   });
 });
 
