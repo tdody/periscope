@@ -154,4 +154,12 @@ describe("<Critter>", () => {
     expect(strokeHtml).not.toContain('stroke="#4a4f57"');
     expect(strokeHtml).toContain(`stroke="${hueRotate("#4a4f57", 150)}"`);
   });
+
+  it("wears goggles or a scarf when told to, marked on its group", () => {
+    const sprite = critterById("scope").sprite;
+    expect(draw({ sprite, worn: "goggles" })).toContain('data-worn="goggles"');
+    expect(draw({ sprite, worn: "goggles" })).toContain('class="tama-goggles"');
+    expect(draw({ sprite, worn: "scarf" })).toContain('class="tama-scarf-tail"');
+    expect(draw({ sprite })).not.toContain("data-worn");
+  });
 });

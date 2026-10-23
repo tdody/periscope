@@ -1,6 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getTamaCritter, prefsSignal } from "../../prefs.js";
-import { CLAWD_HEIGHT, CRITTERS, EYE_FACES, critterById, faceGlyphs, hueRotate, placement, spriteBox, startleGlyph } from "../critters.js";
+import {
+  CLAWD_HEIGHT,
+  CRITTERS,
+  EYE_FACES,
+  critterById,
+  faceGlyphs,
+  hatTransform,
+  hueRotate,
+  placement,
+  spriteBox,
+  startleGlyph,
+  wornGlyphs,
+} from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite);
 
@@ -273,5 +285,49 @@ describe("placement with a height", () => {
     expect(p.scale * box.h).toBeCloseTo(5);
     expect(p.ty + p.scale * (box.y + box.h)).toBeCloseTo(19);
     expect(p.top).toBe(14);
+  });
+});
+
+describe("hatTransform", () => {
+  it("maps Clawd's head top-centre onto the critter's hat seat, at its width", () => {
+    const sprite = critterById("nox").sprite;
+    const { cx, top, w } = sprite.anchors.hat;
+    expect(hatTransform(sprite)).toBe(`translate(${cx} ${top}) scale(${Math.round((w / 12) * 1e4) / 1e4}) translate(-9 -9)`);
+  });
+});
+
+describe("wornGlyphs", () => {
+  const scope = critterById("scope").sprite;
+  const moss = critterById("moss").sprite;
+
+  it("puts a goggle lens around each eye, and a strap across them", () => {
+    const [goggles] = wornGlyphs(scope, "goggles");
+    expect(goggles.cls).toBe("tama-goggles");
+    const [strap, ...lenses] = goggles.g;
+    expect(lenses).toHaveLength(scope.anchors.eyes.length);
+    lenses.forEach(({ r: [x, y, w, h] }, i) => {
+      const e = scope.anchors.eyes[i];
+      expect(x).toBeLessThan(e.x);
+      expect(y).toBeLessThan(e.y);
+      expect(x + w).toBeGreaterThan(e.x + e.w);
+      expect(y + h).toBeGreaterThan(e.y + e.h);
+    });
+    const [sx, , sw] = strap.r;
+    expect(sx).toBeLessThan(Math.min(...scope.anchors.eyes.map((e) => e.x)));
+    expect(sx + sw).toBeGreaterThan(Math.max(...scope.anchors.eyes.map((e) => e.x + e.w)));
+    expect(wornGlyphs(moss, "goggles")[0].g).toHaveLength(2); // one-eyed: a strap and one lens
+  });
+
+  it("wraps the scarf along the neck row, its tail animated", () => {
+    const [scarf] = wornGlyphs(scope, "scarf");
+    const { y, x0, x1 } = scope.anchors.neck;
+    expect(scarf.cls).toBe("tama-scarf");
+    const [band, , tail] = scarf.g;
+    expect(band.r).toEqual([x0, y, x1 - x0, 1.6]);
+    expect(tail.cls).toBe("tama-scarf-tail");
+  });
+
+  it("draws nothing it doesn't know", () => {
+    expect(wornGlyphs(scope, "monocle")).toEqual([]);
   });
 });
