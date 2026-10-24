@@ -4,10 +4,12 @@
 // TamaDishes.jsx's. Behind-the-mascot pieces take fixed positions, set against
 // the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
 // inside its group, so they bob with it. A critter's held pieces sit at its
-// own tip instead, inside its wrapper (CritterHeld). Motion is CSS
-// (styles.css, `.tama`).
+// own tip instead, inside its wrapper (CritterHeld); the bass is there too, as
+// Critter's child, reached by its limb (Tamagotchi.jsx's `fret`); the
+// controller's paws (Paw, below) sit in a critter's own limb colour or
+// Clawd's skin. Motion is CSS (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CLAWD_HEIGHT, CRITTER_HEIGHT, holdTip, HOLDS, placement } from "./critters.js";
+import { CLAWD_HEIGHT, CRITTER_HEIGHT, HOLDS, holdTip, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -115,7 +117,7 @@ function Paw({ limb, x, y, w, h, cls }) {
   const round = limb.style === "tentacle";
   return (
     <rect class={cls} x={x} y={y} width={w} height={h} rx={round ? h / 2 : 0.25} fill={limb.color}
-          stroke={!round && limb.outline ? limb.outline : undefined} stroke-width={!round && limb.outline ? 0.25 : undefined} />
+          stroke={limb.outline || undefined} stroke-width={limb.outline ? 0.25 : undefined} />
   );
 }
 

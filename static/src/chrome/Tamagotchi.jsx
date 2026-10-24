@@ -43,7 +43,7 @@ import {
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
 import {
-  Bass, BASS_FRET, CoffeeMug, Controller, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite,
+  BASS_FRET, Bass, CoffeeMug, Controller, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite,
 } from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
@@ -633,8 +633,9 @@ export function TamaScene({
   // showing its own moods and shutting its own eyes. Clawd's overlay
   // components stay Clawd's; a critter draws its own duty faces (`critterFace`
   // → Critter.jsx); a critter holds the pint, mug, spoon, can and leash in its
-  // own appendage (`holding`); hands, the bass and the controller are still
-  // Clawd-only.
+  // own appendage (`holding`), the bass by its limb reaching the fret
+  // (`fret` below, Critter's `tip`), and the controller in its paws (no
+  // reach) — only Clawd's own hands (ArmsUp, SlapHand) are Clawd-only.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
@@ -717,6 +718,11 @@ export function TamaScene({
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
                      startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret}>
               {fret && (
+                // Undoes the wrapper's placement exactly, so the bass draws at
+                // Clawd's fixed scene coordinates while still bobbing as the
+                // wrapper's child. view-box, not critters.css's `.critter g`
+                // fill-box default: fill-box would pivot scale() on this
+                // group's own box instead of 0,0, same reason as the wrapper's.
                 <g style="transform-box: view-box" transform={`scale(${1 / place.scale}) translate(${-place.tx} ${-place.ty})`}>
                   <Bass x0={x0} limb={sprite.limb} />
                 </g>

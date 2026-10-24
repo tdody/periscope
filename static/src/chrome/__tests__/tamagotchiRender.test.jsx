@@ -1065,12 +1065,21 @@ describe("critters at their pastimes", () => {
     const wrapAt = mascot.indexOf('<g class="tama-critter"');
     const bassAt = mascot.indexOf('<g class="tama-bass"');
     expect(inside(mascot, wrapAt, 'class="tama-bass"')).toBe(true); // bobs and scales back with the critter
+    // The bass's own group undoes the wrapper's placement exactly (not a swapped
+    // translate/scale order, and view-box, not fill-box, so scale() pivots at 0,0):
+    // off by either, the bass lands ~1.5 units from the fret spot.
+    const { tx, ty, scale } = drawnPlace(html);
+    expect(mascot).toContain(`<g style="transform-box: view-box" transform="scale(${1 / scale}) translate(${-tx} ${-ty})"><g class="tama-bass"`);
     const bass = groupAt(mascot, bassAt);
     expect(bass).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-bass"')).toBe(1); // no stray copy
     expect(count(bass, 'class="tama-strum"')).toBe(1);
     expect(bass).toContain(`fill="${c.sprite.limb.color}"`);
-    // The limb reaches the fret spot through the placement actually drawn, after the bass.
     const { x0 } = PASTIME_SCENES.music.pose;
+    // Pinned the way the spoon line is (holdTipInScene): the strum paw's own spot.
+    expect(bass).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5"`);
+    // The limb reaches the fret spot through the placement actually drawn, after the bass.
     const tip = sceneToSprite(drawnPlace(html), [x0 + BASS_FRET.dx, BASS_FRET.y]);
     const last = limbGlyphs(c.sprite, "bass", tip).at(-1).g.at(-1).r;
     const lastRect = `<rect x="${last[0]}" y="${last[1]}" width="${last[2]}" height="${last[3]}">`;
@@ -1081,19 +1090,42 @@ describe("critters at their pastimes", () => {
     const html = render(<TamaScene activity="game" critter={c} />);
     const mascot = html.slice(html.indexOf('class="tama-creature'));
     expect(mascot).toContain('data-holding="controller"');
+    const wrapAt = mascot.indexOf('<g class="tama-critter"');
     const ctlAt = mascot.indexOf('<g class="tama-controller"');
     const ctl = groupAt(mascot, ctlAt);
     expect(ctl).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-controller"')).toBe(1); // no stray copy
     expect(count(ctl, `fill="${c.sprite.limb.color}"`)).toBe(2);
     expect(count(ctl, 'class="tama-thumb"')).toBe(1);
-    expect(inside(mascot, mascot.indexOf('<g class="tama-critter"'), 'class="tama-controller"')).toBe(false); // in front, in scene units
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // The right paw (at x0 + 10) taps; the left (x0 + 6.2) carries no class.
+    expect(ctl).toContain(`class="tama-thumb" x="${x0 + 10}" y="14.3"`);
+    expect(ctl).toContain(`<rect x="${x0 + 6.2}" y="14.3"`);
+    expect(inside(mascot, wrapAt, 'class="tama-controller"')).toBe(false); // in front, in scene units
+    expect(ctlAt).toBeGreaterThanOrEqual(wrapAt + groupAt(mascot, wrapAt).length); // after the whole wrapper closes
   });
 
-  it("frets with the tail, so it stops resting, but holds the controller in paws, so it rests", () => {
-    expect(render(<TamaScene activity="music" critter={nox} />)).not.toContain("crit-nox-1");
-    const game = render(<TamaScene activity="game" critter={nox} />);
-    expect(game).toContain("crit-nox-1");
-    expect(game).toContain('stroke="#4a4f57" stroke-width="0.25"'); // its black paws outlined on the dark controller
+  const tailCritters = [nox, critterById("ember")];
+  it.each(tailCritters.map((c) => [c.id, c]))("%s frets with the tail, so it stops resting, but holds the controller in paws, so it rests", (_id, c) => {
+    const tailAnim = `crit-${c.id}-1`;
+    expect(render(<TamaScene activity="music" critter={c} />)).not.toContain(tailAnim);
+    const game = render(<TamaScene activity="game" critter={c} />);
+    expect(game).toContain(tailAnim);
+    // Nox's tail (and so its paws) is outlined; Ember's isn't — each follows its own limb.
+    const { color, outline } = c.sprite.limb;
+    if (outline) {
+      expect(game).toContain(`stroke="${outline}" stroke-width="0.25"`); // its black paws outlined on the dark controller
+    } else {
+      expect(game).toContain(`<rect class="tama-thumb" x="${PASTIME_SCENES.game.pose.x0 + 10}" y="14.3" width="1.6" height="1.3" rx="0.25" fill="${color}"></rect>`);
+    }
+  });
+
+  it("rounds a tentacle's paw, not a square corner", () => {
+    const jelly = critterById("jelly");
+    const music = render(<TamaScene activity="music" critter={jelly} />);
+    const { x0 } = PASTIME_SCENES.music.pose;
+    expect(music).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5" width="1.3" height="1" rx="0.5"`); // h/2 of its 1-unit strum paw
   });
 
   it("draws Clawd armless at the console, two SKIN paws on the grips instead of a lone thumb", () => {
