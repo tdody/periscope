@@ -36,12 +36,12 @@ import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
   CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, sceneToSprite,
 } from "./critters.js";
-import {
-  AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
-  LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
-  WallScreen, Worried, XEyes,
-} from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
+import {
+  AlarmClock, ApiScreen, ArmsUp, BELL_REACH, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher,
+  HappyEyes, KEYS_REACH, LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, SlapPaw,
+  Sparkles, Stars, Startle, TypingPaws, WallScreen, Worried, XEyes,
+} from "./TamaDuty.jsx";
 import {
   BASS_FRET, Bass, CoffeeMug, Controller, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite,
 } from "./TamaPastimes.jsx";
@@ -635,8 +635,10 @@ export function TamaScene({
   // → Critter.jsx); a critter holds the pint, mug, spoon, can and leash in its
   // own appendage (`holding`), the bass by its limb reaching the fret
   // (`fret` below, Critter's `tip`), and the controller in its paws (no
-  // reach) — only Clawd's own hands (MoodFace's typing hands, ArmsUp,
-  // SlapHand) are Clawd-only.
+  // reach). A critter types, cheers and slaps the bell with its own
+  // appendages too (critters.js cheerGlyphs, TamaDuty TypingPaws / SlapPaw);
+  // only Clawd's drawings of those (MoodFace's typing hands, ArmsUp,
+  // SlapHand) stay his.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
@@ -691,6 +693,11 @@ export function TamaScene({
   // Critter's child: over its body and under its limb, which frets the neck in
   // front of it at Clawd's fret spot.
   const fret = holding === "bass" ? sceneToSprite(place, [x0 + BASS_FRET.dx, BASS_FRET.y]) : null;
+  // At the desk a critter's limb reaches the keyboard when it's moody and the
+  // service bell when the bell's on duty there (TamaDuty KEYS_REACH /
+  // BELL_REACH), through the placement it's drawn with, like the fret.
+  const deskTip = sprite && (moody ? KEYS_REACH : deskBell ? BELL_REACH : null);
+  const tip = fret ?? (deskTip ? sceneToSprite(place, deskTip) : null);
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -717,7 +724,8 @@ export function TamaScene({
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
-                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret} paws={!!p?.paws}>
+                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={tip} paws={!!p?.paws}
+                     cheer={atDesk && celebrating}>
               {fret && (
                 // Undoes the wrapper's placement exactly, so the bass draws at
                 // Clawd's fixed scene coordinates while still bobbing as the
@@ -743,6 +751,8 @@ export function TamaScene({
         {!sprite && atDesk && celebrating && <ArmsUp x0={x0} />}
         {atDesk && pose === "ci" && <Extinguisher />}
         {!sprite && deskBell && <SlapHand />}
+        {sprite && moody && <TypingPaws limb={sprite.limb} />}
+        {sprite && deskBell && <SlapPaw limb={sprite.limb} />}
         {!sprite && <Head dy={headDy}>{pose === "bell" && !deskBell && <Startle x0={x0} />}</Head>}
         {!sprite && !sitting && <Sprite cells={LEG_CELLS[0]} cls="tama-legs-a" x0={x0} y0={LEGS_Y0} />}
         {!sprite && p?.stride && <Sprite cells={LEG_CELLS[1]} cls="tama-legs-b" x0={x0} y0={LEGS_Y0} />}

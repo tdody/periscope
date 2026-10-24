@@ -112,8 +112,9 @@ export const BASS_FRET = { dx: 18, y: 11.7 };
 
 // One of a critter's hands on a prop it holds the way Clawd does, in scene
 // units: a small rect in its limb's colour, round for a tentacle, outlined
-// where its limb is (Nox's black paws on the dark controller).
-function Paw({ limb, x, y, w, h, cls }) {
+// where its limb is (Nox's black paws on the dark controller). (TamaDuty's
+// TypingPaws / SlapPaw use it at the desk)
+export function Paw({ limb, x, y, w, h, cls }) {
   const round = limb.style === "tentacle";
   return (
     <rect class={cls} x={x} y={y} width={w} height={h} rx={round ? h / 2 : 0.25} fill={limb.color}

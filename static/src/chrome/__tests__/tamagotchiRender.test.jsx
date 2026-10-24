@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
 import {
-  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, limbGlyphs,
-  placement, sceneToSprite, spriteBox,
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, cheerGlyphs, critterById, hatTransform, holdTip, holdTipInScene, hueRotate,
+  limbGlyphs, placement, sceneToSprite, spriteBox,
 } from "../critters.js";
+import { BELL_REACH, KEYS_REACH } from "../TamaDuty.jsx";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
 import { BASS_FRET, Bass, FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, SKIN, Y0 } from "../tamagotchi.js";
@@ -627,7 +628,9 @@ describe("critters", () => {
     expect(own).not.toContain('data-mood="calm"');
     expect(html).toContain("tama-smoke");
     expect(html).not.toContain("tama-brows");
-    expect(html).not.toContain("tama-hand");
+    // Its own typing paws now (TamaDuty TypingPaws), in its limb colour, not Clawd's skin.
+    expect(html).toContain("tama-hand");
+    expect(html).not.toContain(`fill="${SKIN}"`);
   });
 
   it("rides the furious heat shimmer up onto a seated critter's head", () => {
@@ -652,12 +655,17 @@ describe("critters", () => {
     expect(scene(volt, "sleep", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain('data-role="shut"');
   });
 
-  it("drops the overlays drawn for Clawd's body", () => {
+  it("drops Clawd's own overlays, drawing its own hands in their place", () => {
     const moss = critterById("moss");
     const done = scene(moss, "code", { duty: { kind: "done", label: "1", more: 0 } });
-    expect(done).toContain("tama-sparkle");
-    expect(done).not.toContain("tama-cheer");
-    expect(scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain("tama-slap");
+    expect(done).toContain("tama-sparkle"); // the scene's own overlay, not sprite-gated
+    // Its own arms up now (critters.js cheerGlyphs), not Clawd's ArmsUp (SKIN).
+    expect(done).toContain("tama-cheer");
+    expect(done).not.toContain(`fill="${SKIN}"`);
+    const bell = scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } });
+    // Its own slap now (TamaDuty SlapPaw), not Clawd's SlapHand (SKIN).
+    expect(bell).toContain("tama-slap");
+    expect(bell).not.toContain(`fill="${SKIN}"`);
   });
 
   it("fits Clawd's hats to the critter's head, inside its own group", () => {
@@ -859,6 +867,33 @@ describe("critter hats and worn props follow Clawd's in every scene", () => {
   });
 });
 
+const count = (html, needle) => html.split(needle).length - 1;
+// Whether `needle` lies inside the <g> that opens at `open`: that group never closes before it.
+const inside = (html, open, needle) => {
+  const at = html.indexOf(needle, open);
+  let depth = 0;
+  for (const m of html.slice(open, at).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return false;
+  }
+  return at > open;
+};
+// The placement the mascot's wrapper was actually drawn with.
+const drawnPlace = (html) => {
+  const [, tx, ty, scale] = /<g class="tama-critter"[^>]*transform="translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)"/
+    .exec(html.slice(html.indexOf('class="tama-creature')));
+  return { tx: Number(tx), ty: Number(ty), scale: Number(scale) };
+};
+// The <g …> group opening at `open`, whole.
+const groupAt = (html, open) => {
+  let depth = 0;
+  for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return html.slice(open, open + m.index + 4);
+  }
+  return html.slice(open);
+};
+
 describe("critters at their pastimes", () => {
   const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
   const nox = critterById("nox");
@@ -880,8 +915,6 @@ describe("critters at their pastimes", () => {
     expect(scene(nox, "game", { occasion: "yearend" })).toContain(`${seat}<g class="tama-hat-santa"`);
     expect(scene(nox, "cook")).toContain(`${seat}<g class="tama-toque"`);
   });
-
-  const count = (html, needle) => html.split(needle).length - 1;
 
   // Parses a wrapper's `translate(a b) scale(sx[ sy])` and maps the sprite's
   // own box (spriteBox) through it: pins the geometry itself, not just the
@@ -944,22 +977,6 @@ describe("critters at their pastimes", () => {
   const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
   const HELD = [["beer", "pint"], ["coffee", "mug"], ["cook", "spoon"], ["garden", "can"], ["dog", "leash"]];
   const r4 = (v) => Math.round(v * 1e4) / 1e4;
-  // Whether `needle` lies inside the <g> that opens at `open`: that group never closes before it.
-  const inside = (html, open, needle) => {
-    const at = html.indexOf(needle, open);
-    let depth = 0;
-    for (const m of html.slice(open, at).matchAll(/<g[\s>]|<\/g>/g)) {
-      depth += m[0] === "</g>" ? -1 : 1;
-      if (depth === 0) return false;
-    }
-    return at > open;
-  };
-  // The placement the mascot's wrapper was actually drawn with.
-  const drawnPlace = (html) => {
-    const [, tx, ty, scale] = /<g class="tama-critter"[^>]*transform="translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)"/
-      .exec(html.slice(html.indexOf('class="tama-creature')));
-    return { tx: Number(tx), ty: Number(ty), scale: Number(scale) };
-  };
 
   it.each(holders)("%s's own wrapper stands it CRITTER_HEIGHT tall, however the scene seats it", (_id, c) => {
     for (const activity of ["code", "beer"]) {
@@ -1047,16 +1064,6 @@ describe("critters at their pastimes", () => {
     const html = scene(c, "beer", { duty: { kind: "bell", label: "1", urgent: false, more: 0 } });
     expect(html).toContain(`class="tama-startle" fill="#f2c14e"><rect x="${x}"`);
   });
-
-  // The <g …> group opening at `open`, whole.
-  const groupAt = (html, open) => {
-    let depth = 0;
-    for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
-      depth += m[0] === "</g>" ? -1 : 1;
-      if (depth === 0) return html.slice(open, open + m.index + 4);
-    }
-    return html.slice(open);
-  };
 
   it("pins BASS_FRET inside the neck's own band, not off its edge", () => {
     const { x0 } = PASTIME_SCENES.music.pose;
@@ -1180,6 +1187,59 @@ describe("critters at their pastimes", () => {
       const gameGroup = groupAt(game, critterAt(game));
       const codeGroup = groupAt(code, critterAt(code));
       expect(gameGroup.replace(' data-holding="controller"', ""), c.id).toBe(codeGroup);
+    }
+  });
+});
+
+describe("critters' hands at the desk", () => {
+  const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
+  const duty = (kind) => ({ duty: { kind, label: "1", urgent: false, more: 0 } });
+  const mascotOf = (html) => html.slice(html.indexOf('class="tama-creature'));
+  // The limb's last rect, as Node draws it, for a reach to a scene point through the drawn placement.
+  const limbEnd = (c, html, point) => {
+    const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), point)).at(-1).g.at(-1).r;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}">`;
+  };
+
+  it.each(holders)("%s types when grumpy or furious: its limb at the keys, two paws tapping", (_id, c) => {
+    for (const mood of ["grumpy", "furious"]) {
+      const html = render(<TamaScene activity="code" mood={mood} working={2} critter={c} />);
+      const mascot = mascotOf(html);
+      expect(mascot, mood).toContain(limbEnd(c, html, KEYS_REACH));
+      const fill = `fill="${c.sprite.limb.color}"`;
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-hand" x="20.7" y="11.9"[^>]*${fill}`));
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-hand tama-hand2" x="22.7" y="11.9"[^>]*${fill}`));
+      expect(mascot).not.toContain(`fill="${SKIN}"`); // not Clawd's hands
+    }
+  });
+
+  it.each(holders)("%s slaps the service bell, at the desk and when it wakes from the walled nap", (_id, c) => {
+    const desk = render(<TamaScene activity="code" critter={c} {...duty("bell")} />);
+    const nap = render(<TamaScene activity="nap" walled={{ day: null, time: "3pm" }} critter={c} {...duty("bell")} />);
+    for (const html of [desk, nap]) {
+      const mascot = mascotOf(html);
+      expect(mascot).toContain(limbEnd(c, html, BELL_REACH));
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-slap" x="21.6" y="8.7"[^>]*fill="${c.sprite.limb.color}"`));
+      expect(mascot).not.toContain(`fill="${SKIN}"`);
+    }
+  });
+
+  it.each(holders)("%s puts its arms up for a done and a merged PR", (_id, c) => {
+    for (const kind of ["done", "merged"]) {
+      const html = render(<TamaScene activity="code" critter={c} {...duty(kind)} party={kind === "merged"} />);
+      const wrapAt = html.indexOf('<g class="tama-critter"', html.indexOf('class="tama-creature'));
+      expect(inside(html, wrapAt, 'class="tama-cheer'), kind).toBe(true);
+      expect(count(html, 'class="tama-cheer')).toBeGreaterThanOrEqual(cheerGlyphs(c.sprite).length);
+      expect(mascotOf(html)).not.toContain(`fill="${SKIN}"`); // not Clawd's ArmsUp
+    }
+  });
+
+  it("keeps the hands for their moments: no paws or cheer while calmly coding", () => {
+    for (const [, c] of holders) {
+      const html = render(<TamaScene activity="code" working={2} critter={c} />);
+      expect(html).not.toContain("tama-hand");
+      expect(html).not.toContain("tama-cheer");
+      expect(html).not.toContain("tama-slap");
     }
   });
 });

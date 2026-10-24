@@ -2,6 +2,7 @@
 // props for each kind. The desk props use the coding scene's fixed desk and
 // monitor (screen x 23.4–31.6, y 6–11.6); the face pieces take the pose's x0
 // so they sit on Clawd in any scene. Motion is CSS (styles.css, `.tama`).
+import { Paw } from "./TamaPastimes.jsx";
 import { EYE, SKIN, Y0 } from "./tamagotchi.js";
 
 const GEO = "geometricPrecision";
@@ -156,6 +157,25 @@ const Ding = ({ d }) => (
 
 export function SlapHand() {
   return <rect class="tama-slap" x="21.6" y="8.7" width="1.2" height="0.9" fill={SKIN} />;
+}
+
+// A critter's hands at the desk (TamaScene), on Clawd's own spots: its limb
+// reaches these points (critters.js sceneToSprite, through its placement) and
+// its paws tap and slap where his hands do. The desk doesn't move with x0.
+export const KEYS_REACH = [21.25, 12.3];
+export const BELL_REACH = [22.2, 9.6];
+
+export function TypingPaws({ limb }) {
+  return (
+    <g>
+      <Paw limb={limb} x={20.7} y={11.9} w={1.1} h={0.8} cls="tama-hand" />
+      <Paw limb={limb} x={22.7} y={11.9} w={1.1} h={0.8} cls="tama-hand tama-hand2" />
+    </g>
+  );
+}
+
+export function SlapPaw({ limb }) {
+  return <Paw limb={limb} x={21.6} y={8.7} w={1.2} h={0.9} cls="tama-slap" />;
 }
 
 export function ServiceBell() {
