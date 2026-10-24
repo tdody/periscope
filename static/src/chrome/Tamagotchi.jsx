@@ -33,14 +33,18 @@ import { Critter } from "./Critter.jsx";
 import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
-import { CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement } from "./critters.js";
+import {
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, sceneToSprite,
+} from "./critters.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
-import { CoffeeMug, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite } from "./TamaPastimes.jsx";
+import {
+  Bass, BASS_FRET, CoffeeMug, Controller, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite,
+} from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
   hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, sceneKey, seasonAt, upNext,
@@ -75,8 +79,10 @@ const WORN_ON_CLAWD = new Set([Goggles, Scarf]);
 
 // What a critter holds for each activity, in its own appendage (critters.js
 // limbGlyphs, TamaPastimes CritterHeld): Clawd's held props sit at his hand and
-// would float beside a critter.
-const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog: "leash" };
+// would float beside a critter. The bass and the controller are held in paws
+// on Clawd's own drawings instead (TamaPastimes Paw); the bass's neck is
+// fretted by the limb, reaching a fixed spot on the bass (`fret` below).
+const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog: "leash", music: "bass", game: "controller" };
 
 // Props drawn on Clawd's head (top at Y0) move with a critter's head instead:
 // a seated critter's head is higher than seated Clawd's. A wrapper, not a
@@ -676,6 +682,10 @@ export function TamaScene({
   // spoon into the pot, the leash to the dog): through the same `place` the
   // wrapper uses, so Spoon and Dog get a point and never a placement.
   const holdFrom = holding === "spoon" || holding === "leash" ? holdTipInScene(sprite, holding, place) : null;
+  // The bass sits in the critter's wrapper, mapped back to scene units, as
+  // Critter's child: over its body and under its limb, which frets the neck in
+  // front of it at Clawd's fret spot.
+  const fret = holding === "bass" ? sceneToSprite(place, [x0 + BASS_FRET.dx, BASS_FRET.y]) : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -702,7 +712,13 @@ export function TamaScene({
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
-                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} />
+                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret}>
+              {fret && (
+                <g style="transform-box: view-box" transform={`scale(${1 / place.scale}) translate(${-place.tx} ${-place.ty})`}>
+                  <Bass x0={x0} limb={sprite.limb} />
+                </g>
+              )}
+            </Critter>
             <CritterHats sprite={sprite} p={p} hat={hat} season={season} ghost={ghost} />
             {holding && <CritterHeld sprite={sprite} kind={holding} scale={place.scale} />}
           </g>
@@ -710,6 +726,7 @@ export function TamaScene({
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
         {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}
+        {holding === "controller" && <Controller x0={x0} limb={sprite.limb} />}
         {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}
