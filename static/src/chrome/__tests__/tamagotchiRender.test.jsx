@@ -1095,6 +1095,34 @@ describe("critters at their pastimes", () => {
     expect(game).toContain("crit-nox-1");
     expect(game).toContain('stroke="#4a4f57" stroke-width="0.25"'); // its black paws outlined on the dark controller
   });
+
+  it("draws Clawd armless at the console, two SKIN paws on the grips instead of a lone thumb", () => {
+    const game = render(<TamaScene activity="game" />);
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // Row 2's arm cells (tamagotchi.js BODY): x 1–2 and 15–16, gone from the game body.
+    expect(game).not.toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 16}" y="13"`);
+    const ctlAt = game.indexOf('<g class="tama-controller"');
+    const ctl = groupAt(game, ctlAt);
+    expect(count(ctl, `fill="${SKIN}"`)).toBe(2);
+    expect(count(ctl, 'class="tama-thumb"')).toBe(1);
+    // The coding pose shares Clawd's x0 with the game one, and keeps its arms.
+    const code = render(<TamaScene activity="code" />);
+    expect(code).toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 16}" y="13"`);
+  });
+
+  it.each(holders)("%s's side arms (if any) go at the console, and come back everywhere else", (_id, c) => {
+    const game = render(<TamaScene activity="game" critter={c} />);
+    const mascot = game.slice(game.indexOf('class="tama-creature'));
+    expect(mascot).not.toContain('"arms":true'); // never leaks the raw sprite flag into markup
+    if (["ember", "volt", "moss"].includes(c.id)) {
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const armNeedle = c.id === "ember" ? '<rect x="3" y="9"' : c.id === "volt" ? '<rect x="2" y="9"' : '<rect x="4" y="10"';
+      expect(code, c.id).toContain(armNeedle);
+      expect(game, c.id).not.toContain(armNeedle);
+    }
+  });
 });
 
 describe("<Tamagotchi> with a critter", () => {
@@ -1147,6 +1175,8 @@ describe("Clawd's drawing, pinned", () => {
       }
     }
     expect(n).toBe(3264);
-    expect(hash.digest("hex")).toBe("355da01dc9d061fcadcececf89882f0b92f8aa96e78944ec91680969f22be094");
+    // 2026-10-24: game scenes changed on purpose — Clawd holds the controller
+    // in both hands, side arms on it.
+    expect(hash.digest("hex")).toBe("c72dc4e395d40aa31c659155dd0be43d5552f196cf46d30bb1db76678857bb06");
   });
 });

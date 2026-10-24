@@ -135,9 +135,10 @@ export function faceGlyphs(sprite, face) {
 
 // The bell's "!" away from the desk, beside the critter's own head: Clawd's
 // Startle sits at his right edge, which floats off any narrower critter. A
-// held prop sits at the right-hand tip (TamaPastimes.jsx CritterHeld), where
-// the "!" would otherwise land and be swallowed — `holding` moves it to the
-// body's left instead, since every held prop is on the right.
+// limb that reaches sits at the right-hand tip (TamaPastimes.jsx CritterHeld),
+// where the "!" would otherwise land and be swallowed — `holding` moves it to
+// the body's left instead, since every reach is to the right. Paws on the
+// controller (no reach) sit low and centred, so the "!" stays at its usual spot.
 export function startleGlyph(sprite, holding = false) {
   const { head } = sprite.anchors;
   const x = holding ? r4(spriteBox(sprite).x - 1.4) : r4(head.right + 0.4);
@@ -257,7 +258,9 @@ export function sceneToSprite({ scale, tx, ty }, [X, Y]) {
 //   as Nox's own tail is drawn — stroking the one group would outline every
 //   seam between its parts.
 // `tip` overrides the prop's (`holdTip`) for a reach to a fixed spot in the
-// scene: the fret on the bass's neck (sceneToSprite).
+// scene: the fret on the bass's neck (sceneToSprite). Assumes a tip right of
+// its root: the arm and tail bars run x0 → x1, and the tail's riser assumes a
+// tip above its root.
 export function limbGlyphs(sprite, prop, tip = holdTip(sprite, prop)) {
   const { style, root: [x0, y0], width: t, color, outline, spade } = sprite.limb;
   const [x1, y1] = tip;

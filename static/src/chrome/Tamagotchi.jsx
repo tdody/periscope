@@ -58,6 +58,9 @@ import {
 const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8 };
 const BODY_CELLS = gridCells(BODY);
+// Armless at the console (`p?.paws`): row 2's side-arm cells (x 1–2 and 15–16)
+// cleared back to row 0/1/3's silhouette, both hands on the controller instead.
+const PAWS_BODY_CELLS = gridCells(BODY.map((row, y) => (y === 2 ? row.replace(/^.##/, "...").replace(/##$/, "..") : row)));
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
 
@@ -722,7 +725,7 @@ export function TamaScene({
             <CritterHats sprite={sprite} p={p} hat={hat} season={season} ghost={ghost} />
             {holding && <CritterHeld sprite={sprite} kind={holding} scale={place.scale} />}
           </g>
-        ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
+        ) : <Sprite cells={p?.paws ? PAWS_BODY_CELLS : BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
         {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}

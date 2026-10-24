@@ -371,8 +371,13 @@ export function Couch() {
   );
 }
 
-// `limb`: a critter's two paws on the grips, the right one tapping.
-export function Controller({ x0, limb }) {
+// Clawd's own hands, two on the grips like a critter's: his side arms are on
+// the controller (TamaScene), so a bare `arm` style draws a plain SKIN paw.
+const CLAWD_HANDS = { style: "arm", color: SKIN };
+
+// `limb`: a critter's two paws on the grips, the right one tapping. Defaults
+// to Clawd's own two hands.
+export function Controller({ x0, limb = CLAWD_HANDS }) {
   return (
     <g class="tama-controller" shape-rendering={GEO}>
       <rect x={x0 + 6.6} y="14.2" width="4.8" height="1.4" rx="0.6" fill="#3b404a" />
@@ -381,12 +386,8 @@ export function Controller({ x0, limb }) {
       <path d={`M${x0 + 7.4} 14.9 h0.9 M${x0 + 7.85} 14.45 v0.9`} stroke="#c9ced6" stroke-width="0.25" />
       <circle cx={x0 + 10.2} cy="14.7" r="0.22" fill="#e05252" />
       <circle cx={x0 + 10.7} cy="15.1" r="0.22" fill="#5aa9e6" />
-      {limb ? (
-        <>
-          <Paw limb={limb} x={x0 + 6.2} y={14.3} w={1.6} h={1.3} />
-          <Paw limb={limb} x={x0 + 10} y={14.3} w={1.6} h={1.3} cls="tama-thumb" />
-        </>
-      ) : <rect class="tama-thumb" x={x0 + 9.7} y="13.6" width="0.9" height="0.7" fill={SKIN} />}
+      <Paw limb={limb} x={x0 + 6.2} y={14.3} w={1.6} h={1.3} />
+      <Paw limb={limb} x={x0 + 10} y={14.3} w={1.6} h={1.3} cls="tama-thumb" />
     </g>
   );
 }
@@ -632,6 +633,8 @@ export function Scarf({ x0 }) {
 //   Behind    behind Clawd, given { season, trick, critter, from }
 //   Held      held or worn, in Clawd's group so it bobs along, given { x0 }
 //             (the bass and the controller also take a critter's `limb`)
+//   paws      held in both hands: the side arms are on the prop (Clawd's body
+//             drawn armless, a critter's `hold-arms` hidden)
 //   Headwear  on Clawd's head unless any hat outranks it, given { x0 }
 //   Front     drawn over Clawd
 //   trick     what changes on a Halloween round (tamagotchi.activityAt's
@@ -645,7 +648,7 @@ export const PASTIME_SCENES = {
   music: { pose: { x0: 6 }, tempo: 0.5, jack: { x: 1.5, y: 16.4 }, Behind: BassAmp, Held: Bass },
   beer: { pose: { x0: 1 }, tempo: 0.9, smile: true, Behind: Friend, Held: ClawdPint },
   kids: { pose: { x0: 1 }, tempo: 0.7, smile: true, Behind: Kids, trick: { outdoors: true } },
-  game: { pose: { x0: 3, sitting: true }, tempo: 1.2, Behind: Couch, Held: Controller },
+  game: { pose: { x0: 3, sitting: true }, tempo: 1.2, Behind: Couch, Held: Controller, paws: true },
   garden: { pose: { x0: 2 }, tempo: 0.8, outdoors: true, Behind: GardenBed, Held: WateringCan },
   cook: { pose: { x0: 2 }, tempo: 0.6, Behind: Stove, Held: Spoon, Headwear: Toque },
   dog: { pose: { x0: 1 }, tempo: 0.5, stride: true, smile: true, outdoors: true, Behind: Dog },

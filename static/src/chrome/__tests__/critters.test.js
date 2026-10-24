@@ -511,7 +511,7 @@ describe("holding", () => {
     expect(limbGlyphs(critterById("scope").sprite, "pint")[0].g).toHaveLength(3); // bar, upright, hand
   });
 
-  it.each(sprites)("%s's limb reaches any tip it's given, not just a prop's", (_id, sprite) => {
+  it.each(sprites)("%s's limb reaches a tip right of its root, given, not just a prop's", (_id, sprite) => {
     const tip = [sprite.limb.root[0] + 4, sprite.limb.root[1] - 3];
     const nodes = limbGlyphs(sprite, "bass", tip);
     expect(covers(nodes, tip)).toBe(true);
