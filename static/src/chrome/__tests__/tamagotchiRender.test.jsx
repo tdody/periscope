@@ -11,7 +11,7 @@ import {
   placement, sceneToSprite, spriteBox,
 } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { BASS_FRET, FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { BASS_FRET, Bass, FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
 import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, SKIN, Y0 } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
@@ -1061,16 +1061,16 @@ describe("critters at their pastimes", () => {
   it("pins BASS_FRET inside the neck's own band, not off its edge", () => {
     const { x0 } = PASTIME_SCENES.music.pose;
     const x = x0 + BASS_FRET.dx;
-    // The neck's quadrilateral (Bass's path): top edge (9.6,13.7)→(23,9.6),
-    // bottom edge (23.3,10.5)→(9.9,14.6), both offset by x0. Edges computed
-    // from the path's own endpoints, not hard-coded, so a redrawn neck
-    // re-checks itself.
-    const edgeY = (x1, y1, x2, y2, atX) => y1 + ((y2 - y1) * (atX - x1)) / (x2 - x1);
-    const topY = edgeY(x0 + 9.6, 13.7, x0 + 23, 9.6, x);
-    const bottomY = edgeY(x0 + 23.3, 10.5, x0 + 9.9, 14.6, x);
-    expect(BASS_FRET.y).toBeGreaterThan(topY);
-    expect(BASS_FRET.y).toBeLessThan(bottomY);
-    expect(12.7).toBeGreaterThan(bottomY); // below the neck's drawn band: would fail the check above
+    // The neck is Bass's first path, a quadrilateral (top edge, then bottom):
+    // read off the markup, so a redrawn neck re-checks the fret against itself.
+    const d = render(<Bass x0={x0} />).match(/<path d="([^"]+)"/)[1];
+    const [a, b, c, e] = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+    const edgeY = ([x1, y1], [x2, y2]) => y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+    // Along the neck too: past its ends the edge lines run on into the headstock.
+    expect(x).toBeGreaterThan(a[0]);
+    expect(x).toBeLessThan(b[0]);
+    expect(BASS_FRET.y).toBeGreaterThan(edgeY(a, b));
+    expect(BASS_FRET.y).toBeLessThan(edgeY(c, e));
   });
 
   it.each(holders)("%s plays the bass: its limb frets the neck in front, a paw strums, no skin hands", (_id, c) => {
