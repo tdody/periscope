@@ -1,7 +1,9 @@
 // Clawd on duty (clawdDuty.js decides what): the bubble, and the poses and
 // props for each kind. The desk props use the coding scene's fixed desk and
 // monitor (screen x 23.4–31.6, y 6–11.6); the face pieces take the pose's x0
-// so they sit on Clawd in any scene. Motion is CSS (styles.css, `.tama`).
+// so they sit on Clawd in any scene. Motion is CSS (styles.css, `.tama`). Also
+// holds a critter's own desk paws (TypingPaws, SlapPaw), which reuse
+// TamaPastimes' Paw.
 import { Paw } from "./TamaPastimes.jsx";
 import { EYE, SKIN, Y0 } from "./tamagotchi.js";
 

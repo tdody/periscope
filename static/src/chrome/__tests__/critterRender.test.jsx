@@ -209,6 +209,11 @@ describe("<Critter>", () => {
     expect(paws.replace(' data-holding="controller"', "")).toBe(draw({ sprite: nox }));
   });
 
+  it("rests a tail for a bare reach too, no prop held (the desk's keys or bell, TamaScene)", () => {
+    const nox = critterById("nox").sprite;
+    expect(draw({ sprite: nox, tip: [22, 6] })).not.toContain("crit-nox-1");
+  });
+
   // A rest group nested inside another group (Nox's and Ember's own are
   // top-level): `rest` has to thread through Node's recursive call, not just
   // the first.

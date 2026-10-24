@@ -451,7 +451,6 @@ describe("<Tamagotchi>", () => {
 describe("Clawd on duty", () => {
   const scene = (activity, duty, extra = {}) =>
     render(<TamaScene activity={activity} duty={duty && { label: "2", more: 0, ...duty }} {...extra} />);
-  const count = (html, needle) => html.split(needle).length - 1;
 
   it("draws the bubble, with its +N, only while something is on duty", () => {
     expect(scene("code", null)).not.toContain("tama-bubble");
@@ -581,7 +580,6 @@ describe("critters", () => {
   const scene = (critter, activity, extra = {}) =>
     render(<TamaScene activity={activity} walled={activity === "nap" ? { day: null, time: "3pm" } : null}
                       critter={critter} {...extra} />);
-  const count = (html, needle) => html.split(needle).length - 1;
 
   it.each(critters.map((c) => [c.id, c]))("%s takes Clawd's place in every scene", (_id, c) => {
     for (const id of scenes) {
@@ -868,6 +866,9 @@ describe("critter hats and worn props follow Clawd's in every scene", () => {
 });
 
 const count = (html, needle) => html.split(needle).length - 1;
+// Every critter, Clawd left out: both "critters at their pastimes" and
+// "critters' hands at the desk" walk the same set.
+const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
 // Whether `needle` lies inside the <g> that opens at `open`: that group never closes before it.
 const inside = (html, open, needle) => {
   const at = html.indexOf(needle, open);
@@ -974,7 +975,6 @@ describe("critters at their pastimes", () => {
     expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
   });
 
-  const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
   const HELD = [["beer", "pint"], ["coffee", "mug"], ["cook", "spoon"], ["garden", "can"], ["dog", "leash"]];
   const r4 = (v) => Math.round(v * 1e4) / 1e4;
 
@@ -1192,7 +1192,6 @@ describe("critters at their pastimes", () => {
 });
 
 describe("critters' hands at the desk", () => {
-  const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
   const duty = (kind) => ({ duty: { kind, label: "1", urgent: false, more: 0 } });
   // The mascot's own group, whole: what it draws must bob, shake and hop with it.
   const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
@@ -1212,6 +1211,14 @@ describe("critters' hands at the desk", () => {
       expect(mascot).toMatch(new RegExp(`<rect class="tama-hand tama-hand2" x="22.7" y="11.9"[^>]*${fill}`));
       expect(mascot).not.toContain(`fill="${SKIN}"`); // not Clawd's hands
       expect(mascot).not.toContain("tama-cheer"); // a reach and a cheer never together
+    }
+  });
+
+  it("types and slaps with its tail, so the resting one goes", () => {
+    for (const id of ["nox", "ember"]) {
+      const c = critterById(id);
+      expect(render(<TamaScene activity="code" mood="grumpy" working={2} critter={c} />)).not.toContain(`crit-${id}-1`);
+      expect(render(<TamaScene activity="code" critter={c} {...duty("bell")} />)).not.toContain(`crit-${id}-1`);
     }
   });
 
