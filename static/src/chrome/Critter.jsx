@@ -18,7 +18,8 @@ function painted(a, tint) {
 // `shut` frame, held, and the glint riding on a blinking eye goes away. Under a
 // face (`hide`), the face's glyph replaces the eye: the eye and its glint go,
 // and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
-// fields (faceGlyphs/startleGlyph): an SVG path's `d` and a CSS class.
+// fields (faceGlyphs/startleGlyph/wornGlyphs/cheerGlyphs): an SVG path's `d`
+// and a CSS class.
 function Node({ n, mood, asleep, hide, tint, rest, paws }) {
   if (n.mood && n.mood !== mood) return null;
   if (rest && n.rest) return null;
@@ -51,13 +52,17 @@ function Node({ n, mood, asleep, hide, tint, rest, paws }) {
 // `holding` is the prop it holds. Its limb (critters.js limbGlyphs) reaches
 // `tip`, by default the prop's own (holdTip); a prop it holds without the limb
 // (the controller's paws: not in HOLDS, no tip given) draws none. Only a limb
-// that reaches takes a resting tail (`rest`) with it. `paws`, held in both
-// paws: the side arms are on the prop, so they go with it (`arms`) — the
-// scene says so explicitly (TamaScene's `p?.paws`), not inferred from
-// `holding`/`reach`, so a `HOLDING` value never in `HOLDS` can't silently
-// hide them. `children`, the bass, sit over the critter and under its limb,
-// which frets in front of it. `cheer`: its arms up when it celebrates at the
-// desk (critters.js cheerGlyphs); a resting tail it waves goes.
+// that's drawn (reaching, or cheering, below) takes a resting tail (`rest`)
+// with it. `paws`, held in both paws: the side arms are on the prop, so they
+// go with it (`arms`) — the scene says so explicitly (TamaScene's `p?.paws`),
+// not inferred from `holding`/`reach`, so a `HOLDING` value never in `HOLDS`
+// can't silently hide them. `children`, the bass, sit over the critter and
+// under its limb, which frets in front of it. `cheer`: its arms up when it
+// celebrates at the desk (critters.js cheerGlyphs); a resting tail it waves
+// goes. `cheer` and a reach (`tip`/`holding`) never land together: a desk
+// reach needs a mood (which a duty outranks) or the bell pose, and `cheer`
+// needs a done or a merged duty — if they ever did, a limb-cheerer would draw
+// two limbs.
 export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, cheer = false, children }) {
   const hide = EYE_FACES.has(face);
   const reach = tip ?? (holding && HOLDS[holding] ? holdTip(sprite, holding) : null);

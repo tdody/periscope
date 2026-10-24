@@ -269,6 +269,8 @@ describe("<Critter>", () => {
     const waving = draw({ sprite: nox, cheer: true });
     expect(waving).toContain('<g class="tama-cheer">');
     expect(waving).not.toContain("crit-nox-1");
+    // The waving limb draws after the body (sprite.root.map, ahead of cheerGlyphs).
+    expect(waving.indexOf('<g class="tama-cheer">')).toBeGreaterThan(waving.indexOf("crit-nox-2"));
     const ember = critterById("ember").sprite;
     const arms = draw({ sprite: ember, cheer: true });
     expect(arms).toContain('class="tama-cheer"');
