@@ -38,7 +38,7 @@ A critter at the bass or the console gets Clawd's orange hands floating on its p
 In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides of their bodies, since their hands are on the controller.
 - **Clawd:** his game body is drawn armless: `BODY`'s row 2 without its end cells (`PAWS_BODY_CELLS`, selected by `PASTIME_SCENES.game.paws`). His controller gets two hands on the grips in his skin colour (`CLAWD_HANDS`), in place of the lone thumb.
 - **The hash pin** changed on purpose, for exactly the 192 game-scene combinations and nothing else. A per-combination diff against main confirmed it.
-- **Critters:** their side arms are marked `<g class="hold-arms">` in the SVG and emitted as `arms: true`. `Critter` takes an explicit `paws` prop (`TamaScene` passes `PASTIME_SCENES[activity]?.paws`) and hides `arms` nodes when it's set — not inferred from `holding` having no limb reach, so a future `HOLDING` value outside `HOLDS` can't silently hide them, and Clawd's armless body and a critter's hidden arms are driven by the one scene flag.
+- **Critters:** their side arms are marked `<g class="hold-arms">` in the SVG and emitted as `arms: true`. `Critter` takes an explicit `paws` prop (`TamaScene` passes the scene's `!!p?.paws`) and hides `arms` nodes when it's set — not inferred from `holding` having no limb reach, so a future `HOLDING` value outside `HOLDS` can't silently hide them, and Clawd's armless body and a critter's hidden arms are driven by the one scene flag.
 - **The "!":** `startleGlyph` follows the limb's reach, not `holding`, so paws on the controller leave the "!" on the right.
 
 ## Code
@@ -87,6 +87,8 @@ In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides 
   - two paws inside `tama-controller`, one `tama-thumb`;
   - the controller after the wrapper;
   - Nox's resting tail kept.
+- **Side arms:** `paws` alone hides `arms` nodes, nested ones included; Clawd's four arm cells are gone in the game scene and kept in the coding scene; ember/volt/moss shed their arm rects at the controller only; the critters without `hold-arms` draw the same group as in the coding scene.
+- **`BASS_FRET`** lies on the neck `Bass` actually draws, read off its markup.
 - Clawd's hash pin changes only for the 192 game combinations; music and the rest of the matrix are unchanged.
 
 ## Hand check

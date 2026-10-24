@@ -6,7 +6,7 @@
 - **The bass:** the critter's limb frets the neck, in front of the bass, and a paw strums.
 - **The controller:** two paws hold it, and the right one taps.
 
-Clawd stays byte-identical.
+Clawd stays byte-identical, except in the game scene (Task 2b).
 
 **Architecture:**
 - **`critters.js`:** `limbGlyphs` takes an optional explicit tip, and a new `sceneToSprite` maps a scene point (the fret spot on Clawd's neck) into a critter's sprite units.
