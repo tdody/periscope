@@ -283,3 +283,34 @@ export function limbGlyphs(sprite, prop, tip = holdTip(sprite, prop)) {
     { a: { fill: color }, g: [...parts, ...(spade ? [r(x1 + 0.4, y1 - 0.9, 1.2, 1.2)] : [])] },
   ];
 }
+
+// A sprite's side arms (`arms`, hold-arms in its SVG), each rect with the fill
+// it's painted in, nested ones included; mood layers aren't arms.
+function armRects(nodes, inArms = false, fill = undefined) {
+  return nodes.flatMap((n) => {
+    if (n.mood) return [];
+    const f = n.a?.fill ?? fill;
+    if (n.r) return inArms ? [{ r: n.r, fill: f }] : [];
+    return armRects(n.g, inArms || !!n.arms, f);
+  });
+}
+
+// Whether a critter cheers with its limb: it has no side arms to raise.
+export function cheersWithLimb(sprite) {
+  return armRects(sprite.root).length === 0;
+}
+
+// A critter's arms up when it celebrates at the desk (TamaScene, as Clawd's
+// ArmsUp): with side arms, a bar up from each in its own colour, bouncing in
+// turn like his (tama-cheer, tama-cheer2); without, its limb waves up beside
+// its head. Sprite units, drawn by Critter.
+export function cheerGlyphs(sprite) {
+  const arms = armRects(sprite.root);
+  if (arms.length) {
+    return arms.map(({ r: [x, y, w], fill }, i) => ({
+      r: [x, r4(y - 4), w, 4], a: { fill }, cls: i ? "tama-cheer tama-cheer2" : "tama-cheer",
+    }));
+  }
+  const box = spriteBox(sprite);
+  return [{ cls: "tama-cheer", g: limbGlyphs(sprite, null, [r4(sprite.limb.root[0] + 1.6), r4(box.y + 0.12 * box.h)]) }];
+}

@@ -4,10 +4,12 @@ import {
   CLAWD_HEIGHT,
   CRITTER_HEIGHT,
   CRITTERS,
-  EYE_FACES,
-  HOLDS,
+  cheerGlyphs,
+  cheersWithLimb,
   critterById,
+  EYE_FACES,
   faceGlyphs,
+  HOLDS,
   hatTransform,
   holdTip,
   holdTipInScene,
@@ -524,5 +526,63 @@ describe("holding", () => {
     const [x, y] = sceneToSprite(place, [24, 11.7]);
     expect(place.tx + place.scale * x).toBeCloseTo(24);
     expect(place.ty + place.scale * y).toBeCloseTo(11.7);
+  });
+});
+
+describe("cheering", () => {
+  // A sprite's arm rects ([x, y, w, h], with their fill), nested ones included.
+  const armRects = (nodes, inArms = false, fill) => nodes.flatMap((n) => {
+    if (n.mood) return [];
+    const f = n.a?.fill ?? fill;
+    return n.r ? (inArms ? [[n.r, f]] : []) : armRects(n.g, inArms || !!n.arms, f);
+  });
+
+  it.each(["ember", "volt", "moss"])("%s raises its own side arms: a bar up from each, in its colour", (id) => {
+    const sprite = critterById(id).sprite;
+    const arms = armRects(sprite.root);
+    expect(arms.length).toBeGreaterThan(0);
+    expect(cheersWithLimb(sprite)).toBe(false);
+    const bars = cheerGlyphs(sprite);
+    expect(bars).toHaveLength(arms.length);
+    bars.forEach((b, i) => {
+      const [[x, y, w], fill] = arms[i];
+      expect(b.r).toEqual([x, y - 4, w, 4]);
+      expect(b.a.fill).toBe(fill);
+      expect(b.cls).toBe(i ? "tama-cheer tama-cheer2" : "tama-cheer");
+    });
+  });
+
+  // Pinned against Moss's own sprite data, not just the test's own recursive
+  // walk above (armRects): both could share the same bug (e.g. dropping into
+  // its second arm, nested one level deeper than the first — critterSprites.js
+  // moss's `arms` group), and the test above would never notice.
+  it("pins Moss's two raised bars explicitly", () => {
+    const moss = critterById("moss").sprite;
+    expect(cheerGlyphs(moss)).toEqual([
+      { r: [4, 6, 1, 4], a: { fill: "#2e9a56" }, cls: "tama-cheer" },
+      { r: [15, 6, 1, 4], a: { fill: "#2e9a56" }, cls: "tama-cheer tama-cheer2" },
+    ]);
+  });
+
+  // A bar's own arm paints it, not the sprite's limb colour (a synthetic
+  // sprite whose two differ, so a bar wrongly coloured by `sprite.limb` fails).
+  it("colours each bar by its own arm's fill, not the limb's", () => {
+    const sprite = {
+      root: [{ g: [{ r: [1, 5, 1, 2], a: { fill: "#111111" } }], arms: true }],
+      limb: { style: "arm", root: [0, 0], width: 1, color: "#eeeeee" },
+    };
+    const [bar] = cheerGlyphs(sprite);
+    expect(bar.r).toEqual([1, 1, 1, 4]);
+    expect(bar.a.fill).toBe("#111111");
+  });
+
+  it.each(["scope", "jelly", "nox", "octocat"])("%s, with no side arms, waves its limb up beside its head", (id) => {
+    const sprite = critterById(id).sprite;
+    expect(cheersWithLimb(sprite)).toBe(true);
+    const [wave] = cheerGlyphs(sprite);
+    expect(wave.cls).toBe("tama-cheer");
+    const box = spriteBox(sprite);
+    const tip = [sprite.limb.root[0] + 1.6, box.y + 0.12 * box.h];
+    expect(wave.g).toEqual(limbGlyphs(sprite, null, tip.map((v) => Math.round(v * 1e4) / 1e4)));
   });
 });

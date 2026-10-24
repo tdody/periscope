@@ -209,6 +209,11 @@ describe("<Critter>", () => {
     expect(paws.replace(' data-holding="controller"', "")).toBe(draw({ sprite: nox }));
   });
 
+  it("rests a tail for a bare reach too, no prop held (the desk's keys or bell, TamaScene)", () => {
+    const nox = critterById("nox").sprite;
+    expect(draw({ sprite: nox, tip: [22, 6] })).not.toContain("crit-nox-1");
+  });
+
   // A rest group nested inside another group (Nox's and Ember's own are
   // top-level): `rest` has to thread through Node's recursive call, not just
   // the first.
@@ -262,5 +267,20 @@ describe("<Critter>", () => {
     expect(draw({ sprite: ember, holding: "controller", paws: true })).not.toContain('<rect x="3" y="9"');
     // `holding` alone (no `paws`) isn't enough: the inference is gone.
     expect(draw({ sprite: ember, holding: "controller" })).toContain('<rect x="3" y="9"');
+  });
+
+  it("cheers: raises its side arms, or waves its limb (and a resting tail it waves goes)", () => {
+    const nox = critterById("nox").sprite;
+    const waving = draw({ sprite: nox, cheer: true });
+    expect(waving).toContain('<g class="tama-cheer">');
+    expect(waving).not.toContain("crit-nox-1");
+    // The waving limb draws after the body (sprite.root.map, ahead of cheerGlyphs).
+    expect(waving.indexOf('<g class="tama-cheer">')).toBeGreaterThan(waving.indexOf("crit-nox-2"));
+    const ember = critterById("ember").sprite;
+    const arms = draw({ sprite: ember, cheer: true });
+    expect(arms).toContain('class="tama-cheer"');
+    expect(arms).toContain('class="tama-cheer tama-cheer2"');
+    expect(arms).toContain("crit-ember-1"); // its tail stays: its arms do the cheering
+    expect(draw({ sprite: ember })).not.toContain("tama-cheer");
   });
 });
