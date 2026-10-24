@@ -2,7 +2,7 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { EYE_FACES, HOLDS, faceGlyphs, holdTip, hueRotate, limbGlyphs, startleGlyph, wornGlyphs } from "./critters.js";
+import { cheerGlyphs, cheersWithLimb, EYE_FACES, faceGlyphs, HOLDS, holdTip, hueRotate, limbGlyphs, startleGlyph, wornGlyphs } from "./critters.js";
 
 // A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
 // `tint` degrees. No tint draws the critter's own paint, untouched.
@@ -56,18 +56,21 @@ function Node({ n, mood, asleep, hide, tint, rest, paws }) {
 // scene says so explicitly (TamaScene's `p?.paws`), not inferred from
 // `holding`/`reach`, so a `HOLDING` value never in `HOLDS` can't silently
 // hide them. `children`, the bass, sit over the critter and under its limb,
-// which frets in front of it.
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, children }) {
+// which frets in front of it. `cheer`: its arms up when it celebrates at the
+// desk (critters.js cheerGlyphs); a resting tail it waves goes.
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, cheer = false, children }) {
   const hide = EYE_FACES.has(face);
   const reach = tip ?? (holding && HOLDS[holding] ? holdTip(sprite, holding) : null);
+  const rest = !!reach || (cheer && cheersWithLimb(sprite));
   return (
     <g class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>
-      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={!!reach} paws={paws} />)}
+      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} />)}
       {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
       {worn && wornGlyphs(sprite, worn).map((n, i) => <Node key={`worn-${i}`} n={n} mood={mood} tint={tint} />)}
       {startle && startleGlyph(sprite, !!reach).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}
       {children}
       {reach && limbGlyphs(sprite, holding, reach).map((n, i) => <Node key={`hold-${i}`} n={n} mood={mood} tint={tint} />)}
+      {cheer && cheerGlyphs(sprite).map((n, i) => <Node key={`cheer-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );
 }

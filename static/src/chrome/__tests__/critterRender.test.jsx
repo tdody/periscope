@@ -263,4 +263,17 @@ describe("<Critter>", () => {
     // `holding` alone (no `paws`) isn't enough: the inference is gone.
     expect(draw({ sprite: ember, holding: "controller" })).toContain('<rect x="3" y="9"');
   });
+
+  it("cheers: raises its side arms, or waves its limb (and a resting tail it waves goes)", () => {
+    const nox = critterById("nox").sprite;
+    const waving = draw({ sprite: nox, cheer: true });
+    expect(waving).toContain('<g class="tama-cheer">');
+    expect(waving).not.toContain("crit-nox-1");
+    const ember = critterById("ember").sprite;
+    const arms = draw({ sprite: ember, cheer: true });
+    expect(arms).toContain('class="tama-cheer"');
+    expect(arms).toContain('class="tama-cheer tama-cheer2"');
+    expect(arms).toContain("crit-ember-1"); // its tail stays: its arms do the cheering
+    expect(draw({ sprite: ember })).not.toContain("tama-cheer");
+  });
 });
