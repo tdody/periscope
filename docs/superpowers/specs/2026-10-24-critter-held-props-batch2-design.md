@@ -33,6 +33,14 @@ A critter at the bass or the console gets Clawd's orange hands floating on its p
 
 **Clawd is untouched,** guarded by the hash pin.
 
+## Side arms on the controller (the user's call, after the draft)
+
+In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides of their bodies, since their hands are on the controller.
+- **Clawd:** his game body is drawn armless: `BODY`'s row 2 without its end cells (`PAWS_BODY_CELLS`, selected by `PASTIME_SCENES.game.paws`). His controller gets two hands on the grips in his skin colour (`CLAWD_HANDS`), in place of the lone thumb.
+- **The hash pin** changed on purpose, for exactly the 192 game-scene combinations and nothing else. A per-combination diff against main confirmed it.
+- **Critters:** their side arms are marked `<g class="hold-arms">` in the SVG and emitted as `arms: true`. `Critter` hides them for a hold in paws (a `holding` with no limb reach).
+- **The "!":** `startleGlyph` follows the limb's reach, not `holding`, so paws on the controller leave the "!" on the right.
+
 ## Code
 
 **`critters.js`:**
