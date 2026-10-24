@@ -10,7 +10,7 @@
         <rect x="4" y="14" width="12" height="1" fill="#d1a92b"></rect>
         <rect x="6" y="7" width="3" height="1" fill="#fff1a8"></rect>
         <g fill="#fff1a8"><rect x="10" y="12" width="1" height="1"></rect><rect x="9" y="13" width="1" height="1"></rect></g>
-        <g fill="#d1a92b">
+        <g fill="#d1a92b" class="hold-arms">
           <animateTransform attributeName="transform" type="translate" values="0 0;0 -1;0 0" dur="0.7s" repeatCount="indefinite" calcMode="discrete"></animateTransform>
           <rect x="2" y="9" width="1" height="2"></rect><rect x="17" y="9" width="1" height="2"></rect>
         </g>

@@ -135,12 +135,13 @@ export function faceGlyphs(sprite, face) {
 
 // The bell's "!" away from the desk, beside the critter's own head: Clawd's
 // Startle sits at his right edge, which floats off any narrower critter. A
-// held prop sits at the right-hand tip (TamaPastimes.jsx CritterHeld), where
-// the "!" would otherwise land and be swallowed — `holding` moves it to the
-// body's left instead, since every held prop is on the right.
-export function startleGlyph(sprite, holding = false) {
+// limb that reaches ends at a tip to the right (holdTip, or the bass's fret),
+// where the "!" would otherwise land and be swallowed — `reach` moves it to
+// the body's left instead, since every reach is to the right. Paws on the
+// controller (no reach) sit low and centred, so the "!" stays at its usual spot.
+export function startleGlyph(sprite, reach = false) {
   const { head } = sprite.anchors;
-  const x = holding ? r4(spriteBox(sprite).x - 1.4) : r4(head.right + 0.4);
+  const x = reach ? r4(spriteBox(sprite).x - 1.4) : r4(head.right + 0.4);
   return [{
     cls: "tama-startle", a: { fill: "#f2c14e" },
     g: [{ r: [x, r4(head.top + 0.5), 1, 3] }, { r: [x, r4(head.top + 4.1), 1, 1] }],
@@ -241,6 +242,13 @@ export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
   return [r4(tx + scale * x), r4(ty + scale * y)];
 }
 
+// A scene point in a critter's sprite units, through the placement its
+// wrapper is drawn with (placement's inverse): how a fixed spot on a prop
+// drawn in scene units, the fret on Clawd's bass neck, becomes a limb's tip.
+export function sceneToSprite({ scale, tx, ty }, [X, Y]) {
+  return [r4((X - tx) / scale), r4((Y - ty) / scale)];
+}
+
 // A critter's appendage from its limb's root (declared in its SVG) to a prop's
 // tip, as sprite nodes in its limb colour:
 // - arm: a bar out, a bar up or down to the tip, a hand;
@@ -249,9 +257,13 @@ export function holdTipInScene(sprite, prop, { scale, tx, ty }) {
 //   spade when declared, and Nox's outline: a stroked copy under a plain one,
 //   as Nox's own tail is drawn — stroking the one group would outline every
 //   seam between its parts.
-export function limbGlyphs(sprite, prop) {
+// `tip` overrides the prop's (`holdTip`) for a reach to a fixed spot in the
+// scene: the fret on the bass's neck (sceneToSprite). Assumes a tip right of
+// its root: the arm and tail bars run x0 → x1, and the tail's riser assumes a
+// tip above its root.
+export function limbGlyphs(sprite, prop, tip = holdTip(sprite, prop)) {
   const { style, root: [x0, y0], width: t, color, outline, spade } = sprite.limb;
-  const [x1, y1] = holdTip(sprite, prop);
+  const [x1, y1] = tip;
   const r = (x, y, w, h) => ({ r: [r4(x), r4(y), r4(w), r4(h)] });
   if (style === "arm") {
     return [{

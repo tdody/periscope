@@ -9,6 +9,9 @@ const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
 const count = (html, needle) => html.split(needle).length - 1;
 const draw = (props) => render(<svg aria-hidden="true"><Critter {...props} /></svg>);
+// A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
+const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
+  g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
 
 describe("<Critter>", () => {
   it.each(sprites)("%s draws one mood's layers at a time", (_id, sprite) => {
@@ -92,6 +95,15 @@ describe("<Critter>", () => {
     expect(draw({ sprite })).not.toContain("tama-startle");
   });
 
+  it("keeps the startle's \"!\" at its usual spot for a paws hold (no limb reach)", () => {
+    // Paws (the controller) sit low and centred, unlike a limb reaching right,
+    // so the "!" doesn't need to move left to clear them.
+    const nox = critterById("nox").sprite;
+    const unheld = draw({ sprite: nox, startle: true });
+    const paws = draw({ sprite: nox, startle: true, holding: "controller" });
+    expect(paws.replace(' data-holding="controller"', "")).toBe(unheld);
+  });
+
   // One of every node kind Node handled before the duty faces: a plain rect, a
   // painted group, an anim group, a calm-only mood layer (furious sits beside
   // it and must not show), an eye and a lid that can shut, and a glint. The
@@ -173,14 +185,28 @@ describe("<Critter>", () => {
     const holding = draw({ sprite: nox, holding: "pint" });
     expect(holding).toContain('data-holding="pint"');
     expect(holding).not.toContain("crit-nox-1");
-    // A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
-    const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
-      g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
     for (const n of limbGlyphs(nox, "pint")) expect(holding).toContain(markup(n));
     const scope = critterById("scope").sprite;
     const [arm] = limbGlyphs(scope, "mug");
     expect(draw({ sprite: scope, holding: "mug", tint: 150 })).toContain(markup({ ...arm, a: { fill: hueRotate(arm.a.fill, 150) } }));
     expect(draw({ sprite: scope })).not.toContain("data-holding");
+  });
+
+  it("reaches a given tip, over a prop it plays (children), or holds with no limb at all", () => {
+    const nox = critterById("nox").sprite;
+    const tip = [22, 6];
+    const html = render(<svg aria-hidden="true"><Critter sprite={nox} holding="bass" tip={tip}><g class="the-bass"></g></Critter></svg>);
+    for (const n of limbGlyphs(nox, "bass", tip)) expect(html).toContain(markup(n));
+    expect(html).not.toContain("crit-nox-1"); // the tail frets, so it isn't resting
+    // The prop it plays sits over its body and under its limb.
+    expect(html.indexOf('class="the-bass"')).toBeGreaterThan(html.indexOf("crit-nox-2"));
+    expect(html.indexOf('class="the-bass"')).toBeLessThan(html.indexOf(markup(limbGlyphs(nox, "bass", tip).at(-1))));
+    // A prop held without the limb (the controller's paws): no limb drawn, the tail
+    // rests. Nox has no hold-arms, so a paws hold draws it exactly as unheld.
+    const paws = draw({ sprite: nox, holding: "controller" });
+    expect(paws).toContain('data-holding="controller"');
+    expect(paws).toContain("crit-nox-1");
+    expect(paws.replace(' data-holding="controller"', "")).toBe(draw({ sprite: nox }));
   });
 
   // A rest group nested inside another group (Nox's and Ember's own are
@@ -193,5 +219,48 @@ describe("<Critter>", () => {
     };
     expect(draw({ sprite })).toContain("#123456");
     expect(draw({ sprite, holding: "pint" })).not.toContain("#123456");
+  });
+
+  // A prop held in paws (no limb reach) takes the side arms with it: they're
+  // on the prop (the controller), drawn in TamaPastimes, not on the critter.
+  it("hides the side arms (hold-arms), top-level or nested, only when the scene says `paws`", () => {
+    const sprite = {
+      root: [
+        { g: [{ r: [1, 1, 1, 1] }], a: { fill: "#abcdef" }, arms: true },
+        { g: [{ g: [{ r: [2, 2, 1, 1] }], a: { fill: "#fedcba" }, arms: true }] },
+      ],
+      limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+    };
+    const unheld = draw({ sprite });
+    expect(unheld).toContain("#abcdef");
+    expect(unheld).toContain("#fedcba");
+    const controller = draw({ sprite, holding: "controller", paws: true });
+    expect(controller).not.toContain("#abcdef");
+    expect(controller).not.toContain("#fedcba");
+    // `paws` alone decides it, independent of `holding`: never set with a
+    // limb reach in practice (TamaScene's `p?.paws` is only true for the
+    // controller), but there's no other guard against it here.
+    const noHolding = draw({ sprite, paws: true });
+    expect(noHolding).not.toContain("#abcdef");
+    expect(noHolding).not.toContain("#fedcba");
+  });
+
+  // `paws` is explicit (TamaScene's `p?.paws`), not inferred from `holding`
+  // having no reach: a `HOLDING` value never declared in `HOLDS` must not
+  // silently shed the arms just because nothing else gave it a tip.
+  it("keeps the side arms for a holding prop with no reach when the scene doesn't say `paws`", () => {
+    const sprite = {
+      root: [{ g: [{ r: [1, 1, 1, 1] }], a: { fill: "#abcdef" }, arms: true }],
+      limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+    };
+    expect(draw({ sprite, holding: "controller" })).toContain("#abcdef");
+  });
+
+  it("ember's side arms show by default and go when the scene says `paws`", () => {
+    const ember = critterById("ember").sprite;
+    expect(draw({ sprite: ember })).toContain('<rect x="3" y="9"');
+    expect(draw({ sprite: ember, holding: "controller", paws: true })).not.toContain('<rect x="3" y="9"');
+    // `holding` alone (no `paws`) isn't enough: the inference is gone.
+    expect(draw({ sprite: ember, holding: "controller" })).toContain('<rect x="3" y="9"');
   });
 });

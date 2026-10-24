@@ -7,12 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
 import {
-  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, placement,
-  spriteBox,
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTip, holdTipInScene, hueRotate, limbGlyphs,
+  placement, sceneToSprite, spriteBox,
 } from "../critters.js";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
-import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, Y0 } from "../tamagotchi.js";
+import { BASS_FRET, FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, SKIN, Y0 } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
@@ -1047,6 +1047,141 @@ describe("critters at their pastimes", () => {
     const html = scene(c, "beer", { duty: { kind: "bell", label: "1", urgent: false, more: 0 } });
     expect(html).toContain(`class="tama-startle" fill="#f2c14e"><rect x="${x}"`);
   });
+
+  // The <g …> group opening at `open`, whole.
+  const groupAt = (html, open) => {
+    let depth = 0;
+    for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+      depth += m[0] === "</g>" ? -1 : 1;
+      if (depth === 0) return html.slice(open, open + m.index + 4);
+    }
+    return html.slice(open);
+  };
+
+  it("pins BASS_FRET inside the neck's own band, not off its edge", () => {
+    const { x0 } = PASTIME_SCENES.music.pose;
+    const x = x0 + BASS_FRET.dx;
+    // The neck's quadrilateral (Bass's path): top edge (9.6,13.7)→(23,9.6),
+    // bottom edge (23.3,10.5)→(9.9,14.6), both offset by x0. Edges computed
+    // from the path's own endpoints, not hard-coded, so a redrawn neck
+    // re-checks itself.
+    const edgeY = (x1, y1, x2, y2, atX) => y1 + ((y2 - y1) * (atX - x1)) / (x2 - x1);
+    const topY = edgeY(x0 + 9.6, 13.7, x0 + 23, 9.6, x);
+    const bottomY = edgeY(x0 + 23.3, 10.5, x0 + 9.9, 14.6, x);
+    expect(BASS_FRET.y).toBeGreaterThan(topY);
+    expect(BASS_FRET.y).toBeLessThan(bottomY);
+    expect(12.7).toBeGreaterThan(bottomY); // below the neck's drawn band: would fail the check above
+  });
+
+  it.each(holders)("%s plays the bass: its limb frets the neck in front, a paw strums, no skin hands", (_id, c) => {
+    const html = render(<TamaScene activity="music" critter={c} />);
+    const mascot = html.slice(html.indexOf('class="tama-creature'));
+    expect(mascot).toContain('data-holding="bass"');
+    const wrapAt = mascot.indexOf('<g class="tama-critter"');
+    const bassAt = mascot.indexOf('<g class="tama-bass"');
+    expect(inside(mascot, wrapAt, 'class="tama-bass"')).toBe(true); // bobs and scales back with the critter
+    // The bass's own group undoes the wrapper's placement exactly (not a swapped
+    // translate/scale order, and view-box, not fill-box, so scale() pivots at 0,0):
+    // off by either, the bass lands ~1.5 units from the fret spot.
+    const { tx, ty, scale } = drawnPlace(html);
+    expect(mascot).toContain(`<g style="transform-box: view-box" transform="scale(${1 / scale}) translate(${-tx} ${-ty})"><g class="tama-bass"`);
+    const bass = groupAt(mascot, bassAt);
+    expect(bass).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-bass"')).toBe(1); // no stray copy
+    expect(count(bass, 'class="tama-strum"')).toBe(1);
+    expect(bass).toContain(`fill="${c.sprite.limb.color}"`);
+    const { x0 } = PASTIME_SCENES.music.pose;
+    // Pinned the way the spoon line is (holdTipInScene): the strum paw's own spot.
+    expect(bass).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5"`);
+    // The limb reaches the fret spot through the placement actually drawn, after the bass.
+    const tip = sceneToSprite(drawnPlace(html), [x0 + BASS_FRET.dx, BASS_FRET.y]);
+    const last = limbGlyphs(c.sprite, "bass", tip).at(-1).g.at(-1).r;
+    const lastRect = `<rect x="${last[0]}" y="${last[1]}" width="${last[2]}" height="${last[3]}">`;
+    expect(mascot.indexOf(lastRect)).toBeGreaterThan(bassAt + bass.length - 1);
+  });
+
+  it.each(holders)("%s holds the controller in two paws, the right one tapping, no skin thumb", (_id, c) => {
+    const html = render(<TamaScene activity="game" critter={c} />);
+    const mascot = html.slice(html.indexOf('class="tama-creature'));
+    expect(mascot).toContain('data-holding="controller"');
+    const wrapAt = mascot.indexOf('<g class="tama-critter"');
+    const ctlAt = mascot.indexOf('<g class="tama-controller"');
+    const ctl = groupAt(mascot, ctlAt);
+    expect(ctl).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-controller"')).toBe(1); // no stray copy
+    expect(count(ctl, `fill="${c.sprite.limb.color}"`)).toBe(2);
+    expect(count(ctl, 'class="tama-thumb"')).toBe(1);
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // The right paw (at x0 + 10) taps; the left (x0 + 6.2) carries no class.
+    expect(ctl).toContain(`class="tama-thumb" x="${x0 + 10}" y="14.3"`);
+    expect(ctl).toContain(`<rect x="${x0 + 6.2}" y="14.3"`);
+    expect(inside(mascot, wrapAt, 'class="tama-controller"')).toBe(false); // in front, in scene units
+    expect(ctlAt).toBeGreaterThanOrEqual(wrapAt + groupAt(mascot, wrapAt).length); // after the whole wrapper closes
+  });
+
+  const tailCritters = [nox, critterById("ember")];
+  it.each(tailCritters.map((c) => [c.id, c]))("%s frets with the tail, so it stops resting, but holds the controller in paws, so it rests", (_id, c) => {
+    const tailAnim = `crit-${c.id}-1`;
+    expect(render(<TamaScene activity="music" critter={c} />)).not.toContain(tailAnim);
+    const game = render(<TamaScene activity="game" critter={c} />);
+    expect(game).toContain(tailAnim);
+    // Nox's tail (and so its paws) is outlined; Ember's isn't — each follows its own limb.
+    const { color, outline } = c.sprite.limb;
+    if (outline) {
+      expect(game).toContain(`stroke="${outline}" stroke-width="0.25"`); // its black paws outlined on the dark controller
+    } else {
+      expect(game).toContain(`<rect class="tama-thumb" x="${PASTIME_SCENES.game.pose.x0 + 10}" y="14.3" width="1.6" height="1.3" rx="0.25" fill="${color}"></rect>`);
+    }
+  });
+
+  it("rounds a tentacle's paw, not a square corner", () => {
+    const jelly = critterById("jelly");
+    const music = render(<TamaScene activity="music" critter={jelly} />);
+    const { x0 } = PASTIME_SCENES.music.pose;
+    expect(music).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5" width="1.3" height="1" rx="0.5"`); // h/2 of its 1-unit strum paw
+  });
+
+  it("draws Clawd armless at the console, two SKIN paws on the grips instead of a lone thumb", () => {
+    const game = render(<TamaScene activity="game" />);
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // Row 2's arm cells (tamagotchi.js BODY): x 1–2 and 15–16, gone from the game body.
+    expect(game).not.toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 15}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 16}" y="13"`);
+    const ctlAt = game.indexOf('<g class="tama-controller"');
+    const ctl = groupAt(game, ctlAt);
+    expect(count(ctl, `fill="${SKIN}"`)).toBe(2);
+    expect(count(ctl, 'class="tama-thumb"')).toBe(1);
+    // The coding pose shares Clawd's x0 with the game one, and keeps its arms.
+    const code = render(<TamaScene activity="code" />);
+    expect(code).toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 15}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 16}" y="13"`);
+  });
+
+  it.each(holders)("%s's side arms (if any) go at the console, and come back everywhere else", (_id, c) => {
+    const game = render(<TamaScene activity="game" critter={c} />);
+    if (["ember", "volt", "moss"].includes(c.id)) {
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const armNeedle = c.id === "ember" ? '<rect x="3" y="9"' : c.id === "volt" ? '<rect x="2" y="9"' : '<rect x="4" y="10"';
+      expect(code, c.id).toContain(armNeedle);
+      expect(game, c.id).not.toContain(armNeedle);
+    } else {
+      // No hold-arms at all (scope, jelly, nox, octocat): `paws` has nothing
+      // to hide, so its own <g class="critter">…</g> group is unheld's,
+      // byte for byte, plus the `data-holding` the controller adds — the
+      // same equivalence the Nox "!" test uses (critterRender.test.jsx).
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const critterAt = (html) => html.indexOf('<g class="critter"');
+      const gameGroup = groupAt(game, critterAt(game));
+      const codeGroup = groupAt(code, critterAt(code));
+      expect(gameGroup.replace(' data-holding="controller"', ""), c.id).toBe(codeGroup);
+    }
+  });
 });
 
 describe("<Tamagotchi> with a critter", () => {
@@ -1099,6 +1234,8 @@ describe("Clawd's drawing, pinned", () => {
       }
     }
     expect(n).toBe(3264);
-    expect(hash.digest("hex")).toBe("355da01dc9d061fcadcececf89882f0b92f8aa96e78944ec91680969f22be094");
+    // 2026-10-24: game scenes changed on purpose — Clawd holds the controller
+    // in both hands, side arms on it.
+    expect(hash.digest("hex")).toBe("c72dc4e395d40aa31c659155dd0be43d5552f196cf46d30bb1db76678857bb06");
   });
 });

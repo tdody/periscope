@@ -33,14 +33,18 @@ import { Critter } from "./Critter.jsx";
 import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
-import { CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement } from "./critters.js";
+import {
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, sceneToSprite,
+} from "./critters.js";
 import {
   AlarmClock, ApiScreen, ArmsUp, Bubble, CiScreen, CtxScreen, DeskZs, DoneScreen, Extinguisher, HappyEyes,
   LookDown, MergeScreen, PanesScreen, PaperStack, Parcel, ServiceBell, SlapHand, Sparkles, Stars, Startle,
   WallScreen, Worried, XEyes,
 } from "./TamaDuty.jsx";
 import { Dish } from "./TamaDishes.jsx";
-import { CoffeeMug, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite } from "./TamaPastimes.jsx";
+import {
+  BASS_FRET, Bass, CoffeeMug, Controller, CritterHeld, Goggles, PASTIME_SCENES, Scarf, Spoon, Sprite,
+} from "./TamaPastimes.jsx";
 import {
   activityAt, activityLabel, BODY, clockLabel, codingMood, dayFlags, dayKey, EYE, EYES, gridCells, headlineAt,
   hourLabel, LEGS, MOODS, moodReason, msUntilNextChange, noteKey, occasionShown, SKIN, sceneKey, seasonAt, upNext,
@@ -54,6 +58,9 @@ import {
 const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8 };
 const BODY_CELLS = gridCells(BODY);
+// Armless at the console (`p?.paws`): row 2's side-arm cells (x 1–2 and 15–16)
+// cleared back to row 0/1/3's silhouette, both hands on the controller instead.
+const PAWS_BODY_CELLS = gridCells(BODY.map((row, y) => (y === 2 ? row.replace(/^.##/, "...").replace(/##$/, "..") : row)));
 const LEG_CELLS = LEGS.map((frame) => gridCells([frame]));
 const LEGS_Y0 = Y0 + 2 * BODY.length;
 
@@ -75,8 +82,10 @@ const WORN_ON_CLAWD = new Set([Goggles, Scarf]);
 
 // What a critter holds for each activity, in its own appendage (critters.js
 // limbGlyphs, TamaPastimes CritterHeld): Clawd's held props sit at his hand and
-// would float beside a critter.
-const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog: "leash" };
+// would float beside a critter. The bass and the controller are held in paws
+// on Clawd's own drawings instead (TamaPastimes Paw); the bass's neck is
+// fretted by the limb, reaching a fixed spot on the bass (`fret` below).
+const HOLDING = { beer: "pint", coffee: "mug", cook: "spoon", garden: "can", dog: "leash", music: "bass", game: "controller" };
 
 // Props drawn on Clawd's head (top at Y0) move with a critter's head instead:
 // a seated critter's head is higher than seated Clawd's. A wrapper, not a
@@ -624,8 +633,10 @@ export function TamaScene({
   // showing its own moods and shutting its own eyes. Clawd's overlay
   // components stay Clawd's; a critter draws its own duty faces (`critterFace`
   // → Critter.jsx); a critter holds the pint, mug, spoon, can and leash in its
-  // own appendage (`holding`); hands, the bass and the controller are still
-  // Clawd-only.
+  // own appendage (`holding`), the bass by its limb reaching the fret
+  // (`fret` below, Critter's `tip`), and the controller in its paws (no
+  // reach) — only Clawd's own hands (MoodFace's typing hands, ArmsUp,
+  // SlapHand) are Clawd-only.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
@@ -676,6 +687,10 @@ export function TamaScene({
   // spoon into the pot, the leash to the dog): through the same `place` the
   // wrapper uses, so Spoon and Dog get a point and never a placement.
   const holdFrom = holding === "spoon" || holding === "leash" ? holdTipInScene(sprite, holding, place) : null;
+  // The bass sits in the critter's wrapper, mapped back to scene units, as
+  // Critter's child: over its body and under its limb, which frets the neck in
+  // front of it at Clawd's fret spot.
+  const fret = holding === "bass" ? sceneToSprite(place, [x0 + BASS_FRET.dx, BASS_FRET.y]) : null;
   return (
     <svg viewBox="0 0 34 24" shape-rendering="crispEdges" aria-hidden="true"
          data-activity={activity} data-occasion={occasion || undefined} data-mood={moody ? mood : undefined}
@@ -702,14 +717,26 @@ export function TamaScene({
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
-                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} />
+                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret} paws={!!p?.paws}>
+              {fret && (
+                // Undoes the wrapper's placement exactly, so the bass draws at
+                // Clawd's fixed scene coordinates while still bobbing as the
+                // wrapper's child. view-box, not critters.css's `.critter g`
+                // fill-box default: fill-box would pivot scale() on this
+                // group's own box instead of 0,0, same reason as the wrapper's.
+                <g style="transform-box: view-box" transform={`scale(${1 / place.scale}) translate(${-place.tx} ${-place.ty})`}>
+                  <Bass x0={x0} limb={sprite.limb} />
+                </g>
+              )}
+            </Critter>
             <CritterHats sprite={sprite} p={p} hat={hat} season={season} ghost={ghost} />
             {holding && <CritterHeld sprite={sprite} kind={holding} scale={place.scale} />}
           </g>
-        ) : <Sprite cells={BODY_CELLS} cls="tama-body" x0={x0} />}
+        ) : <Sprite cells={p?.paws ? PAWS_BODY_CELLS : BODY_CELLS} cls="tama-body" x0={x0} />}
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
         {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}
+        {holding === "controller" && <Controller x0={x0} limb={sprite.limb} />}
         {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}

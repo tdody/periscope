@@ -31,7 +31,8 @@ else, so a new SVG fails loudly instead of drawing wrong):
     Static art: rects and groups only, no animation, no mood layers.
   - every critter declares the appendage it holds things with: data-limb="arm|tentacle|tail x y [width]"
     and data-limb-color (optionally data-limb-outline, data-limb-tip="spade"); a <g class="hold-rest">
-    is what a holding pose hides (a resting tail curled up instead).
+    is what a holding pose hides (a resting tail curled up instead); a `<g class="hold-arms">` is the
+    side arms a two-handed hold (the controller) puts on the prop.
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
 FACES = {"face-happy": "happy", "face-x": "x", "face-worried": "worried", "face-down": "down"}
 HOLD_REST = "hold-rest"  # what a holding pose hides: the resting tail it curls up instead
+HOLD_ARMS = "hold-arms"  # the side arms a two-handed hold (the controller) puts on the prop
 LIMB_STYLES = ("arm", "tentacle", "tail")
 LIMB_ATTRS = ("data-limb", "data-limb-color", "data-limb-outline", "data-limb-tip")
 
@@ -80,10 +82,10 @@ def paint(el: ET.Element) -> dict:
 
 def mood_of(el: ET.Element) -> str | None:
     cls = el.get("class")
-    if cls is None or cls in FACES or cls == HOLD_REST:  # face/hold-rest layers aren't drawn by mood
+    if cls is None or cls in FACES or cls in (HOLD_REST, HOLD_ARMS):  # these layers aren't drawn by mood
         return None
     if cls not in MOODS:
-        raise ValueError(f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES, HOLD_REST})!r})")
+        raise ValueError(f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES, HOLD_REST, HOLD_ARMS})!r})")
     return MOODS[cls]
 
 
@@ -426,6 +428,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                 raise ValueError(f"{svg.name}: {el.get('class')} must be a <g>, not a <rect>")
             if el.get("class") == HOLD_REST:
                 raise ValueError(f"{svg.name}: {HOLD_REST} must be a <g>, not a <rect>")
+            if el.get("class") == HOLD_ARMS:
+                raise ValueError(f"{svg.name}: {HOLD_ARMS} must be a <g>, not a <rect>")
             for c in el:
                 if tag(c) != "animate":
                     raise ValueError(f"{svg.name}: <rect> may only contain <animate>, found <{tag(c)}>")
@@ -482,6 +486,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             out = {"g": children}
             if el.get("class") == HOLD_REST:
                 out["rest"] = True
+            if el.get("class") == HOLD_ARMS:
+                out["arms"] = True
             if paint(el):
                 out["a"] = paint(el)
             if mood:
@@ -510,6 +516,8 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                 )
             if el.get("class") == HOLD_REST:
                 raise ValueError(f"{svg.name}: {face_cls} can't hold a {HOLD_REST} — a holding pose never hides a face")
+            if el.get("class") == HOLD_ARMS:
+                raise ValueError(f"{svg.name}: {face_cls} can't hold a {HOLD_ARMS} — a holding pose never hides a face")
             for sub in el:
                 check(sub)
 
