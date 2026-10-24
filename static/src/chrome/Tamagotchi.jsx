@@ -635,7 +635,8 @@ export function TamaScene({
   // → Critter.jsx); a critter holds the pint, mug, spoon, can and leash in its
   // own appendage (`holding`), the bass by its limb reaching the fret
   // (`fret` below, Critter's `tip`), and the controller in its paws (no
-  // reach) — only Clawd's own hands (ArmsUp, SlapHand) are Clawd-only.
+  // reach) — only Clawd's own hands (MoodFace's typing hands, ArmsUp,
+  // SlapHand) are Clawd-only.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
@@ -716,7 +717,7 @@ export function TamaScene({
           <g class="tama-critter" style="transform-box: view-box"
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
-                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret}>
+                     startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={fret} paws={!!p?.paws}>
               {fret && (
                 // Undoes the wrapper's placement exactly, so the bass draws at
                 // Clawd's fixed scene coordinates while still bobbing as the

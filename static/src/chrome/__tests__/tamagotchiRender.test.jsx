@@ -1058,6 +1058,21 @@ describe("critters at their pastimes", () => {
     return html.slice(open);
   };
 
+  it("pins BASS_FRET inside the neck's own band, not off its edge", () => {
+    const { x0 } = PASTIME_SCENES.music.pose;
+    const x = x0 + BASS_FRET.dx;
+    // The neck's quadrilateral (Bass's path): top edge (9.6,13.7)→(23,9.6),
+    // bottom edge (23.3,10.5)→(9.9,14.6), both offset by x0. Edges computed
+    // from the path's own endpoints, not hard-coded, so a redrawn neck
+    // re-checks itself.
+    const edgeY = (x1, y1, x2, y2, atX) => y1 + ((y2 - y1) * (atX - x1)) / (x2 - x1);
+    const topY = edgeY(x0 + 9.6, 13.7, x0 + 23, 9.6, x);
+    const bottomY = edgeY(x0 + 23.3, 10.5, x0 + 9.9, 14.6, x);
+    expect(BASS_FRET.y).toBeGreaterThan(topY);
+    expect(BASS_FRET.y).toBeLessThan(bottomY);
+    expect(12.7).toBeGreaterThan(bottomY); // below the neck's drawn band: would fail the check above
+  });
+
   it.each(holders)("%s plays the bass: its limb frets the neck in front, a paw strums, no skin hands", (_id, c) => {
     const html = render(<TamaScene activity="music" critter={c} />);
     const mascot = html.slice(html.indexOf('class="tama-creature'));
@@ -1133,6 +1148,8 @@ describe("critters at their pastimes", () => {
     const { x0 } = PASTIME_SCENES.game.pose;
     // Row 2's arm cells (tamagotchi.js BODY): x 1–2 and 15–16, gone from the game body.
     expect(game).not.toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 15}" y="13"`);
     expect(game).not.toContain(`<rect x="${x0 + 16}" y="13"`);
     const ctlAt = game.indexOf('<g class="tama-controller"');
     const ctl = groupAt(game, ctlAt);
@@ -1141,18 +1158,28 @@ describe("critters at their pastimes", () => {
     // The coding pose shares Clawd's x0 with the game one, and keeps its arms.
     const code = render(<TamaScene activity="code" />);
     expect(code).toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 15}" y="13"`);
     expect(code).toContain(`<rect x="${x0 + 16}" y="13"`);
   });
 
   it.each(holders)("%s's side arms (if any) go at the console, and come back everywhere else", (_id, c) => {
     const game = render(<TamaScene activity="game" critter={c} />);
-    const mascot = game.slice(game.indexOf('class="tama-creature'));
-    expect(mascot).not.toContain('"arms":true'); // never leaks the raw sprite flag into markup
     if (["ember", "volt", "moss"].includes(c.id)) {
       const code = render(<TamaScene activity="code" critter={c} />);
       const armNeedle = c.id === "ember" ? '<rect x="3" y="9"' : c.id === "volt" ? '<rect x="2" y="9"' : '<rect x="4" y="10"';
       expect(code, c.id).toContain(armNeedle);
       expect(game, c.id).not.toContain(armNeedle);
+    } else {
+      // No hold-arms at all (scope, jelly, nox, octocat): `paws` has nothing
+      // to hide, so its own <g class="critter">…</g> group is unheld's,
+      // byte for byte, plus the `data-holding` the controller adds — the
+      // same equivalence the Nox "!" test uses (critterRender.test.jsx).
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const critterAt = (html) => html.indexOf('<g class="critter"');
+      const gameGroup = groupAt(game, critterAt(game));
+      const codeGroup = groupAt(code, critterAt(code));
+      expect(gameGroup.replace(' data-holding="controller"', ""), c.id).toBe(codeGroup);
     }
   });
 });

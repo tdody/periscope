@@ -51,13 +51,15 @@ function Node({ n, mood, asleep, hide, tint, rest, paws }) {
 // `holding` is the prop it holds. Its limb (critters.js limbGlyphs) reaches
 // `tip`, by default the prop's own (holdTip); a prop it holds without the limb
 // (the controller's paws: not in HOLDS, no tip given) draws none. Only a limb
-// that reaches takes a resting tail (`rest`) with it. A prop held in paws (no
-// reach) takes the side arms (`arms`) with it: they're on the prop. `children`,
-// the bass, sit over the critter and under its limb, which frets in front of it.
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, children }) {
+// that reaches takes a resting tail (`rest`) with it. `paws`, held in both
+// paws: the side arms are on the prop, so they go with it (`arms`) — the
+// scene says so explicitly (TamaScene's `p?.paws`), not inferred from
+// `holding`/`reach`, so a `HOLDING` value never in `HOLDS` can't silently
+// hide them. `children`, the bass, sit over the critter and under its limb,
+// which frets in front of it.
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, children }) {
   const hide = EYE_FACES.has(face);
   const reach = tip ?? (holding && HOLDS[holding] ? holdTip(sprite, holding) : null);
-  const paws = !!holding && !reach;
   return (
     <g class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>
       {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={!!reach} paws={paws} />)}

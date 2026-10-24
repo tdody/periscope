@@ -223,7 +223,7 @@ describe("<Critter>", () => {
 
   // A prop held in paws (no limb reach) takes the side arms with it: they're
   // on the prop (the controller), drawn in TamaPastimes, not on the critter.
-  it("hides the side arms (hold-arms), top-level or nested, only for a paws hold", () => {
+  it("hides the side arms (hold-arms), top-level or nested, only when the scene says `paws`", () => {
     const sprite = {
       root: [
         { g: [{ r: [1, 1, 1, 1] }], a: { fill: "#abcdef" }, arms: true },
@@ -234,18 +234,33 @@ describe("<Critter>", () => {
     const unheld = draw({ sprite });
     expect(unheld).toContain("#abcdef");
     expect(unheld).toContain("#fedcba");
-    const controller = draw({ sprite, holding: "controller" });
+    const controller = draw({ sprite, holding: "controller", paws: true });
     expect(controller).not.toContain("#abcdef");
     expect(controller).not.toContain("#fedcba");
-    // A limb reach (`pint`) keeps the arms: only a paws hold (no reach) sheds them.
-    const pint = draw({ sprite, holding: "pint" });
-    expect(pint).toContain("#abcdef");
-    expect(pint).toContain("#fedcba");
+    // `paws` alone decides it, independent of `holding`: never set with a
+    // limb reach in practice (TamaScene's `p?.paws` is only true for the
+    // controller), but there's no other guard against it here.
+    const noHolding = draw({ sprite, paws: true });
+    expect(noHolding).not.toContain("#abcdef");
+    expect(noHolding).not.toContain("#fedcba");
   });
 
-  it("ember's side arms show by default and go when it holds the controller", () => {
+  // `paws` is explicit (TamaScene's `p?.paws`), not inferred from `holding`
+  // having no reach: a `HOLDING` value never declared in `HOLDS` must not
+  // silently shed the arms just because nothing else gave it a tip.
+  it("keeps the side arms for a holding prop with no reach when the scene doesn't say `paws`", () => {
+    const sprite = {
+      root: [{ g: [{ r: [1, 1, 1, 1] }], a: { fill: "#abcdef" }, arms: true }],
+      limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+    };
+    expect(draw({ sprite, holding: "controller" })).toContain("#abcdef");
+  });
+
+  it("ember's side arms show by default and go when the scene says `paws`", () => {
     const ember = critterById("ember").sprite;
     expect(draw({ sprite: ember })).toContain('<rect x="3" y="9"');
-    expect(draw({ sprite: ember, holding: "controller" })).not.toContain('<rect x="3" y="9"');
+    expect(draw({ sprite: ember, holding: "controller", paws: true })).not.toContain('<rect x="3" y="9"');
+    // `holding` alone (no `paws`) isn't enough: the inference is gone.
+    expect(draw({ sprite: ember, holding: "controller" })).toContain('<rect x="3" y="9"');
   });
 });
