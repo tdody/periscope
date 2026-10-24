@@ -628,7 +628,7 @@ describe("critters", () => {
     expect(own).not.toContain('data-mood="calm"');
     expect(html).toContain("tama-smoke");
     expect(html).not.toContain("tama-brows");
-    // Its own typing paws now (TamaDuty TypingPaws), in its limb colour, not Clawd's skin.
+    // Its own typing paws (TamaDuty TypingPaws), in its limb colour, not Clawd's skin.
     expect(html).toContain("tama-hand");
     expect(html).not.toContain(`fill="${SKIN}"`);
   });
@@ -659,11 +659,11 @@ describe("critters", () => {
     const moss = critterById("moss");
     const done = scene(moss, "code", { duty: { kind: "done", label: "1", more: 0 } });
     expect(done).toContain("tama-sparkle"); // the scene's own overlay, not sprite-gated
-    // Its own arms up now (critters.js cheerGlyphs), not Clawd's ArmsUp (SKIN).
+    // Its own arms up (critters.js cheerGlyphs), not Clawd's ArmsUp (SKIN).
     expect(done).toContain("tama-cheer");
     expect(done).not.toContain(`fill="${SKIN}"`);
     const bell = scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } });
-    // Its own slap now (TamaDuty SlapPaw), not Clawd's SlapHand (SKIN).
+    // Its own slap (TamaDuty SlapPaw), not Clawd's SlapHand (SKIN).
     expect(bell).toContain("tama-slap");
     expect(bell).not.toContain(`fill="${SKIN}"`);
   });
@@ -1194,7 +1194,8 @@ describe("critters at their pastimes", () => {
 describe("critters' hands at the desk", () => {
   const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
   const duty = (kind) => ({ duty: { kind, label: "1", urgent: false, more: 0 } });
-  const mascotOf = (html) => html.slice(html.indexOf('class="tama-creature'));
+  // The mascot's own group, whole: what it draws must bob, shake and hop with it.
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
   // The limb's last rect, as Node draws it, for a reach to a scene point through the drawn placement.
   const limbEnd = (c, html, point) => {
     const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), point)).at(-1).g.at(-1).r;
@@ -1210,7 +1211,24 @@ describe("critters' hands at the desk", () => {
       expect(mascot).toMatch(new RegExp(`<rect class="tama-hand" x="20.7" y="11.9"[^>]*${fill}`));
       expect(mascot).toMatch(new RegExp(`<rect class="tama-hand tama-hand2" x="22.7" y="11.9"[^>]*${fill}`));
       expect(mascot).not.toContain(`fill="${SKIN}"`); // not Clawd's hands
+      expect(mascot).not.toContain("tama-cheer"); // a reach and a cheer never together
     }
+  });
+
+  it("reaches Clawd's own hand spots: the first paw's middle, the slap paw's lower edge", () => {
+    expect(KEYS_REACH[0]).toBeCloseTo(20.7 + 1.1 / 2);
+    expect(KEYS_REACH[1]).toBeCloseTo(11.9 + 0.8 / 2);
+    expect(BELL_REACH[0]).toBeCloseTo(21.6 + 1.2 / 2);
+    expect(BELL_REACH[1]).toBeCloseTo(8.7 + 0.9);
+  });
+
+  it.each(holders)("%s keeps its desk hands at the desk: no slap, reach or cheer away from it", (_id, c) => {
+    for (const activity of ["eat", "sleep"]) {
+      const html = render(<TamaScene activity={activity} critter={c} {...duty("bell")} />);
+      expect(html, activity).not.toContain("tama-slap");
+      expect(mascotOf(html), activity).not.toContain(limbEnd(c, html, BELL_REACH));
+    }
+    expect(render(<TamaScene activity="eat" critter={c} {...duty("done")} />)).not.toContain("tama-cheer");
   });
 
   it.each(holders)("%s slaps the service bell, at the desk and when it wakes from the walled nap", (_id, c) => {
@@ -1229,7 +1247,7 @@ describe("critters' hands at the desk", () => {
       const html = render(<TamaScene activity="code" critter={c} {...duty(kind)} party={kind === "merged"} />);
       const wrapAt = html.indexOf('<g class="tama-critter"', html.indexOf('class="tama-creature'));
       expect(inside(html, wrapAt, 'class="tama-cheer'), kind).toBe(true);
-      expect(count(html, 'class="tama-cheer')).toBeGreaterThanOrEqual(cheerGlyphs(c.sprite).length);
+      expect(count(html, 'class="tama-cheer')).toBe(cheerGlyphs(c.sprite).length);
       expect(mascotOf(html)).not.toContain(`fill="${SKIN}"`); // not Clawd's ArmsUp
     }
   });
