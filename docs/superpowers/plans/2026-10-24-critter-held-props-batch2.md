@@ -30,7 +30,7 @@ Clawd stays byte-identical.
 - **Linting:**
   - `npx biome lint static/src/chrome`
   - `bin/check` must end "all checks passed". 3 pre-existing Biome warnings, in `Rail.jsx` and `spawnAccountPickerRender.test.jsx`, are fine.
-- **Clawd invariant:** `tamagotchiRender.test.jsx`'s "Clawd's drawing, pinned" (sha256 over 3264 renders, music and game included) must pass, and the hash must never be edited. `critterRender.test.jsx`'s exact-markup pin must pass too.
+- **Clawd invariant:** `tamagotchiRender.test.jsx`'s "Clawd's drawing, pinned" (sha256 over 3264 renders, music and game included) must pass, and the hash must never be edited (Task 2b changed it on purpose for the game scene; see the spec's Side arms section). `critterRender.test.jsx`'s exact-markup pin must pass too.
 - **Comments** explain *why*, tersely, in the voice of the surrounding code.
 
 ---
@@ -93,7 +93,7 @@ In `critterRender.test.jsx`, inside `describe("<Critter>", …)`, add the test b
     const paws = draw({ sprite: nox, holding: "controller" });
     expect(paws).toContain('data-holding="controller"');
     expect(paws).toContain("crit-nox-1");
-    expect(paws).not.toContain('stroke="#4a4f57" stroke-width="1"><rect x="15.2"');
+    expect(paws.replace(' data-holding="controller"', "")).toBe(draw({ sprite: nox }));
   });
 ```
 
@@ -361,3 +361,15 @@ git commit -m "tamagotchi: critters play the bass — the limb frets the neck, a
 git add docs/superpowers/specs/2026-10-21-tamagotchi-critter-picker-design.md static/dist/app.js
 git commit -m "docs + build: critters play the bass and the controller (THI-415 part 2b, batch 2); static/dist rebuilt"
 ```
+
+---
+
+### Task 2b (after the draft)
+
+The user's call, once the draft above was reviewed on the live scenes: in the
+video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides of
+their bodies, since their hands are on the controller. See the spec's "Side
+arms on the controller" section for the decisions (Clawd's armless body and
+`CLAWD_HANDS`, the SVGs' `hold-arms`, the explicit `paws` prop, the deliberate
+hash-pin change for exactly the 192 game combinations) and its Code section
+for where each piece lives.

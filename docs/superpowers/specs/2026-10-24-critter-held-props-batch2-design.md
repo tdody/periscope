@@ -31,14 +31,14 @@ A critter at the bass or the console gets Clawd's orange hands floating on its p
 - Nox's and Ember's tails run along the floor to reach the neck.
 - Octocat's dark tentacle on the dark neck.
 
-**Clawd is untouched,** guarded by the hash pin.
+**Clawd is untouched outside the game scene** (see Side arms below).
 
 ## Side arms on the controller (the user's call, after the draft)
 
 In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides of their bodies, since their hands are on the controller.
 - **Clawd:** his game body is drawn armless: `BODY`'s row 2 without its end cells (`PAWS_BODY_CELLS`, selected by `PASTIME_SCENES.game.paws`). His controller gets two hands on the grips in his skin colour (`CLAWD_HANDS`), in place of the lone thumb.
 - **The hash pin** changed on purpose, for exactly the 192 game-scene combinations and nothing else. A per-combination diff against main confirmed it.
-- **Critters:** their side arms are marked `<g class="hold-arms">` in the SVG and emitted as `arms: true`. `Critter` hides them for a hold in paws (a `holding` with no limb reach).
+- **Critters:** their side arms are marked `<g class="hold-arms">` in the SVG and emitted as `arms: true`. `Critter` takes an explicit `paws` prop (`TamaScene` passes `PASTIME_SCENES[activity]?.paws`) and hides `arms` nodes when it's set — not inferred from `holding` having no limb reach, so a future `HOLDING` value outside `HOLDS` can't silently hide them, and Clawd's armless body and a critter's hidden arms are driven by the one scene flag.
 - **The "!":** `startleGlyph` follows the limb's reach, not `holding`, so paws on the controller leave the "!" on the right.
 
 ## Code
@@ -49,12 +49,13 @@ In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides 
 
 **`Critter.jsx`:**
 - **`tip`:** where its limb reaches, in sprite units. It defaults to `holdTip(sprite, holding)` for a batch-1 prop, and to none for a prop not in `HOLDS` (the controller). The limb is drawn, and the resting tail hidden, only when there's a tip. So the controller draws no limb and keeps the tail.
+- **`paws`:** an explicit boolean, not derived from `holding`/`tip`. Hides `arms` nodes when set; the caller (`TamaScene`) is the one source of truth for whether the scene puts both hands on a prop.
 - **`children`:** drawn over the critter and under its limb. That's the bass, so the limb frets in front of it.
 
 **`TamaPastimes.jsx`:**
 - `Paw({ limb, x, y, w, h, cls })` draws one hand, paw or tip.
 - `BASS_FRET = { dx: 18, y: 11.7 }` is the fret spot.
-- `Bass({ x0, limb })` and `Controller({ x0, limb })`: with a `limb` they draw paws in its colour in place of Clawd's skin hands. Without one, their markup is unchanged.
+- `Bass({ x0, limb })` and `Controller({ x0, limb })`: with a `limb` they draw paws in its colour in place of Clawd's skin hands. `Bass` without a limb keeps Clawd's markup; `Controller` defaults to Clawd's two hands (`CLAWD_HANDS`).
 
 **`Tamagotchi.jsx`:**
 - `HOLDING` gains `music: "bass"` and `game: "controller"`. This drops Clawd's `p.Held` for those critters.
@@ -86,8 +87,11 @@ In the video-game scene, Clawd, Ember, Volt and Moss lose the arms on the sides 
   - two paws inside `tama-controller`, one `tama-thumb`;
   - the controller after the wrapper;
   - Nox's resting tail kept.
-- Clawd's hash pin is unchanged. Music and game are in its matrix.
+- Clawd's hash pin changes only for the 192 game combinations; music and the rest of the matrix are unchanged.
 
 ## Hand check
 
 Re-render the music and game rows, and the full grid, from the branch. They must match the approved draft.
+- The paws cover the D-pad and the red/blue buttons, for Clawd and critters alike.
+- Clawd's skin paws overhang the controller's left edge, with `rx` 0.25.
+- Scope's 2×4 left-side block is not an arm (the user named only Ember, Volt and Moss), so it stays.
