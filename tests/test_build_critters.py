@@ -492,6 +492,34 @@ def test_a_hold_rest_group_is_marked_rest(tmp_path):
         )
 
 
+def test_a_hold_arms_group_is_marked_arms(tmp_path):
+    arms = '<g class="hold-arms"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + arms), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("arms")] == [{"g": [{"r": [1, 1, 1, 1]}], "arms": True}]
+    with pytest.raises(ValueError, match="hold-arms"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="hold-arms" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def test_a_hold_arms_group_cant_hide_inside_a_face(tmp_path):
+    layer = '<g class="face-happy"><g class="hold-arms"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="can't hold a hold-arms"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def _arms(ns):
+    return sum(bool(n.get("arms")) + _arms(n.get("g", [])) for n in ns)
+
+
+def test_only_ember_volt_and_moss_have_one_hold_arms_group():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        assert _arms(s["root"]) == (1 if cid in ("ember", "volt", "moss") else 0), cid
+
+
 def _rests(ns):
     return sum(bool(n.get("rest")) + _rests(n.get("g", [])) for n in ns)
 
