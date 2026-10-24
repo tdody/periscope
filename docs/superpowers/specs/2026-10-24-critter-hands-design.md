@@ -27,6 +27,7 @@ The desk is fixed in the scene, so these reaches go to fixed scene points, mappe
   - **Without (Scope, Jelly, Nox, Octocat):** the limb waves up beside the head, to `[root.x + 1.6, box.y + 0.12·box.h]`, inside a `tama-cheer` group. Nox's resting tail goes.
 - **The paws are batch 2's `Paw`**: the limb's colour, round for a tentacle, outlined where the limb is.
 - **Clawd is untouched**, guarded by the hash pin.
+- **No key-clack specks.** Clawd's `MoodFace` draws `tama-clack`, two small specks over the keys while typing; critters don't get them — the approved draft drew none, and adding them would be a separate visual change.
 
 ## Code
 
@@ -64,9 +65,12 @@ The desk is fixed in the scene, so these reaches go to fixed scene points, mappe
 - Nox's resting tail goes when it cheers; Ember's stays.
 
 **`tamagotchiRender.test.jsx`, for every critter:**
-- **Grumpy and furious at the desk:** the limb's tip is at `KEYS_REACH` through the drawn placement, and there are two paws in the limb's colour with `tama-hand` and `tama-hand tama-hand2`, inside `.tama-creature`.
+- **Grumpy and furious at the desk:** the limb's tip is at `KEYS_REACH` through the drawn placement, and there are two paws in the limb's colour with `tama-hand` and `tama-hand tama-hand2`, inside `.tama-creature` (scoped to the whole creature group, via `groupAt`).
 - **The bell at the desk and in the nap:** the limb's tip is at `BELL_REACH`, with one `tama-slap` paw.
-- **Done and merged:** `cheer` glyphs are drawn.
+- **Done and merged:** `cheer` glyphs are drawn, in the exact count `cheerGlyphs` gives.
+- **Reach points pinned:** `KEYS_REACH`/`BELL_REACH` land on the paws' own middle/lower edge, not just wherever `TypingPaws`/`SlapPaw` happen to draw them.
+- **Away from the desk, never:** eat and sleep with a bell duty draw no `tama-slap` and no limb reaching `BELL_REACH`; eat with a done duty draws no `cheer`.
+- **The tail drops its rest:** Nox and Ember's resting tail (`crit-<id>-1`) goes both while typing (grumpy) and while slapping the bell.
 - Clawd's `MoodFace` hands, `ArmsUp` and `SlapHand` never appear for a critter.
 - Clawd's hash pin is unchanged.
 

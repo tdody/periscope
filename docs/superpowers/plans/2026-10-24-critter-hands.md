@@ -200,7 +200,7 @@ In `tamagotchiRender.test.jsx`, hoist `count`, `inside`, `drawnPlace` and `group
 describe("critters' hands at the desk", () => {
   const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
   const duty = (kind) => ({ duty: { kind, label: "1", urgent: false, more: 0 } });
-  const mascotOf = (html) => html.slice(html.indexOf('class="tama-creature'));
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
   // The limb's last rect, as Node draws it, for a reach to a scene point through the drawn placement.
   const limbEnd = (c, html, point) => {
     const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), point)).at(-1).g.at(-1).r;
@@ -235,7 +235,7 @@ describe("critters' hands at the desk", () => {
       const html = render(<TamaScene activity="code" critter={c} {...duty(kind)} party={kind === "merged"} />);
       const wrapAt = html.indexOf('<g class="tama-critter"', html.indexOf('class="tama-creature'));
       expect(inside(html, wrapAt, 'class="tama-cheer'), kind).toBe(true);
-      expect(count(html, 'class="tama-cheer')).toBeGreaterThanOrEqual(cheerGlyphs(c.sprite).length);
+      expect(count(html, 'class="tama-cheer')).toBe(cheerGlyphs(c.sprite).length);
       expect(mascotOf(html)).not.toContain(`fill="${SKIN}"`); // not Clawd's ArmsUp
     }
   });
@@ -251,7 +251,7 @@ describe("critters' hands at the desk", () => {
 });
 ```
 
-`count(html, 'class="tama-cheer')` counts the bars, plus the wave group for a limb waver. Adjust it to what's true if the exact count differs, keeping the intent: the cheer glyphs are drawn in the critter's wrapper.
+`count(html, 'class="tama-cheer')` counts the bars, plus the wave group for a limb waver: the cheer glyphs are drawn in the critter's wrapper.
 
 Check the props `TamaScene` actually takes for a duty, `party`, `walled` and `working`. Copy the shapes the existing desk tests use (search for `duty={` or a `duty(` helper in the file) and follow them.
 
@@ -320,6 +320,15 @@ Then run `npm test`, `npx biome lint static/src/chrome` and `bin/check`.
 git add static/src/chrome/TamaPastimes.jsx static/src/chrome/TamaDuty.jsx static/src/chrome/Tamagotchi.jsx static/src/chrome/__tests__/tamagotchiRender.test.jsx
 git commit -m "tamagotchi: critters type when moody, slap the service bell and put their arms up, with their own appendages"
 ```
+
+**Hardened in review:** two rounds of review on this work (Task 1's cheer, Task 2's hands) added these mutation-verified assertions, each spot-checked against the mutation it closes before being committed:
+- the reach-points pin — `KEYS_REACH`/`BELL_REACH` land on the paws' own middle/lower edge;
+- the desk-only negatives — no slap, reach or cheer for eat/sleep with a bell duty, or eat with a done duty;
+- the moody no-cheer assertion — a reach and a cheer never show together;
+- the Moss bars pin — `cheerGlyphs` on Moss, explicit values, catching a broken nested-arm walk;
+- the synthetic arm-fill case — a bar is coloured by its own arm, not the sprite's limb;
+- the z-order assertion — the waving limb draws after the body, ahead of the resting-tail hide;
+- the tail-drop test — a bare `tip` with nothing held (the desk's keys or bell) also drops the resting tail, not just a held reach.
 
 ---
 
