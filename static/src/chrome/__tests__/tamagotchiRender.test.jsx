@@ -590,11 +590,12 @@ describe("critters", () => {
       // would pass even for a mascot that drew nothing of its own.
       expect(html.slice(html.indexOf('class="tama-creature')), id).toContain('class="critter"');
       expect(html, id).not.toContain("tama-body");
-      // Clawd's own standing legs (Tamagotchi.jsx's `!sprite` guard) can
-      // never draw for a critter — but the critter's own stride draws this
-      // same class (critters.js strideRoot) in run/cycle/dog, so the check
-      // only holds everywhere else.
-      if (!["run", "cycle", "dog"].includes(id)) expect(html, id).not.toContain("tama-legs-a");
+      // Clawd's own legs, standing or striding (Tamagotchi.jsx's `!sprite`
+      // guard), can never draw for a critter — but the critter's own stride
+      // draws this same class (critters.js strideRoot) in run/cycle/dog, so
+      // check Clawd's skin instead of the class, which the critter never
+      // paints with.
+      expect(groupAt(html, html.indexOf('<g class="tama-creature')), id).not.toContain(`fill="${SKIN}"`);
     }
   });
 
@@ -604,10 +605,11 @@ describe("critters", () => {
     expect(html).not.toContain("data-critter");
   });
 
-  // placement()'s `top` (and everything derived from it, like the heat
-  // shimmer's `<Head dy>`) must come out rounded like the rest of the
-  // module's geometry — an unrounded float leaks as `-2.000000000000001` or
-  // `6.999999999999999` into the markup instead of a clean `-2`/`7`.
+  // Guards placement()'s geometry (tx, ty, top) and what derives from it
+  // (like the heat shimmer's `<Head dy>`) — it must come out rounded like the
+  // rest of the module's geometry, or an unrounded float leaks as
+  // `-2.000000000000001` or `6.999999999999999` into the markup instead of a
+  // clean `-2`/`7`.
   it.each(critters.map((c) => [c.id, c]))("%s's markup carries no float noise in run, beer, code or read", (_id, c) => {
     for (const activity of ["run", "beer", "code", "read"]) {
       const html = scene(c, activity);
@@ -650,7 +652,7 @@ describe("critters", () => {
     const html = scene(critterById("ember"), "code", { mood: "furious" });
     // code's pose is seated at x0 3 (Tamagotchi.jsx POSES); the shimmer rides
     // up by however much higher the critter's own head sits than Clawd's (Y0).
-    const headDy = placement(critterById("ember").sprite, { x0: 3, sitting: true }).top - Y0;
+    const headDy = Math.round((placement(critterById("ember").sprite, { x0: 3, sitting: true }).top - Y0) * 1e4) / 1e4;
     expect(html).toContain(`<g transform="translate(0 ${headDy})"><g class="tama-shimmer"`);
   });
 

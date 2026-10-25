@@ -203,6 +203,10 @@ describe("strideRoot", () => {
         expect(aw).toBeCloseTo(w);
         expect(ah).toBeCloseTo(h);
       });
+      // Frame B is n with only each rect's x moved: paint, sway (`anim`) and flags ride along.
+      const noX = (m) => (m.r ? { ...m, r: m.r.slice(1) } : { ...m, g: m.g.map(noX) });
+      expect(frameB.g).toHaveLength(1);
+      expect(noX(frameB.g[0])).toEqual(noX(n));
       j += 2;
     }
     expect(out).toHaveLength(j);

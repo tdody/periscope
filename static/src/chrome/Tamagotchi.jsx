@@ -34,7 +34,7 @@ import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
-  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, sceneToSprite,
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, r4, sceneToSprite,
 } from "./critters.js";
 import { Dish } from "./TamaDishes.jsx";
 import {
@@ -57,7 +57,6 @@ import {
 // (TamaPastimes.PASTIME_SCENES).
 const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8 };
-const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const BODY_CELLS = gridCells(BODY);
 // Armless at the console (`p?.paws`): row 2's side-arm cells (x 1–2 and 15–16)
 // cleared back to row 0/1/3's silhouette, both hands on the controller instead.

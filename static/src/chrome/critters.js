@@ -29,6 +29,7 @@ export const CLAWD_HEIGHT = 10;
 export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
+export const r4 = (v) => Math.round(v * 1e4) / 1e4;
 
 // The visible box of the always-drawn layers, in sprite units. Mood layers
 // are left out: Jelly's furious sparks sit outside its body, and counting them
@@ -54,8 +55,9 @@ export function spriteBox(sprite, { seated = false } = {}) {
 // Where a critter stands in Clawd's spot: CRITTER_HEIGHT tall (or `height`:
 // the kids are half that), centred on Clawd's centre, on the floor line
 // standing and on the seat sitting (on the floor line it would sink through
-// the chair). `top` is its head, for the props that sit on one (hats, stars,
-// the "!").
+// the chair). Seated, its body — without the legs it hides (`legs`, not
+// `keepSeated`) — sits on the seat, at standing's scale. `top` is its head,
+// for the props that sit on one (hats, stars, the "!").
 export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
@@ -69,14 +71,13 @@ export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
 }
 
 const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
-const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
 
 // A striding critter's legs (TamaScene, on the run, the bike, the dog walk):
 // its stance (tama-legs-a) and every leg rect two units toward its middle
 // (tama-legs-b), swapped by styles.css on the scene's tempo like Clawd's
 // tamagotchi.js LEGS. Two units, not Clawd's one: one read too subtle at a
-// critter's scale.
+// critter's scale. (legs are root nodes; build_critters' tests pin it)
 export function strideRoot(sprite) {
   const box = spriteBox(sprite);
   const mid = box.x + box.w / 2;
