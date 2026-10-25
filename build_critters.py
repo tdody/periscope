@@ -426,7 +426,7 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         raise ValueError(f"{svg.name}: the outer <g> must open with the data-bob idle bob")
     eyes = eye_rects(outer[0])
 
-    def node(el: ET.Element, in_mood: bool) -> dict:
+    def node(el: ET.Element, in_mood: bool, top: bool = False) -> dict:
         t = tag(el)
         mood = mood_of(el)
         if t == "rect":
@@ -480,6 +480,10 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         if t == "g":
             check_attrs(el, set())
             if el.get("class") in FACES:
+                raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
+            if not top and el.get("class") in (LEGS, LEGS_KEPT):
+                # strideRoot (critters.js) only steps root-level `legs` nodes; a nested one would
+                # hide seated (spriteBox) but never stride.
                 raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
             anims = []
             kids2 = []
@@ -569,7 +573,7 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                 raise ValueError(f"{svg.name}: {face_cls} appears twice")
             faces[name] = [face_layer(c)]
             continue
-        root.append(node(c, False))
+        root.append(node(c, False, top=True))
     if not any(drawn(n) for n in root):
         # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
         # so spriteBox is Infinity downstream. Also catches an empty root.

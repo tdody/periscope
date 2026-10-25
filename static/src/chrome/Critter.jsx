@@ -19,7 +19,8 @@ function painted(a, tint) {
 // face (`hide`), the face's glyph replaces the eye: the eye and its glint go,
 // and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
 // fields (faceGlyphs/startleGlyph/wornGlyphs/cheerGlyphs): an SVG path's `d`
-// and a CSS class.
+// and a CSS class. `cls` alone also marks strideRoot's two frame wrappers
+// (tama-legs-a/-b): styles.css swaps them, so neither is ever animated either.
 function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
   if (n.mood && n.mood !== mood) return null;
   if (rest && n.rest) return null;
@@ -36,8 +37,9 @@ function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
     const [x, y, w, h] = n.shut;
     return <rect data-role="shut" x={x} y={y} width={w} height={h} {...painted(n.g[0].a, tint)} />;
   }
-  // n.anim and n.cls never both land here: `cls` is a face glyph's own field,
-  // and a face glyph is static art (critters.js), never animated.
+  // n.anim and n.cls never both land here: `cls` marks a face glyph (static
+  // art, critters.js) or one of strideRoot's frame wrappers — neither is
+  // ever animated.
   return (
     <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...painted(n.a, tint)}>
       {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} seated={seated} />)}

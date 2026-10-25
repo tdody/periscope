@@ -546,6 +546,20 @@ def test_a_legs_kept_group_cant_hide_inside_a_face(tmp_path):
         build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
 
 
+def test_a_nested_legs_group_raises(tmp_path):
+    # strideRoot (critters.js) only steps root-level `legs` nodes: one buried inside
+    # another <g> would hide seated but never stride.
+    nested = '<g><g class="legs"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="legs must sit directly under the outer <g>"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + nested), build_critters.Sheet())
+
+
+def test_a_nested_legs_kept_group_raises(tmp_path):
+    nested = '<g><g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="legs-kept must sit directly under the outer <g>"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + nested), build_critters.Sheet())
+
+
 def _count(ns, key):
     return sum(bool(n.get(key)) + _count(n.get("g", []), key) for n in ns)
 

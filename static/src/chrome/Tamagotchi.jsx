@@ -748,7 +748,16 @@ export function TamaScene({
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
         {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}
-        {holding === "controller" && <Controller x0={x0} limb={sprite.limb} />}
+        {holding === "controller" && (
+          // Drawn at Clawd's fixed spot, not through the critter's own
+          // wrapper (CritterHeld's `scale`, not this one): a seated critter
+          // with hidden legs sits lower than Clawd, so it lowers with the
+          // body (`place.drop`) but never past the seat (0.8 = SEAT 17 minus
+          // the controller's own bottom, 16.2).
+          <g transform={`translate(0 ${Math.min(place.drop, 0.8)})`}>
+            <Controller x0={x0} limb={sprite.limb} />
+          </g>
+        )}
         {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}

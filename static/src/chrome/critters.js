@@ -23,9 +23,10 @@ export const CLAWD_HEIGHT = 10;
 // (13.5 put Jelly's party hat off the top of the scene and the beer friends'
 // heads together): under the Halloween sheets,
 // cut for Clawd (Tamagotchi.jsx, CritterKid), a critter goes back to Clawd's
-// height; at the desk, the duty bubble's tail covers a seated critter's ear
-// tips. Everything else a critter wears or holds follows placement(), so it
-// all grows with it.
+// height; at the desk, the duty bubble covers only Jelly's and Nox's ear
+// tips — the two that keep their legs (`keepSeated`) and so sit highest;
+// Ember's horn and Moss's leaf only touch the tail. Everything else a
+// critter wears or holds follows placement(), so it all grows with it.
 export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
@@ -54,20 +55,25 @@ export function spriteBox(sprite, { seated = false } = {}) {
 
 // Where a critter stands in Clawd's spot: CRITTER_HEIGHT tall (or `height`:
 // the kids are half that), centred on Clawd's centre, on the floor line
-// standing and on the seat sitting (on the floor line it would sink through
-// the chair). Seated, its body — without the legs it hides (`legs`, not
-// `keepSeated`) — sits on the seat, at standing's scale. `top` is its head,
-// for the props that sit on one (hats, stars, the "!").
+// standing and on the seat sitting — its body, without the legs it hides
+// (`legs`, not `keepSeated`), ending on the seat, at standing's scale. `top`
+// is its head, in scene units, read by the stars and the shimmer (`headDy`);
+// props that sit on it (hats, the "!") place themselves in sprite units off
+// the wrapper instead. `drop` is how much lower a seated critter's hidden
+// legs left its body than Clawd's fixed seat (0 standing): Tamagotchi.jsx
+// lowers the controller — drawn at Clawd's fixed spot, not through this
+// wrapper — by it, capped at the seat.
 export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
-  // Seated, its body ends on the seat as Clawd's does: the legs it hides
-  // (`legs`, not `keepSeated`) don't count, at standing's scale.
   const foot = sitting ? (({ y, h }) => y + h)(spriteBox(sprite, { seated: true })) : box.y + box.h;
   const ty = (sitting ? SEAT : FEET) - scale * foot;
   // Rounded like the rest of the module's geometry: an unrounded tx/ty leaks
   // into the critter's own `translate(…)` as e.g. `7.299999999999999`.
-  return { scale, tx: r4(x0 + 8.5 - scale * (box.x + box.w / 2)), ty: r4(ty), top: r4(ty + scale * box.y) };
+  return {
+    scale, tx: r4(x0 + 8.5 - scale * (box.x + box.w / 2)), ty: r4(ty), top: r4(ty + scale * box.y),
+    drop: sitting ? r4(scale * (box.y + box.h - foot)) : 0,
+  };
 }
 
 const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
