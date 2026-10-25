@@ -47,7 +47,7 @@ npx vitest run static/src/chrome
   - **`critterRender.test.jsx`:**
     - `draw({ sprite, mood: "furious" })`:
       - contains `<g class="tama-flush" fill="#ff3b2f">`;
-      - inside that group: no `fill=`, no `stroke=` and no `data-mood`;
+      - inside that group: no node carries its own `fill=` (only the wrapper does), the only stroke colour is `#ff3b2f`, and there's no `data-mood` or `data-role`;
       - the face's own furious layer (`data-mood="furious"`) appears again after the flush group;
       - the teeth path (`stroke="#f3f5f8"`) comes last.
     - With `mood: "calm"` or `"grumpy"`: no `tama-flush` and no teeth.

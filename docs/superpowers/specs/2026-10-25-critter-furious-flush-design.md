@@ -49,14 +49,14 @@ A critter shows only its own `mood-furious` layer: angled brows, an open shoutin
 **`critterRender.test.jsx`:**
 - **Furious:**
   - the flush group exists;
-  - its rects carry no paint of their own;
+  - no node in it carries its own fill (only the wrapper's `#ff3b2f`), and its only stroke colour is `#ff3b2f`;
   - mood layers are absent from it;
   - hidden nodes are absent from it (a synthetic sprite with `rest`/`legs` plus `tip`/`seated`);
   - a stroked node keeps its stroke in it, recoloured: Nox's outline is `stroke="#ff3b2f" stroke-width="1"`;
   - the limb, when it reaches, is inside it;
   - the anim classes are kept;
   - the face nodes are redrawn after it;
-  - the teeth come last, before the limb.
+  - the teeth come last, after the flush and the face (and so after the limb).
 - **Calm and grumpy:** no flush and no teeth.
 - **The exact-markup pin** holds.
 
