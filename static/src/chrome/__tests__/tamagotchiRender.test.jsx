@@ -590,7 +590,11 @@ describe("critters", () => {
       // would pass even for a mascot that drew nothing of its own.
       expect(html.slice(html.indexOf('class="tama-creature')), id).toContain('class="critter"');
       expect(html, id).not.toContain("tama-body");
-      expect(html, id).not.toContain("tama-legs-a");
+      // Clawd's own standing legs (Tamagotchi.jsx's `!sprite` guard) can
+      // never draw for a critter — but the critter's own stride draws this
+      // same class (critters.js strideRoot) in run/cycle/dog, so the check
+      // only holds everywhere else.
+      if (!["run", "cycle", "dog"].includes(id)) expect(html, id).not.toContain("tama-legs-a");
     }
   });
 
@@ -1276,6 +1280,76 @@ describe("critters' hands at the desk", () => {
       expect(html).not.toContain("tama-hand");
       expect(html).not.toContain("tama-cheer");
       expect(html).not.toContain("tama-slap");
+    }
+  });
+});
+
+describe("critters' strides and seats", () => {
+  const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
+  // The mascot's own group, whole, same reason as critters' hands above: a
+  // beer/kids friend striding or seated too (it isn't) must not leak in.
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
+  const STRIDE = ["run", "cycle", "dog"];
+  // Each seated pastime, with the extra prop that makes it seated in the
+  // test (sled only sits in winter's own markup path; nap needs its walled
+  // clock): code and read sit by their own POSES entry, game/swim/sled by
+  // PASTIME_SCENES's.
+  const SEATED = [
+    ["code", {}], ["read", {}], ["game", {}], ["sled", { season: "winter" }], ["swim", {}],
+    ["nap", { walled: { day: null, time: "3pm" } }],
+  ];
+
+  it.each(holders)("%s strides on the run, the bike and the dog walk", (_id, c) => {
+    for (const activity of STRIDE) {
+      const mascot = mascotOf(scene(c, activity));
+      expect(mascot, activity).toContain('class="tama-legs-a"');
+      expect(mascot, activity).toContain('class="tama-legs-b"');
+    }
+    // code and beer have no stride (PASTIME_SCENES / POSES): no second frame to swap.
+    for (const activity of ["code", "beer"]) {
+      expect(mascotOf(scene(c, activity)), activity).not.toContain("tama-legs-b");
+    }
+  });
+
+  // One needle per critter's own legs rect (critterSprites.js's `legs`
+  // node), scoped to the mascot's own group so a beer scene's mirrored
+  // friend — the same sprite, outside this group, in Behind — can't make an
+  // absence check pass for the wrong reason.
+  const LEG_NEEDLES = {
+    scope: ['x="5" y="16"', 'x="13" y="16"'],
+    ember: ['x="6" y="16"'],
+    volt: ['x="5" y="15"'],
+    moss: ['x="6" y="16"'],
+    octocat: ['x="4" y="14"', 'x="15" y="16"'],
+  };
+
+  it.each(Object.entries(LEG_NEEDLES))("%s draws its legs standing but none of them seated", (id, needles) => {
+    const c = critterById(id);
+    // Standing first: an absence seated proves nothing if the needle was
+    // never the legs to begin with.
+    const standing = mascotOf(scene(c, "beer"));
+    for (const needle of needles) expect(standing, needle).toContain(needle);
+    for (const [activity, extra] of SEATED) {
+      const mascot = mascotOf(scene(c, activity, extra));
+      for (const needle of needles) expect(mascot, `${activity} ${needle}`).not.toContain(needle);
+    }
+  });
+
+  it("keeps Nox's toes and Jelly's tentacles drawn seated — their own keepSeated legs", () => {
+    const nox = critterById("nox");
+    const jelly = critterById("jelly");
+    for (const [activity, extra] of SEATED) {
+      expect(mascotOf(scene(nox, activity, extra)), activity).toContain('x="6" y="17"');
+      expect(mascotOf(scene(jelly, activity, extra)), activity).toContain('x="6" y="13"');
+    }
+  });
+
+  it.each(holders)("%s's seated body ends on the seat, like Clawd's", (_id, c) => {
+    for (const [activity, extra] of SEATED) {
+      const html = scene(c, activity, extra);
+      const { ty, scale } = drawnPlace(html);
+      const { y, h } = spriteBox(c.sprite, { seated: true });
+      expect(ty + scale * (y + h), activity).toBeCloseTo(17, 3);
     }
   });
 });

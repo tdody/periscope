@@ -638,8 +638,10 @@ export function TamaScene({
   // (`fret` below, Critter's `tip`), and the controller in its paws (no
   // reach). A critter types, cheers and slaps the bell with its own
   // appendages too (critters.js cheerGlyphs, TamaDuty TypingPaws / SlapPaw);
-  // only Clawd's drawings of those (MoodFace's typing hands, ArmsUp,
-  // SlapHand) stay his.
+  // it also strides on the run, the bike and the dog walk, and sits without
+  // the legs the seat hides (`seated`/`stride` below, critters.js
+  // strideRoot/placement); only Clawd's own drawings of those (MoodFace's
+  // typing hands, ArmsUp, SlapHand, LEG_CELLS) stay his.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
@@ -728,7 +730,7 @@ export function TamaScene({
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
                      startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={tip} paws={!!p?.paws}
-                     cheer={atDesk && celebrating}>
+                     cheer={atDesk && celebrating} seated={sitting} stride={!!p?.stride}>
               {fret && (
                 // Undoes the wrapper's placement exactly, so the bass draws at
                 // Clawd's fixed scene coordinates while still bobbing as the
