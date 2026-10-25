@@ -2,7 +2,7 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { cheerGlyphs, cheersWithLimb, EYE_FACES, faceGlyphs, HOLDS, holdTip, hueRotate, limbGlyphs, startleGlyph, wornGlyphs } from "./critters.js";
+import { cheerGlyphs, cheersWithLimb, EYE_FACES, faceGlyphs, HOLDS, holdTip, hueRotate, limbGlyphs, startleGlyph, strideRoot, wornGlyphs } from "./critters.js";
 
 // A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
 // `tint` degrees. No tint draws the critter's own paint, untouched.
@@ -20,10 +20,11 @@ function painted(a, tint) {
 // and a lid shuts over the eye it covers. `p`/`cls` are the face glyphs'
 // fields (faceGlyphs/startleGlyph/wornGlyphs/cheerGlyphs): an SVG path's `d`
 // and a CSS class.
-function Node({ n, mood, asleep, hide, tint, rest, paws }) {
+function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
   if (n.mood && n.mood !== mood) return null;
   if (rest && n.rest) return null;
   if (paws && n.arms) return null;
+  if (seated && n.legs && !n.keepSeated) return null;
   if ((asleep || hide) && n.role === "glint") return null;
   if (hide && n.role === "eye") return null;
   if (n.r) {
@@ -39,7 +40,7 @@ function Node({ n, mood, asleep, hide, tint, rest, paws }) {
   // and a face glyph is static art (critters.js), never animated.
   return (
     <g class={n.anim || n.cls} data-mood={n.mood} data-role={n.role} {...painted(n.a, tint)}>
-      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} />)}
+      {n.g.map((c, i) => <Node key={i} n={c} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} seated={seated} />)}
     </g>
   );
 }
@@ -64,14 +65,15 @@ function Node({ n, mood, asleep, hide, tint, rest, paws }) {
 // desk reach needs a mood (which a duty outranks) or the bell pose, and
 // `cheer` needs a done or a merged duty, and nothing's held at the desk
 // (HOLDING has no `code`) — if they ever did, a limb-cheerer would draw two
-// limbs.
-export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, cheer = false, children }) {
+// limbs. `seated`: the legs it hides sitting go (critters.js placement
+// lowers it onto the seat); `stride`: its legs step (critters.js strideRoot).
+export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, cheer = false, seated = false, stride = false, children }) {
   const hide = EYE_FACES.has(face);
   const reach = tip ?? (holding && HOLDS[holding] ? holdTip(sprite, holding) : null);
   const rest = !!reach || (cheer && cheersWithLimb(sprite));
   return (
     <g class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>
-      {sprite.root.map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} />)}
+      {(stride ? strideRoot(sprite) : sprite.root).map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} seated={seated} />)}
       {face && faceGlyphs(sprite, face).map((n, i) => <Node key={`face-${i}`} n={n} mood={mood} tint={tint} />)}
       {worn && wornGlyphs(sprite, worn).map((n, i) => <Node key={`worn-${i}`} n={n} mood={mood} tint={tint} />)}
       {startle && startleGlyph(sprite, !!reach).map((n, i) => <Node key={`startle-${i}`} n={n} mood={mood} tint={tint} />)}

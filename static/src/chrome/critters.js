@@ -32,11 +32,14 @@ const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair sea
 
 // The visible box of the always-drawn layers, in sprite units. Mood layers
 // are left out: Jelly's furious sparks sit outside its body, and counting them
-// would move the critter sideways whenever its mood changed.
-export function spriteBox(sprite) {
+// would move the critter sideways whenever its mood changed. With `seated`,
+// it's the box without the legs a seated critter hides (`legs`, not
+// `keepSeated`) — placement()'s seated bottom.
+export function spriteBox(sprite, { seated = false } = {}) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const walk = (n) => {
     if (n.mood) return;
+    if (seated && n.legs && !n.keepSeated) return;
     if (n.r) {
       const [x, y, w, h] = n.r;
       x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
@@ -56,18 +59,30 @@ export function spriteBox(sprite) {
 export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
-  const bottom = sitting ? SEAT : FEET;
-  return {
-    scale,
-    tx: x0 + 8.5 - scale * (box.x + box.w / 2),
-    ty: bottom - scale * (box.y + box.h),
-    top: bottom - height,
-  };
+  // Seated, its body ends on the seat as Clawd's does: the legs it hides
+  // (`legs`, not `keepSeated`) don't count, at standing's scale.
+  const foot = sitting ? (({ y, h }) => y + h)(spriteBox(sprite, { seated: true })) : box.y + box.h;
+  const ty = (sitting ? SEAT : FEET) - scale * foot;
+  return { scale, tx: x0 + 8.5 - scale * (box.x + box.w / 2), ty, top: ty + scale * box.y };
 }
 
 const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
+
+// A striding critter's legs (TamaScene, on the run, the bike, the dog walk):
+// its stance (tama-legs-a) and every leg rect two units toward its middle
+// (tama-legs-b), swapped by styles.css on the scene's tempo like Clawd's
+// tamagotchi.js LEGS. Two units, not Clawd's one: one read too subtle at a
+// critter's scale.
+export function strideRoot(sprite) {
+  const box = spriteBox(sprite);
+  const mid = box.x + box.w / 2;
+  const step = (n) => (n.r
+    ? { ...n, r: [r4(n.r[0] + (n.r[0] + n.r[2] / 2 < mid ? 2 : -2)), ...n.r.slice(1)] }
+    : { ...n, g: n.g.map(step) });
+  return sprite.root.flatMap((n) => (n.legs ? [{ g: [n], cls: "tama-legs-a" }, { g: [step(n)], cls: "tama-legs-b" }] : [n]));
+}
 
 // The faces Critter.jsx draws in place of the eyes (lids shut over them).
 // Worried is the one duty face that keeps the eyes, drawing brows over them.

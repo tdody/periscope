@@ -19,6 +19,7 @@ import {
   sceneToSprite,
   spriteBox,
   startleGlyph,
+  strideRoot,
   wornGlyphs,
 } from "../critters.js";
 
@@ -82,7 +83,9 @@ describe("placement", () => {
     expect(p.scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
     expect(bottomOf(p, box)).toBeCloseTo(19);
     expect(centreOf(p, box)).toBeCloseTo(16.5);
-    expect(p.top).toBe(19 - CRITTER_HEIGHT);
+    // `top` is now derived (ty + scale*box.y) rather than a direct
+    // `bottom - height`, so it lands a float epsilon off 7 for some sprites.
+    expect(p.top).toBeCloseTo(19 - CRITTER_HEIGHT);
   });
 
   // The constraint that rejected 13.5 (docs/superpowers/specs/…-design.md):
@@ -138,6 +141,73 @@ describe("placement", () => {
     expect(bottomOf(p, box)).toBeCloseTo(17);
     expect(centreOf(p, box)).toBeCloseTo(11.5);
     expect(p.top).toBe(17 - CRITTER_HEIGHT);
+  });
+
+  // Legged critters: seated, it's the *hidden* legs' bottom that lands on the
+  // seat, not the full (standing) box's — the body ends where Clawd's does,
+  // at standing's scale.
+  const LEGGED = ["scope", "ember", "volt", "moss", "octocat"];
+  it.each(LEGGED)("seats %s on the seat by its legs-hidden box, at standing's scale", (id) => {
+    const sprite = critterById(id).sprite;
+    const box = spriteBox(sprite);
+    const seatedBox = spriteBox(sprite, { seated: true });
+    const standing = placement(sprite, { x0: 3, sitting: false });
+    const p = placement(sprite, { x0: 3, sitting: true });
+    expect(p.ty + p.scale * (seatedBox.y + seatedBox.h)).toBeCloseTo(17);
+    expect(p.scale).toBeCloseTo(standing.scale);
+    expect(p.top).toBeCloseTo(p.ty + p.scale * box.y);
+  });
+
+  // Nox's toes and Jelly's tentacles are `keepSeated`: their seated box is the
+  // same as the standing one, so the feet-on-seat rule is unchanged.
+  it.each(["nox", "jelly"])("keeps %s's feet on the seat, unchanged by the legs-hidden rule", (id) => {
+    const sprite = critterById(id).sprite;
+    const box = spriteBox(sprite);
+    const p = placement(sprite, { x0: 3, sitting: true });
+    expect(bottomOf(p, box)).toBeCloseTo(17);
+  });
+});
+
+describe("strideRoot", () => {
+  // Every rect in a node, depth first, in sprite-tree order.
+  function rects(n, out = []) {
+    if (n.r) { out.push(n.r); return out; }
+    for (const c of n.g) rects(c, out);
+    return out;
+  }
+
+  it.each(sprites.map((c) => [c.id, c.sprite]))("steps %s's legs two units toward the middle in frame B, leaves frame A as drawn", (_id, sprite) => {
+    const mid = spriteBox(sprite).x + spriteBox(sprite).w / 2;
+    const legRoots = sprite.root.filter((n) => n.legs);
+    expect(legRoots.length).toBeGreaterThan(0);
+    const out = strideRoot(sprite);
+    // Walk sprite.root and out in lockstep: a plain node consumes one out
+    // slot (itself, untouched); a legs node consumes two (frame A, frame B).
+    let j = 0;
+    for (const n of sprite.root) {
+      if (!n.legs) {
+        expect(out[j]).toBe(n);
+        j++;
+        continue;
+      }
+      const frameA = out[j];
+      const frameB = out[j + 1];
+      expect(frameA).toEqual({ g: [n], cls: "tama-legs-a" });
+      expect(frameB.cls).toBe("tama-legs-b");
+      const before = rects(n);
+      const after = rects(frameB.g[0]);
+      expect(after).toHaveLength(before.length);
+      before.forEach(([x, y, w, h], k) => {
+        const [ax, ay, aw, ah] = after[k];
+        const dir = x + w / 2 < mid ? 2 : -2;
+        expect(ax).toBeCloseTo(x + dir);
+        expect(ay).toBeCloseTo(y);
+        expect(aw).toBeCloseTo(w);
+        expect(ah).toBeCloseTo(h);
+      });
+      j += 2;
+    }
+    expect(out).toHaveLength(j);
   });
 });
 
