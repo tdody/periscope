@@ -14,7 +14,7 @@
           <animateTransform attributeName="transform" type="translate" values="0 0;0 -1;0 0" dur="0.7s" repeatCount="indefinite" calcMode="discrete"></animateTransform>
           <rect x="2" y="9" width="1" height="2"></rect><rect x="17" y="9" width="1" height="2"></rect>
         </g>
-        <g fill="#d1a92b"><rect x="5" y="15" width="3" height="1"></rect><rect x="12" y="15" width="3" height="1"></rect></g>
+        <g fill="#d1a92b" class="legs"><rect x="5" y="15" width="3" height="1"></rect><rect x="12" y="15" width="3" height="1"></rect></g>
         <rect x="6" y="8" width="2" height="2" fill="#3a2f10"><animate attributeName="height" values="2;2;0.4;2" keyTimes="0;0.93;0.97;1" dur="3.8s" repeatCount="indefinite"></animate><animate attributeName="y" values="8;8;9;8" keyTimes="0;0.93;0.97;1" dur="3.8s" repeatCount="indefinite"></animate></rect>
         <rect x="12" y="8" width="2" height="2" fill="#3a2f10"><animate attributeName="height" values="2;2;0.4;2" keyTimes="0;0.93;0.97;1" dur="3.8s" repeatCount="indefinite"></animate><animate attributeName="y" values="8;8;9;8" keyTimes="0;0.93;0.97;1" dur="3.8s" repeatCount="indefinite"></animate></rect>
         <g fill="#f3f5f8" class="mood-calm"><rect x="6" y="8" width="0.7" height="0.7"></rect><rect x="12" y="8" width="0.7" height="0.7"></rect></g>

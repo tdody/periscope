@@ -14,7 +14,7 @@
         <g fill="#b8403a" class="hold-arms">
           <rect x="3" y="9" width="1" height="2"></rect><rect x="16" y="9" width="1" height="2"></rect>
         </g>
-        <g fill="#b8403a">
+        <g fill="#b8403a" class="legs">
           <rect x="6" y="16" width="2" height="1"></rect><rect x="12" y="16" width="2" height="1"></rect>
         </g>
         <g fill="#b8403a" class="hold-rest">

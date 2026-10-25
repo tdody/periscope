@@ -510,6 +510,42 @@ def test_a_hold_arms_group_cant_hide_inside_a_face(tmp_path):
         build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
 
 
+def test_a_legs_group_is_marked_legs(tmp_path):
+    legs = '<g class="legs"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + legs), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("legs")] == [{"g": [{"r": [1, 1, 1, 1]}], "legs": True}]
+    with pytest.raises(ValueError, match="legs"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="legs" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def test_a_legs_kept_group_is_marked_legs_and_kept_seated(tmp_path):
+    legs = '<g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + legs), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("legs")] == [{"g": [{"r": [1, 1, 1, 1]}], "legs": True, "keepSeated": True}]
+    with pytest.raises(ValueError, match="legs-kept"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="legs-kept" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def test_a_legs_group_cant_hide_inside_a_face(tmp_path):
+    layer = '<g class="face-happy"><g class="legs"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="can't hold a legs —"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def test_a_legs_kept_group_cant_hide_inside_a_face(tmp_path):
+    layer = '<g class="face-happy"><g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="can't hold a legs-kept"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
 def _arms(ns):
     return sum(bool(n.get("arms")) + _arms(n.get("g", [])) for n in ns)
 
@@ -539,3 +575,21 @@ def test_render_raises_for_a_critter_without_a_limb(tmp_path, monkeypatch):
     monkeypatch.setattr(build_critters, "CRITTERS", ["bad"])
     with pytest.raises(ValueError, match="data-limb"):
         build_critters.render()
+
+
+def _legs(ns):
+    return sum(bool(n.get("legs")) + _legs(n.get("g", [])) for n in ns)
+
+
+def test_every_shipped_critter_has_exactly_one_legs_node():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        assert _legs(s["root"]) == 1, cid
+
+
+def test_legs_kept_is_set_for_jelly_and_nox_only_and_legs_are_root_nodes():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        # next() over root (not a recursive search) also proves the legs node sits at the top level.
+        legs_node = next(n for n in s["root"] if n.get("legs"))
+        assert legs_node.get("keepSeated", False) == (cid in ("jelly", "nox")), cid
