@@ -23,20 +23,25 @@ export const CLAWD_HEIGHT = 10;
 // (13.5 put Jelly's party hat off the top of the scene and the beer friends'
 // heads together): under the Halloween sheets,
 // cut for Clawd (Tamagotchi.jsx, CritterKid), a critter goes back to Clawd's
-// height; at the desk, the duty bubble's tail covers a seated critter's ear
-// tips. Everything else a critter wears or holds follows placement(), so it
-// all grows with it.
+// height; at the desk, the duty bubble covers only Jelly's and Nox's ear
+// tips — the two that keep their legs (`keepSeated`) and so sit highest;
+// Ember's horn and Moss's leaf only touch the tail. Everything else a
+// critter wears or holds follows placement(), so it all grows with it.
 export const CRITTER_HEIGHT = 12;
 const FEET = 19;  // the scene's floor line, where standing Clawd's legs end
 const SEAT = 17;  // where seated Clawd's body ends, on the chair / armchair seat
+export const r4 = (v) => Math.round(v * 1e4) / 1e4;
 
 // The visible box of the always-drawn layers, in sprite units. Mood layers
 // are left out: Jelly's furious sparks sit outside its body, and counting them
-// would move the critter sideways whenever its mood changed.
-export function spriteBox(sprite) {
+// would move the critter sideways whenever its mood changed. With `seated`,
+// it's the box without the legs a seated critter hides (`legs`, not
+// `keepSeated`) — placement()'s seated bottom.
+export function spriteBox(sprite, { seated = false } = {}) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const walk = (n) => {
     if (n.mood) return;
+    if (seated && n.legs && !n.keepSeated) return;
     if (n.r) {
       const [x, y, w, h] = n.r;
       x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
@@ -50,24 +55,43 @@ export function spriteBox(sprite) {
 
 // Where a critter stands in Clawd's spot: CRITTER_HEIGHT tall (or `height`:
 // the kids are half that), centred on Clawd's centre, on the floor line
-// standing and on the seat sitting (on the floor line it would sink through
-// the chair). `top` is its head, for the props that sit on one (hats, stars,
-// the "!").
+// standing and on the seat sitting — its body, without the legs it hides
+// (`legs`, not `keepSeated`), ending on the seat, at standing's scale. `top`
+// is its head, in scene units, read by the stars and the shimmer (`headDy`);
+// props that sit on it (hats, the "!") place themselves in sprite units off
+// the wrapper instead. `drop` is how much lower a seated critter's hidden
+// legs left its body than Clawd's fixed seat (0 standing): Tamagotchi.jsx
+// lowers the controller — drawn at Clawd's fixed spot, not through this
+// wrapper — by it, capped at the seat.
 export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   const box = spriteBox(sprite);
   const scale = height / box.h;
-  const bottom = sitting ? SEAT : FEET;
+  const foot = sitting ? (({ y, h }) => y + h)(spriteBox(sprite, { seated: true })) : box.y + box.h;
+  const ty = (sitting ? SEAT : FEET) - scale * foot;
+  // Rounded like the rest of the module's geometry: an unrounded tx/ty leaks
+  // into the critter's own `translate(…)` as e.g. `7.299999999999999`.
   return {
-    scale,
-    tx: x0 + 8.5 - scale * (box.x + box.w / 2),
-    ty: bottom - scale * (box.y + box.h),
-    top: bottom - height,
+    scale, tx: r4(x0 + 8.5 - scale * (box.x + box.w / 2)), ty: r4(ty), top: r4(ty + scale * box.y),
+    drop: sitting ? r4(scale * (box.y + box.h - foot)) : 0,
   };
 }
 
 const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45
-const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const stroked = (ink, width = STROKE) => ({ fill: "none", stroke: ink, "stroke-width": width, "stroke-linecap": "square" });
+
+// A striding critter's legs (TamaScene, on the run, the bike, the dog walk):
+// its stance (tama-legs-a) and every leg rect two units toward its middle
+// (tama-legs-b), swapped by styles.css on the scene's tempo like Clawd's
+// tamagotchi.js LEGS. Two units, not Clawd's one: one read too subtle at a
+// critter's scale. (legs are root nodes; build_critters' tests pin it)
+export function strideRoot(sprite) {
+  const box = spriteBox(sprite);
+  const mid = box.x + box.w / 2;
+  const step = (n) => (n.r
+    ? { ...n, r: [r4(n.r[0] + (n.r[0] + n.r[2] / 2 < mid ? 2 : -2)), ...n.r.slice(1)] }
+    : { ...n, g: n.g.map(step) });
+  return sprite.root.flatMap((n) => (n.legs ? [{ g: [n], cls: "tama-legs-a" }, { g: [step(n)], cls: "tama-legs-b" }] : [n]));
+}
 
 // The faces Critter.jsx draws in place of the eyes (lids shut over them).
 // Worried is the one duty face that keeps the eyes, drawing brows over them.

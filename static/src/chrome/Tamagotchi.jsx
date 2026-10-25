@@ -34,7 +34,7 @@ import { clickHandlers } from "./clawdClick.js";
 import { deskView, dutyItems, moreCount, wallLabel, wallPhrase } from "./clawdDuty.js";
 import { mergeParties, startClawdWatch } from "./clawdWatch.js";
 import {
-  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, sceneToSprite,
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, critterById, hatTransform, holdTipInScene, placement, r4, sceneToSprite,
 } from "./critters.js";
 import { Dish } from "./TamaDishes.jsx";
 import {
@@ -637,13 +637,17 @@ export function TamaScene({
   // (`fret` below, Critter's `tip`), and the controller in its paws (no
   // reach). A critter types, cheers and slaps the bell with its own
   // appendages too (critters.js cheerGlyphs, TamaDuty TypingPaws / SlapPaw);
-  // only Clawd's drawings of those (MoodFace's typing hands, ArmsUp,
-  // SlapHand) stay his.
+  // it also strides on the run, the bike and the dog walk, and sits without
+  // the legs the seat hides (`seated`/`stride` below, critters.js
+  // strideRoot/placement); only Clawd's own drawings of those (MoodFace's
+  // typing hands, ArmsUp, SlapHand, LEG_CELLS) stay his.
   const sprite = critter.sprite;
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
   const place = sprite && placement(sprite, { x0, sitting, height: ghost ? CLAWD_HEIGHT : CRITTER_HEIGHT });
-  const headDy = place ? place.top - Y0 : 0;
+  // r4'd again: place.top is already rounded, but subtracting Y0 can still
+  // surface a float a digit short of it (e.g. -2.5881999999999996 for -2.5882).
+  const headDy = place ? r4(place.top - Y0) : 0;
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
   // nap.
@@ -725,7 +729,7 @@ export function TamaScene({
              transform={`translate(${place.tx} ${place.ty}) scale(${place.scale})`}>
             <Critter sprite={sprite} mood={moody ? mood : "calm"} asleep={asleep} face={critterFace}
                      startle={pose === "bell" && !deskBell} worn={worn} holding={holding} tip={tip} paws={!!p?.paws}
-                     cheer={atDesk && celebrating}>
+                     cheer={atDesk && celebrating} seated={sitting} stride={!!p?.stride}>
               {fret && (
                 // Undoes the wrapper's placement exactly, so the bass draws at
                 // Clawd's fixed scene coordinates while still bobbing as the
@@ -744,7 +748,16 @@ export function TamaScene({
         {face}
         {p?.Held && !(sprite && (WORN_ON_CLAWD.has(p.Held) || holding)) && <p.Held x0={x0} />}
         {holding === "spoon" && <Spoon x0={x0} from={holdFrom} />}
-        {holding === "controller" && <Controller x0={x0} limb={sprite.limb} />}
+        {holding === "controller" && (
+          // Drawn at Clawd's fixed spot, not through the critter's own
+          // wrapper (CritterHeld's `scale`, not this one): a seated critter
+          // with hidden legs sits lower than Clawd, so it lowers with the
+          // body (`place.drop`) but never past the seat (0.8 = SEAT 17 minus
+          // the controller's own bottom, 16.2).
+          <g transform={`translate(0 ${Math.min(place.drop, 0.8)})`}>
+            <Controller x0={x0} limb={sprite.limb} />
+          </g>
+        )}
         {!sprite && <Head dy={headDy}>{p?.Headwear && !hat && <p.Headwear x0={x0} />}</Head>}
         <Head dy={headDy}>{pose === "api" && <Stars x0={x0} />}</Head>
         {!sprite && pose === "ctx" && <Worried x0={x0} />}

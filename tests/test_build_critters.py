@@ -510,14 +510,108 @@ def test_a_hold_arms_group_cant_hide_inside_a_face(tmp_path):
         build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
 
 
-def _arms(ns):
-    return sum(bool(n.get("arms")) + _arms(n.get("g", [])) for n in ns)
+def test_a_legs_group_is_marked_legs(tmp_path):
+    legs = '<g class="legs"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + legs), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("legs")] == [{"g": [{"r": [1, 1, 1, 1]}], "legs": True}]
+    with pytest.raises(ValueError, match="legs must be a <g>"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="legs" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def test_a_legs_kept_group_is_marked_legs_and_kept_seated(tmp_path):
+    legs = '<g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g>'
+    s = build_critters.convert("t", _svg(tmp_path, BODY + EYE + legs), build_critters.Sheet())
+    assert [n for n in s["root"] if n.get("legs")] == [{"g": [{"r": [1, 1, 1, 1]}], "legs": True, "keepSeated": True}]
+    with pytest.raises(ValueError, match="legs-kept must be a <g>"):
+        build_critters.convert(
+            "t",
+            _svg(tmp_path, BODY + EYE + '<rect class="legs-kept" x="1" y="1" width="1" height="1"/>'),
+            build_critters.Sheet(),
+        )
+
+
+def test_a_legs_group_cant_hide_inside_a_face(tmp_path):
+    layer = '<g class="face-happy"><g class="legs"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="can't hold a legs —"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def test_a_legs_kept_group_cant_hide_inside_a_face(tmp_path):
+    layer = '<g class="face-happy"><g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="can't hold a legs-kept"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + layer), build_critters.Sheet())
+
+
+def test_a_nested_legs_group_raises(tmp_path):
+    # strideRoot (critters.js) only steps root-level `legs` nodes: one buried inside
+    # another <g> would hide seated but never stride.
+    nested = '<g><g class="legs"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="legs must sit directly under the outer <g>"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + nested), build_critters.Sheet())
+
+
+def test_a_nested_legs_kept_group_raises(tmp_path):
+    nested = '<g><g class="legs-kept"><rect x="1" y="1" width="1" height="1"/></g></g>'
+    with pytest.raises(ValueError, match="legs-kept must sit directly under the outer <g>"):
+        build_critters.convert("t", _svg(tmp_path, BODY + EYE + nested), build_critters.Sheet())
+
+
+def _count(ns, key):
+    return sum(bool(n.get(key)) + _count(n.get("g", []), key) for n in ns)
 
 
 def test_only_ember_volt_and_moss_have_one_hold_arms_group():
     for cid in build_critters.CRITTERS:
         s = _sprite(cid)
-        assert _arms(s["root"]) == (1 if cid in ("ember", "volt", "moss") else 0), cid
+        assert _count(s["root"], "arms") == (1 if cid in ("ember", "volt", "moss") else 0), cid
+
+
+def test_every_shipped_critter_has_exactly_one_legs_node():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        assert _count(s["root"], "legs") == 1, cid
+
+
+def test_legs_kept_is_set_for_jelly_and_nox_only_and_legs_are_root_nodes():
+    for cid in build_critters.CRITTERS:
+        s = _sprite(cid)
+        # next() over root (not a recursive search) also proves the legs node sits at the top level.
+        legs_node = next((n for n in s["root"] if n.get("legs")), None)
+        assert legs_node is not None, cid
+        assert legs_node.get("keepSeated", False) == (cid in ("jelly", "nox")), cid
+
+
+def _rects(ns):
+    """Every rect's [x, y, w, h] under `ns`, depth first, mood layers skipped (spriteBox's own rule:
+    critters.js never counts a mood layer toward a critter's box)."""
+    for n in ns:
+        if n.get("mood"):
+            continue
+        if "r" in n:
+            yield n["r"]
+        yield from _rects(n.get("g", []))
+
+
+def _bottom(rs):
+    return max(y + h for _, y, _, h in rs)
+
+
+def test_every_shipped_critters_legs_reach_its_bottom():
+    # Pins which group is the legs geometrically, not just that some group
+    # carries the flag: a mismarked group (e.g. Ember's horns tagged `legs`
+    # instead of its feet) would still satisfy "exactly one legs node" above.
+    for cid in build_critters.CRITTERS:
+        root = _sprite(cid)["root"]
+        legs = next((n for n in root if n.get("legs")), None)
+        assert legs is not None, cid
+        assert _bottom(_rects([legs])) == _bottom(_rects(root)), cid
+        if not legs.get("keepSeated"):
+            # placement() seats the body without these legs, so it must end above them.
+            assert _bottom(_rects(n for n in root if not n.get("legs"))) < _bottom(_rects(root)), cid
 
 
 def _rests(ns):

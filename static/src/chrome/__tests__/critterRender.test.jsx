@@ -3,7 +3,7 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById, hueRotate, limbGlyphs } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, limbGlyphs, strideRoot } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
@@ -282,5 +282,46 @@ describe("<Critter>", () => {
     expect(arms).toContain('class="tama-cheer tama-cheer2"');
     expect(arms).toContain("crit-ember-1"); // its tail stays: its arms do the cheering
     expect(draw({ sprite: ember })).not.toContain("tama-cheer");
+  });
+
+  it("seated hides a legs node, nested included, but keeps one that's keepSeated", () => {
+    const sprite = {
+      root: [
+        { g: [{ r: [1, 1, 1, 1] }], legs: true, a: { fill: "#111111" } },
+        { g: [{ r: [2, 2, 1, 1] }], a: { fill: "#222222" } },
+        { g: [{ g: [{ r: [3, 3, 1, 1] }], legs: true, a: { fill: "#333333" } }] },
+        { g: [{ r: [4, 4, 1, 1] }], legs: true, keepSeated: true, a: { fill: "#444444" } },
+      ],
+    };
+    const everything = draw({ sprite });
+    expect(everything).toContain("#111111");
+    expect(everything).toContain("#222222");
+    expect(everything).toContain("#333333");
+    expect(everything).toContain("#444444");
+    const seated = draw({ sprite, seated: true });
+    expect(seated).not.toContain("#111111");
+    expect(seated).toContain("#222222");
+    expect(seated).not.toContain("#333333");
+    expect(seated).toContain("#444444");
+  });
+
+  it("hides scope's feet when seated, keeps Nox's toes (keepSeated)", () => {
+    const scope = critterById("scope").sprite;
+    expect(draw({ sprite: scope })).toContain('<rect x="5" y="16"');
+    expect(draw({ sprite: scope, seated: true })).not.toContain('<rect x="5" y="16"');
+    const nox = critterById("nox").sprite;
+    expect(draw({ sprite: nox, seated: true })).toContain('<rect x="6" y="17"');
+  });
+
+  it("strides: draws both leg frames when told to, neither otherwise", () => {
+    const ember = critterById("ember").sprite;
+    const striding = draw({ sprite: ember, stride: true });
+    expect(striding).toContain("tama-legs-a");
+    expect(striding).toContain("tama-legs-b");
+    const still = draw({ sprite: ember });
+    expect(still).not.toContain("tama-legs-a");
+    expect(still).not.toContain("tama-legs-b");
+    // Matches strideRoot's own tree, not just the class names.
+    expect(striding).toBe(draw({ sprite: { ...ember, root: strideRoot(ember) } }));
   });
 });
