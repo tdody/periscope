@@ -9,6 +9,17 @@ const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
 const count = (html, needle) => html.split(needle).length - 1;
 const draw = (props) => render(<svg aria-hidden="true"><Critter {...props} /></svg>);
+// The `<g class="tama-flush"` group, whole, as groupAt does in tamagotchiRender.test.jsx.
+const flushGroup = (html) => {
+  const open = html.indexOf('<g class="tama-flush"');
+  if (open < 0) return null;
+  let depth = 0;
+  for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return html.slice(open, open + m.index + 4);
+  }
+  return html.slice(open);
+};
 // A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
 const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
   g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
@@ -323,5 +334,55 @@ describe("<Critter>", () => {
     expect(still).not.toContain("tama-legs-b");
     // Matches strideRoot's own tree, not just the class names.
     expect(striding).toBe(draw({ sprite: { ...ember, root: strideRoot(ember) } }));
+  });
+
+  describe("furious flush", () => {
+    it.each(sprites)("%s washes its silhouette red, with its face crisp on top and its teeth last", (_id, sprite) => {
+      const html = draw({ sprite, mood: "furious" });
+      expect(html).toContain('<g class="tama-flush" fill="#ff3b2f">');
+      const group = flushGroup(html);
+      expect(group).not.toBeNull();
+      // Only the wrapper itself carries a fill; nothing inside it does.
+      const inner = group.slice(group.indexOf(">") + 1);
+      expect(inner).not.toContain("fill=");
+      expect(inner).not.toContain("data-mood");
+      expect(inner).not.toContain("data-role");
+      // The face's own furious layer is redrawn after the flush group, and
+      // the teeth, inside its furious mouth, come last of all.
+      const afterFlush = html.slice(html.indexOf(group) + group.length);
+      expect(afterFlush).toContain('data-mood="furious"');
+      expect(afterFlush.lastIndexOf('stroke="#f3f5f8"')).toBeGreaterThan(afterFlush.lastIndexOf('data-mood="furious"'));
+    });
+
+    it.each(["calm", "grumpy"])("draws no flush and no teeth for %s", (mood) => {
+      const html = draw({ sprite: critterById("nox").sprite, mood });
+      expect(html).not.toContain("tama-flush");
+      expect(html).not.toContain('stroke="#f3f5f8"');
+    });
+
+    it("drops a synthetic sprite's hidden rest and seated legs from the flush, typing furiously", () => {
+      const sprite = {
+        root: [
+          { g: [{ r: [1, 1, 1, 1] }], rest: true, a: { fill: "#111111" } },
+          { g: [{ r: [2, 2, 1, 1] }], legs: true, a: { fill: "#222222" } },
+          { g: [{ r: [3, 3, 2, 2] }], anim: "crit-x-1", a: { fill: "#333333" } },
+        ],
+        limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+      };
+      const html = draw({ sprite, mood: "furious", tip: [20, 10], seated: true });
+      const group = flushGroup(html);
+      expect(group).not.toContain('x="1"');
+      expect(group).not.toContain('x="2"');
+      // Its anim class rides along into the flush group.
+      expect(group).toContain("crit-x-1");
+      // The limb it reaches with is washed too.
+      expect(group).toContain('x="10"');
+    });
+
+    it("recolours Nox's outline to the flush, at its own stroke width", () => {
+      const html = draw({ sprite: critterById("nox").sprite, mood: "furious" });
+      const group = flushGroup(html);
+      expect(group).toContain('stroke="#ff3b2f" stroke-width="1"');
+    });
   });
 });

@@ -2,7 +2,7 @@
 // 20×20 units. Motion is the classes in static/critters.css; the caller places
 // and scales it (Tamagotchi.jsx in the header, TamaPicker.jsx in Settings).
 
-import { cheerGlyphs, cheersWithLimb, EYE_FACES, faceGlyphs, HOLDS, holdTip, hueRotate, limbGlyphs, startleGlyph, strideRoot, wornGlyphs } from "./critters.js";
+import { cheerGlyphs, cheersWithLimb, EYE_FACES, FLUSH, faceGlyphs, HOLDS, holdTip, hueRotate, limbGlyphs, r4, startleGlyph, strideRoot, teethGlyph, wornGlyphs } from "./critters.js";
 
 // A friend's colours (TamaPastimes.jsx): every fill and stroke turned by
 // `tint` degrees. No tint draws the critter's own paint, untouched.
@@ -21,7 +21,14 @@ function painted(a, tint) {
 // fields (faceGlyphs/startleGlyph/wornGlyphs/cheerGlyphs): an SVG path's `d`
 // and a CSS class. `cls` alone also marks strideRoot's two frame wrappers
 // (tama-legs-a/-b): styles.css swaps them, so neither is ever animated either.
-function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
+
+// A stroked node's own paint, recoloured to the flush at its own width: Nox's
+// and Octocat's grey outline copies, left out, would leave a grey ring around
+// a red body (the first draft's defect).
+const flushStroke = (a) => (a?.stroke ? { stroke: FLUSH, "stroke-width": a["stroke-width"] } : undefined);
+
+function Node({ n, mood, asleep, hide, tint, rest, paws, seated, flush }) {
+  if (flush && n.mood) return null; // mood layers aren't body: the furious layer is redrawn separately, crisp
   if (n.mood && n.mood !== mood) return null;
   if (rest && n.rest) return null;
   if (paws && n.arms) return null;
@@ -30,12 +37,22 @@ function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
   if (hide && n.role === "eye") return null;
   if (n.r) {
     const [x, y, w, h] = n.r;
+    // The wrapper's own fill applies in the wash; 0.02 larger closes seams
+    // between adjoining rects, as Clawd's Sprite does.
+    if (flush) return <rect class={n.cls} x={x} y={y} width={r4(w + 0.02)} height={r4(h + 0.02)} {...flushStroke(n.a)} />;
     return <rect class={n.cls} x={x} y={y} width={w} height={h} {...painted(n.a, tint)} />;
   }
-  if (n.p) return <path class={n.cls} d={n.p} {...painted(n.a, tint)} />;
+  if (n.p) return flush ? null : <path class={n.cls} d={n.p} {...painted(n.a, tint)} />;
   if ((asleep || hide) && n.shut) {
     const [x, y, w, h] = n.shut;
     return <rect data-role="shut" x={x} y={y} width={w} height={h} {...painted(n.g[0].a, tint)} />;
+  }
+  if (flush) {
+    return (
+      <g class={n.anim || n.cls} {...flushStroke(n.a)}>
+        {n.g.map((c, i) => <Node key={i} n={c} mood={mood} rest={rest} paws={paws} seated={seated} flush />)}
+      </g>
+    );
   }
   // n.anim and n.cls never both land here: `cls` marks a face glyph (static
   // art, critters.js) or one of strideRoot's frame wrappers — neither is
@@ -69,10 +86,17 @@ function Node({ n, mood, asleep, hide, tint, rest, paws, seated }) {
 // (HOLDING has no `code`) — if they ever did, a limb-cheerer would draw two
 // limbs. `seated`: the legs it hides sitting go (critters.js placement
 // lowers it onto the seat); `stride`: its legs step (critters.js strideRoot).
+// Furious, its silhouette washes red like Clawd's flush (`tama-flush`), with
+// its eyes and own furious face drawn again on top so they stay crisp, and
+// gritted teeth in its shouting mouth (critters.js teethGlyph).
 export function Critter({ sprite, mood = "calm", asleep = false, face = null, startle = false, tint = 0, worn = null, holding = null, tip = null, paws = false, cheer = false, seated = false, stride = false, children }) {
   const hide = EYE_FACES.has(face);
   const reach = tip ?? (holding && HOLDS[holding] ? holdTip(sprite, holding) : null);
   const rest = !!reach || (cheer && cheersWithLimb(sprite));
+  const furious = mood === "furious" && !asleep;
+  // Its own eyes/role nodes and its furious layer, redrawn crisp over the wash.
+  const hasRole = (n) => n.role !== undefined || (n.g || []).some(hasRole);
+  const faceNodes = furious ? sprite.root.filter((n) => n.mood === "furious" || hasRole(n)) : [];
   return (
     <g class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>
       {(stride ? strideRoot(sprite) : sprite.root).map((n, i) => <Node key={i} n={n} mood={mood} asleep={asleep} hide={hide} tint={tint} rest={rest} paws={paws} seated={seated} />)}
@@ -82,6 +106,14 @@ export function Critter({ sprite, mood = "calm", asleep = false, face = null, st
       {children}
       {reach && limbGlyphs(sprite, holding, reach).map((n, i) => <Node key={`hold-${i}`} n={n} mood={mood} tint={tint} />)}
       {cheer && cheerGlyphs(sprite).map((n, i) => <Node key={`cheer-${i}`} n={n} mood={mood} tint={tint} />)}
+      {furious && (
+        <g class="tama-flush" fill={FLUSH}>
+          {(stride ? strideRoot(sprite) : sprite.root).map((n, i) => <Node key={i} n={n} mood={mood} hide={hide} rest={rest} paws={paws} seated={seated} flush />)}
+          {reach && limbGlyphs(sprite, holding, reach).map((n, i) => <Node key={`hold-${i}`} n={n} mood={mood} flush />)}
+        </g>
+      )}
+      {furious && faceNodes.map((n, i) => <Node key={`fu-${i}`} n={n} mood={mood} hide={hide} tint={tint} rest={rest} paws={paws} seated={seated} />)}
+      {furious && teethGlyph(sprite).map((n, i) => <Node key={`teeth-${i}`} n={n} mood={mood} tint={tint} />)}
     </g>
   );
 }
