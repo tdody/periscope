@@ -33,8 +33,8 @@ else, so a new SVG fails loudly instead of drawing wrong):
     and data-limb-color (optionally data-limb-outline, data-limb-tip="spade"); a <g class="hold-rest">
     is what a holding pose hides (a resting tail curled up instead); a `<g class="hold-arms">` is the
     side arms a two-handed hold (the controller) puts on the prop.
-  - a critter's legs are a `<g class="legs">` (strides, hidden when seated) or `<g class="legs-kept">`
-    (strides, but stays when seated — Nox's toes, Jelly's tentacles).
+  - a critter's legs are a `<g class="legs">` (legs that stride and hide when seated) or
+    `<g class="legs-kept">` (legs that stride but stay when seated — Nox's toes, Jelly's tentacles).
 """
 
 from __future__ import annotations
@@ -86,9 +86,8 @@ def paint(el: ET.Element) -> dict:
 
 def mood_of(el: ET.Element) -> str | None:
     cls = el.get("class")
-    if (
-        cls is None or cls in FACES or cls in (HOLD_REST, HOLD_ARMS, LEGS, LEGS_KEPT)
-    ):  # these layers aren't drawn by mood
+    # these layers aren't drawn by mood
+    if cls is None or cls in FACES or cls in (HOLD_REST, HOLD_ARMS, LEGS, LEGS_KEPT):
         return None
     if cls not in MOODS:
         raise ValueError(
