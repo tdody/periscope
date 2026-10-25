@@ -600,6 +600,17 @@ describe("critters", () => {
     expect(html).not.toContain("data-critter");
   });
 
+  // placement()'s `top` (and everything derived from it, like the heat
+  // shimmer's `<Head dy>`) must come out rounded like the rest of the
+  // module's geometry — an unrounded float leaks as `-2.000000000000001` or
+  // `6.999999999999999` into the markup instead of a clean `-2`/`7`.
+  it.each(critters.map((c) => [c.id, c]))("%s's markup carries no float noise in run, beer, code or read", (_id, c) => {
+    for (const activity of ["run", "beer", "code", "read"]) {
+      const html = scene(c, activity);
+      expect(html, activity).not.toMatch(/\d\.\d*0000000\d|\d\.\d*9999999\d/);
+    }
+  });
+
   it("scales the critter about the view box, not styles.css's fill-box pivot", () => {
     // Node can't measure layout (styles.css's `.tama g { transform-box: fill-box }`
     // would pivot scale() around this group's own, mood-dependent bounding box

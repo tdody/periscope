@@ -63,7 +63,9 @@ export function placement(sprite, { x0, sitting, height = CRITTER_HEIGHT }) {
   // (`legs`, not `keepSeated`) don't count, at standing's scale.
   const foot = sitting ? (({ y, h }) => y + h)(spriteBox(sprite, { seated: true })) : box.y + box.h;
   const ty = (sitting ? SEAT : FEET) - scale * foot;
-  return { scale, tx: x0 + 8.5 - scale * (box.x + box.w / 2), ty, top: ty + scale * box.y };
+  // Rounded like the rest of the module's geometry: an unrounded tx/ty leaks
+  // into the critter's own `translate(…)` as e.g. `7.299999999999999`.
+  return { scale, tx: r4(x0 + 8.5 - scale * (box.x + box.w / 2)), ty: r4(ty), top: r4(ty + scale * box.y) };
 }
 
 const STROKE = 0.75; // sprite units: grows with the critter, ~0.56 scene units at CRITTER_HEIGHT, against Clawd's fixed 0.45

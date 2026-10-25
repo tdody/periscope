@@ -57,6 +57,7 @@ import {
 // (TamaPastimes.PASTIME_SCENES).
 const POSES = { code: { x0: 3, sitting: true }, nap: { x0: 3, sitting: true }, read: { x0: 4, sitting: true } };
 const STANDING = { x0: 8 };
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const BODY_CELLS = gridCells(BODY);
 // Armless at the console (`p?.paws`): row 2's side-arm cells (x 1–2 and 15–16)
 // cleared back to row 0/1/3's silhouette, both hands on the controller instead.
@@ -643,7 +644,9 @@ export function TamaScene({
   // The sheet is cut for Clawd; at CRITTER_HEIGHT ears, horns and antennas
   // poke through it.
   const place = sprite && placement(sprite, { x0, sitting, height: ghost ? CLAWD_HEIGHT : CRITTER_HEIGHT });
-  const headDy = place ? place.top - Y0 : 0;
+  // r4'd again: place.top is already rounded, but subtracting Y0 can still
+  // surface a float a digit short of it (e.g. -2.5881999999999996 for -2.5882).
+  const headDy = place ? r4(place.top - Y0) : 0;
   // Asleep — the night's sleep or the walled nap at the desk — only the bell
   // wakes Clawd: to an alarm clock at night, to the desk's service bell in the
   // nap.

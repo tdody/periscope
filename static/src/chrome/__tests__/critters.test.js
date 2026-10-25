@@ -83,9 +83,7 @@ describe("placement", () => {
     expect(p.scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
     expect(bottomOf(p, box)).toBeCloseTo(19);
     expect(centreOf(p, box)).toBeCloseTo(16.5);
-    // `top` is now derived (ty + scale*box.y) rather than a direct
-    // `bottom - height`, so it lands a float epsilon off 7 for some sprites.
-    expect(p.top).toBeCloseTo(19 - CRITTER_HEIGHT);
+    expect(p.top).toBe(19 - CRITTER_HEIGHT);
   });
 
   // The constraint that rejected 13.5 (docs/superpowers/specs/…-design.md):
