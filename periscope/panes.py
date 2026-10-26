@@ -12,6 +12,7 @@ the resume-in-flight check and by routes/sessions / routes/history for
 the resume orchestration).
 """
 
+import os
 import re
 import time
 
@@ -303,6 +304,25 @@ NEEDS_INPUT_FOOTER_RE = re.compile(
     r"(?:Enter\s+to\s+\w+|↑/↓|Submit\b).*Esc\s+to\s+cancel",
 )
 
+# A permission dialog (Bash, Write, Edit, …), which a native banner's Allow /
+# Deny answers (routes/pane_actions.py). Its footer, "Esc to cancel · Tab to
+# amend" in 2.1.280, is outside NEEDS_INPUT_FOOTER_RE's family, so it's known
+# by its own shape: a "Do you want to …?" question, "❯ 1. Yes" on the next
+# line, and the footer ending the screen. Any one of them can turn up in a
+# reply; a dialog Claude quotes in a reply still has the input box below it.
+PERMISSION_QUESTION_RE = re.compile(r"^\s*Do you want to .+\?\s*$")
+PERMISSION_YES_RE = re.compile(r"^\s*❯\s*1\.\s+Yes\b")
+DIALOG_CANCEL_RE = re.compile(r"\bEsc\s+to\s+cancel\b")
+# The full-width rule Claude draws above the dialog: where its text starts.
+DIALOG_RULE_RE = re.compile(r"^\s*─{20,}\s*$")
+# Lines the question can sit above the footer: the options under it wrap
+# (Bash's "always allow access to <dir>" does), but not past a dozen.
+_PERMISSION_TAIL = 12
+# Tools whose dialog names the file relative to the cwd, while the hook
+# records it absolute (pane_permission_hook.py): matched on the basename.
+_FILE_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
+_WS_RE = re.compile(r"\s+")
+
 RECAP_RE = re.compile(r"※ recap:\s*(?P<text>.+?)(?=\n\s*[─❯]|\Z)", re.DOTALL)
 PROMPT_LINE_RE = re.compile(r"^❯\s*(?P<input>.*)$")
 
@@ -481,6 +501,50 @@ def _detect_needs_input(lines: list[str]) -> bool:
     that merely discusses dialog UI.
     """
     return any(NEEDS_INPUT_FOOTER_RE.search(line) for line in lines[-5:])
+
+
+def permission_dialog(content: str) -> str | None:
+    """The permission dialog on screen, as its lines from below the rule
+    Claude draws above it down to its "Esc to cancel" footer, or None when
+    there isn't one. `content` is a capture; SGR escapes are stripped here.
+
+    From the rule, not the question: Bash's command sits above the question
+    line. Never further up: the scrollback's `⏺ Bash(touch probe.txt)` can
+    quote the same command, and must not vouch for a different dialog."""
+    _raw, _plain, lines = _split_buffers(content)
+    # The footer ends the screen (a status row may follow it).
+    tail = range(len(lines) - 1, max(len(lines) - 3, -1), -1)
+    footer = next((i for i in tail if DIALOG_CANCEL_RE.search(lines[i])), None)
+    if footer is None:
+        return None
+    above = range(footer - 1, max(footer - 1 - _PERMISSION_TAIL, -1), -1)
+    question = next((i for i in above if PERMISSION_QUESTION_RE.match(lines[i])), None)
+    if question is None or not PERMISSION_YES_RE.match(lines[question + 1]):
+        return None
+    top = next((i for i in range(question - 1, -1, -1) if DIALOG_RULE_RE.match(lines[i])), None)
+    if top is None:
+        return None
+    return "\n".join(lines[top + 1 : footer + 1])
+
+
+def dialog_open(content: str) -> bool:
+    """Whether any Claude dialog is up in a capture: a choice dialog's footer
+    (AskUserQuestion and its family) or a permission dialog. Text typed into
+    one picks an option — `1 sounds good` + Enter answers "Yes" — so
+    POST /api/pane/reply refuses while one is open."""
+    _raw, _plain, lines = _split_buffers(content)
+    return _detect_needs_input(lines) or permission_dialog(content) is not None
+
+
+def dialog_shows(dialog: str, tool: str, summary: str) -> bool:
+    """Whether a permission dialog's text names the request the hook recorded:
+    the file's basename for a file tool, else the summary's first 40
+    characters. All whitespace is dropped on both sides, since a long line
+    wraps mid-word onto an indented row. This is what stops a stale row from
+    approving a different dialog that happens to be up."""
+    token = os.path.basename(summary) if tool in _FILE_TOOLS else summary[:40]
+    token = _WS_RE.sub("", token)
+    return bool(token) and token in _WS_RE.sub("", dialog)
 
 
 _SGR_SPLIT_RE = re.compile(r"(\x1b\[[0-9;]*m)")

@@ -11,6 +11,7 @@ file had.
 """
 
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -24,10 +25,13 @@ from periscope.panes import (
     _agent_last_seen,
     _focused_at,
     _spinner_last_seen,
+    dialog_open,
+    dialog_shows,
     list_windows,
     note_action,
     note_focus,
     parse_pane,
+    permission_dialog,
     smooth_agent,
     smooth_spinner,
     update_focus_from_windows,
@@ -893,3 +897,140 @@ def test_drop_target_focus_pops_both_dicts():
     assert "sess:1" not in panes._acted_at
     assert panes._focused_at["sess:2"] == 200  # untouched
     panes._focused_at.pop("sess:2", None)  # cleanup
+
+
+# ── Permission dialogs (a banner's Allow / Deny; routes/pane_actions.py) ──
+# Real captures from Claude Code 2.1.280 (`tmux capture-pane -p`), the scratch
+# path replaced by /tmp/probe. Bash's option 2 wraps mid-word, as it did live.
+
+_DIALOGS = Path(__file__).parent / "fixtures" / "permission_dialogs"
+_RULE = "─" * 60
+# An idle Claude pane: no dialog, the input box at the bottom.
+_IDLE = "\n".join(
+    [
+        "⏺ Done — notes.md is written.",
+        "",
+        "✻ Brewed for 3s",
+        "",
+        _RULE,
+        "❯ ",
+        _RULE,
+        "  ⏵⏵ auto mode on (shift+tab to cycle)",
+    ]
+)
+# A reply quoting a dialog verbatim: every marker is there, but the input box
+# is below it, so it isn't on screen as a dialog.
+_QUOTED = "\n".join(
+    [
+        "⏺ The prompt read:",
+        "",
+        " Do you want to proceed?",
+        " ❯ 1. Yes",
+        "   2. No",
+        "",
+        " Esc to cancel · Tab to amend",
+        "",
+        _RULE,
+        "❯ ",
+        _RULE,
+        "  ⏵⏵ auto mode on (shift+tab to cycle)",
+    ]
+)
+# AskUserQuestion: a choice dialog, not a permission one.
+_ASK = "\n".join(
+    [
+        _RULE,
+        " ☐ Database",
+        "",
+        "Which database should I use?",
+        "",
+        "❯ 1. Postgres",
+        "  2. SQLite",
+        "",
+        "Enter to select · ↑/↓ to navigate · Esc to cancel",
+    ]
+)
+
+
+def _dialog(name: str) -> str:
+    return (_DIALOGS / name).read_text()
+
+
+def test_permission_dialog_reads_a_bash_prompt_from_its_rule_to_its_footer():
+    dialog = permission_dialog(_dialog("bash.txt"))
+    assert dialog is not None
+    rows = dialog.splitlines()
+    assert rows[0] == " Bash command"
+    assert "   touch probe.txt" in rows
+    assert rows[-1] == " Esc to cancel · Tab to amend"
+    # Not the scrollback above the rule: `⏺ Bash(touch probe.txt)` quotes the
+    # same command and must not vouch for whatever dialog is up.
+    assert "⏺" not in dialog
+
+
+def test_permission_dialog_reads_a_write_prompt():
+    dialog = permission_dialog(_dialog("write.txt"))
+    assert dialog is not None
+    assert " notes.md" in dialog.splitlines()
+    assert " Do you want to create notes.md?" in dialog.splitlines()
+
+
+def test_permission_dialog_strips_the_capture_colours():
+    # capture() keeps SGR escapes (-e); the live dialog colours ❯ and Yes.
+    coloured = _dialog("bash.txt").replace(
+        " ❯ 1. Yes",
+        " \x1b[38;2;177;185;249m❯\x1b[39m \x1b[38;2;153;153;153m1.\x1b[39m \x1b[38;2;177;185;249mYes\x1b[39m",
+    )
+    dialog = permission_dialog(coloured)
+    assert dialog is not None
+    assert "\x1b" not in dialog
+
+
+@pytest.mark.parametrize("screen", [_IDLE, _QUOTED, _ASK, ""], ids=["idle", "quoted", "ask", "empty"])
+def test_permission_dialog_is_none_without_one(screen):
+    assert permission_dialog(screen) is None
+
+
+def test_dialog_open_sees_permission_and_choice_dialogs():
+    assert dialog_open(_dialog("bash.txt"))
+    assert dialog_open(_dialog("write.txt"))
+    assert dialog_open(_ASK)
+    assert not dialog_open(_IDLE)
+    assert not dialog_open(_QUOTED)
+
+
+def test_dialog_shows_the_bash_command_it_asks_about():
+    dialog = permission_dialog(_dialog("bash.txt"))
+    assert dialog_shows(dialog, "Bash", "touch probe.txt")
+    assert not dialog_shows(dialog, "Bash", "rm -rf build")
+    assert not dialog_shows(dialog, "Bash", "")
+
+
+def test_dialog_shows_a_long_command_across_a_mid_word_wrap():
+    # The token is the summary's first 40 characters; the dialog wrapped
+    # inside them, onto an indented row.
+    wrapped = _dialog("bash.txt").replace(
+        "   touch probe.txt", "   python3 scripts/regenerate_fix\n   tures.py --source /tmp/probe/captures --out tests"
+    )
+    dialog = permission_dialog(wrapped)
+    assert dialog is not None
+    assert dialog_shows(
+        dialog, "Bash", "python3 scripts/regenerate_fixtures.py --source /tmp/probe/captures --out tests"
+    )
+
+
+def test_dialog_shows_a_file_by_its_basename():
+    # The dialog shows the path relative to the cwd; the hook stores it absolute.
+    dialog = permission_dialog(_dialog("write.txt"))
+    assert dialog_shows(dialog, "Write", "/tmp/probe/notes.md")
+    assert dialog_shows(dialog, "Write", "…/a/clipped/very/long/path/notes.md")
+    assert not dialog_shows(dialog, "Write", "/tmp/probe/other.md")
+
+
+def test_the_keys_pane_actions_sends_select_what_they_should():
+    # Allow sends `1`: option 1 is Yes in every dialog. Deny sends Escape,
+    # never a number: No is option 4 for Bash and 3 for Write.
+    bash = permission_dialog(_dialog("bash.txt")).splitlines()
+    write = permission_dialog(_dialog("write.txt")).splitlines()
+    assert " ❯ 1. Yes" in bash and " ❯ 1. Yes" in write
+    assert "   4. No" in bash and "   3. No" in write
