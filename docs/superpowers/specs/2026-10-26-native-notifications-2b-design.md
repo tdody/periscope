@@ -13,7 +13,7 @@
 
 | PR | What it adds | Agent acts? |
 |---|---|---|
-| **1. Shell + plain buttons** | <ul><li>The Rust category and action plumbing.</li><li>The JS dispatcher.</li><li>Review diff, Mark seen, Open PR, Clean up worktree, Spawn on {B} and Details.</li></ul> | No |
+| **1. Shell + plain buttons** | <ul><li>The Rust category and action plumbing.</li><li>The JS dispatcher.</li><li>Mark seen, Open PR, Clean up worktree, Spawn on {B} and Details (Review diff waits on THI-433).</li></ul> | No |
 | **2. Agent-acting buttons** | <ul><li>The `PermissionRequest` hook and `pending_permission`.</li><li>`/api/pane/permission` and `/api/pane/reply`.</li><li>Allow, Deny, Open, Send and Ask agent to fix.</li></ul> | Yes |
 
 - **The shell is generic.** It knows categories and actions only as data the webview sends, so PR 1's single `.app` rebuild covers both PRs.
@@ -48,7 +48,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
   - Every field is `#[serde(default)]` and tolerates `null`, as `NotifyRequest` does.
   - A pure `category_specs(&str)` parses and validates the set: an action needs an `id` and a `title`; an action that fails is dropped, not the whole category. It's cargo-tested.
 - **When the set is registered.** The webview sends it when the feed starts and again whenever it changes. It's never sent from `send()`, because registration is asynchronous and replaces the whole set, so a banner posted straight after it can arrive without buttons.
-- **`NotifyRequest` gains `category`,** defaulting to `kind`. It's set as `categoryIdentifier` on kinded banners only, so an older webview's plain banner has none.
+- **`NotifyRequest` gains `category`.** No fallback to `kind`: 2b's category ids reuse 2a's kind names (`done`, `usage`, `pr_merged`, …), and the registered set outlives the webview, so a kind-only fallback would let an old webview's plain `kind:"done"` banners match a stale category after a JS rollback and grow buttons whose presses nothing listens for. A banner only gets `categoryIdentifier` when it names `category` explicitly, and only when it also has a `kind` — a plain (kindless) banner never gets one.
 - **`did_receive` routes by action identifier:**
 
   | Action | What it emits |
@@ -72,7 +72,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
   | Combination | Result |
   |---|---|
   | Old shell, new JS | Nothing listens for the categories event, and `category` is an unknown field, so banners arrive without buttons, as in 2a. |
-  | New shell, old JS | No categories are ever registered, so there are no buttons. |
+  | New shell, old JS | Old JS's banners never name a category, so even a set a newer webview left registered shows no buttons. |
 
   `docs/tauri-shell.md` gains a line for this.
 - **Delivery when the webview is down.** An action that arrives while the webview is being rebuilt (a recycle) is lost, as a click is today. Every action is safe to lose: the banner stays in Notification Center, and the pane still shows what's waiting.
@@ -89,11 +89,13 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
   | Banner | Category | Buttons |
   |---|---|---|
-  | `done`, the pane has a branch | `done` | **Review diff** · Mark seen |
-  | `done`, no branch | `done_seen` | Mark seen |
-  | `ci_failed` | `ci_failed_pr` | Open PR (PR 2 adds the `ci_failed` category, with **Ask agent to fix**) |
-  | `pr_merged`, the pane has a `cwd` | `pr_merged` | **Clean up worktree** · Open PR |
-  | `pr_merged`, no `cwd` | `pr_merged_pr` | Open PR |
+  | `done` | `done_seen` | Mark seen (Review diff is deferred to THI-433: every pane shares one tmux session, so a session-keyed review row would open the wrong pane's) |
+  | `ci_failed`, a URL | `ci_failed_pr` | Open PR (PR 2 adds the `ci_failed` category, with **Ask agent to fix**) |
+  | `ci_failed`, no URL | none | the click still opens the pane |
+  | `pr_merged`, a `cwd` and a URL | `pr_merged` | **Clean up worktree** · Open PR |
+  | `pr_merged`, a `cwd`, no URL | `pr_merged_cleanup` | **Clean up worktree** |
+  | `pr_merged`, a URL, no `cwd` | `pr_merged_pr` | Open PR |
+  | `pr_merged`, neither | none | the click still opens the pane |
   | `usage`, `moveTargets[A]` is another account B | `usage_to_{B}` | **Spawn on {B label}** · Details |
   | `usage`, no B | `usage` | Details |
   | `needs_input`, `question` | none in PR 1 | the click still opens the pane |
@@ -109,14 +111,14 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
 | action | Foreground | Does |
 |---|---|---|
-| `review` | yes | `selectReview(session)` (the live pane's, else the banner's `data.session`): sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
-| `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. |
+| `review` | yes | Deferred to THI-433: no category offers this button yet, since every pane shares one tmux session (`config.MANAGED_SESSION`) and a session-keyed review row would open the wrong pane's. `selectReview(session)` and `runAction`'s `review` case stay, ready for the follow-up: `selectReview(session)` (the live pane's, else the banner's `data.session`) sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
+| `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. Client-side only, like a rail dismissal: after a webview reload or recycle the READY row is back (the done banner itself never repeats — its dedupe key is kept). A server-side ack is a possible follow-up. |
 | `open_pr` | no | `openExternal(data.url)`: the browser comes forward on its own. |
-| `cleanup` | yes | `openCleanupModal({ paths: [w.cwd] })`. Never deletes: the modal's own Archive button does, after you look. |
+| `cleanup` | yes | `openCleanupModal({ paths: [data.cwd || w.cwd] })`: the banner names the worktree whose PR merged, and the pane may have moved since. Never deletes: the modal's own Archive button does, after you look. |
 | `spawn_on` | no | `pickSpawnAccount(B)`: the header picker's `pick`, exported. It pins every new spawn to B until set back to auto; the header pin shows it. |
 | `details` | yes | `openUsageDetails()` |
 
-- **A missing pane.** An action whose pane is gone (no window with `data.pid`) uses the banner's own `data` (`session`, `cwd`) and falls back to `revealPane(target)` when that's missing too, as a click does. Mark seen does nothing, since a gone pane has no READY row left to dismiss. `open_pr`, `spawn_on` and `details` don't need the pane.
+- **A missing pane.** A fallback or a failed opener selects the live pane found by `data.pid`, and reveals `target` only when that pane is gone, as a click does. Mark seen does nothing, since a gone pane has no READY row left to dismiss. `open_pr`, `spawn_on` and `details` don't need the pane.
 - **`data` gains** `session` (for `review`) and `cwd` (for `cleanup`) on the banners that need them. `data.pid` is still the lookup key. The banner's own data is the fallback, since tmux renumbers windows.
 
 ### Server: `?paths=` on `/api/cleanup/candidates`
@@ -125,7 +127,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 - **A listed path that isn't a candidate** (still busy, or already archived) is simply absent.
 - **`CleanupModal`:**
   - `openCleanupModal({ paths })` fetches with `paths` and preselects what comes back;
-  - **with nothing back,** it says "This worktree isn't ready to clean up." with the usual reasons;
+  - **with nothing back,** it says "Nothing to clean up here. Cleanup only offers a worktree (never a main checkout) whose PR is merged or closed, whose remote branch is gone, or that sits idle.";
   - **without `paths`,** it behaves as today.
 
 ## PR 2: the buttons that make an agent act
@@ -286,9 +288,8 @@ Both take a **JSON body**: a body-less POST with query params is a CORS simple r
 
 ## Deploying
 
-- **PR 1:** rebuild and relaunch the shell **before** deploying the JS.
+- **PR 1:** rebuild/relaunch the shell and deploy the JS (merge + `bin/periscope restart`) in either order — each half without the other just means no buttons yet (old shell: never registers the new categories; old JS: never names one), same as any other version-skew gap (`docs/tauri-shell.md`).
   - Run `cargo tauri build` in `src-tauri/`; the running app is `target/release/bundle/macos/Periscope.app`.
-  - Then merge and run `bin/periscope restart`.
 - **PR 2:**
   - Merge, then `bin/periscope install-hook`, which registers `PermissionRequest`, then `bin/periscope restart`.
   - Claude reads hooks at session start, so the hook covers only sessions started after the install. Older panes get the dialog variant (Open only) until they restart.

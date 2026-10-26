@@ -14,10 +14,13 @@
 //
 // Native notifications go through our own UNUserNotificationCenter bridge
 // in Rust (src-tauri/src/notifications.rs), not tauri-plugin-notification:
-// the plugin's macOS backend reports no click callback. We hand a banner
-// to Rust over the "periscope:notify" event and Rust hands the click back
-// over "periscope:notification-clicked" — events, because the webview is
-// a remote origin that can't invoke Rust commands.
+// the plugin's macOS backend reports no click callback. We hand a banner to
+// Rust over "periscope:notify" and the category set over
+// "periscope:notify-categories"; Rust hands a plain click back over
+// "periscope:notification-clicked", a kind-aware one over
+// "periscope:notification-opened", and a button press over
+// "periscope:notification-action" — events, because the webview is a
+// remote origin that can't invoke Rust commands.
 
 export function inTauri() {
   return typeof window !== "undefined"
@@ -27,6 +30,15 @@ export function inTauri() {
 
 function invoke(cmd, payload) {
   return window.__TAURI_INTERNALS__.invoke(cmd, payload || {});
+}
+
+// Subscribe to a Tauri event from the shell. transformCallback is the raw-JS
+// way to receive one without the @tauri-apps/api event module.
+async function listen(event, cb) {
+  const handler = window.__TAURI_INTERNALS__.transformCallback((e) => {
+    if (e?.payload) cb(e.payload);
+  });
+  await invoke("plugin:event|listen", { event, target: { kind: "Any" }, handler });
 }
 
 export async function setBadgeCount(n) {
@@ -59,19 +71,11 @@ export async function notify({ title, body, target = "", ...rest }) {
 
 // Register a handler for native-notification clicks. macOS already
 // foregrounds Periscope on click; the payload is the pane target so the
-// caller can open that pane's modal. transformCallback is the raw-JS way
-// to receive a Tauri event without the @tauri-apps/api event module.
+// caller can open that pane's modal.
 export async function onNotificationClick(cb) {
   if (!inTauri()) return;
   try {
-    const handler = window.__TAURI_INTERNALS__.transformCallback((e) => {
-      if (e?.payload) cb(e.payload);
-    });
-    await invoke("plugin:event|listen", {
-      event: "periscope:notification-clicked",
-      target: { kind: "Any" },
-      handler,
-    });
+    await listen("periscope:notification-clicked", cb);
   } catch (e) {
     console.warn("[tauri] notification-click listener failed:", e);
   }
@@ -84,16 +88,34 @@ export async function onNotificationClick(cb) {
 export async function onNotificationOpened(cb) {
   if (!inTauri()) return;
   try {
-    const handler = window.__TAURI_INTERNALS__.transformCallback((e) => {
-      if (e?.payload) cb(e.payload);
-    });
-    await invoke("plugin:event|listen", {
-      event: "periscope:notification-opened",
-      target: { kind: "Any" },
-      handler,
-    });
+    await listen("periscope:notification-opened", cb);
   } catch (e) {
     console.warn("[tauri] notification-opened listener failed:", e);
+  }
+}
+
+// Register a handler for a banner's buttons: the shell sends { target, kind,
+// action, text, data }, `text` being what was typed into a reply button.
+export async function onNotificationAction(cb) {
+  if (!inTauri()) return;
+  try {
+    await listen("periscope:notification-action", cb);
+  } catch (e) {
+    console.warn("[tauri] notification-action listener failed:", e);
+  }
+}
+
+// Register every banner category's buttons (notify/actions.js builds the
+// set). macOS replaces the whole set on each call and registers it
+// asynchronously, so the feed sends it when the set changes, never just
+// before posting: a banner posted right behind a registration can show no
+// buttons. An older shell has no listener; its banners carry no buttons.
+export async function setNotifyCategories(set) {
+  if (!inTauri()) return;
+  try {
+    await invoke("plugin:event|emit", { event: "periscope:notify-categories", payload: set });
+  } catch (e) {
+    console.warn("[tauri] setNotifyCategories failed:", e);
   }
 }
 

@@ -34,9 +34,15 @@ const NEEDS_BODY = {
 };
 const CHECK_MARK = { failure: "✗", pending: "⟳", success: "✓" };
 
-// Each event's banner: { kind, title, subtitle, body, target, thread, data }.
+// A usage banner's category when it can offer Spawn on {B}: one per B,
+// because a category's buttons, labels included, are fixed (notify/actions.js).
+export const usageCategory = (to) => `usage_to_${to}`;
+
+// Each event's banner: { kind, title, subtitle, body, target, thread, category, data }.
 // `target` is the pane, so an older shell's plain click can still reveal it;
-// `data` says what a click opens. ctx: { accounts, windows }.
+// `data` says what a click opens. ctx: { accounts, windows, moveTargets }.
+// `category` picks the banner's buttons (notify/actions.js); a kind without
+// one shows none.
 export function payloadFor(ev, ctx = {}) {
   const w = ev.w;
   const base = { kind: ev.kind, thread: ev.kind, target: w?.target || "", data: {} };
@@ -60,34 +66,56 @@ export function payloadFor(ev, ctx = {}) {
         // The linked PR only: an auto-detected one is just the branch's, often
         // days old, and would ride every finished turn.
         subtitle: w.pr && w.pr_linked ? `${w.session} · PR #${w.pr}` : where(w),
-        body: firstSentence(w.recap || w.last_line) || "Finished.", data: { open: "pane", pid: w.pid },
+        body: firstSentence(w.recap || w.last_line) || "Finished.",
+        // Review diff waits on review rows keyed by worktree (THI-433): every
+        // pane shares one tmux session, so a session-keyed review would open
+        // the wrong pane's.
+        category: "done_seen", data: { open: "pane", pid: w.pid, session: w.session },
       };
     case "ci_failed": {
       const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
+      const url = prUrl(w.repo_slug, w.pr);
       return {
         ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
-        body: checks || "Checks are failing.", data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid },
+        body: checks || "Checks are failing.",
+        // No URL, no Open PR to offer (PR 2 adds the "ci_failed" category,
+        // with Ask agent to fix, regardless of a URL).
+        ...(url ? { category: "ci_failed_pr" } : {}),
+        data: { open: "url", url, pid: w.pid },
       };
     }
-    case "pr_merged":
+    case "pr_merged": {
+      const url = prUrl(w.repo_slug, w.pr);
+      let category;
+      if (w.cwd && url) category = "pr_merged";
+      else if (w.cwd) category = "pr_merged_cleanup";
+      else if (url) category = "pr_merged_pr";
       return {
         ...base, title: `PR #${w.pr} merged`,
         subtitle: w.pr_base ? `${w.session} · ${w.branch} → ${w.pr_base}` : where(w),
-        body: "The worktree and its session can be cleaned up.", data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid },
+        body: "The worktree and its session can be cleaned up.",
+        ...(category ? { category } : {}),
+        data: { open: "url", url, pid: w.pid, cwd: w.cwd },
       };
+    }
     case "usage": {
       const registry = ctx.accounts || [];
       const name = clip(registry.find((a) => a.id === ev.account)?.label || ev.account, 16);
       const multi = registry.length > 1;
       const proj = Math.max(...[ev.m.projected_percent, ev.m.projected_recent].filter((v) => v != null), -1);
       const working = (ctx.windows || []).filter((x) => x.state === "working" && x.account === ev.account).length;
+      // Spawn on the account a pane on A would move to (launch_policy.choose_move,
+      // published as move_targets): not launch_default, which can be A itself.
+      const to = ctx.moveTargets?.[ev.account];
+      const spawn = to && to !== ev.account;
       return {
         ...base, target: "",
         title: multi ? `Account ${name} is running hot` : "Usage is running hot",
         subtitle: `${meterLabel(ev.meter)} usage ${Math.round(ev.m.percent ?? 0)}%`
           + (proj >= 0 ? ` · →${Math.round(proj)}% at reset` : ""),
         body: multi ? `${plural(working, "session")} working on ${name}.` : `${plural(working, "session")} working.`,
-        data: { open: "usage" },
+        category: spawn ? usageCategory(to) : "usage",
+        data: spawn ? { open: "usage", spawn_to: to } : { open: "usage" },
       };
     }
     default:

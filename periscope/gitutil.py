@@ -44,6 +44,14 @@ def resolve_repo_and_branch(pinned_dir: str) -> tuple[str, str]:
     return repo, branch
 
 
+def worktree_root(path: str) -> str:
+    """The checkout or worktree root containing `path`, realpath'd — a pane's
+    cwd can sit in a subdirectory. Falls back to `path` itself (realpath'd)
+    when git can't answer."""
+    code, top = _run(["git", "-C", path, "rev-parse", "--show-toplevel"])
+    return os.path.realpath(top if code == 0 and top else path)
+
+
 def detect_default_branch(repo: str) -> str:
     """Resolve a repo's default branch — 'main' / 'master' / similar.
 

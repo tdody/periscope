@@ -11,19 +11,49 @@
 // .cleanup-delete-branches, body.cleanup-modal-open. Escape closes via the
 // shared LIFO useEscape hook.
 import { signal } from "@preact/signals";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { track } from "../track.js";
 import { modalRequest } from "./modalRequest.js";
 
 const open = signal(false);
+// The worktree dirs a notification's "Clean up worktree" scoped this opening
+// to: null for the full list, [] for an explicit "nothing matched" scope —
+// refresh() treats those two differently (see candidatesUrl's caller there).
+const scope = signal(null);
 
-function openCleanupModal() {
-  open.value = true;
-  track("overlay.open", { which: "cleanup" });
+// Only an array counts as a scope (a string must not spread into characters);
+// filter() already copies, isolating the signal from caller mutation.
+export function scopeOf(paths) {
+  return Array.isArray(paths) ? paths.filter(Boolean) : null;
 }
+
+function sameScope(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// `paths` scopes the list (and its preselection) to those worktrees. Same
+// scope as last time (e.g. the same banner clicked twice) keeps the existing
+// signal value so an in-flight edit isn't wiped by a no-op refetch.
+export function openCleanupModal(opts) {
+  const { paths } = opts || {}; // tolerates openCleanupModal(null) too
+  const next = scopeOf(paths);
+  if (!sameScope(next, scope.value)) scope.value = next;
+  open.value = true;
+  track("overlay.open", { which: "cleanup", scoped: !!scope.value });
+}
+
+// Callers must not pass []: an empty scope never fetches (refresh() guards it).
+export function candidatesUrl(paths) {
+  if (!paths?.length) return "/api/cleanup/candidates";
+  return `/api/cleanup/candidates?${paths.map((p) => `paths=${encodeURIComponent(p)}`).join("&")}`;
+}
+
 function close() {
   open.value = false;
+  scope.value = null;
 }
 
 export function CleanupModal() {
@@ -35,17 +65,33 @@ export function CleanupModal() {
   const [checked, setChecked] = useState({});
   const [deleteBranches, setDeleteBranches] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Guards a stale in-flight load: a header full walk takes minutes, and a
+  // scoped banner open that starts and finishes inside that window must not
+  // have the full walk land over it afterwards and replace its list.
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     const btn = document.getElementById("cleanup-btn");
-    if (btn) btn.addEventListener("click", openCleanupModal);
-    return () => { if (btn) btn.removeEventListener("click", openCleanupModal); };
+    const onClick = () => openCleanupModal();
+    if (btn) btn.addEventListener("click", onClick);
+    return () => { if (btn) btn.removeEventListener("click", onClick); };
   }, []);
 
   async function refresh() {
+    const seq = ++loadSeq.current;
     setError("");
     setLoading(true);
-    const { data, error: err } = await modalRequest("load candidates", "/api/cleanup/candidates");
+    setCandidates([]);
+    setChecked({});
+    const sc = scope.peek();
+    if (sc && sc.length === 0) {
+      // An explicit empty scope means nothing matched: never fall through to
+      // the unscoped URL, which would fetch and check every candidate.
+      setLoading(false);
+      return;
+    }
+    const { data, error: err } = await modalRequest("load candidates", candidatesUrl(sc));
+    if (seq !== loadSeq.current) return; // stale: a close or a newer scoped open abandoned us
     setLoading(false);
     if (err) { setError(err); setCandidates([]); return; }
     const cands = data.candidates || [];
@@ -57,10 +103,13 @@ export function CleanupModal() {
   }
 
   useEffect(() => {
-    if (!open.value) return;
+    if (!open.value) {
+      loadSeq.current++; // abandon any in-flight load across a close
+      return;
+    }
     setDeleteBranches(false);
     refresh();
-  }, [open.value]);
+  }, [open.value, scope.value]);
 
   const selectedCount = Object.values(checked).filter(Boolean).length;
 
@@ -80,11 +129,11 @@ export function CleanupModal() {
     setSubmitting(false);
     if (err) { setError(err); return; }
     if (result.failed && result.failed.length > 0) {
-      setError(
+      const msg =
         `Archived ${result.archived.length}, ${result.failed.length} failed: ` +
-        result.failed.map((f) => `${f.pinned_dir.split("/").pop()}: ${f.error}`).join("; ")
-      );
-      await refresh();
+        result.failed.map((f) => `${f.pinned_dir.split("/").pop()}: ${f.error}`).join("; ");
+      await refresh(); // refresh()'s setError("") would otherwise wipe msg before it's ever shown
+      setError((e) => e || msg);
       return;
     }
     close();
@@ -119,8 +168,12 @@ export function CleanupModal() {
         <div id="cleanup-modal-list">
           {loading ? (
             <div class="cleanup-loading">Walking worktrees…</div>
-          ) : candidates.length === 0 ? (
-            <div class="cleanup-empty">No cleanup candidates. 🎉</div>
+          ) : candidates.length === 0 && !error ? (
+            <div class="cleanup-empty">
+              {scope.value
+                ? "Nothing to clean up here. Cleanup only offers a worktree (never a main checkout) whose PR is merged or closed, whose remote branch is gone, or that sits idle."
+                : "No cleanup candidates. 🎉"}
+            </div>
           ) : (
             candidates.map((c, i) => {
               const name = c.project_name || `(untracked: ${c.pinned_dir.split("/").pop()})`;
@@ -154,7 +207,7 @@ export function CleanupModal() {
           <button
             type="button"
             id="cleanup-submit"
-            disabled={selectedCount === 0 || submitting}
+            disabled={loading || submitting || selectedCount === 0}
             onClick={handleSubmit}
           >
             archive selected ({selectedCount})

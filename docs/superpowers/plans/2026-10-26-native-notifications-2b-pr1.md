@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Native banners gain buttons that don't make an agent act:
-- Review diff · Mark seen on `done`;
+- Mark seen on `done` (Review diff was held back in review until THI-433 keys review rows by worktree);
 - Open PR on `ci_failed`;
 - Clean up worktree · Open PR on `pr_merged`;
 - Spawn on {B} · Details on `usage`.
@@ -146,17 +146,20 @@ Expected: the vitest notify suites pass, and cargo reports `test result: ok`. Th
     }
 
     #[test]
-    fn a_kinded_banner_names_its_category_defaulting_to_its_kind() {
-        assert_eq!(category_of(&parse_request(FULL).unwrap()), Some("ci_failed"));
+    fn a_banner_gets_buttons_only_when_it_names_a_category() {
+        // FULL carries a kind but no category — no fallback, so no buttons.
+        assert_eq!(category_of(&parse_request(FULL).unwrap()), None);
         let named = parse_request(r#"{"title":"t","body":"b","kind":"done","category":"done_seen"}"#)
             .unwrap();
         assert_eq!(category_of(&named), Some("done_seen"));
-        // A plain banner (an older webview's) carries no category, so no buttons.
+        // An explicit null category is still no category — no fallback to kind.
+        let null = parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
+        assert_eq!(category_of(&null), None);
+        // A plain banner (an older webview's) carries no kind, so no buttons
+        // even if a category somehow rode along.
         let plain =
             parse_request(r#"{"title":"t","body":"b","target":"s:1","category":"done"}"#).unwrap();
         assert_eq!(category_of(&plain), None);
-        let null = parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
-        assert_eq!(category_of(&null), Some("done"));
     }
 
     #[test]
@@ -190,12 +193,17 @@ Expected: a compile failure: `cannot find function category_specs` / `category_o
 // Buttons (2b): the webview registers the whole category set on
 // "periscope:notify-categories" (when the feed starts and whenever the set
 // changes, never per banner: registration is asynchronous and replaces the
-// set, so a banner posted right behind one can show no buttons). A kinded
-// banner names its category; a press goes out on
-// "periscope:notification-action" as { target, kind, action, text, data }.
-// This shell knows no kinds or buttons: they're data, so a new button needs
-// new JS, not a new .app. An older shell drops the categories event and its
-// banners carry no buttons; an older webview registers none.
+// set, so a banner posted right behind one can show no buttons). A banner
+// only gets buttons when it names a `category` explicitly — never falling
+// back to its `kind`, because 2b's category ids reuse 2a's kind names (done,
+// usage, pr_merged, …) and the registered set outlives the webview: after a
+// JS rollback, an old webview's kind:"done" banners would otherwise match a
+// stale category and grow buttons whose presses nothing listens for (a typed
+// reply silently lost). A press goes out on "periscope:notification-action"
+// as { target, kind, action, text, data }. This shell knows no kinds or
+// buttons: they're data, so a new button needs new JS, not a new .app. An
+// older shell drops the categories event and its banners carry no buttons;
+// an older webview registers none.
 ```
 
 **(b)** Change the imports to:
@@ -234,16 +242,14 @@ const ACTION_EVENT: &str = "periscope:notification-action";
 **(e)** After `fn user_info_json…`, add the pure helpers:
 
 ```rust
-/// The category a banner's buttons come from: its own, else its kind's. `None`
-/// for a plain banner, so an older webview's banner never grows buttons.
+/// The category a banner's buttons come from: its own, explicitly named.
+/// Never falls back to `kind` — 2b's category ids reuse 2a's kind names
+/// (done, usage, pr_merged, …), and the registered set outlives the webview,
+/// so a kind-only fallback would let an old webview's plain-kind banner
+/// (after a JS rollback) match a stale category and grow buttons whose
+/// presses nothing listens for.
 fn category_of(req: &NotifyRequest) -> Option<&str> {
-    if req.kind.is_empty() {
-        None
-    } else if req.category.is_empty() {
-        Some(&req.kind)
-    } else {
-        Some(&req.category)
-    }
+    (!req.kind.is_empty() && !req.category.is_empty()).then_some(req.category.as_str())
 }
 
 /// A text-input button's labels (UNTextInputNotificationAction).
@@ -448,6 +454,8 @@ git commit -m "shell: banners carry buttons — the webview registers categories
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
+**Revised in review:** `category_specs` returns `(specs, dropped)` and dedupes (a repeated category id keeps its last definition, a repeated action id its first), logging what it dropped to `shell.log` at registration; `category_of` never falls back to `kind`, as specced; and a malformed `auth` (e.g. `"yes"`) drops the button rather than registering it unauthenticated; a missing or null `auth` means none is required.
+
 ---
 
 ### Task 2: Server: `?paths=` scopes cleanup candidates to a worktree
@@ -606,6 +614,8 @@ git commit -m "cleanup: ?paths= evaluates only the worktrees holding those dirs,
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+**Revised in review:** `compute_candidates`'s `wanted` is `{worktree_root(p) for p in set(paths) if p} if paths is not None else None` — blank and duplicate entries drop out, and an all-blank list still evaluates as an empty set (never falls through to `None`'s full walk, which would surface the server's own checkout). `test_gitutil.py`'s `worktree_root` cases run against real git (including through a symlink), not a mocked `_run`.
 
 ---
 
@@ -770,6 +780,8 @@ git commit -m "openers for banner buttons: markReadySeen, selectReview, pickSpaw
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+**Revised in review:** `CleanupModal` gained a `loadSeq` guard so a stale load never lands over a newer scoped one, `scopeOf`/`sameScope` helpers (arrays only — a string must not spread into characters) replace the plan's inline `paths?.length ? paths : null`, Archive stays `disabled` while `loading` (not just `submitting`/empty), and a partial archive failure's error message survives the post-failure `refresh()` instead of being wiped by its `setError("")`.
 
 ---
 
@@ -1097,6 +1109,8 @@ git commit -m "notify: actions — the banner categories and what each button do
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
+**Revised in review:** the cleanup case shipped as `const cwd = data.cwd || w?.cwd;` (the banner's own data wins over a moved live pane); the fallbacks and the catch call `show()` (`selectPane` on the live pane found by `data.pid`, else `revealPane(target)`) rather than `revealPane(target)` directly; and "has no Spawn category with one account" was renamed to "has no Spawn category without move targets".
+
 ---
 
 ### Task 5: Banners name their category; the feed registers the set and routes presses
@@ -1229,6 +1243,10 @@ git commit -m "notify: each banner names the category whose buttons apply; the f
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
+**Revised in review:** registration and delivery go through `makeDelivery`'s single promise chain — each step catches its own failure, and a hung `setNotifyCategories` races `REGISTRATION_TIMEOUT_MS` rather than the plan's bare `if (cats) setNotifyCategories(cats)` — so one slow or failed registration can't stall later banners. The category-set build runs inside its own try/catch so a bad `accounts`/`moveTargets` shape can't cost the pass. `out()` carries `categories` on every return by default (not just when the set changes), so an early return can't silently drop a pending registration.
+
+**Revised in the final whole-branch review:** Review diff is deferred to THI-433 (every `done` banner gets `done_seen` only — every managed pane shares one tmux session, so a session-keyed review would open the wrong pane's); Open PR is offered only with a URL, adding `pr_merged_cleanup` (Clean up only) for a `cwd` with no URL and dropping `ci_failed`'s category entirely when it has neither.
+
 ---
 
 ### Task 6: Docs, bundle, gate
@@ -1243,7 +1261,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 In `docs/tauri-shell.md`, after the "**An old shell with new JS** loses:" list (before "So **install a rebuilt `.app`…"), add:
 
 ```markdown
-- the buttons (2b): it never registers the categories the webview sends, so banners arrive without them. A **new shell with old JS** registers none either. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
+- the buttons (2b): it never registers the categories the webview sends, so banners arrive without them. A **new shell with old JS** shows none either: old JS's banners never name a category, and the shell never falls back to a banner's kind (2b's category ids reuse 2a kind names), so even a set a newer webview left registered shows no buttons. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
 ```
 
 In `CLAUDE.md`'s reference table, the row starting ``| `static/src/notify/`, `notifications.rs`…`` becomes:
@@ -1257,7 +1275,7 @@ In `CLAUDE.md`'s reference table, the row starting ``| `static/src/notify/`, `no
 ```bash
 npm run build
 bin/check && npm test && uv run pytest -q
-(cd src-tauri && cargo test --lib notifications 2>&1 | tail -2 && cargo fmt --check)
+(cd src-tauri && cargo test notifications 2>&1 | tail -2 && rustfmt --check --edition 2021 src/notifications.rs)
 ```
 
 Expected:
