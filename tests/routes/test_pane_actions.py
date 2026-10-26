@@ -313,7 +313,10 @@ def test_permission_500s_and_sends_nothing_when_the_pane_cannot_be_read(client, 
 _TEXT = "Postgres, please"
 _EMPTY_ROW = "\x1b[39m❯\xa0"
 _NOT_AT_PROMPT = "the pane's composer isn't at a plain prompt — shell mode or a draft; open it to see"
-_CHANGED = "the pane changed while the reply was typed — it's in the composer, unsent; open it"
+_CHANGED = (
+    "the pane changed while the reply was typed — the text may be in the composer or the dialog;"
+    " nothing was submitted; open it"
+)
 
 
 def _composer(prompt_row: str) -> str:
@@ -464,6 +467,29 @@ def test_reply_never_enters_on_a_dialog_even_with_the_paste_showing(client, pane
     assert r.status_code == 409
     assert r.json()["detail"] == _CHANGED
     _assert_left_unsent(pane)
+
+
+def test_reply_never_enters_under_a_half_drawn_dialog(client, pane, idle, mocker):
+    # Mid-redraw: a dialog's top half above the composer, which still shows
+    # the paste. Enter would land on the dialog once it finishes drawing.
+    top = "─" * 100 + "\n Bash command\n\n   rm -rf build\n\n Do you want to proceed?\n ❯ 1. Yes\n"
+    after = _idle_capture_typed().replace("\n\n\n\x1b[38;2;136;136;136m", "\n" + top + "\x1b[38;2;136;136;136m", 1)
+    assert after != _idle_capture_typed()
+    _screens(mocker, _idle_capture(), after)
+    r = _reply(client)
+    assert r.status_code == 409
+    assert r.json()["detail"] == _CHANGED
+    _assert_left_unsent(pane)
+
+
+def test_reply_logs_a_paste_it_did_not_submit_without_its_text(client, pane, idle, mocker, caplog):
+    secret = "my token is hunter2"
+    _screens(mocker, _IDLE, _screen("bash.txt"))
+    with caplog.at_level("INFO", logger="periscope"):
+        assert _reply(client, secret).status_code == 409
+    lines = [r.getMessage() for r in caplog.records]
+    assert f"pane-action: reply on ab12cd34 (%9), {len(secret)} chars, pasted but not submitted" in lines
+    assert not any("hunter2" in line for line in lines)
 
 
 def test_reply_never_enters_when_the_paste_does_not_show(client, pane, idle, mocker):

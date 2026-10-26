@@ -1494,3 +1494,65 @@ _REPLY = "CI failed on #12: lint, unit. Please investigate and fix."
 )
 def test_composer_holds(screen, holds):
     assert composer_holds(screen(), _REPLY) is holds
+
+
+# Real 2.1.280 captures of the composer just after a bracketed paste: a short
+# reply shown as typed (default fg), and 29 lines collapsed to a placeholder
+# (its footer reads "paste again to expand").
+_PASTED_SHORT = "CI failed on #7: test (ubuntu, 3.12). Please investigate and fix."
+
+
+def test_a_real_short_paste_is_held_and_only_that_text():
+    screen = _composer_capture("pasted_short.txt")
+    assert composer_holds(screen, _PASTED_SHORT)
+    assert not composer_holds(screen, "CI failed on #8: lint. Please investigate and fix.")
+    assert not composer_ready(screen)
+
+
+def test_a_real_collapsed_paste_is_held_by_its_placeholder():
+    screen = _composer_capture("pasted_long.txt")
+    assert composer_holds(screen, "\n".join(f"line {i}: something to fix" for i in range(29)))
+    assert not composer_ready(screen)
+
+
+def test_composer_holds_compares_the_start_of_the_reply():
+    # The first look saw an empty composer; this text isn't the reply.
+    assert not composer_holds(_with_composer_row("\x1b[39m❯\xa0Postgres is down"), "Postgres, please")
+    assert composer_holds(_with_composer_row("\x1b[39m❯\xa0Postgres, please"), "Postgres, please")
+
+
+def _over_composer(rows: str, composer_row: str = "\x1b[39m❯\xa0Postgres, please") -> str:
+    """The idle capture with `rows` drawn just above the composer's top rule,
+    as a mid-redraw capture can catch a dialog's top half."""
+    screen = _with_composer_row(composer_row)
+    rule = "\x1b[38;2;136;136;136m" + "─" * 100
+    assert screen.count(rule) == 2
+    return screen.replace(rule, rows.rstrip("\n") + "\n" + rule, 1)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        # The dialog's own full-width rule, header and question, options not yet drawn.
+        "─" * 100 + "\n Bash command\n\n   rm -rf build\n\n Do you want to proceed?",
+        # Its question with `1. Yes` under it, the cursor there or moved down.
+        " Do you want to proceed?\n ❯ 1. Yes",
+        " Do you want to proceed?\n   1. Yes\n ❯ 2. Yes, and don't ask again",
+        # `1. Yes` under the cursor, the question cut off above.
+        " ❯ 1. Yes\n   2. No",
+        # Its footer.
+        " Esc to cancel · Tab to amend",
+    ],
+    ids=["rule-and-question", "question-and-yes", "question-then-yes-cursor-below", "cursor-on-yes", "footer"],
+)
+def test_a_half_drawn_dialog_above_the_composer_refuses_both_looks(rows):
+    assert not composer_holds(_over_composer(rows), "Postgres, please")
+    assert not composer_ready(_over_composer(rows, "\x1b[39m❯\xa0"))
+
+
+def test_a_question_asked_in_prose_above_the_composer_is_fine():
+    # How Claude asks in a reply, which is what a reply answers: no rule, no
+    # options under it, no footer.
+    rows = "⏺ I've drafted the migration.\n\n  Do you want to run it now?"
+    assert composer_holds(_over_composer(rows), "Postgres, please")
+    assert composer_ready(_over_composer(rows, "\x1b[39m❯\xa0"))

@@ -186,7 +186,8 @@ def pane_reply(body: ReplyBody):
 
     Then the paste goes in alone, and Enter follows only when a fresh capture
     shows no dialog and the paste in the composer (panes.composer_holds);
-    otherwise 409, the reply left in the composer, unsent."""
+    otherwise 409 with nothing submitted (the paste may sit in the composer,
+    or in a dialog that took focus)."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "nothing to send")
@@ -213,8 +214,11 @@ def pane_reply(body: ReplyBody):
             )
         _send_to_target(target, text, [], address=pane_id)
         if not _submit_when_held(target, pane_id, text):
+            log.info("pane-action: reply on %s (%s), %d chars, pasted but not submitted", pid, pane_id, len(text))
             raise HTTPException(
-                409, "the pane changed while the reply was typed — it's in the composer, unsent; open it"
+                409,
+                "the pane changed while the reply was typed — the text may be in the composer or the dialog;"
+                " nothing was submitted; open it",
             )
     log.info("pane-action: reply on %s (%s), %d chars", pid, pane_id, len(text))
     return {"ok": True}

@@ -779,18 +779,42 @@ _FOOTER_REACH = 6
 # How much of a reply's start the composer must show back before its Enter:
 # enough to tell it from anything else, short enough for the first row.
 _HOLDS_PREFIX = 24
+# Non-empty rows above the composer's top rule searched for a dialog drawn
+# over the screen mid-redraw: Claude rewrites only the rows that change, so a
+# capture can catch a dialog's top half above a composer still intact below.
+_DIALOG_TOP_REACH = 16
+
+
+def _dialog_above(rows: list[str]) -> bool:
+    """Whether the rows above a composer show part of a dialog: its own
+    full-width rule (a reply's hr is indented, never at column 0), an `Esc to
+    cancel`, or a `1. Yes` option under its cursor or right under a "Do you
+    want to …?". A bare "Do you want to …?" doesn't count: that's how Claude
+    asks in prose, which is what a reply answers."""
+    above = [row for row in rows if row.strip()][-_DIALOG_TOP_REACH:]
+    for i, row in enumerate(above):
+        if DIALOG_RULE_RE.match(row) or DIALOG_CANCEL_RE.search(row):
+            return True
+        if PERMISSION_YES_RE.match(row) and (
+            row.lstrip().startswith("❯") or (i and PERMISSION_QUESTION_RE.match(above[i - 1]))
+        ):
+            return True
+    return False
 
 
 def _composer_rows(content: str) -> list[tuple[str, str]] | None:
     """(raw, plain) of the non-empty rows between the LAST two full-width
     rules, where Claude draws its composer, or None when there is no such
-    pair or more than _FOOTER_REACH rows follow it."""
+    pair, more than _FOOTER_REACH rows follow it, or part of a dialog shows
+    above it (_dialog_above)."""
     raw_rows = content.rstrip("\n").split("\n")
     plain_rows = [_strip_escapes(row).rstrip() for row in raw_rows]
     rules = [i for i, row in enumerate(plain_rows) if DIALOG_RULE_RE.match(row)]
     if len(rules) < 2:
         return None
     if sum(1 for row in plain_rows[rules[-1] + 1 :] if row.strip()) > _FOOTER_REACH:
+        return None
+    if _dialog_above(plain_rows[: rules[-2]]):
         return None
     return [(raw_rows[i], plain_rows[i]) for i in range(rules[-2] + 1, rules[-1]) if plain_rows[i].strip()]
 
