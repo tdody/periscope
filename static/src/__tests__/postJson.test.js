@@ -14,6 +14,7 @@ describe("postJson", () => {
     expect(await postJson("/api/pane/reply", { pid: "p1", text: "hi" })).toEqual({ ok: true, status: 200, detail: "HTTP 200" });
     expect(spy).toHaveBeenCalledWith("/api/pane/reply", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pid: "p1", text: "hi" }),
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -22,9 +23,19 @@ describe("postJson", () => {
     expect(await postJson("/x", {})).toEqual({ ok: false, status: 409, detail: "stale" });
   });
 
-  it("says the status for a validation error's list detail", async () => {
+  it("prefers a validation error's first message over the bare status", async () => {
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, json: async () => ({ detail: [{ msg: "x" }] }) }));
+    expect((await postJson("/x", {})).detail).toBe("x");
+  });
+
+  it("falls back to the bare status when the list detail has no message", async () => {
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, json: async () => ({ detail: [] }) }));
     expect((await postJson("/x", {})).detail).toBe("HTTP 422");
+  });
+
+  it("uses a string error field over the bare status", async () => {
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 400, json: async () => ({ error: "bad request" }) }));
+    expect((await postJson("/x", {})).detail).toBe("bad request");
   });
 
   it("tolerates a body that isn't JSON", async () => {

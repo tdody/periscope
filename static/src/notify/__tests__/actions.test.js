@@ -204,8 +204,12 @@ describe("runAction: the buttons that make an agent act", () => {
     await runAction({ target: "s:1", action: "deny", data: PERMISSION }, o);
     expect(o.post).toHaveBeenLastCalledWith("/api/pane/permission", { ...PERMISSION, choice: "deny" });
     // Success shows nothing more: the pane's next state shows it working.
+    // (selectPane alone would pass trivially here — no window matches PERMISSION's
+    // pid — so revealPane is the assertion that actually catches a regression.)
     expect(o.selectPane).not.toHaveBeenCalled();
+    expect(o.revealPane).not.toHaveBeenCalled();
     expect(o.toast).not.toHaveBeenCalled();
+    expect(o.notify).not.toHaveBeenCalled();
   });
 
   it("a 409 (the banner went stale) shows the pane as it is now, without a toast", async () => {
@@ -224,11 +228,12 @@ describe("runAction: the buttons that make an agent act", () => {
     expect(o.toast).toHaveBeenCalledWith("Deny failed: tmux died", "bad", 6000);
   });
 
-  it("never rejects, even when the request itself throws", async () => {
+  it("never rejects, even when the request itself throws; every failure still posts a notice", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const o = { ...openers(), post: vi.fn(async () => { throw new Error("boom"); }) };
     await expect(runAction({ target: "s:1", action: "allow", data: PERMISSION }, o)).resolves.toBeUndefined();
     expect(o.revealPane).toHaveBeenCalledWith("s:1");
+    expect(o.notify).toHaveBeenCalled();
   });
 
   it("a banner without a pane has nothing to answer: it reveals instead", async () => {
@@ -236,6 +241,15 @@ describe("runAction: the buttons that make an agent act", () => {
     await runAction({ target: "s:1", action: "allow", data: { request_id: "a1b2c3d4e5f60718" } }, o);
     expect(o.post).not.toHaveBeenCalled();
     expect(o.revealPane).toHaveBeenCalledWith("s:1");
+    expect(o.notify).not.toHaveBeenCalled();
+  });
+
+  it("a banner naming no request has nothing to answer either, like a missing pid: it reveals instead", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "deny", data: { pid: "p1" } }, o);
+    expect(o.post).not.toHaveBeenCalled();
+    expect(o.revealPane).toHaveBeenCalledWith("s:1");
+    expect(o.notify).not.toHaveBeenCalled();
   });
 
   it("Reply sends the typed text, trimmed; an empty reply does nothing", async () => {
@@ -274,8 +288,9 @@ describe("runAction: every category's action is handled", () => {
   // nothing on a real press. Walk every action id any category can carry
   // (including a usage_to_* one, so spawn_on is in the set) and assert none
   // of them hit that default.
-  it("every action id that categories() can register has a case (no unknown-action warning)", async () => {
+  it("every action id that categories() can register has a case (no unknown-action warning, no caught error)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
     const ids = new Set(categories({ accounts, moveTargets: { default: "b" } }).flatMap((c) => c.actions.map((a) => a.id)));
     const data = {
@@ -286,43 +301,87 @@ describe("runAction: every category's action is handled", () => {
       await runAction({ target: "s:1", action, text: "hi", data }, openers());
     }
     expect(warn).not.toHaveBeenCalled();
+    expect(err).not.toHaveBeenCalled();
   });
 });
 
-describe("runAction: the follow-up banner on a failed background press", () => {
+describe("runAction: the follow-up notice on a failed background press", () => {
+  // show() and the toast land in a hidden window on these presses (the app
+  // isn't foregrounded for them), so the notice is what the shell can
+  // actually show: it needs body (the shell's NotifyRequest has no serde
+  // default for it — a notice with none never parses) and target (so a click
+  // still reveals a gone pane, the same fallback every copy.js banner has).
   const PERMISSION = { pid: "p1", request_id: "a1b2c3d4e5f60718" };
+  const PERMISSION_409 = "The dialog changed — open the pane to answer it.";
+  const REPLY_409 = "The pane has a dialog open, or isn't running an agent — open it to see why.";
   const CASES = [
-    ["allow", { target: "s:1", action: "allow", data: PERMISSION }],
-    ["deny", { target: "s:1", action: "deny", data: PERMISSION }],
-    ["send", { target: "s:1", action: "send", text: "hi", data: { pid: "p1" } }],
-    ["fix", { target: "s:1", action: "fix", data: { pid: "p1", pr: 7, checks: ["test"] } }],
+    { action: "allow", evt: { target: "s:1", action: "allow", data: PERMISSION }, title: "Couldn't allow", route409: PERMISSION_409 },
+    { action: "deny", evt: { target: "s:1", action: "deny", data: PERMISSION }, title: "Couldn't deny", route409: PERMISSION_409 },
+    { action: "send", evt: { target: "s:1", action: "send", text: "hi", data: { pid: "p1" } }, title: "Couldn't send your reply", route409: REPLY_409 },
+    { action: "fix", evt: { target: "s:1", action: "fix", data: { pid: "p1", pr: 7, checks: ["test"] } }, title: "Couldn't ask the agent to fix", route409: REPLY_409 },
   ];
 
-  for (const [verb, evt] of CASES) {
-    it(`${verb}: a 409 posts a plain follow-up banner, clickable back to the pane`, async () => {
-      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 409, detail: "stale" })) };
+  for (const { action, evt, title, route409 } of CASES) {
+    it(`${action}: a 409 with no server reason gets the route's canned one, target set for a click on a gone pane`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 409, detail: "HTTP 409" })) };
       await runAction(evt, o);
       expect(o.notify).toHaveBeenCalledWith({
-        kind: "notice", title: `Couldn't ${verb} — the dialog changed`, data: { open: "pane", pid: "p1" },
+        kind: "notice", thread: "notice", title, body: route409, target: "s:1",
+        data: { open: "pane", pid: "p1" }, quiet_when_focused: true,
       });
     });
 
-    it(`${verb}: any other failure posts a plain follow-up banner naming the reason`, async () => {
+    it(`${action}: a 409 with the server's own reason uses that instead of the canned one`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 409, detail: "another request already answered it" })) };
+      await runAction(evt, o);
+      expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({ title, body: "another request already answered it" }));
+    });
+
+    it(`${action}: a 404 says the pane is gone, whatever the server's detail says`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 404, detail: "HTTP 404" })) };
+      await runAction(evt, o);
+      expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({ title, body: "The pane is gone." }));
+    });
+
+    it(`${action}: status 0 says Periscope isn't answering`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 0, detail: "offline" })) };
+      await runAction(evt, o);
+      expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({ title, body: "Periscope isn't answering." }));
+    });
+
+    it(`${action}: any other failure names the server's own reason, and still toasts it`, async () => {
       const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 500, detail: "tmux died" })) };
       await runAction(evt, o);
-      expect(o.notify).toHaveBeenCalledWith({
-        kind: "notice", title: `Couldn't ${verb} — tmux died`, data: { open: "pane", pid: "p1" },
-      });
+      expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({ title, body: "tmux died" }));
+      expect(o.toast).toHaveBeenCalled();
     });
   }
 
-  it("a success posts no follow-up banner", async () => {
+  it("a success posts no notice", async () => {
     const o = openers();
     await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
     expect(o.notify).not.toHaveBeenCalled();
   });
 
-  // The banner's own click routing (data.open: "pane") is the same shape
-  // copy.js's needs_input banner already uses, and feed.test.js's
-  // openFromBanner suite covers selecting the pane by pid from it.
+  it("every notice payload has a string title and a string body (the shell's NotifyRequest requires both)", async () => {
+    const statuses = [
+      { status: 409, detail: "stale" }, { status: 409, detail: "HTTP 409" },
+      { status: 404, detail: "HTTP 404" }, { status: 0, detail: "offline" }, { status: 500, detail: "tmux died" },
+    ];
+    for (const { evt } of CASES) {
+      for (const s of statuses) {
+        const o = { ...openers(), post: vi.fn(async () => ({ ok: false, ...s })) };
+        await runAction(evt, o);
+        expect(o.notify).toHaveBeenCalledTimes(1);
+        const payload = o.notify.mock.calls[0][0];
+        expect(typeof payload.title).toBe("string");
+        expect(typeof payload.body).toBe("string");
+      }
+    }
+  });
+
+  // The notice's click routing (data.open: "pane", target as its fallback) is
+  // the same shape copy.js's needs_input banner already uses; feed.test.js's
+  // openFromBanner suite covers selecting the pane by pid or revealing the
+  // target from it.
 });

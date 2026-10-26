@@ -74,10 +74,36 @@ export const OPENERS = Object.freeze({
 // What a failed agent-acting press says in its toast.
 const ACT_LABEL = { allow: "Allow", deny: "Deny", send: "Reply", fix: "Ask agent to fix" };
 
-// The short verb a failed agent-acting press names itself in its follow-up
-// native banner ("Couldn't allow — …") — distinct from ACT_LABEL, which names
-// the button for the toast.
-const NOTICE_VERB = { allow: "allow", deny: "deny", send: "send", fix: "fix" };
+// What a failed agent-acting press titles its follow-up notice (a full
+// sentence fragment, not ACT_LABEL's button name: "Couldn't ask the agent to
+// fix" reads better than "Ask agent to fix failed").
+const NOTICE_TITLE = {
+  allow: "Couldn't allow", deny: "Couldn't deny", send: "Couldn't send your reply", fix: "Couldn't ask the agent to fix",
+};
+
+// allow/deny have nothing to answer without the dialog's own request_id
+// (same reasoning as the missing-pid guard below): a stale banner's id would
+// answer a dialog that moved on.
+const NEEDS_REQUEST_ID = new Set(["allow", "deny"]);
+
+// A route's canned 409 reason, used only when the server's own detail is
+// just postJson's generic HTTP fallback (i.e. it said nothing route-specific).
+const ROUTE_409 = {
+  "/api/pane/permission": "The dialog changed — open the pane to answer it.",
+  "/api/pane/reply": "The pane has a dialog open, or isn't running an agent — open it to see why.",
+};
+
+// The follow-up notice's body, by status: 404/0 get a plain human reason; a
+// 409 gets the route's canned one unless the server already said something
+// more specific; anything else is the server's own detail.
+function noticeBody(path, r) {
+  if (r?.status === 404) return "The pane is gone.";
+  if (r?.status === 0) return "Periscope isn't answering.";
+  if (r?.status === 409) {
+    return typeof r.detail === "string" && r.detail !== `HTTP ${r.status}` ? r.detail : ROUTE_409[path];
+  }
+  return r?.detail || "no answer";
+}
 
 // The message Ask agent to fix types into the pane: the PR and the names of
 // its failing checks (copy.js puts them in data.checks).
@@ -92,34 +118,35 @@ export function fixMessage(pr, checks) {
 // now. Any other failure shows it too, with the error. Allow / Deny / Send /
 // Fix are background presses — the app isn't brought forward for them — so
 // show() and the toast land in a hidden window where nobody sees them; a
-// plain follow-up banner (kind "notice", no category, data.open: "pane" —
-// openFromBanner already opens that by pid) is what actually reaches the
-// user, on every failure. Success needs nothing: the pane's next state shows
-// it working. Never rejects.
-async function agentAct(action, path, body, show, o) {
+// plain follow-up notice (kind "notice", no category, data.open: "pane" —
+// openFromBanner already opens that by pid, `target` as its fallback, same as
+// every copy.js banner) is what actually reaches the user, on every failure,
+// posted before the toast since the toast is the one that's invisible here.
+// Success needs nothing: the pane's next state shows it working. Never rejects.
+async function agentAct({ target, show }, action, path, body, o) {
+  // Deferred a tick so a throwing/rejecting o.notify (a dead IPC call, say)
+  // can't take the rest of this function down with it.
   const notice = (reason) => {
-    try {
-      o.notify({ kind: "notice", title: `Couldn't ${NOTICE_VERB[action]} — ${reason}`, data: { open: "pane", pid: body.pid } });
-    } catch (e) {
-      console.error("[notify] follow-up failed", e);
-    }
+    Promise.resolve()
+      .then(() => o.notify({
+        kind: "notice", thread: "notice", title: NOTICE_TITLE[action], body: reason, target,
+        data: { open: "pane", pid: body.pid }, quiet_when_focused: true,
+      }))
+      .catch((e) => console.error("[notify] follow-up failed", e));
   };
   try {
-    if (!body.pid) {
+    if (!body.pid || (NEEDS_REQUEST_ID.has(action) && !body.request_id)) {
       show();
       return;
     }
     const r = await o.post(path, body);
     if (r?.ok) return;
     show();
-    if (r?.status === 409) {
-      notice("the dialog changed");
-    } else {
-      o.toast(`${ACT_LABEL[action]} failed: ${r?.detail || "no answer"}`, "bad", 6000);
-      notice(r?.detail || "no answer");
-    }
+    notice(noticeBody(path, r));
+    if (r?.status !== 409) o.toast(`${ACT_LABEL[action]} failed: ${r?.detail || "no answer"}`, "bad", 6000);
   } catch (e) {
     console.error("[notify] action failed", action, e);
+    notice(e?.message || "Periscope isn't answering.");
     try {
       show();
     } catch (e2) {
@@ -179,15 +206,15 @@ export function runAction({ target, action, text, data } = {}, o = OPENERS) {
       }
       case "allow":
       case "deny":
-        return agentAct(action, "/api/pane/permission", { pid: data.pid, request_id: data.request_id, choice: action }, show, o);
+        return agentAct({ target, show }, action, "/api/pane/permission", { pid: data.pid, request_id: data.request_id, choice: action }, o);
       case "send": {
         // An empty reply says nothing; there's nothing to send.
         const reply = String(text || "").trim();
         if (!reply) return;
-        return agentAct(action, "/api/pane/reply", { pid: data.pid, text: reply }, show, o);
+        return agentAct({ target, show }, action, "/api/pane/reply", { pid: data.pid, text: reply }, o);
       }
       case "fix":
-        return agentAct(action, "/api/pane/reply", { pid: data.pid, text: fixMessage(data.pr, data.checks) }, show, o);
+        return agentAct({ target, show }, action, "/api/pane/reply", { pid: data.pid, text: fixMessage(data.pr, data.checks) }, o);
       case "open":
         show();
         return;
