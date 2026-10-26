@@ -663,9 +663,13 @@ def dialog_open(content: str) -> bool:
 
 
 _SGR_SPLIT_RE = re.compile(r"(\x1b\[[0-9;]*m)")
-# Ghost suggestions are drawn dim, bright-black, or in the dark half of the
-# 256-color grey ramp. Anything else after the prompt is treated as typed.
-_GHOST_256 = frozenset({8, *range(232, 248)})
+# Ghost suggestions are drawn dim, bright-black, or a mid grey: 256-color
+# ramp entries 238-247 (levels 68-158), or an RGB grey of 64-160. Anything
+# else after the prompt is treated as typed, a near-black grey included: that
+# is a draft in a dark theme's text colour, and reading a draft as a
+# suggestion lets a send be appended to it and submitted with it.
+_GHOST_FLOOR = 64
+_GHOST_256 = frozenset({8, *range(238, 248)})
 
 
 def _sgr_fg(params: list[str], fg: tuple | None, dim: bool) -> tuple[tuple | None, bool]:
@@ -701,7 +705,7 @@ def _ghost_colored(fg: tuple | None, dim: bool) -> bool:
     if fg and fg[0] == "256":
         return fg[1] in _GHOST_256
     if fg and fg[0] == "rgb":
-        return max(fg[1:]) - min(fg[1:]) <= 24 and max(fg[1:]) <= 160
+        return max(fg[1:]) - min(fg[1:]) <= 24 and min(fg[1:]) >= _GHOST_FLOOR and max(fg[1:]) <= 160
     return False
 
 

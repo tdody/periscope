@@ -476,6 +476,17 @@ GHOST_CASES: list[tuple[str, str, str | None]] = [
     # Grey prefix then default-fg text, with no placeholder: the ghost rule is
     # all-or-nothing, so one typed glyph makes it a draft.
     ("grey-then-default-fg", f"\x1b[39m❯\xa0\x1b[38;5;240mdraft\x1b[39m continues\n{STATUS_LINE}\n", "draft continues"),
+    # A mid-grey RGB suggestion is ghost text...
+    ("rgb-grey-ghost", f"\x1b[39m❯\xa0\x1b[38;2;102;102;102mtry the tests\x1b[39m\n{STATUS_LINE}\n", None),
+    # ...but a near-black one is a draft in a dark text colour, whether RGB or
+    # the 256-color ramp's dark end: below the grey floor counts as typed.
+    ("rgb-black-draft", f"\x1b[39m❯\xa0\x1b[38;2;0;0;0mhalf a thought\x1b[39m\n{STATUS_LINE}\n", "half a thought"),
+    (
+        "rgb-dark-grey-draft",
+        f"\x1b[39m❯\xa0\x1b[38;2;40;40;40mhalf a thought\x1b[39m\n{STATUS_LINE}\n",
+        "half a thought",
+    ),
+    ("256-near-black-draft", f"\x1b[39m❯\xa0\x1b[38;5;233mhalf a thought\x1b[39m\n{STATUS_LINE}\n", "half a thought"),
 ]
 
 
