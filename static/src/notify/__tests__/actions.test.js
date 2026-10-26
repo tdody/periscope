@@ -95,7 +95,7 @@ describe("runAction", () => {
   it("Spawn on with no destination calls no opener", () => {
     const o = openers();
     runAction({ target: "", action: "spawn_on", data: {} }, o);
-    expect(o.pickSpawnAccount).not.toHaveBeenCalled();
+    expect(Object.values(o).some((f) => f.mock.calls.length)).toBe(false);
   });
 
   it("Mark seen finds the pane by pid, and does nothing once it's gone", () => {
