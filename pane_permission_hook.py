@@ -49,12 +49,19 @@ _KEEP_S = 86400  # a dialog left open longer than a day is not a banner's busine
 _SUMMARY_MAX = 80
 # The dialog names these by file (relative to the cwd); the banner shows the path.
 _FILE_TOOLS = ("Edit", "Write", "NotebookEdit")
+# Bidi overrides/isolates and zero-width marks: invisible in the dialog but can
+# reorder or hide characters, so a summary built from them could read as
+# something other than what Allow actually approves. Stripped before anything
+# else touches the text.
+_HIDDEN_RE = re.compile("[​-‏‪-‮⁦-⁩﻿]")
 
 
 def _clip(text: str, keep_end: bool = False) -> str:
-    """Whitespace collapsed, at most _SUMMARY_MAX characters. A path keeps its
-    end: routes/pane_actions.py matches a file tool's dialog on the basename."""
-    s = re.sub(r"\s+", " ", text).strip()
+    """Hidden bidi/zero-width characters stripped, whitespace collapsed (so a
+    multi-line command still fits in one line), at most _SUMMARY_MAX
+    characters. A path keeps its end: routes/pane_actions.py matches a file
+    tool's dialog on the basename."""
+    s = re.sub(r"\s+", " ", _HIDDEN_RE.sub("", text)).strip()
     if len(s) <= _SUMMARY_MAX:
         return s
     return "…" + s[1 - _SUMMARY_MAX :] if keep_end else s[: _SUMMARY_MAX - 1] + "…"
@@ -65,8 +72,10 @@ def summarize(tool: str, tool_input: object) -> str:
     if not isinstance(tool_input, dict):
         return ""
     if tool == "Bash":
-        lines = str(tool_input.get("command") or "").strip().splitlines()
-        return _clip(lines[0] if lines else "")
+        # The WHOLE command, not just its first line: Allow approves all of
+        # it, and the dialog (what the screen check matches against) shows
+        # it wrapped across lines, not truncated to the first.
+        return _clip(str(tool_input.get("command") or ""))
     if tool in _FILE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         return _clip(str(path), keep_end=True)

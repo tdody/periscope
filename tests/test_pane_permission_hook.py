@@ -44,7 +44,8 @@ def _rows(db: Path) -> list[tuple]:
 
 
 def test_summary_per_tool():
-    assert hook.summarize("Bash", {"command": "  git status\n  && rm -rf build"}) == "git status"
+    # Whole command, not just its first line: Allow approves all of it.
+    assert hook.summarize("Bash", {"command": "  git status\n  && rm -rf build"}) == "git status && rm -rf build"
     assert hook.summarize("Bash", {"command": "echo   a\tb"}) == "echo a b"
     assert hook.summarize("Edit", {"file_path": "/r/src/app.py", "old_string": "x"}) == "/r/src/app.py"
     assert hook.summarize("Write", {"file_path": "/r/notes.md", "content": "hello"}) == "/r/notes.md"
@@ -63,6 +64,20 @@ def test_summary_is_capped_at_80_characters():
     # A path keeps its end: the dialog is matched on the basename.
     long_path = hook.summarize("Write", {"file_path": "/very" * 40 + "/notes.md"})
     assert len(long_path) == 80 and long_path.startswith("…") and long_path.endswith("/notes.md")
+
+
+def test_bash_summary_is_the_whole_multiline_command():
+    # The banner's screen check strips all whitespace, so a summary spanning
+    # lines still matches a dialog that wraps the same command.
+    assert hook.summarize("Bash", {"command": "cd /tmp\nrm -rf build"}) == "cd /tmp rm -rf build"
+    long_cmd = hook.summarize("Bash", {"command": "echo a\n" + "b " * 100})
+    assert len(long_cmd) == 80 and long_cmd.endswith("…")
+
+
+def test_summary_strips_bidi_and_zero_width_controls():
+    hidden = "‮rm​ -rf‌ /‍‎‏﻿"
+    assert hook.summarize("Bash", {"command": hidden}) == "rm -rf /"
+    assert hook.summarize("WebFetch", {"url": "https://x⁦.example⁩.com"}) == "https://x.example.com"
 
 
 def test_request_id_is_16_hex_and_names_one_request():
