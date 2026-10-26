@@ -89,11 +89,12 @@ def test_permission_sends_the_choices_key(client, pane, fresh_activity_db, choic
     r = _permission(client, choice=choice)
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True}
-    pane.assert_called_once_with("s:4", None, keys)
+    pane.assert_called_once_with("s:4", None, keys, address="%9")
     # Looked up by the pane the pid resolves to now, never by the banner's target.
     pane_actions.session_id_for_pane.assert_called_with("%9")
     pane_actions.needs_since_for.assert_called_with("ab12cd34")
-    pane_actions.capture.assert_called_with("s:4")
+    # Read and sent by %id: tmux re-resolves `s:4` at send time.
+    pane_actions.capture.assert_called_with("%9")
 
 
 @pytest.mark.parametrize(
@@ -112,7 +113,7 @@ def test_allow_answers_each_dialog_its_row_names(client, pane, fresh_activity_db
     mocker.patch.object(pane_actions, "capture", return_value=_screen(fixture))
     r = _permission(client, choice="allow")
     assert r.status_code == 200, r.text
-    pane.assert_called_once_with("s:4", None, ["1"])
+    pane.assert_called_once_with("s:4", None, ["1"], address="%9")
 
 
 def test_the_keys_pane_actions_sends_fit_the_dialogs_options():
@@ -140,6 +141,14 @@ def test_permission_rejects_any_other_choice(client, pane, fresh_activity_db):
 def test_permission_404s_for_a_pane_that_is_gone(client, pane, fresh_activity_db, mocker):
     _row(fresh_activity_db)
     mocker.patch.object(pane_actions, "window_by_pid", return_value=("", "", {}))
+    assert _permission(client, choice="allow").status_code == 404
+    pane.assert_not_called()
+
+
+def test_permission_404s_without_a_pane_id_to_address(client, pane, fresh_activity_db, mocker):
+    _row(fresh_activity_db)
+    window = {"session": "s", "index": 4, "pane_id": "", "current_command": "claude.exe"}
+    mocker.patch.object(pane_actions, "window_by_pid", return_value=("ab12cd34", "", window))
     assert _permission(client, choice="allow").status_code == 404
     pane.assert_not_called()
 
@@ -217,7 +226,7 @@ def test_a_request_is_answered_once(client, pane, fresh_activity_db):
     assert _permission(client, choice="allow").status_code == 200
     assert _permission(client, choice="allow").status_code == 409
     assert _permission(client, choice="deny").status_code == 409
-    pane.assert_called_once_with("s:4", None, ["1"])
+    pane.assert_called_once_with("s:4", None, ["1"], address="%9")
 
 
 def test_a_failed_send_is_not_retried_from_a_banner(client, pane, fresh_activity_db):
@@ -308,7 +317,7 @@ def test_reply_pastes_then_enters(client, pane, idle):
     r = _reply(client, "  Postgres, please  ")
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True}
-    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"], address="%9")
 
 
 def test_reply_goes_to_a_working_agent(client, pane, mocker):
@@ -324,7 +333,7 @@ def test_reply_goes_to_an_unmapped_pane_showing_claude(client, pane, mocker):
     mocker.patch.object(pane_actions, "session_state_for", return_value=None)
     mocker.patch.object(pane_actions, "capture", return_value=_CLAUDE_ON_SCREEN)
     assert _reply(client).status_code == 200
-    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"], address="%9")
 
 
 def test_reply_rejects_empty_text(client, pane, idle):
@@ -450,10 +459,10 @@ def test_reply_409s_in_shell_mode(client, pane, idle, mocker, name):
 def test_reply_goes_to_an_empty_composer(client, pane, idle, mocker, prompt_row):
     mocker.patch.object(pane_actions, "capture", return_value=_composer(prompt_row))
     assert _reply(client).status_code == 200
-    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"], address="%9")
 
 
 def test_reply_goes_to_a_real_idle_composer(client, pane, idle, mocker):
     mocker.patch.object(pane_actions, "capture", return_value=(_COMPOSER / "idle.txt").read_text())
     assert _reply(client).status_code == 200
-    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"], address="%9")

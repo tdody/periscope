@@ -81,16 +81,18 @@ class ReplyBody(BaseModel):
 def _live_pane(handle: str) -> tuple[str, str, str, dict]:
     """(pid, pane_id, target, window) of the live pane, found by pid — never
     by a target tmux may have renumbered since the banner was posted
-    (invariant 11). Callers build nothing from the banner but the pid."""
+    (invariant 11). Callers build nothing from the banner but the pid, and
+    capture and send by pane_id (`%N`): the pane every check was made on,
+    where `session:index` is re-resolved by tmux at send time."""
     pid, pane_id, window = window_by_pid(handle)
-    if not window:
+    if not window or not pane_id:
         raise HTTPException(404, f"no live pane for pid {handle!r}")
     return pid, pane_id, f"{window['session']}:{window['index']}", window
 
 
-def _screen(target: str) -> str:
+def _screen(pane_id: str) -> str:
     try:
-        return capture(target)
+        return capture(pane_id)
     except Exception as e:
         raise HTTPException(500, f"could not read the pane: {e}") from e
 
@@ -118,11 +120,11 @@ def pane_permission(body: PermissionBody):
             raise HTTPException(409, "the pane isn't waiting on a permission request periscope can verify")
         if row["request_id"] != body.request_id:
             raise HTTPException(409, "the pane is asking about a different request now")
-        parsed = parse_permission_dialog(_screen(target))
+        parsed = parse_permission_dialog(_screen(pane_id))
         if parsed is None or not dialog_matches(parsed, row["tool"], row["match_key"]):
             raise HTTPException(409, "the dialog on screen isn't the request's")
         _ANSWERED.append(body.request_id)
-        _send_to_target(target, None, keys)
+        _send_to_target(target, None, keys, address=pane_id)
     log.info("pane-action: %s %s on %s (%s, %s)", body.choice, row["tool"], pid, pane_id, body.request_id)
     return {"ok": True}
 
@@ -151,7 +153,7 @@ def pane_reply(body: ReplyBody):
         if sess.get("state") == "needs-input":
             waiting = sess.get("waiting_for") or "needs input"
             raise HTTPException(409, f"the pane has a dialog open ({waiting}) — answer it first")
-        screen = _screen(target)
+        screen = _screen(pane_id)
         if dialog_open(screen):
             raise HTTPException(409, "the pane has a dialog open — answer it first")
         foreground = (window.get("current_command") or "").lstrip("-")
@@ -164,5 +166,5 @@ def pane_reply(body: ReplyBody):
             raise HTTPException(
                 409, "the pane's composer isn't at a plain prompt — shell mode or a draft; open it to see"
             )
-        _send_to_target(target, text, ["Enter"])
+        _send_to_target(target, text, ["Enter"], address=pane_id)
     return {"ok": True}
