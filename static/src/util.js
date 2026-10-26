@@ -187,7 +187,9 @@ export async function postJson(path, body) {
   try {
     res = await fetch(path, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      ...(typeof AbortSignal?.timeout === "function" ? { signal: AbortSignal.timeout(10000) } : {}),
+      ...(typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? { signal: AbortSignal.timeout(10000) }
+        : {}),
     });
   } catch (err) {
     return { ok: false, status: 0, detail: err?.message || String(err) };

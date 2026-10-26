@@ -236,20 +236,26 @@ describe("runAction: the buttons that make an agent act", () => {
     expect(o.notify).toHaveBeenCalled();
   });
 
-  it("a banner without a pane has nothing to answer: it reveals instead", async () => {
+  it("a banner without a pane has nothing to answer: it reveals instead, and still tells the user", async () => {
     const o = openers();
     await runAction({ target: "s:1", action: "allow", data: { request_id: "a1b2c3d4e5f60718" } }, o);
     expect(o.post).not.toHaveBeenCalled();
     expect(o.revealPane).toHaveBeenCalledWith("s:1");
-    expect(o.notify).not.toHaveBeenCalled();
+    // A background press never fails silently, even one that never reaches the server.
+    expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Couldn't allow", body: "Open the pane to answer it.", target: "s:1",
+    }));
   });
 
-  it("a banner naming no request has nothing to answer either, like a missing pid: it reveals instead", async () => {
+  it("a banner naming no request has nothing to answer either, like a missing pid: it reveals instead, and still tells the user", async () => {
     const o = openers();
     await runAction({ target: "s:1", action: "deny", data: { pid: "p1" } }, o);
     expect(o.post).not.toHaveBeenCalled();
     expect(o.revealPane).toHaveBeenCalledWith("s:1");
-    expect(o.notify).not.toHaveBeenCalled();
+    expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Couldn't deny", body: "Open the pane to answer it.", target: "s:1",
+      data: { open: "pane", pid: "p1" },
+    }));
   });
 
   it("Reply sends the typed text, trimmed; an empty reply does nothing", async () => {
@@ -361,6 +367,33 @@ describe("runAction: the follow-up notice on a failed background press", () => {
     const o = openers();
     await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
     expect(o.notify).not.toHaveBeenCalled();
+  });
+
+  it("a throwing toast still posts exactly one notice, with the route's reason intact (not the toast's own crash)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const o = {
+      ...openers(),
+      post: vi.fn(async () => ({ ok: false, status: 500, detail: "tmux died" })),
+      toast: vi.fn(() => { throw new Error("toast crashed"); }),
+    };
+    await runAction({ target: "s:1", action: "deny", data: PERMISSION }, o);
+    expect(o.notify).toHaveBeenCalledTimes(1);
+    expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Couldn't deny", body: "tmux died" }));
+  });
+
+  it("a throwing show() still posts exactly one notice, with the route's reason intact (not the show()'s own crash)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const o = {
+      ...openers(),
+      post: vi.fn(async () => ({ ok: false, status: 409, detail: "HTTP 409" })),
+      selectPane: vi.fn(() => { throw new Error("selectPane crashed"); }),
+    };
+    windows.value = [{ pid: "p1", target: "s:4" }];
+    await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
+    expect(o.notify).toHaveBeenCalledTimes(1);
+    expect(o.notify).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Couldn't allow", body: "The dialog changed — open the pane to answer it.",
+    }));
   });
 
   it("every notice payload has a string title and a string body (the shell's NotifyRequest requires both)", async () => {

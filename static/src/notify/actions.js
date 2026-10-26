@@ -102,7 +102,7 @@ function noticeBody(path, r) {
   if (r?.status === 409) {
     return typeof r.detail === "string" && r.detail !== `HTTP ${r.status}` ? r.detail : ROUTE_409[path];
   }
-  return r?.detail || "no answer";
+  return r?.detail || "No answer";
 }
 
 // The message Ask agent to fix types into the pane: the PR and the names of
@@ -124,9 +124,16 @@ export function fixMessage(pr, checks) {
 // posted before the toast since the toast is the one that's invisible here.
 // Success needs nothing: the pane's next state shows it working. Never rejects.
 async function agentAct({ target, show }, action, path, body, o) {
-  // Deferred a tick so a throwing/rejecting o.notify (a dead IPC call, say)
-  // can't take the rest of this function down with it.
+  // Guarded by `sent`: show()/toast() can themselves throw (an opener with a
+  // bug), which falls into the catch below — that must not re-post a second
+  // notice with an unrelated internal-error message in place of the real,
+  // already-computed route reason. First reason wins.
+  let sent = false;
   const notice = (reason) => {
+    if (sent) return;
+    sent = true;
+    // Deferred a tick so a throwing/rejecting o.notify (a dead IPC call, say)
+    // can't take the rest of this function down with it.
     Promise.resolve()
       .then(() => o.notify({
         kind: "notice", thread: "notice", title: NOTICE_TITLE[action], body: reason, target,
@@ -135,14 +142,21 @@ async function agentAct({ target, show }, action, path, body, o) {
       .catch((e) => console.error("[notify] follow-up failed", e));
   };
   try {
+    // A banner with nothing to answer (its pane is gone, or — allow/deny
+    // only — its dialog's own request_id is missing) still tells the user,
+    // rather than failing silently in a window nobody's looking at.
     if (!body.pid || (NEEDS_REQUEST_ID.has(action) && !body.request_id)) {
+      notice("Open the pane to answer it.");
       show();
       return;
     }
     const r = await o.post(path, body);
     if (r?.ok) return;
+    // Computed before show(): if show() throws, the catch below must still
+    // report this reason, not its own exception.
+    const reason = noticeBody(path, r);
+    notice(reason);
     show();
-    notice(noticeBody(path, r));
     if (r?.status !== 409) o.toast(`${ACT_LABEL[action]} failed: ${r?.detail || "no answer"}`, "bad", 6000);
   } catch (e) {
     console.error("[notify] action failed", action, e);
