@@ -237,6 +237,50 @@ def mem_signal(proc: dict | None) -> dict | None:
     return {"tier": tier, "rss_gb": round(rss / (1024 * 1024), 1), "age_s": age}
 
 
+# The PermissionRequest hook stamps its row just before the dialog renders,
+# and needs_since is whole seconds from the poll that first saw the pane
+# waiting: the row can predate it by a little under a poll.
+_PERMISSION_SKEW_S = 2
+
+
+def pending_permission_row(pane_id: str, state: str | None, waiting_for: str | None, needs_since: int) -> dict | None:
+    """The permission request a pane's dialog is asking, as the hook's full
+    row {request_id, tool, summary, match_key}, or None unless it can be told
+    for sure AND checked on screen: the pane waits on a permission prompt,
+    exactly one pane_permissions row (pane_permission_hook.py) falls in this
+    wait, and that row has a match_key. Two or more — parallel tool calls each
+    asking, or back-to-back prompts inside one poll so needs_since never
+    moved — can't be told apart; a row without a key is a tool whose dialog
+    panes.dialog_matches can't verify. Either way a banner offers Open only:
+    the cost is a button, never a wrong approval. Unkeyed rows still count
+    toward "exactly one", since the dialog on screen may be theirs.
+
+    match_key is server-only (POST /api/pane/permission hands it to
+    dialog_matches, recomputing this rather than trusting the banner's copy);
+    pending_permission_for is what /api/state publishes."""
+    if state != "needs-input" or (waiting_for or "").lower() != "permission prompt":
+        return None
+    if not pane_id or not needs_since:
+        return None
+    rows = activity.pane_permissions_since(pane_id, needs_since - _PERMISSION_SKEW_S)
+    if len(rows) != 1:
+        return None
+    request_id, tool, summary, match_key = rows[0]
+    if not match_key:
+        return None
+    return {"request_id": request_id, "tool": tool, "summary": summary, "match_key": match_key}
+
+
+def pending_permission_for(pane_id: str, state: str | None, waiting_for: str | None, needs_since: int) -> dict | None:
+    """pending_permission_row as the banner sees it: {request_id, tool,
+    summary}, never the match_key — a Bash key is a digest of the whole
+    command, and the client has no use for either kind."""
+    row = pending_permission_row(pane_id, state, waiting_for, needs_since)
+    if row is None:
+        return None
+    return {"request_id": row["request_id"], "tool": row["tool"], "summary": row["summary"]}
+
+
 def build_window_view(
     w: dict,
     now_ts: int,
@@ -347,6 +391,11 @@ def build_window_view(
     ):
         stamp_update = (pid, completed, acked, needs_since)
 
+    # One indexed read, and only for a pane waiting on a permission prompt.
+    pending_permission = pending_permission_for(
+        w.get("pane_id") or "", parsed.get("state"), parsed.get("waiting_for"), needs_since
+    )
+
     git = cached_git_state(w.get("cwd", "")) or {}
     pr = cached_pr_state(w.get("cwd", ""), git.get("branch")) or {}
     lgtm = cached_lgtm_state(w.get("cwd", ""))
@@ -435,6 +484,8 @@ def build_window_view(
         "acted_at": acked,
         "completed_at": completed,
         "needs_since": needs_since,
+        # The request a banner's Allow / Deny would answer (or null: Open only).
+        "pending_permission": pending_permission,
         "mem": mem_signal(claude_proc_for(sid)),
         "channel_attached": channel["attached"],
         "channel_unread": channel["unread"],

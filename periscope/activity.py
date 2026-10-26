@@ -107,6 +107,23 @@ CREATE TABLE IF NOT EXISTS pane_status (
                                    -- [{"t":<unix>,"s":"..."}], divergence
                                    -- evidence the narrator reasons against
 );
+-- One row per Claude permission dialog, written by pane_permission_hook.py
+-- (PermissionRequest) just before the dialog renders and pruned by it after a
+-- day; window_view.pending_permission_row reads it. Same DDL as the hook's:
+-- whichever opens the DB first creates it (test_pane_permission_hook checks).
+CREATE TABLE IF NOT EXISTS pane_permissions (
+  pane_id     TEXT NOT NULL,       -- tmux pane id, e.g. '%56'
+  session_id  TEXT,                -- Claude session id
+  agent_id    TEXT,                -- set for a subagent's call (it asks in this pane)
+  request_id  TEXT PRIMARY KEY,    -- sha1(session, tool, input, created_at)[:16]
+  tool        TEXT NOT NULL,       -- tool_name, e.g. 'Bash'
+  summary     TEXT NOT NULL,       -- what it asks, <= 80 chars (display only)
+  match_key   TEXT,                -- what panes.dialog_matches needs on screen
+                                   -- before Allow fires: Bash 'sha256:<hex>',
+                                   -- Edit/Write the absolute path, else NULL
+  created_at  REAL NOT NULL        -- unix seconds, when the hook ran
+);
+CREATE INDEX IF NOT EXISTS idx_pane_permissions_pane ON pane_permissions (pane_id, created_at);
 DROP TABLE IF EXISTS first_mate;
 """
 
@@ -135,6 +152,12 @@ def _conn() -> sqlite3.Connection:
         pt_cols = {r[1] for r in c.execute("PRAGMA table_info(pane_tracks)")}
         if "pane_id" in pt_cols:
             c.execute("ALTER TABLE pane_tracks RENAME COLUMN pane_id TO pid")
+        # pane_permissions predates match_key in a DB the first hook release
+        # wrote. The same ALTER the hook runs, so whichever side opens the DB
+        # first leaves the shape the other expects.
+        pp_cols = {r[1] for r in c.execute("PRAGMA table_info(pane_permissions)")}
+        if "match_key" not in pp_cols:
+            c.execute("ALTER TABLE pane_permissions ADD COLUMN match_key TEXT")
         # usage_samples predates multi-account and was keyed (meter, at), which
         # would interleave two subscriptions into one unseparable series. SQLite
         # can't widen a PK in place, so rebuild — existing rows are all from the
@@ -338,6 +361,27 @@ def prune_pane_sessions(alive_pane_ids: set[str]) -> int:
         c.executemany("DELETE FROM pane_sessions WHERE pane_id=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
+
+
+# --- pane_permissions: the permission dialog a pane is showing -----------
+#
+# Writer is pane_permission_hook.py (out-of-process, Claude's PermissionRequest
+# hook; it also prunes). The reader is window_view.pending_permission_row.
+
+
+def pane_permissions_since(pane_id: str, since: float) -> list[tuple[str, str, str, str | None]]:
+    """(request_id, tool, summary, match_key) of this pane's permission
+    requests stamped at or after `since`, oldest first — at most two: the
+    caller only needs to know whether exactly one fits."""
+    if not pane_id:
+        return []
+    with _LOCK:
+        c = _conn()
+        return c.execute(
+            "SELECT request_id, tool, summary, match_key FROM pane_permissions "
+            "WHERE pane_id=? AND created_at>=? ORDER BY created_at LIMIT 2",
+            (pane_id, since),
+        ).fetchall()
 
 
 # --- pane_workspaces: tmux pane id -> workspace id tag -----------------

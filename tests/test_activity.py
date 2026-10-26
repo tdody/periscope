@@ -590,6 +590,60 @@ def test_heal_tmux_conf_is_prod_only_and_points_at_this_checkout(monkeypatch):
     assert calls == [Path(activity.__file__).resolve().parent.parent]
 
 
+# --- pane_permissions: written by pane_permission_hook.py ----------------
+
+
+def _insert_permission(pane_id, request_id, created_at, match_key="sha256:ab"):
+    with activity._LOCK:
+        c = activity._conn()
+        c.execute(
+            "INSERT INTO pane_permissions "
+            "(pane_id, session_id, agent_id, request_id, tool, summary, match_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (pane_id, "sid", None, request_id, "Bash", "ls", match_key, created_at),
+        )
+        c.commit()
+
+
+def test_pane_permissions_since_reads_this_pane_from_since_oldest_first_at_most_two():
+    _insert_permission("%5", "early", 99.0)
+    _insert_permission("%5", "first", 100.0)
+    _insert_permission("%5", "second", 101.0, match_key=None)
+    _insert_permission("%5", "third", 102.0)
+    _insert_permission("%6", "other", 100.5)
+    assert activity.pane_permissions_since("%5", 100.0) == [
+        ("first", "Bash", "ls", "sha256:ab"),
+        ("second", "Bash", "ls", None),
+    ]
+    assert activity.pane_permissions_since("", 0) == []
+
+
+def test_pane_permissions_migration_adds_match_key_to_old_db():
+    # A periscope.db the first hook release wrote has no match_key, and
+    # CREATE TABLE IF NOT EXISTS won't add it: without the guarded ALTER every
+    # read of the column fails. Fabricate the old shape before _conn() opens it.
+    import sqlite3
+
+    from periscope import config
+
+    db = sqlite3.connect(str(config.ACTIVITY_DB))
+    db.execute(
+        "CREATE TABLE pane_permissions ("
+        "  pane_id TEXT NOT NULL, session_id TEXT, agent_id TEXT, request_id TEXT PRIMARY KEY,"
+        "  tool TEXT NOT NULL, summary TEXT NOT NULL, created_at REAL NOT NULL)"
+    )
+    db.execute("INSERT INTO pane_permissions VALUES ('%5', 'sid', NULL, 'old', 'Bash', 'ls', 100.0)")
+    db.commit()
+    db.close()
+    # First _conn() → migration runs; the row survives, keyless (Open only).
+    assert activity.pane_permissions_since("%5", 0) == [("old", "Bash", "ls", None)]
+    # Idempotent: a reconnect on the now-current shape must not raise.
+    with activity._LOCK:
+        activity._CONN.close()
+        activity._CONN = None
+    assert activity.pane_permissions_since("%5", 0) == [("old", "Bash", "ls", None)]
+
+
 def test_pane_workspace_set_get(fresh_activity_db):
     activity = fresh_activity_db
     assert activity.get_pane_workspace("%1") is None

@@ -371,3 +371,52 @@ def test_install_repoints_a_stale_path(tmp_path):
     [entry] = groups[0]["hooks"]
     assert "/old/checkout/" not in entry["command"]
     assert _entry_script_path(entry["command"]).resolve() == SCRIPT
+
+
+def _table_shape(c: sqlite3.Connection) -> tuple[list, list]:
+    return (
+        c.execute("PRAGMA table_info(pane_permissions)").fetchall(),
+        c.execute("PRAGMA index_info(idx_pane_permissions_pane)").fetchall(),
+    )
+
+
+def test_the_hook_and_the_server_create_the_same_table(tmp_path, fresh_activity_db):
+    # Whichever opens periscope.db first creates pane_permissions.
+    with contextlib.closing(sqlite3.connect(tmp_path / "hook.db")) as c:
+        c.execute(hook._SCHEMA)
+        c.execute(hook._INDEX)
+        hook_shape = _table_shape(c)
+    with fresh_activity_db._LOCK:
+        server_shape = _table_shape(fresh_activity_db._conn())
+    assert hook_shape == server_shape
+    assert "match_key" in {col[1] for col in server_shape[0]}
+
+
+# pane_permissions as the first hook release created it, before match_key.
+_PRE_MATCH_KEY_DDL = (
+    "CREATE TABLE pane_permissions ("
+    "  pane_id TEXT NOT NULL, session_id TEXT, agent_id TEXT, request_id TEXT PRIMARY KEY,"
+    "  tool TEXT NOT NULL, summary TEXT NOT NULL, created_at REAL NOT NULL"
+    ")"
+)
+
+
+def test_the_hook_and_the_server_heal_a_pre_match_key_table_the_same_way(tmp_path, monkeypatch, fresh_activity_db):
+    # Whichever opens an older periscope.db first adds the column; either way
+    # the other must find the shape it would have made.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("TMUX_PANE", "%56")
+    hook_db = tmp_path / "xdg" / "periscope" / "periscope.db"
+    hook_db.parent.mkdir(parents=True)
+    server_db = fresh_activity_db.config.ACTIVITY_DB
+    for db in (hook_db, server_db):
+        with contextlib.closing(sqlite3.connect(db)) as c, c:
+            c.execute(_PRE_MATCH_KEY_DDL)
+    monkeypatch.setattr("sys.stdin", io.StringIO(_payload()))
+    hook.record()
+    with contextlib.closing(sqlite3.connect(hook_db)) as c:
+        hook_shape = _table_shape(c)
+    with fresh_activity_db._LOCK:
+        server_shape = _table_shape(fresh_activity_db._conn())
+    assert hook_shape == server_shape
+    assert "match_key" in {col[1] for col in server_shape[0]}
