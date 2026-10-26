@@ -338,3 +338,31 @@ export function cheerGlyphs(sprite) {
   const box = spriteBox(sprite);
   return [{ cls: "tama-cheer", g: limbGlyphs(sprite, null, [r4(sprite.limb.root[0] + 1.6), r4(box.y + 0.12 * box.h)]) }];
 }
+
+// Furious Clawd's flush (Tamagotchi.jsx MoodFace), washed over a furious
+// critter's silhouette by Critter.
+export const FLUSH = "#ff3b2f";
+const TEETH = "#f3f5f8";
+
+// Clawd's scowl as gritted teeth inside a furious critter's own shouting mouth
+// (the widest rect of its furious layer, at least 2.4 × 1.2; none means no
+// teeth): a four-stroke zig-zag across it. Its furious layer already draws a
+// mouth, so a scowl beside it would clash.
+export function teethGlyph(sprite) {
+  let mouth = null;
+  const walk = (n, furious) => {
+    const f = furious || n.mood === "furious";
+    if (n.r) {
+      if (f && n.r[2] >= 2.4 && n.r[3] >= 1.2 && (!mouth || n.r[2] > mouth[2])) mouth = n.r;
+      return;
+    }
+    (n.g || []).forEach((k) => { walk(k, f); });
+  };
+  sprite.root.forEach((n) => { walk(n, false); });
+  if (!mouth) return [];
+  const [x, y, w, h] = mouth;
+  const top = y + h * 0.3, bot = y + h * 0.7, step = w / 4 - 0.05;
+  let d = `M${r4(x + 0.1)} ${r4(bot)}`;
+  for (let i = 1; i <= 4; i++) d += ` L${r4(x + 0.1 + step * i)} ${r4(i % 2 ? top : bot)}`;
+  return [{ p: d, a: { fill: "none", stroke: TEETH, "stroke-width": 0.35, "stroke-linejoin": "miter" } }];
+}

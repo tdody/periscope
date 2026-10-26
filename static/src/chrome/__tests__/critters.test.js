@@ -20,6 +20,7 @@ import {
   spriteBox,
   startleGlyph,
   strideRoot,
+  teethGlyph,
   wornGlyphs,
 } from "../critters.js";
 
@@ -656,5 +657,44 @@ describe("cheering", () => {
     const box = spriteBox(sprite);
     const tip = [sprite.limb.root[0] + 1.6, box.y + 0.12 * box.h];
     expect(wave.g).toEqual(limbGlyphs(sprite, null, tip.map((v) => Math.round(v * 1e4) / 1e4)));
+  });
+});
+
+describe("teethGlyph", () => {
+  // Every point in an SVG path's `d` string ("M… L… L…"), as [x, y] pairs.
+  const points = (d) => {
+    const nums = d.match(/-?[\d.]+/g).map(Number);
+    const out = [];
+    for (let i = 0; i < nums.length; i += 2) out.push([nums[i], nums[i + 1]]);
+    return out;
+  };
+
+  it.each(sprites.map((c) => [c.id, c.sprite]))("draws %s's zig-zag inside its furious mouth's widest rect", (_id, sprite) => {
+    const [glyph] = teethGlyph(sprite);
+    expect(glyph.a.stroke).toBe("#f3f5f8");
+    // The mouth: the widest furious-layer rect at least 2.4 wide and 1.2 tall.
+    let mouth = null;
+    const walk = (n, furious) => {
+      const f = furious || n.mood === "furious";
+      if (n.r) {
+        if (f && n.r[2] >= 2.4 && n.r[3] >= 1.2 && (!mouth || n.r[2] > mouth[2])) mouth = n.r;
+        return;
+      }
+      (n.g || []).forEach((k) => { walk(k, f); });
+    };
+    sprite.root.forEach((n) => { walk(n, false); });
+    expect(mouth).not.toBeNull();
+    const [x, y, w, h] = mouth;
+    for (const [px, py] of points(glyph.p)) {
+      expect(px).toBeGreaterThanOrEqual(x - 1e-6);
+      expect(px).toBeLessThanOrEqual(x + w + 1e-6);
+      expect(py).toBeGreaterThanOrEqual(y - 1e-6);
+      expect(py).toBeLessThanOrEqual(y + h + 1e-6);
+    }
+  });
+
+  it("gives [] for a sprite with no furious mouth", () => {
+    const sprite = { root: [{ g: [{ r: [0, 0, 1, 1] }], mood: "furious" }] };
+    expect(teethGlyph(sprite)).toEqual([]);
   });
 });

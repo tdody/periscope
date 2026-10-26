@@ -3,12 +3,23 @@
 import render from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 import { Critter } from "../Critter.jsx";
-import { CRITTERS, critterById, hueRotate, limbGlyphs, strideRoot } from "../critters.js";
+import { CRITTERS, critterById, hueRotate, limbGlyphs, strideRoot, teethGlyph } from "../critters.js";
 
 const sprites = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c.sprite]);
 const MOODS = ["calm", "grumpy", "furious"];
 const count = (html, needle) => html.split(needle).length - 1;
 const draw = (props) => render(<svg aria-hidden="true"><Critter {...props} /></svg>);
+// The `<g class="tama-flush"` group, whole, as groupAt does in tamagotchiRender.test.jsx.
+const flushGroup = (html) => {
+  const open = html.indexOf('<g class="tama-flush"');
+  if (open < 0) return null;
+  let depth = 0;
+  for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return html.slice(open, open + m.index + 4);
+  }
+  return html.slice(open);
+};
 // A limb node as Node draws it. A limb's colours are its body's too, so a bare fill= match passes with no limb.
 const markup = ({ a, g }) => `<g ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}>` +
   g.map(({ r: [x, y, w, h] }) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>`).join("") + "</g>";
@@ -323,5 +334,119 @@ describe("<Critter>", () => {
     expect(still).not.toContain("tama-legs-b");
     // Matches strideRoot's own tree, not just the class names.
     expect(striding).toBe(draw({ sprite: { ...ember, root: strideRoot(ember) } }));
+  });
+
+  describe("furious flush", () => {
+    it.each(sprites)("%s washes its silhouette red at half opacity, with its face crisp on top and its teeth last of all", (_id, sprite) => {
+      const html = draw({ sprite, mood: "furious" });
+      // opacity="0.5" matches Clawd's own flush (Tamagotchi.jsx MoodFace): under
+      // reduced motion styles.css's pulse stops, and an unset opacity would
+      // paint every furious critter as a flat, solid red shape.
+      expect(html).toContain('<g class="tama-flush" fill="#ff3b2f" opacity="0.5">');
+      const group = flushGroup(html);
+      expect(group).not.toBeNull();
+      // Only the wrapper itself carries a fill; nothing inside it does.
+      const inner = group.slice(group.indexOf(">") + 1);
+      expect(inner).not.toContain("fill=");
+      expect(inner).not.toContain("data-mood");
+      expect(inner).not.toContain("data-role");
+      // The face's own furious layer is drawn after the flush group, and the
+      // teeth, inside its furious mouth, are the very last child of all.
+      const afterFlush = html.slice(html.indexOf(group) + group.length);
+      expect(afterFlush).toContain('data-mood="furious"');
+      expect(afterFlush.lastIndexOf('stroke="#f3f5f8"')).toBeGreaterThan(afterFlush.lastIndexOf('data-mood="furious"'));
+      const [teeth] = teethGlyph(sprite);
+      const teethMarkup = `<path d="${teeth.p}" fill="${teeth.a.fill}" stroke="${teeth.a.stroke}" ` +
+        `stroke-width="${teeth.a["stroke-width"]}" stroke-linejoin="${teeth.a["stroke-linejoin"]}"></path>`;
+      expect(html.endsWith(`${teethMarkup}</g></svg>`)).toBe(true);
+      // The face is drawn once: not also in the main pass before the wash,
+      // where a second animated copy would stack under it.
+      const beforeFlush = html.slice(0, html.indexOf(group));
+      expect(beforeFlush).not.toContain('data-mood="furious"');
+      expect(beforeFlush).not.toContain("data-role=");
+    });
+
+    it.each(["calm", "grumpy"])("draws no flush and no teeth for %s", (mood) => {
+      const html = draw({ sprite: critterById("nox").sprite, mood });
+      expect(html).not.toContain("tama-flush");
+      expect(html).not.toContain('stroke="#f3f5f8"');
+    });
+
+    it("drops a synthetic sprite's hidden rest, seated legs and mood layers from the flush, typing furiously", () => {
+      const sprite = {
+        root: [
+          { g: [{ r: [1, 1, 1, 1] }], rest: true, a: { fill: "#111111" } },
+          { g: [{ r: [2, 2, 1, 1] }], legs: true, a: { fill: "#222222" } },
+          { g: [{ r: [3, 3, 2, 2] }], anim: "crit-x-1", a: { fill: "#333333" } },
+          // Mood-matching too: `n.mood && n.mood !== mood` alone would let a
+          // node whose own mood equals the current one straight through.
+          { g: [{ r: [7, 7, 1, 1] }], mood: "furious" },
+        ],
+        limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+      };
+      const html = draw({ sprite, mood: "furious", tip: [20, 10], seated: true });
+      const group = flushGroup(html);
+      expect(group).not.toContain('x="1"');
+      expect(group).not.toContain('x="2"');
+      expect(group).not.toContain('x="7" y="7"');
+      // Its anim class rides along into the flush group.
+      expect(group).toContain("crit-x-1");
+      // The limb it reaches with is washed too.
+      expect(group).toContain('x="10"');
+    });
+
+    it("recolours Nox's outline to the flush, at its own stroke width", () => {
+      const html = draw({ sprite: critterById("nox").sprite, mood: "furious" });
+      const group = flushGroup(html);
+      expect(group).toContain('stroke="#ff3b2f" stroke-width="1"');
+    });
+
+    // The eyes/lids redrawn crisp after the wash are exactly the top-level
+    // nodes carrying a role, or containing one: scope/jelly/ember/volt/octocat
+    // tag their eye groups directly (role="eye"), and Moss its lid
+    // (role="lid"); only Nox's lids are nested inside a role-less wrapper, so
+    // Nox alone exercises the "contains one at any depth" half of `hasRole`.
+    // Deleting the "contains one at any depth" half of the filter (`hasRole`)
+    // would pass the flush-group/teeth checks above untouched, since neither
+    // looks at what comes after the flush group — this looks there directly.
+    it.each([
+      ["scope", "eye"], ["jelly", "eye"], ["ember", "eye"], ["volt", "eye"], ["octocat", "eye"],
+      ["nox", "lid"], ["moss", "lid"],
+    ])("redraws %s's role-tagged eyes/lids crisp, as data-role=\"%s\", after the wash", (id, role) => {
+      const sprite = critterById(id).sprite;
+      const html = draw({ sprite, mood: "furious" });
+      const group = flushGroup(html);
+      const afterFlush = html.slice(html.indexOf(group) + group.length);
+      expect(afterFlush).toContain(`data-role="${role}"`);
+    });
+
+    // A nested rest/arms node, and sleep: the recursion into the flush
+    // group's own children has to carry every visibility rule along (not
+    // just the top-level call's), and the top-level gate must still hold
+    // asleep.
+    it("threads rest/paws through the flush's own nested recursion, and never flushes asleep", () => {
+      const sprite = {
+        root: [
+          { g: [{ g: [{ r: [1, 1, 1, 1] }], rest: true, a: { fill: "#111111" } }] },
+          { g: [{ r: [2, 2, 1, 1] }], arms: true, a: { fill: "#222222" } },
+        ],
+        limb: { style: "arm", root: [10, 10], width: 1, color: "#654321" },
+      };
+      const typing = draw({ sprite, mood: "furious", tip: [20, 10], paws: true });
+      const group = flushGroup(typing);
+      expect(group).not.toContain('x="1"'); // the nested resting part goes: the limb reaches instead
+      expect(group).not.toContain('x="2"'); // the side arms go: they're on the held prop (paws)
+      expect(draw({ sprite, mood: "furious", asleep: true })).not.toContain("tama-flush");
+    });
+
+    it("remounts the whole critter on entering or leaving furious, so every animated copy starts in phase", () => {
+      const sprite = critterById("jelly").sprite;
+      const calm = Critter({ sprite, mood: "calm" });
+      const grumpy = Critter({ sprite, mood: "grumpy" });
+      const furious = Critter({ sprite, mood: "furious" });
+      expect(furious.key).not.toBe(calm.key);
+      expect(furious.key).not.toBe(grumpy.key);
+      expect(calm.key).toBe(grumpy.key); // neither mounts the flush: no need to remount between them
+    });
   });
 });

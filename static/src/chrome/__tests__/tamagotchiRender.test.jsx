@@ -1409,6 +1409,52 @@ describe("<Tamagotchi> with a critter", () => {
   });
 });
 
+describe("critters flush red when furious at the desk", () => {
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
+  const flushGroupAt = (html) => {
+    const mascot = mascotOf(html);
+    const open = mascot.indexOf('<g class="tama-flush"');
+    return open < 0 ? null : groupAt(mascot, open);
+  };
+
+  it.each(holders)("%s flushes red and grits its teeth, furious at the desk", (_id, c) => {
+    const mascot = mascotOf(render(<TamaScene activity="code" mood="furious" working={2} critter={c} />));
+    expect(mascot).toContain('class="tama-flush"');
+    expect(mascot).toContain('stroke="#f3f5f8"');
+  });
+
+  it.each(holders)("%s shows neither, grumpy or calm", (_id, c) => {
+    for (const mood of ["grumpy", "calm"]) {
+      const mascot = mascotOf(render(<TamaScene activity="code" mood={mood} working={2} critter={c} />));
+      expect(mascot, mood).not.toContain("tama-flush");
+      expect(mascot, mood).not.toContain('stroke="#f3f5f8"');
+    }
+  });
+
+  it("keeps Nox's resting tail out of the flush: typing makes it reach instead", () => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById("nox")} />);
+    const flush = flushGroupAt(html);
+    expect(flush).not.toContain('x="15" y="16"');
+    expect(flush).not.toContain('x="17" y="12"');
+  });
+
+  it("keeps Scope's feet out of the flush, seated at the desk", () => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById("scope")} />);
+    expect(flushGroupAt(html)).not.toContain('x="5" y="16"');
+  });
+
+  it.each(["nox", "octocat"])("recolours %s's outline to the flush, at its own stroke width", (id) => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById(id)} />);
+    expect(flushGroupAt(html)).toContain('stroke="#ff3b2f" stroke-width="1"');
+  });
+
+  it.each(holders)("%s's typing limb is washed red in the flush too", (_id, c) => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={c} />);
+    const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), KEYS_REACH)).at(-1).g.at(-1).r;
+    expect(flushGroupAt(html)).toContain(`<rect x="${x}" y="${y}" width="${r4(w + 0.02)}" height="${r4(h + 0.02)}">`);
+  });
+});
+
 describe("Clawd's drawing, pinned", () => {
   // Every activity × duty kind × mood × occasion × season, hashed. Critter work
   // must never move a pixel of Clawd: a failure here means a change reached his
