@@ -9,9 +9,10 @@ doc-enricher pipeline.
 
 ## Smallest version
 
-**Problem:** After a sprint, the branches waiting on review aren't visible in
-one place, and reviewing one means reading code instead of a structural tour
-whose feedback reaches the pane that wrote it.
+**Problem:** After a sprint, the PRs waiting on me — mine to land, and
+others' to review — aren't visible in one place, and reviewing one means
+reading code instead of a structural tour whose feedback reaches the pane
+that wrote it.
 
 **Seams:** four, all present today —
 - review surface: the rail's per-track `review` row + its detail view (one
@@ -46,6 +47,9 @@ Left out, and what it costs:
   verified in pytest with `_deliver` patched, and once in prod after merge
 
 Accepted consequences:
+- the queue polls only repos periscope knows (the unified-open catalog's
+  discovered repos); a repo never opened in periscope is not in the queue
+  until it is opened once
 - the tour can be stale — the file records the head it was written at; the
   view says "N commits since" and leaves it to you
 - walkthroughs and comments live outside the repo, so they are not shared
@@ -174,21 +178,37 @@ HEAD differs from the header's `head`. Hunks come from the branch's worktree
 path, not a pane, so a branch with no live pane but a worktree on disk still
 shows them.
 
-### D6. The Reviews queue is a detail-area selection, one row per (repo, branch)
+### D6. The Reviews queue is a detail-area selection, one row per (repo, branch), sourced from GitHub
 
-Rows: every distinct `(repo_label, branch)` among live windows, merged with
-every `~/.claude/reviews/<repo>/<slug>` with no live window. Columns: PR
-(number, state incl. merged, CI glyph), walkthrough (none / N stops /
-stale by N), comments (M unresolved), owner (pane name / none / "open the
-branch first"). Sort: unresolved comments, then PR-without-walkthrough,
-then the rest; within a group by PR number desc, then branch. Merged rows
-sink to the bottom with a **clear** action.
+**The queue answers "what's waiting on me," not "what's running in
+periscope."** Its primary source is GitHub: every open PR you authored and
+every open PR where your review is requested, across the repos periscope
+knows (the unified-open catalog's discovered repos). Live panes, worktrees
+on disk and walkthrough files are joined onto those rows, not the rows
+themselves — after a reboot or a cleanup the panes are gone but the PRs are
+not, and a teammate's PR has no pane or local branch at all. Two secondary
+groups follow: local branches with a live pane and no PR (sprint work not
+yet pushed), and `~/.claude/reviews/<repo>/<slug>` dirs matching neither.
+
+Each row carries a **role**: `mine` or `review-requested` (with the author).
+Columns: branch + repo + role/author, PR (number, draft, state incl.
+merged, CI glyph), walkthrough (none / N stops / stale by N), comments (M
+unresolved), owner (pane name / "no pane" / "not checked out"). Sort:
+unresolved comments, then review-requested, then PR-without-walkthrough,
+then the rest, then local-no-PR; merged last. Within a group by PR number
+desc, then branch.
 
 Actions: **prepare** (message the owner to run the `walkthrough` skill; with
-no owner but a worktree on disk, spawn one there — the picked addition),
-**merge** (message the owner; disabled with the reason when none), **clear**
-(remove the review dir; offered when the PR is merged or the branch has no
+no owner but a worktree on disk, spawn one there — the picked addition;
+with neither — a PR not checked out locally — disabled with "check out the
+PR first (⌘K)", which is the existing unified-open PR path), **merge**
+(message the owner; disabled with the reason when none), **clear** (remove
+the review dir; offered when the PR is merged or the branch has no
 worktree). Row click selects that branch's review row.
+
+The PR lists are fetched with `gh` per known repo, cached 60 s with
+stale-while-revalidate like the existing PR cache; with `gh` absent or
+offline the queue degrades to the secondary groups.
 
 **Rail placement:** the review row sits inside the branch sub-cluster when
 the track spans ≥2 branches, else at the top of the track body — one row
@@ -265,17 +285,28 @@ this repo, so outside this spec's budget.
   label; `None` when neither.
 - `stale_by(worktree, head)` → `git rev-list --count <head>..HEAD`, cached
   by `(worktree, head, current HEAD sha)`; `None` without a worktree.
-- `list_reviews(windows)` → rows `{repo, branch, slug, pr: {number, state,
-  ci} | None, walkthrough: {stops, head, stale_by} | None, unresolved,
+- `open_prs(repo_root)` → `[{number, title, branch, draft, ci, role,
+  author}]` from two `gh pr list --state open` calls in that repo (`--author
+  @me`, and `--search "review-requested:@me"`), deduped by number; `role`
+  is `mine` for the first list. `cached_open_prs(repo_root)` is the 60 s
+  stale-while-revalidate wrapper (background `_bg` fetch on miss/stale,
+  same shape as `git_pr.cached_pr_state`); `[]` when `gh` is absent.
+- `list_reviews(windows, repos)` → rows `{repo, branch, slug, role: "mine"
+  | "review-requested" | "local", pr: {number, title, draft, state, ci,
+  author} | None, walkthrough: {stops, head, stale_by} | None, unresolved,
   owner: {pid, pane_id, session, index, name} | None, worktree: path |
-  None}`. PR state for a row with a walkthrough header `pr:` uses
-  `cached_linked_pr_state` (sees merged); otherwise the window's `pr`/`ci`.
+  None}`. `repos` is the list of known repo roots (the route passes
+  `open_ops.discover_repos()`); `repo` is each root's basename. Row order
+  of assembly: PRs per repo, then live `(repo_label, branch)` pairs with no
+  PR (`role: local`), then orphan review dirs. A row with a walkthrough
+  header `pr:` not in the open lists uses `cached_linked_pr_state` (sees
+  merged).
 
 **`periscope/routes/reviews.py`** (new) — all `async def`, blocking work in
 `asyncio.to_thread`:
 
 - `GET /api/reviews` → `{rows}` from `list_reviews(windows of
-  state_hub._last_blob or [])`.
+  state_hub._last_blob or [], open_ops.discover_repos())`.
 - `GET /api/reviews/walkthrough?repo=&branch=` → `{text, comments, head_now,
   stale_by, diff}` where `diff` is `gitdiff.diff_for(worktree,
   gitdiff.branch_base(worktree))` or `None` with no worktree; 404 with no
@@ -399,8 +430,10 @@ pytest:
 - `tests/test_reviews.py` — slug/path mapping, header/comment parsing,
   `append_comment` creates and appends, `owner_for` picks the attached
   claude window on the right branch (not another branch on the same
-  track), `list_reviews` merges live windows with orphan dirs, `stale_by`
-  against a temp git repo and its cache.
+  track), `open_prs` parses both gh lists and assigns roles (patched
+  `_run`), `list_reviews` assembles PR rows (patched `cached_open_prs`)
+  then local-no-PR pairs then orphan dirs, `stale_by` against a temp git
+  repo and its cache.
 - `tests/routes/test_reviews.py` — comment route appends then delivers
   (patch `_deliver`, assert pane_id and message), 409 path still appends;
   prepare with no owner but a worktree calls `spawn_claude_with_prompt`
