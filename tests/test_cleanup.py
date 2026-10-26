@@ -95,3 +95,45 @@ def test_signal4_idle_keys_on_live_pane_cwd(mocker):
     )
     assert cand is not None
     assert any(s["kind"] == "idle" for s in cand["signals"])
+
+
+def test_compute_candidates_paths_evaluates_only_those_worktrees(mocker):
+    # A notification's "Clean up worktree" asks about one worktree; walking
+    # every worktree (gh + git per worktree) is what makes the full list slow.
+    mocker.patch.object(
+        cleanup, "all_projects", return_value={"/r/a": _project("a", "s", "/r"), "/q/b": _project("b", "s", "/q")}
+    )
+    mocker.patch.object(
+        cleanup.worktrees,
+        "_cached_worktrees",
+        side_effect=lambda repo: {"/r": [("/r", "main"), ("/r/a", "fa"), ("/r/c", "fc")], "/q": [("/q/b", "fb")]}[repo],
+    )
+    default = mocker.patch.object(cleanup, "_detect_default_branch", return_value="main")
+    seen = []
+    mocker.patch.object(cleanup, "_evaluate_worktree", side_effect=lambda wt, *a, **k: seen.append(wt))
+    mocker.patch("periscope.panes.list_windows", return_value=[])
+    mocker.patch("periscope.store.all_windows", return_value={})
+    mocker.patch.object(cleanup, "get_settings", return_value={})
+    # A pane's cwd can be a subdirectory: it resolves to its worktree root.
+    mocker.patch.object(cleanup, "worktree_root", side_effect=lambda p: "/r/a" if p.startswith("/r/a") else p)
+
+    cleanup.compute_candidates(paths=["/r/a/src"])
+
+    assert seen == ["/r/a"]
+    # A repo holding none of the paths is skipped before its default branch is looked up.
+    default.assert_called_once_with("/r")
+
+
+def test_compute_candidates_without_paths_walks_every_worktree(mocker):
+    mocker.patch.object(cleanup, "all_projects", return_value={"/r/a": _project("a", "s", "/r")})
+    mocker.patch.object(cleanup.worktrees, "_cached_worktrees", return_value=[("/r/a", "fa"), ("/r/c", "fc")])
+    mocker.patch.object(cleanup, "_detect_default_branch", return_value="main")
+    seen = []
+    mocker.patch.object(cleanup, "_evaluate_worktree", side_effect=lambda wt, *a, **k: seen.append(wt))
+    mocker.patch("periscope.panes.list_windows", return_value=[])
+    mocker.patch("periscope.store.all_windows", return_value={})
+    mocker.patch.object(cleanup, "get_settings", return_value={})
+
+    cleanup.compute_candidates()
+
+    assert seen == ["/r/a", "/r/c"]

@@ -25,7 +25,7 @@ import time
 from typing import TypedDict
 
 from periscope import worktrees
-from periscope.gitutil import detect_default_branch
+from periscope.gitutil import detect_default_branch, worktree_root
 from periscope.log import log
 from periscope.projects import MAIN_KEY, Project, all_projects
 from periscope.store import WindowAnnotation, get_settings
@@ -273,13 +273,17 @@ def _evaluate_worktree(
     }
 
 
-def compute_candidates(repo_filter: str | None = None) -> list[Candidate]:
+def compute_candidates(repo_filter: str | None = None, paths: list[str] | None = None) -> list[Candidate]:
     """Walk every repo periscope knows about and return the cleanup
     candidate list. A worktree appears as a candidate if ANY signal
     fires.
 
     `repo_filter` (optional realpath): scope to a single repo. Used by
     a future per-project cleanup view (not in phase 6).
+
+    `paths` (optional): only the worktrees containing these directories —
+    a notification's "Clean up worktree" asks about one, and evaluating
+    every worktree takes minutes.
     """
     projects = all_projects()
     # Build (repo → project_rows) so we can correlate worktrees with
@@ -311,11 +315,15 @@ def compute_candidates(repo_filter: str | None = None) -> list[Candidate]:
     alive_worktree_cwds: set[str] = {os.path.realpath(w["cwd"]) for w in list_windows() if w.get("cwd")}
     idle_threshold = int(get_settings().get("cleanup_idle_days") or IDLE_THRESHOLD_DAYS)
 
+    wanted = {worktree_root(p) for p in paths} if paths else None
     candidates: list[Candidate] = []
     for repo in sorted(repos):
-        default = _detect_default_branch(repo)
         # `_cached_worktrees` returns [(realpath, branch_or_none), ...]
-        for wt_path, branch in worktrees._cached_worktrees(repo):
+        wts = [(p, b) for p, b in worktrees._cached_worktrees(repo) if wanted is None or p in wanted]
+        if not wts:
+            continue
+        default = _detect_default_branch(repo)
+        for wt_path, branch in wts:
             cand = _evaluate_worktree(
                 wt_path,
                 branch,
