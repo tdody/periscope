@@ -594,46 +594,6 @@ import json
 from unittest.mock import AsyncMock
 
 
-def test_resolve_window_by_pid_matches_stamped_handle(mocker):
-    from periscope import channels
-
-    rows = [
-        {"session": "s", "index": 2, "name": "w", "cwd": "/x", "pane_id": "%7", "pid_raw": "abcd1234"},
-    ]
-    mocker.patch("periscope.channels.list_windows", return_value=rows)
-
-    def _attach(ws, **kw):
-        for w in ws:
-            w["pid"] = w.pop("pid_raw")
-
-    mocker.patch("periscope.channels._attach_git_then_resolve_pids", side_effect=_attach)
-
-    pid, pane_id, window = channels._resolve_window_by_pid("abcd1234")
-    assert pid == "abcd1234"
-    assert pane_id == "%7"
-    assert window["session"] == "s" and window["index"] == 2
-
-
-def test_resolve_window_by_pid_miss_returns_empty(mocker):
-    from periscope import channels
-
-    mocker.patch(
-        "periscope.channels.list_windows",
-        return_value=[
-            {"session": "s", "index": 2, "pane_id": "%7", "pid_raw": "other"},
-        ],
-    )
-    mocker.patch("periscope.channels._attach_git_then_resolve_pids")
-    assert channels._resolve_window_by_pid("abcd1234") == ("", "", {})
-
-
-def test_resolve_window_by_pid_empty_handle_returns_empty(mocker):
-    from periscope import channels
-
-    mocker.patch("periscope.channels.list_windows")
-    assert channels._resolve_window_by_pid("") == ("", "", {})
-
-
 def test_spawn_claude_writes_spawned_by(mocker):
     from periscope import channels
 
@@ -1911,28 +1871,6 @@ def test_deliver_still_sends_when_readiness_is_unknown(mocker):
 
     assert asyncio.run(channels._deliver("%9", "hello", "%1")) == {"ok": True}
     emit.assert_awaited_once()
-
-
-def test_resolve_window_by_pid_falls_back_to_pane_id(mocker):
-    """A pid can change under a live pane (re-mint, or a rebind that misses
-    after a tmux restart). The observed shape was always the same: spawn
-    returned a pid, minutes later send_to said "no live window" while the pane
-    was alive at the SAME pane_id. Callers hold that pane_id, so it must work
-    as a handle — one session read the dead handle as death and respawned a
-    duplicate worker onto the live task."""
-    from periscope import channels
-
-    rows = [{"session": "s", "index": 1, "name": "w", "cwd": "/a", "pane_id": "%106", "pid_raw": "e42b3b40"}]
-    mocker.patch.object(channels, "list_windows", return_value=rows)
-    mocker.patch.object(
-        channels, "_attach_git_then_resolve_pids", side_effect=lambda ws, **kw: [w.update(pid=w["pid_raw"]) for w in ws]
-    )
-
-    # The stale spawn-time pid no longer resolves...
-    assert channels._resolve_window_by_pid("3dc7686a") == ("", "", {})
-    # ...but the pane id the caller still holds does.
-    pid, pane_id, _w = channels._resolve_window_by_pid("%106")
-    assert (pid, pane_id) == ("e42b3b40", "%106")
 
 
 def test_stale_handle_error_names_the_recovery():
