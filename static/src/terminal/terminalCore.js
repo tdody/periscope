@@ -422,7 +422,7 @@ function disposeWebglAddon() {
 // Re-parenting MUST move the element xterm already owns: term.open(newParent)
 // silently no-ops after the first call (xtermjs/xterm.js#4978 — it ignores the
 // argument and returns). Same imperative parked-host trick <Detail> uses to
-// keep LGTM iframes from reloading on reconciliation.
+// keep iframes from reloading on reconciliation.
 //
 // Nothing disposes this; it intentionally lives for the page's lifetime.
 function ensureTerminal() {
@@ -541,11 +541,10 @@ function ensureTerminal() {
     console.warn("[periscope] Unicode 11 widths unavailable; emoji will offset the cursor:", e);
   }
 
-  // Cmd+click on a `.md` path → add it as a document to the LGTM
-  // session for this pane's repo. Path is resolved against the pane's
-  // cwd server-side. Plain click on the underlined path does nothing
-  // (no modifier = no action) — the Cmd requirement keeps incidental
-  // clicks during scrollback reading from triggering adds.
+  // Cmd+click on a file path opens it as a preview tab. Path is resolved
+  // against the pane's cwd server-side. Plain click on the underlined path
+  // does nothing (no modifier = no action) — the Cmd requirement keeps
+  // incidental clicks during scrollback reading from triggering opens.
   //
   // The link provider runs per-rendered-row on demand. Underline-on-
   // hover comes for free from xterm's default link styling.

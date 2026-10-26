@@ -29,7 +29,6 @@ def test_pane_returns_parsed_payload(client, mocker):
         "list_windows",
         return_value=[{"session": "main", "index": 0, "name": "x", "pane_id": "%7", "cwd": "/tmp"}],
     )
-    _patch(mocker, "cached_lgtm_state", return_value=None)
 
     r = client.get("/api/pane?session=main&index=0")
     assert r.status_code == 200
@@ -76,7 +75,6 @@ def test_pane_drops_branch_prs_checks_and_base_under_a_linked_pr(client, mocker,
         "list_windows",
         return_value=[{"session": "main", "index": 0, "name": "x", "pane_id": "%7", "cwd": "/tmp"}],
     )
-    _patch(mocker, "cached_lgtm_state", return_value=None)
     clean_state["windows"]["p9"] = {"linked_pr": 1234}
 
     r = client.get("/api/pane?session=main&index=0")

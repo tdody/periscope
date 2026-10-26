@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../prefs.js", () => ({ setLastSelected: vi.fn() }));
 
 const { dismissedNeedsPids, dismissedReadyPids, railSelection } = await import("../../store.js");
-const { markReadySeen, openNeedsPane, openReadyPane, selectReview } = await import("../alertFeed.js");
+const { markReadySeen, openNeedsPane, openReadyPane } = await import("../alertFeed.js");
 const prefs = await import("../../prefs.js");
 
 afterEach(() => {
@@ -51,16 +51,5 @@ describe("what a done banner's buttons do", () => {
     expect(prefs.setLastSelected).not.toHaveBeenCalled();
     markReadySeen(null);
     expect(dismissedReadyPids.value.size).toBe(1);
-  });
-
-  it("Review diff selects the session's review row and remembers it", () => {
-    selectReview("periscope");
-    expect(railSelection.value).toBe("review:periscope");
-    expect(prefs.setLastSelected).toHaveBeenLastCalledWith({ kind: "review", worktree: "periscope" });
-    railSelection.value = null;
-    prefs.setLastSelected.mockClear();
-    selectReview("");
-    expect(railSelection.value).toBe(null);
-    expect(prefs.setLastSelected).not.toHaveBeenCalled();
   });
 });

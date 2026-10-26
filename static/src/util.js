@@ -131,19 +131,6 @@ export function prStateMeta(state) {
   return { cls: "", suffix: "" };
 }
 
-// Rewrite an LGTM-server URL's hostname to match the parent page's host.
-// The server hands out 127.0.0.1; the parent may be on localhost or LAN
-// IP, and same-host iframes avoid mixed-host browser headaches.
-export function rewriteLgtmHost(url) {
-  try {
-    const u = new URL(url);
-    u.hostname = window.location.hostname;
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-
 // Shared error-surfacing wrapper. FastAPI returns `{detail: ...}` on 404/422,
 // not our `{ok, error}` shape, so naive `data.error` reads as "undefined" when
 // e.g. the wrong server version is running. Normalize both shapes.

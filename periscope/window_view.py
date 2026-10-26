@@ -29,7 +29,6 @@ from periscope.git_pr import (
     cached_linked_pr_state,
     cached_pr_state,
 )
-from periscope.lgtm import cached_lgtm_state
 from periscope.panes import (
     clear_agent_state_transition,
     forget_agent,
@@ -349,7 +348,6 @@ def build_window_view(
 
     git = cached_git_state(w.get("cwd", "")) or {}
     pr = cached_pr_state(w.get("cwd", ""), git.get("branch")) or {}
-    lgtm = cached_lgtm_state(w.get("cwd", ""))
 
     channel = channel_state_for(w.get("pane_id") or "")
     if parsed.get("agent") == "codex":
@@ -456,7 +454,6 @@ def build_window_view(
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
-        "lgtm": lgtm,
         # The track this tab belongs to — the sole organizational primitive.
         # (project_pinned_dir / workspace_id / project_name / project_archived
         # are gone; the frontend groups purely by track_id.)

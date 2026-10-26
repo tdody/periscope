@@ -69,7 +69,7 @@ def save_now() -> None:
     Safe to call every worker tick: the script self-gates on
     `@continuum-save-interval` and takes its own lock, so it only writes when
     an interval has actually elapsed. Degrades silently when continuum isn't
-    installed — same contract as the LGTM integration.
+    installed.
     """
     if not config.is_prod():
         return

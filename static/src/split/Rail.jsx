@@ -11,8 +11,8 @@
 //   - `railSelection`   → STRING highlight-key the rows compare against
 //
 // Two deliberately-different selection shapes (do NOT cross them):
-//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid} / {kind:"review",worktree})
-//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>" / "review:<worktree>")
+//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid})
+//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>")
 // railSelection mirrors the string; setLastSelected stores the object.
 //
 // Drag identity travels on the drag descriptor captured at dragStart (kind +
@@ -35,7 +35,7 @@ import { ActivitySection, AttentionTop } from "./AttentionSections.jsx";
 import { alertItems } from "./alertFeed.js";
 import { awaitingReplyByPid } from "./attention.js";
 import { railHovered } from "./layoutFreeze.js";
-import { BranchRow, NewTabRow, PaneRow, ReviewRow, TrackRow } from "./RailRows.jsx";
+import { BranchRow, NewTabRow, PaneRow, TrackRow } from "./RailRows.jsx";
 import { maxSeverity, mergeLiveAndPrefs, paneChip, trackKind, trackLabel } from "./railTree.js";
 import { SectionHeader } from "./SectionHeader.jsx";
 
@@ -189,7 +189,7 @@ function isValidDropTarget(drag, target) {
     if (target.kind === "track") return true;      // move onto a track header
     return false;
   }
-  return false;   // review rows aren't draggable
+  return false;   // no other row kind is draggable
 }
 
 export function Rail() {
@@ -245,8 +245,6 @@ export function Rail() {
     track("pane.focus", { key });
     if (key.startsWith("pane:")) {
       prefs.setLastSelected({ kind: "pane", pid: key.slice("pane:".length) });
-    } else if (key.startsWith("review:")) {
-      prefs.setLastSelected({ kind: "review", worktree: key.slice("review:".length) });
     }
   }
 
@@ -487,27 +485,6 @@ export function Rail() {
       ));
   }
 
-  // The LGTM review row is re-homed under its TRACK (Task 12 dropped the
-  // "review" tree sentinel). A track with any live LGTM session gets one review
-  // row at the top of its body (its worktree key = the first such window's
-  // session, which keys the iframe in <Detail>). Approach noted in the report.
-  function reviewRowFor(trackId) {
-    const w = live.find((x) => x.track_id === trackId && x.lgtm?.slug);
-    if (!w) return null;
-    const wtKey = w.session;
-    return (
-      <ReviewRow
-        key={`review:${wtKey}`}
-        worktreeKey={wtKey}
-        lgtmLive={true}
-        selectedKey={selectedKey}
-        onSelect={selectKey}
-        dragProps={{}}
-        dropPos={dropPosFor(`review:${wtKey}`)}
-      />
-    );
-  }
-
   // --- Empty state ---------------------------------------------------------
   if (trackOrder.length === 0) {
     return (
@@ -557,7 +534,6 @@ export function Rail() {
         // `all`, and read as disabled. Emptiness is not a filter miss.
         const trackDim = trackWindows.length === 0
           || trackWindows.some((w) => passesFilter(w, filter));
-        const review = reviewRowFor(trackId);
 
         return (
           <RailFragment key={trackKeyStr}>
@@ -583,9 +559,6 @@ export function Rail() {
                 class={`rail-group rail-track-card${dropPosFor(`card:${trackId}`) ? " drop-into" : ""}`}
                 {...makeCardDropProps(trackId)}
               >
-                {/* Review row (if any LGTM session is live) sits at the top of
-                    the card body, above the branches / panes. */}
-                {review && <div class="rail-group-body rail-review-head">{review}</div>}
                 {multiBranch ? (
                   // Multi-branch: branch sub-clusters INSIDE the card (purple
                   // left-rail subgroups), not separate top-level cards.

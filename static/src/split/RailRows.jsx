@@ -319,27 +319,6 @@ export function PaneRow({
   );
 }
 
-export function ReviewRow({ worktreeKey, lgtmLive, selectedKey, onSelect, dragProps, dropPos }) {
-  const k = `review:${worktreeKey}`;
-  const sel = k === selectedKey ? " selected" : "";
-  const empty = lgtmLive ? "" : " review-empty";
-  const drop = dropPos ? " drop-target" : "";
-  return (
-    <div
-      class={`rail-row child-row${sel}${empty}${drop}`}
-      data-drop-pos={dropPos || undefined}
-      draggable
-      onClick={() => onSelect(k)}
-      {...dragProps}
-    >
-      {lgtmLive
-        ? <span class="rail-icon icon-review">◉</span>
-        : <span class="rail-icon icon-review-empty">○</span>}
-      <span class="rail-label">review{lgtmLive ? "" : <> <em>start →</em></>}</span>
-    </div>
-  );
-}
-
 export function NewTabRow({ worktreeKey, onOpen }) {
   return (
     <div

@@ -40,7 +40,7 @@ def _safe_build(w: dict, now_ts: int) -> tuple[dict, tuple[str, int, int, int] |
     """Per-worker exception isolation for the parallel fan-out.
 
     build_window_view already catches capture()/parse_pane() failures, but the
-    git / PR / LGTM / affiliation calls run outside that guard. In executor.map
+    git / PR / affiliation calls run outside that guard. In executor.map
     one worker raising would re-raise on the join and 500 the whole /api/state
     response. Convert any per-pane exception into an error view so one bad pane
     can't sink the board.

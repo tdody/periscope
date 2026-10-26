@@ -16,7 +16,6 @@ from fastapi.staticfiles import StaticFiles
 from periscope.channels import _mcp_listener
 from periscope.config import MCP_SOCKET_PATH, STATIC
 from periscope.git_pr import prewarm_pr_cache
-from periscope.lgtm import _LGTM_SSE_TASKS, _lgtm_periodic_refresh
 from periscope.log import _bg, _task, log
 
 # Routes — each module owns an APIRouter that we mount into `app` below.
@@ -42,7 +41,6 @@ from periscope.routes import (
     ws,
 )
 from periscope.routes import cleanup as cleanup_routes
-from periscope.routes import lgtm as lgtm_route
 from periscope.routes import open as open_route
 from periscope.routes import projects as projects_routes
 from periscope.routes import settings as settings_routes
@@ -118,10 +116,6 @@ async def lifespan(_app: FastAPI):
     from periscope import state_hub
 
     state_task = _task("state-hub", state_hub.run())
-    # LGTM mirror: polls localhost:9900 + subscribes per-session SSE.
-    # No-op while LGTM isn't running; surfaces on the dashboard the
-    # moment it comes up.
-    lgtm_task = _task("lgtm-refresh", _lgtm_periodic_refresh())
     # Activity worker: context-reset detection + narrator (semantic status
     # + auto-rename). Prod only — the narrator spends Haiku per pane, and
     # periscope.db is a single shared file. Gated on IS_PROD (not bare
@@ -189,13 +183,10 @@ async def lifespan(_app: FastAPI):
         if mcp_task is not None:
             mcp_task.cancel()
         state_task.cancel()
-        lgtm_task.cancel()
         if activity_task is not None:
             activity_task.cancel()
         if poke_task is not None:
             poke_task.cancel()
-        for t in list(_LGTM_SSE_TASKS.values()):
-            t.cancel()
         if mcp_task is not None:
             with suppress(asyncio.CancelledError, Exception):
                 await mcp_task
@@ -222,7 +213,6 @@ for r in (
     fs,
     healthz,
     history,
-    lgtm_route,
     open_route,
     pane,
     paste_image,

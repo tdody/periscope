@@ -33,7 +33,6 @@ applies. Read the relevant doc before editing, not after the tests go red.
 | `channels.py`, `channel_shim.py`, `turns.py`, `pane_session_hook.py`, `codex_pane_session_hook.py` | `docs/channels.md` — MCP tools, shim reconnect protocol, pane→session mapping (live sid first, `pane_sessions` fallback) |
 | `narrator.py`, `rename_ai.py`, `/api/rename`, `/api/name-pin` | `docs/narrator.md` — regeneration rules, humans win renames, name pinning |
 | `launch_policy.py`, `usage.py` (`choose_launch`), `poke.py`, the spawn/resume paths in `routes/sessions.py` (incl. move-account), `open_ops.py`, `channels.py`, the `spawn_model` / `spawn_account` settings, header pin pickers, `UsagePill` / `usageSummary.js` | `docs/account-routing.md` — earliest-reset routing, walls vs. session pressure, what `auto`/`default` mean, the session poke, the move-anyway override, the 💤 waste marker |
-| `lgtm.py`, Review tab, LGTM iframes | `docs/lgtm.md` — HTTP/SSE contract, debugging a blank Review tab |
 | `src-tauri/` | `docs/tauri-shell.md` — build via `.app` not `cargo tauri dev`, webview recycling |
 | `static/src/notify/`, `notifications.rs`, `tauri.js` `notify` / `onNotificationOpened` / `onNotificationAction`, `NotifySettings` | `docs/superpowers/specs/2026-10-21-native-notifications-design.md` (its revision sections first) — one pass per applied state (`stateSeq`), grace counted in passes, keys that survive a restart, webview/shell version skew; buttons: `2026-10-26-native-notifications-2b-design.md` — categories are data the webview registers, one per variant whose buttons all apply |
 | `bin/periscope update`, `updater.py`, the launchd plist | `docs/updating.md` — why pull+restart is not `update`, the bootout guards |
@@ -127,7 +126,7 @@ would double-load every global.
 | `bg_commander.py` | Background command jobs + status sync |
 | `poke.py` | Daily session poke: one Haiku message per account at 08:00 so the 5h window resets ~13:00; verified, logged, prod-only |
 | `resurrect.py` / `tmux_persist.py` | Save-file `--resume` rewrite + `save_now()` / provisioning the tmux side of continuation-over-reboot |
-| `git_pr.py` / `lgtm.py` / `usage.py` / `launch_policy.py` / `cost_pressure.py` | Git state + PR cache / LGTM mirror / plan usage + `choose_launch` shell / pure account-and-model routing policy / per-pane context-cost pressure |
+| `git_pr.py` / `usage.py` / `launch_policy.py` / `cost_pressure.py` | Git state + PR cache / plan usage + `choose_launch` shell / pure account-and-model routing policy / per-pane context-cost pressure |
 | `narrator.py` / `rename_ai.py` | Per-pane AI status lines + divergence renames / Anthropic SDK plumbing |
 | `open_ops.py` | Unified-open core (path/branch/PR descriptors → create-or-focus → rail placement); no HTTP |
 | `updater.py` | Self-update: commits-behind check + detached spawn of `bin/periscope update` |

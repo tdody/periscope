@@ -45,7 +45,6 @@ def test_state_with_window(client, mocker, clean_state):
     _patch(mocker, "parse_pane", return_value={"agent": None, "spinner": None, "state": "shell"})
     _patch(mocker, "cached_git_state", return_value={"branch": "main"})
     _patch(mocker, "cached_pr_state", return_value={"pr": None})
-    _patch(mocker, "cached_lgtm_state", return_value=None)
     _patch(mocker, "cached_claude_usage", return_value={})
     _patch(mocker, "cached_plan_usage", return_value={})
     _patch(mocker, "all_pane_ids", return_value={"%7", "%8"})

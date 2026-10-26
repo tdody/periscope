@@ -1,12 +1,10 @@
-// Right-pane of the split view (#detail). Four states, ported from detail.js:
+// Right-pane of the split view (#detail). Two states, ported from detail.js:
 //
 //   - pane          — <Terminal> + side metadata (pending input / recap / last line)
-//   - review-live   — idempotent LGTM iframe
-//   - review-empty  — "Start review →" CTA
 //   - empty         — nothing selected
 //
 // The selection is driven by the `railSelection` signal (string highlight-key:
-// "pane:<pid>" | "review:<worktree>" | null) — the same value <Rail> writes and
+// "pane:<pid>" | null) — the same value <Rail> writes and
 // compares rows against. The live window data comes from the `windows` signal,
 // so the header + side panel refresh on every poll without remounting the
 // terminal (single-xterm reuse: <Terminal> is keyed on pid, so re-selecting the
@@ -15,7 +13,7 @@
 // shared paste handler always targets the current selection.
 //
 // CSS contract preserved verbatim: detail-pane/-header/-body, detail-xterm,
-// detail-side, detail-review/-header/-iframe, detail-empty, review-start-card,
+// detail-side, detail-empty,
 // hsep, header-pr/-linear/-ci/-git/-api-error, side-section/-label/-pending/
 // -prompt/-mono. No class renamed.
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -31,7 +29,7 @@ import { Terminal } from "../terminal/Terminal.jsx";
 import { TerminalSearch } from "../terminal/TerminalSearch.jsx";
 import { isTerminalAtBottom, scrollTerminalToBottom, setTerminalFileCallback, writeTerminalLine } from "../terminal/terminalCore.js";
 import { track } from "../track.js";
-import { apiCall, memHint, paneLabel, prStateMeta, prUrl, relTime, rewriteLgtmHost, targetQuery } from "../util.js";
+import { memHint, paneLabel, prStateMeta, prUrl, relTime, targetQuery } from "../util.js";
 import { sideHidden } from "./panels.js";
 import { ResizeHandle } from "./ResizeHandle.jsx";
 import { SessionPickers } from "./SessionPickers.jsx";
@@ -135,11 +133,6 @@ export function computeMode(w) {
   // reloads. We deliberately do NOT auto-flip to transcript once data is seen —
   // that surprises users who were happily watching the terminal.
   return getDetailMode(w.pid) || "terminal";
-}
-
-function lgtmSessionForWorktree(worktreeKey) {
-  const w = (windows.value || []).find((x) => x.session === worktreeKey);
-  return w?.lgtm?.slug ? w.lgtm : null;
 }
 
 // Shared image-paste handler (capture-phase via Terminal's onPaste). Mirrors
@@ -512,97 +505,6 @@ function PaneDetail({ w }) {
   );
 }
 
-// Review state — live LGTM iframe. Idempotent: the iframe element persists and
-// its src is reassigned ONLY when the (worktree → url) key changes; never per
-// poll (that kills the SSE). Keyed on worktreeKey at the call site so switching
-// worktrees tears down + remounts. activeTarget is cleared (review owns the
-// iframe, no pane target).
-function ReviewDetail({ worktreeKey }) {
-  // The LGTM iframe is created imperatively ONCE and parked inside a host div
-  // Preact owns; Preact never reconciles the iframe node, so the 1.5s/3s poll
-  // re-render can't move/recreate it (which reloads an iframe in a browser and
-  // drops the user's in-iframe file selection). Mirrors vanilla's static
-  // iframe. `display:contents` keeps it laid out as a flex child of #detail-review.
-  const hostRef = useRef(null);
-  const iframeRef = useRef(null);
-  const mountedSrc = useRef(null);
-  const everHadSession = useRef(false);
-  const session = lgtmSessionForWorktree(worktreeKey);
-  const hasSession = !!(session?.url);
-  if (hasSession) everHadSession.current = true;
-  // Use LGTM's EMBEDDING contract (?embedded=1&host=periscope), same as the
-  // modal review — NOT the bare standalone URL. The bare URL boots LGTM's full
-  // standalone app whose /events SSE fails when iframed, making LGTM reload
-  // itself in a loop. Embedded mode is the iframe-designed path and is stable
-  // (the modal review proves it).
-  const url = hasSession
-    ? `${rewriteLgtmHost(session.url)}?embedded=1&host=periscope`
-    : null;
-
-  useEffect(() => {
-    activeTarget.value = null;
-  }, [worktreeKey]);
-
-  useEffect(() => {
-    if (!hostRef.current || iframeRef.current) return;
-    const f = document.createElement("iframe");
-    f.id = "detail-review-iframe";
-    f.className = "detail-review-iframe";
-    hostRef.current.appendChild(f);
-    iframeRef.current = f;
-  });
-
-  useEffect(() => {
-    if (url && iframeRef.current && mountedSrc.current !== url) {
-      iframeRef.current.src = url;
-      mountedSrc.current = url;
-    }
-  }, [url]);
-
-  // No session yet for this worktree → Start-review CTA. (Once a session has
-  // existed, everHadSession keeps us on the iframe even across a transient gap.)
-  if (!everHadSession.current) {
-    return <ReviewStart worktreeKey={worktreeKey} />;
-  }
-
-  return (
-    <div id="detail-review" class="detail-review">
-      <header id="detail-review-header" class="detail-review-header">
-        <span><b>review</b></span>
-        <span class="hsep">·</span>
-        <span>{worktreeKey}</span>
-      </header>
-      <div ref={hostRef} class="detail-review-iframe-host" style="display:contents" />
-    </div>
-  );
-}
-
-// Review-empty CTA. "Start review →" POSTs /api/lgtm/start with the worktree
-// cwd; after start, the next /api/state poll surfaces lgtm.slug and this row
-// transitions to ReviewDetail (the iframe mounts on the CTA→live transition).
-function ReviewStart({ worktreeKey }) {
-  async function start() {
-    const w = (windows.value || []).find((x) => x.session === worktreeKey);
-    if (!w) return;
-    await apiCall("start review", "/api/lgtm/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: w.cwd }),
-    });
-    // No explicit selectReview re-call: the next poll flips lgtm.slug on, and
-    // the signal-driven render swaps in <ReviewDetail> automatically.
-  }
-
-  return (
-    <div id="detail-review-start" class="detail-review-start">
-      <div class="review-start-card">
-        <div class="review-start-title">No LGTM session for this worktree</div>
-        <button class="review-start-btn" onClick={start}>Start review →</button>
-      </div>
-    </div>
-  );
-}
-
 function EmptyDetail() {
   // Markup matches vanilla detail.js:showEmpty verbatim, incl. the
   // #detail-empty-add button. It opens the unified open omnibox via the same
@@ -627,29 +529,13 @@ export function Detail() {
   const sel = railSelection.value;       // string highlight-key, or null
   const ws = windows.value || [];        // read so Detail re-renders each poll
 
-  const isReview = !!sel && sel.startsWith("review:");
   const isPane = !!sel && sel.startsWith("pane:");
-  const activeReviewWt = isReview ? sel.slice("review:".length) : null;
-
-  // Keep EVERY opened review's iframe mounted (CSS-hidden when not active), so
-  // switching among reviews/panes never reloads a review — each loads exactly
-  // once. Display toggling never reloads an iframe (it stays in the DOM).
-  // Mirrors how the modal keeps its review iframe alive across tab switches.
-  // The opened set is pruned to worktrees still live in /api/state, so a
-  // closed worktree's iframe is torn down rather than leaking.
-  const opened = useRef(new Set());
-  if (activeReviewWt) opened.current.add(activeReviewWt);
-  const liveSessions = new Set(ws.map((w) => w.session));
-  for (const wt of [...opened.current]) {
-    if (wt !== activeReviewWt && !liveSessions.has(wt)) opened.current.delete(wt);
-  }
-  const reviewWts = [...opened.current];
 
   const paneW = isPane ? lookupWindow(sel.slice("pane:".length)) : null;
 
   // Keep every opened Claude transcript mounted (CSS-hidden when not active) so
-  // scroll position + expanded segments survive pane switches — same discipline
-  // as the review iframes. Pruned to pids still live in /api/state.
+  // scroll position + expanded segments survive pane switches — 
+  // Pruned to pids still live in /api/state.
   const openedTr = useRef(new Set());
   if (isPane && paneW?.agent === "claude") openedTr.current.add(paneW.pid);
   const livePids = new Set(ws.map((x) => x.pid));
@@ -672,11 +558,6 @@ export function Detail() {
     <section id="detail">
       {!sel && <EmptyDetail />}
       {isPane && (paneW ? <PaneDetail w={paneW} /> : <EmptyDetail />)}
-      {reviewWts.map((wt) => (
-        <div key={wt} style={activeReviewWt === wt ? "display:contents" : "display:none"}>
-          <ReviewDetail key={wt} worktreeKey={wt} />
-        </div>
-      ))}
       {trPids.map((pid) => {
         const tw = lookupWindow(pid);
         const isSelected = isPane && paneW?.pid === pid;

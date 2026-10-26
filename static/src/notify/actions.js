@@ -6,14 +6,13 @@
 // A category is a fixed set of buttons, labels included, so copy.js gives
 // each banner the variant whose buttons all apply: no Clean up without a
 // worktree, no Open PR without a URL, and Spawn on {B} gets one category per
-// B. Review diff isn't offered yet — it waits on review rows keyed by
-// worktree (THI-433). None of these make an agent act; Allow / Deny / reply
+// B. None of these make an agent act; Allow / Deny / reply
 // are PR 2's (docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md).
 import { accountLabel } from "../accounts.js";
 import { pickSpawnAccount } from "../chrome/SpawnAccountPicker.jsx";
 import { openUsageDetails } from "../chrome/UsagePill.jsx";
 import { openCleanupModal } from "../overlays/CleanupModal.jsx";
-import { markReadySeen, revealPane, selectPane, selectReview } from "../split/alertFeed.js";
+import { markReadySeen, revealPane, selectPane } from "../split/alertFeed.js";
 import { windows } from "../store.js";
 import { openExternal } from "../tauri.js";
 import { usageCategory } from "./copy.js";
@@ -31,8 +30,7 @@ const DETAILS = act("details", "Details", { foreground: true });
 // set because move_targets came back in another order.
 export function categories({ accounts = [], moveTargets = {} } = {}) {
   const set = [
-    // No "done" category yet: Review diff waits on review rows keyed by
-    // worktree (THI-433), so every done banner gets done_seen only.
+    // No "done" category: every done banner gets done_seen only.
     { id: "done_seen", actions: [MARK_SEEN] },
     { id: "ci_failed_pr", actions: [OPEN_PR] },
     { id: "pr_merged", actions: [CLEANUP, OPEN_PR] },
@@ -48,7 +46,7 @@ export function categories({ accounts = [], moveTargets = {} } = {}) {
 }
 
 export const OPENERS = Object.freeze({
-  openExternal, openUsageDetails, pickSpawnAccount, openCleanupModal, markReadySeen, selectReview, selectPane, revealPane,
+  openExternal, openUsageDetails, pickSpawnAccount, openCleanupModal, markReadySeen, selectPane, revealPane,
 });
 
 // A pressed button, as the shell reports it. The pane is found by pid first:
@@ -81,14 +79,6 @@ export function runAction({ target, action, data } = {}, o = OPENERS) {
         // A gone pane has no READY row left to dismiss.
         if (w) o.markReadySeen(w);
         return;
-      case "review": {
-        // No category offers this button until THI-433 re-adds one; kept so
-        // the follow-up only touches categories() and copy.js.
-        const session = w?.session || data.session;
-        if (session) o.selectReview(session);
-        else show();
-        return;
-      }
       case "cleanup": {
         // The banner names the worktree whose PR merged; the live pane may
         // since have moved to another one. (review keeps preferring the live

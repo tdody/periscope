@@ -1067,63 +1067,6 @@ body.modal-open { overflow: hidden; }
   min-width: 0;
 }
 #modal[data-tab="terminal"] #modal-terminal-pane { display: flex; flex-direction: row; }
-#modal[data-tab="review"]   #modal-review-pane   { display: flex; flex-direction: column; }
-
-/* Review pane: full-bleed iframe or "Start review" empty state. */
-#modal-review-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  background: var(--bg-modal);
-}
-#modal-review-content iframe {
-  flex: 1;
-  border: 0;
-  width: 100%;
-  /* Explicit height: 100% — iframes don't size to flex containers as
-     reliably as block elements, especially when the parent had
-     display:none until a tab switch. */
-  height: 100%;
-  min-height: 0;
-  background: var(--bg-modal);
-}
-.modal-review-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  color: var(--fg-3);
-  font-size: 13px;
-  padding: 24px;
-  text-align: center;
-}
-.modal-review-empty p {
-  margin: 0;
-  max-width: 360px;
-  line-height: 1.5;
-}
-.modal-review-empty button {
-  padding: 8px 18px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--fg-0);
-  background: var(--bg-1);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.modal-review-empty button:hover { background: var(--bg-1-hi); }
-.modal-review-empty button:disabled { opacity: 0.5; cursor: progress; }
-.modal-review-empty .modal-review-error {
-  color: var(--s-danger);
-  font-size: 11.5px;
-  font-family: var(--mono);
-}
 
 #modal-xterm {
   flex: 1;
@@ -2254,7 +2197,7 @@ body.col-resizing iframe { pointer-events: none; }
   background: var(--bg-0);
 }
 
-#detail-empty, #detail-pane, #detail-review, #detail-review-start {
+#detail-empty, #detail-pane {
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -2304,10 +2247,7 @@ body.col-resizing iframe { pointer-events: none; }
   font-family: var(--mono);
   font-size: 12px;
 }
-.detail-review { display: flex; flex-direction: column; }
-.detail-review-iframe { flex: 1; border: 0; min-height: 0; }
 .detail-empty { display: flex; align-items: center; justify-content: center; color: var(--fg-3); }
-.detail-review-start { display: flex; align-items: center; justify-content: center; }
 
 .hidden { display: none !important; }
 
@@ -2353,7 +2293,7 @@ body.col-resizing iframe { pointer-events: none; }
 
 /* Each nesting level adds --rail-indent of left-padding so the tree's
    hierarchy reads visually. repo at base; worktree at base + 1 step;
-   pane / review / new-tab at base + 2 steps. */
+   pane / new-tab at base + 2 steps. */
 :root { --rail-indent: 16px; }
 
 .rail-row {
@@ -2571,7 +2511,6 @@ body.col-resizing iframe { pointer-events: none; }
   width: calc(var(--rail-indent) - 5px);
   height: 1px;
 }
-.rail-row.review-empty .rail-label em { font-style: italic; opacity: .55; font-size: 11px; }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .dot-green { background: var(--s-working); }
@@ -2584,7 +2523,7 @@ body.col-resizing iframe { pointer-events: none; }
 .dot-pulse-done { animation: rail-pulse-done 1.6s ease-in-out infinite; }
 @keyframes rail-pulse-done { 50% { box-shadow: 0 0 0 4px var(--s-done-bg); } }
 
-.detail-pane-header, .detail-review-header {
+.detail-pane-header {
   padding: 5px 14px; border-bottom: 1px solid var(--line);
   display: flex; gap: 8px; align-items: baseline; font-size: 12px;
   flex-wrap: wrap;
@@ -2593,7 +2532,7 @@ body.col-resizing iframe { pointer-events: none; }
    pane's header before it moved to the tab bar, kept so the move shifted
    nothing below the header. */
 .detail-pane-header[data-agent="claude"] { min-height: 32.6px; }
-.detail-pane-header .hsep, .detail-review-header .hsep { opacity: .5; }
+.detail-pane-header .hsep { opacity: .5; }
 .detail-pane-header .header-pr, .detail-pane-header .header-linear {
   color: var(--fg-1); text-decoration: none; font-family: var(--mono);
 }
@@ -2627,8 +2566,7 @@ body.col-resizing iframe { pointer-events: none; }
 .side-mono { font-family: var(--mono); font-size: 11px; opacity: .85; }
 .side-pending { color: var(--s-needs); }
 .side-prompt { color: var(--s-needs); margin-right: 4px; }
-.review-start-card, .detail-empty-card { text-align: center; color: var(--fg-3); }
-.review-start-btn { margin-top: 10px; padding: 6px 14px; cursor: pointer; }
+.detail-empty-card { text-align: center; color: var(--fg-3); }
 
 /* Drag affordance lives on the row itself — no explicit grip handle.
    `cursor: grab` on draggable rows hints that mousedown+move reorders;
@@ -2800,8 +2738,6 @@ body.col-resizing iframe { pointer-events: none; }
 .icon-shell { color: var(--s-shell); font-family: var(--mono); }  /* $ — shells */
 .icon-claude { color: oklch(0.74 0.12 38); font-size: 13px; }     /* ✻ — Claude brand-orange */
 .icon-codex { color: oklch(0.78 0.10 220); font-size: 13px; }    /* ⬡ — Codex */
-.icon-review { color: var(--s-shell); font-size: 11px; }          /* ◉ — live LGTM */
-.icon-review-empty { color: var(--fg-4); font-size: 11px; }        /* ○ — start CTA */
 .icon-worktree { color: var(--worktree); }                         /* ⎇ — branch glyph */
 
 .rail-row { position: relative; }
@@ -2844,8 +2780,6 @@ body.col-resizing iframe { pointer-events: none; }
   padding: 5px;
   border-color: color-mix(in oklch, var(--effort) 30%, transparent);
 }
-/* Review row parked at the top of the card body, above branches/panes. */
-.rail-review-head { padding-top: 0; padding-bottom: 2px; }
 
 /* Whole-card drop zone (see Rail.jsx makeCardDropProps). Dropping a tab
    anywhere in the card moves it into that track — the seclabel alone was too

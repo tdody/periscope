@@ -12,7 +12,7 @@ const { categories, runAction, OPENERS } = await import("../actions.js");
 
 const openers = () => ({
   openExternal: vi.fn(), openUsageDetails: vi.fn(), pickSpawnAccount: vi.fn(), openCleanupModal: vi.fn(),
-  markReadySeen: vi.fn(), selectReview: vi.fn(), selectPane: vi.fn(), revealPane: vi.fn(),
+  markReadySeen: vi.fn(), selectPane: vi.fn(), revealPane: vi.fn(),
 });
 
 afterEach(() => {
@@ -109,23 +109,9 @@ describe("runAction", () => {
     expect(o.revealPane).not.toHaveBeenCalled();
   });
 
-  it("Review diff selects the live pane's session, else the banner's, else reveals", () => {
-    const o = openers();
-    // the live window's target deliberately differs from the banner's so a
-    // pass here can only be from the pid match, never a target coincidence.
-    windows.value = [{ pid: "p1", target: "s:4", session: "live" }];
-    runAction({ target: "s:1", action: "review", data: { pid: "p1", session: "old" } }, o);
-    expect(o.selectReview).toHaveBeenLastCalledWith("live");
-    windows.value = [];
-    runAction({ target: "s:1", action: "review", data: { pid: "p1", session: "old" } }, o);
-    expect(o.selectReview).toHaveBeenLastCalledWith("old");
-    runAction({ target: "s:1", action: "review", data: { pid: "p1" } }, o);
-    expect(o.revealPane).toHaveBeenCalledWith("s:1");
-  });
-
   it("Clean up names the banner's worktree over the live pane's, which beats a reveal", () => {
     const o = openers();
-    // same deliberate target mismatch as the review test above.
+    // the live window's target deliberately differs from the banner's, so a pass can only come from the pid match.
     windows.value = [{ pid: "p1", target: "s:4", cwd: "/wt/live" }];
     runAction({ target: "s:1", action: "cleanup", data: { pid: "p1", cwd: "/wt/old" } }, o);
     expect(o.openCleanupModal).toHaveBeenLastCalledWith({ paths: ["/wt/old"] });

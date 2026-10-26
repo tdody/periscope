@@ -1,8 +1,8 @@
 """GET /api/pane (single-pane detail) and POST /api/rename (rename window).
 
 Pane returns the captured screen + every derived field the modal needs
-(git state, PR badge, activity timeline, channel reply queue, LGTM
-mirror). Mostly an aggregator over already-cached subsystems.
+(git state, PR badge, activity timeline, channel reply queue).
+Mostly an aggregator over already-cached subsystems.
 """
 
 import os
@@ -17,7 +17,6 @@ from periscope import config
 from periscope.activity import cached_pane_activity, stamp_pane_rename
 from periscope.channels import _resolve_window_by_pid, channel_state_for
 from periscope.git_pr import cached_git_state, cached_pr_state
-from periscope.lgtm import cached_lgtm_state
 from periscope.log import log
 from periscope.panes import (
     list_windows,
@@ -126,7 +125,6 @@ def pane(session: str, index: int, lines: int = 200):
         pr.pop("ci", None)
         pr.pop("ci_checks", None)
         pr.pop("pr_base", None)
-    lgtm = cached_lgtm_state(cwd)
     return {
         "content": content,
         "target": target,
@@ -142,7 +140,6 @@ def pane(session: str, index: int, lines: int = 200):
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
-        "lgtm": lgtm,
         **parsed,
         **git,
         **pr,

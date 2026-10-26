@@ -82,14 +82,13 @@ def _window(**overrides) -> dict:
     return base
 
 
-def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, lgtm=None, linked_pr=None):
+def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, linked_pr=None):
     """Mock the read-only caches the view consumes. `linked_pr` defaults to None
     (a cold SWR miss) — patched unconditionally so no real `gh pr view` thread
     ever fires from a test (leaked-thread + live-network hazard)."""
     mocker.patch("periscope.window_view.capture", return_value=pane_content)
     mocker.patch("periscope.window_view.cached_git_state", return_value=git or {})
     mocker.patch("periscope.window_view.cached_pr_state", return_value=pr or {})
-    mocker.patch("periscope.window_view.cached_lgtm_state", return_value=lgtm)
     mocker.patch("periscope.window_view.cached_linked_pr_state", return_value=linked_pr)
 
 
@@ -595,7 +594,6 @@ def test_view_handles_capture_exception(mocker, clean_state):
     mocker.patch("periscope.window_view.capture", side_effect=Exception("tmux died"))
     mocker.patch("periscope.window_view.cached_git_state", return_value={})
     mocker.patch("periscope.window_view.cached_pr_state", return_value={})
-    mocker.patch("periscope.window_view.cached_lgtm_state", return_value=None)
 
     view, _ = build_window_view(_window(), now_ts=1000)
     assert view["state"] == "shell"  # error → agent=None → shell
