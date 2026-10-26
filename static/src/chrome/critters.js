@@ -345,8 +345,9 @@ export const FLUSH = "#ff3b2f";
 const TEETH = "#f3f5f8";
 
 // Clawd's scowl as gritted teeth inside a furious critter's own shouting mouth
-// (the widest rect of its furious layer): a four-stroke zig-zag across it. Its
-// furious layer already draws a mouth, so a scowl beside it would clash.
+// (the widest rect of its furious layer, at least 2.4 × 1.2; none means no
+// teeth): a four-stroke zig-zag across it. Its furious layer already draws a
+// mouth, so a scowl beside it would clash.
 export function teethGlyph(sprite) {
   let mouth = null;
   const walk = (n, furious) => {
