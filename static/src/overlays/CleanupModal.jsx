@@ -17,13 +17,25 @@ import { track } from "../track.js";
 import { modalRequest } from "./modalRequest.js";
 
 const open = signal(false);
+// The worktree dirs a notification's "Clean up worktree" scoped this opening
+// to, or null for the full list.
+const scope = signal(null);
 
-function openCleanupModal() {
+// `paths` scopes the list (and its preselection) to those worktrees.
+export function openCleanupModal({ paths } = {}) {
+  scope.value = paths?.length ? paths : null;
   open.value = true;
   track("overlay.open", { which: "cleanup" });
 }
+
+export function candidatesUrl(paths) {
+  if (!paths?.length) return "/api/cleanup/candidates";
+  return `/api/cleanup/candidates?${paths.map((p) => `paths=${encodeURIComponent(p)}`).join("&")}`;
+}
+
 function close() {
   open.value = false;
+  scope.value = null;
 }
 
 export function CleanupModal() {
@@ -38,14 +50,15 @@ export function CleanupModal() {
 
   useEffect(() => {
     const btn = document.getElementById("cleanup-btn");
-    if (btn) btn.addEventListener("click", openCleanupModal);
-    return () => { if (btn) btn.removeEventListener("click", openCleanupModal); };
+    const onClick = () => openCleanupModal();
+    if (btn) btn.addEventListener("click", onClick);
+    return () => { if (btn) btn.removeEventListener("click", onClick); };
   }, []);
 
   async function refresh() {
     setError("");
     setLoading(true);
-    const { data, error: err } = await modalRequest("load candidates", "/api/cleanup/candidates");
+    const { data, error: err } = await modalRequest("load candidates", candidatesUrl(scope.value));
     setLoading(false);
     if (err) { setError(err); setCandidates([]); return; }
     const cands = data.candidates || [];
@@ -60,7 +73,7 @@ export function CleanupModal() {
     if (!open.value) return;
     setDeleteBranches(false);
     refresh();
-  }, [open.value]);
+  }, [open.value, scope.value]);
 
   const selectedCount = Object.values(checked).filter(Boolean).length;
 
@@ -120,7 +133,11 @@ export function CleanupModal() {
           {loading ? (
             <div class="cleanup-loading">Walking worktrees…</div>
           ) : candidates.length === 0 ? (
-            <div class="cleanup-empty">No cleanup candidates. 🎉</div>
+            <div class="cleanup-empty">
+              {scope.value
+                ? "This worktree isn't ready to clean up: it needs a merged or closed PR, a deleted remote branch, or to sit idle."
+                : "No cleanup candidates. 🎉"}
+            </div>
           ) : (
             candidates.map((c, i) => {
               const name = c.project_name || `(untracked: ${c.pinned_dir.split("/").pop()})`;

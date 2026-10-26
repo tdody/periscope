@@ -30,6 +30,14 @@ export function selectPane(w) {
   prefs.setLastSelected({ kind: "pane", pid: w.pid });
 }
 
+// Select a session's Review row (the live LGTM review, or its "Start
+// review →"), as clicking it in the rail does: rows are keyed by session.
+export function selectReview(session) {
+  if (!session) return;
+  railSelection.value = `review:${session}`;
+  prefs.setLastSelected({ kind: "review", worktree: session });
+}
+
 // What clicking a live NEEDS YOU / READY row does, shared by the rail
 // (AttentionSections) and the header's Clawd so the two can't drift. A soft
 // question (no real dialog) is dismissed for this episode; a real dialog stays
@@ -40,8 +48,13 @@ export function openNeedsPane(w) {
   selectPane(w);
 }
 
-export function openReadyPane(w) {
+// Dismiss a READY row without opening its pane: a done banner's Mark seen.
+export function markReadySeen(w) {
   if (w?.pid) dismissedReadyPids.value = new Set([...dismissedReadyPids.value, w.pid]);
+}
+
+export function openReadyPane(w) {
+  markReadySeen(w);
   selectPane(w);
 }
 

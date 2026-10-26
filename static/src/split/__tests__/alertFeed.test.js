@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../prefs.js", () => ({ setLastSelected: vi.fn() }));
 
 const { dismissedNeedsPids, dismissedReadyPids, railSelection } = await import("../../store.js");
-const { openNeedsPane, openReadyPane } = await import("../alertFeed.js");
+const { markReadySeen, openNeedsPane, openReadyPane, selectReview } = await import("../alertFeed.js");
+const prefs = await import("../../prefs.js");
 
 afterEach(() => {
   dismissedNeedsPids.value = new Set();
@@ -37,6 +38,25 @@ describe("row clicks shared by the rail and Clawd", () => {
     openNeedsPane(null);
     openReadyPane(null);
     expect(dismissedReadyPids.value.size).toBe(0);
+    expect(railSelection.value).toBe(null);
+  });
+});
+
+describe("what a done banner's buttons do", () => {
+  it("Mark seen dismisses the READY row without opening the pane", () => {
+    markReadySeen({ pid: "c" });
+    expect([...dismissedReadyPids.value]).toEqual(["c"]);
+    expect(railSelection.value).toBe(null);
+    markReadySeen(null);
+    expect(dismissedReadyPids.value.size).toBe(1);
+  });
+
+  it("Review diff selects the session's review row and remembers it", () => {
+    selectReview("periscope");
+    expect(railSelection.value).toBe("review:periscope");
+    expect(prefs.setLastSelected).toHaveBeenCalledWith({ kind: "review", worktree: "periscope" });
+    railSelection.value = null;
+    selectReview("");
     expect(railSelection.value).toBe(null);
   });
 });
