@@ -15,36 +15,51 @@ whose feedback reaches the pane that wrote it.
 
 **Seams:** four, all present today —
 - review surface: the rail's per-track `review` row + its detail view (one
-  producer, one renderer; gated today on an LGTM session)
-- document rendering: `renderMarkdown` — 3 call sites (transcript ×2, preview ×1)
-- message into a pane: `_deliver(pane_id, message, sender)` — what `send_to` uses
-- branch hunks: `GET /api/fs/diff?scope=branch` — what the Changes tab renders
+  producer `reviewRowFor` at Rail.jsx:494, one renderer `ReviewDetail` at
+  Detail.jsx:520; gated today on an LGTM session)
+- document rendering: `renderMarkdown` — 3 call sites (Transcript.jsx:201,
+  :208; PreviewTabInner.jsx:598)
+- message into a pane: `_deliver(pane_id, message, sender)` (channels.py:1139);
+  an HTTP route already calls the same push (`POST /api/channel/push`)
+- branch hunks: `gitdiff.diff_for(repo, base)` — what `/api/fs/diff` and the
+  Changes tab render; pure in the repo path
 
-**Minimal version (~18 files + dist; 6 new, 12 edited, plus removals and tests):** the review row appears when a
-walkthrough file exists for the branch and opens a native stop-by-stop view; a
-"Reviews" selection in the detail area lists every branch with its
-PR/CI/walkthrough/comment state; comments append to a sidecar file and are
-delivered to the owning pane; prepare/merge are messages to that pane, never
-git operations periscope runs.
+**Minimal version (~30 files + dist; 7 new, ~23 edited, plus removals and
+tests):** the review row appears per branch when a walkthrough file exists
+and opens a native stop-by-stop view; a "Reviews" selection in the detail
+area lists every branch with its PR/CI/walkthrough/comment state; comments
+append to a sidecar file and are delivered to the owning pane; prepare/merge
+are messages to that pane, never git operations periscope runs.
 
 Left out, and what it costs:
 - refs whose lines moved after the tour was written → chip renders "no hunk";
   recovery: prepare again
 - a merge that fails (conflict, red CI) → reported by the pane in its
   transcript, not on the queue row
-- a walkthrough for a branch whose worktree is gone → the row shows the tour
-  but no hunks (the diff needs a checkout); recovery: open the branch (⌘K)
+- a walkthrough whose worktree is gone → the row shows the tour and comments
+  but no hunks; prepare is disabled; recovery: open the branch (⌘K)
+- comments are matched to stops by title → a re-prepare that retitles a
+  stop orphans its comments (they still show at the bottom, unattached)
+- two repos with the same basename share one reviews dir
+- the dev backend never binds the MCP socket, so at :17375 every comment /
+  prepare / merge returns 409 (the file write still happens); delivery is
+  verified in pytest with `_deliver` patched, and once in prod after merge
 
 Accepted consequences:
 - the tour can be stale — the file records the head it was written at; the
   view says "N commits since" and leaves it to you
 - walkthroughs and comments live outside the repo, so they are not shared
   with the team
-- mermaid is a ~1 MB lazy chunk, loaded on first diagram
+- mermaid is a ~1 MB chunk of its own, loaded on first diagram
+- a merged branch's review dir stays until you click **clear** on its row —
+  the one file deletion periscope performs, on an explicit click
 
 Additions:
-- **picked** +2 files → removes "no live pane on the branch": prepare spawns a
-  Claude on the track when none is live, through the existing spawn path
+- **picked** +2 files → removes "no live pane on the branch": prepare spawns
+  a Claude in the branch's worktree on the repo's default track, with the
+  prepare prompt delivered the way `spawn_claude` already does it. Requires
+  the worktree to exist on disk; otherwise prepare is disabled with
+  "open the branch first"
 - not picked → periscope runs the merge itself (moves a git mutation across
   the trust boundary for one click saved)
 - later, own spec → decision log: same renderer, a `decision` convention
@@ -53,8 +68,10 @@ Additions:
 Dropped:
 - a periscope DB table for walkthroughs/comments — the files are the store
 - stacked-PR modeling — not in use
+- a per-window `walkthrough` field in the state blob — the reviews payload
+  is its own fetch on its own cadence (D6)
 
-File budget: 20 (18 + the spawn addition). Stop and report at 40. Removals and tests don't count.
+File budget: 32. Stop and report at 64. Removals and tests don't count.
 
 ## Decisions
 
@@ -62,29 +79,40 @@ File budget: 20 (18 + the spawn addition). Stop and report at 40. Removals and t
 
 Prepare, re-prepare, merge, and "address comments" are all messages to the
 pane that owns the branch. The dashboard stays a lens; the pane is the actor.
-This is also the ownership story: a review belongs to a pane, a pane to a
-track, a track to a branch — nothing is nebulous about who holds it.
+
+**A review belongs to a (repo, branch) pair, not a track.** Tracks are not
+branches — a repo-default track holds every worktree of the repo, and the
+rail already derives branch sub-clusters inside a track. The **owning pane**
+of a review is the live window whose `(repo_label, branch)` match, whose
+`agent` is `claude`, and whose channel is attached; with several, the most
+recently active. No such window → no owner; the row says so.
 
 ### D2. The walkthrough is a file on disk, not periscope state
 
 `~/.claude/reviews/<repo>/<branch-slug>/walkthrough.md` plus `comments.md`
 beside it. Outside the repo: no gitignore or exclude dance, nothing the team
 sees, and it survives worktree removal — a cleaned-up branch still shows its
-tour until it merges. The authoring skill owns the path; periscope reads it
-by convention. `<repo>` is the repo's basename; `<branch-slug>` is the branch
-with `/` → `--`.
+tour until you clear it. The authoring skill owns the path; periscope reads
+it by convention.
+
+- `<repo>` is periscope's `repo_label`: the basename of the realpath of the
+  parent of `git rev-parse --git-common-dir`. That is the main checkout's
+  name even from inside a linked worktree (`.claude/worktrees/x` → the repo,
+  not `x`). The skill derives it with exactly
+  `basename "$(realpath "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")"`.
+- `<branch-slug>` is the branch with every `/` → `--`.
 
 One writer per file: the pane writes `walkthrough.md`; periscope only ever
 appends to `comments.md`; the pane edits `comments.md` only to flip
-`resolved`.
+`resolved`. Periscope removes the whole dir only on the row's **clear**.
 
 ### D3. Markdown with three conventions, each degrading to plain markdown
 
 ```markdown
 # <title>
 
-> branch: feat/x · head: 3f2a1c9 · pr: 1234 · repo: fdy
-> base: main
+> branch: feat/x · head: 3f2a1c9 · pr: 1234
+> repo: fdy
 
 <one-paragraph problem statement, no code vocabulary>
 
@@ -104,47 +132,74 @@ flowchart LR
 <prose: which existing thing, and why it is the right one>
 ```
 
-- **Header block:** the first blockquote after the title; `key: value` pairs
-  separated by ` · `. Required: `branch`, `head`. Optional: `pr`, `base`,
-  `repo`.
-- **Stop:** every `##` heading. The blockquote directly under it carries
-  `kind` (one of `new-subsystem`, `extension`, `reuse`, `system-touch`,
-  `behavior`) and `refs` (comma-separated `path` or `path:a-b`). A `##`
-  without a conforming blockquote is still a stop, with no kind and no refs.
+- **Metadata blockquote:** a blockquote whose only child is one paragraph
+  whose children are all plain text, split into pairs on ` · ` **and on
+  newlines**, every pair matching `^[a-z-]+: .+$`. Anything else is an
+  ordinary blockquote (so a superpowers plan's `> **For agentic workers:**…`
+  under its H1 is not a header).
+- **Header block:** the metadata blockquote directly after the H1. Required
+  `branch`, `head`. Optional `pr`, `repo`.
+- **Stop:** every `##` heading. The metadata blockquote directly under it
+  carries `kind` (one of `new-subsystem`, `extension`, `reuse`,
+  `system-touch`, `behavior`; an unknown value is kept as a plain chip) and
+  `refs` (comma-separated `path` or `path:a-b`). A `##` without one is still
+  a stop, with no kind and no refs.
 - **Diagrams:** ` ```mermaid ` fences.
-- **Citations:** bare `path:line` or `path:a-b` tokens anywhere in prose
-  (path must contain a `/` or a `.`; this is the review-map chip rule).
+- **Citations:** `path` / `path:line` / `path:a-b` tokens in prose text or in
+  backticks, where the path contains a `/` or ends in `.<letters>` before
+  the colon (`127.0.0.1:17374` does not match: the segment before `:` ends
+  in a digit).
 
 Stops are ordered by damage-if-wrong; the file order is the tour order.
 
 ### D4. Enrichment happens at render time, for every document
 
 The shared markdown renderer gains three opt-in behaviors — mermaid fences →
-SVG, a heading's metadata blockquote → a badge row, citation tokens → chips.
-The transcript skin leaves them off and renders exactly as today. The
-preview tab turns them on for every `.md`, so specs get diagrams and chips
-with no second artifact. That is what retires the doc-enricher: the author
-writes one markdown file; the look is periscope's job and improves for all
-docs at once.
+SVG, a metadata blockquote → a chip row, citation tokens → chips. The
+transcript skin leaves them off and renders exactly as today. The preview
+tab turns them on for every `.md`, so specs get diagrams and chips with no
+second artifact. That is what retires the doc-enricher: the author writes
+one markdown file; the look is periscope's job and improves for all docs at
+once. Mermaid is its own vite chunk, loaded by dynamic import on the first
+fence.
 
 ### D5. The walkthrough view is the renderer plus three things
 
 Stops as cards (kind badge, anchor), the referenced hunks from the branch
-diff collapsed under each stop — rendered by the Changes tab's existing hunk
-component, intraline highlighting included — and a comment box per stop. A
-staleness chip when the branch head differs from the header's `head`.
+diff collapsed under each stop — rendered by the Changes tab's hunk
+component (extracted from its file block; intraline highlighting included;
+the file-header click is disabled here because there is no active pane
+target) — and a comment box per stop. A staleness chip when the worktree's
+HEAD differs from the header's `head`. Hunks come from the branch's worktree
+path, not a pane, so a branch with no live pane but a worktree on disk still
+shows them.
 
-### D6. The Reviews queue is a detail-area selection, one row per branch
+### D6. The Reviews queue is a detail-area selection, one row per (repo, branch)
 
-Rows come from the live windows grouped by track/branch, plus any
-`~/.claude/reviews/<repo>/<slug>` with no live window (so cleaned-up
-branches still appear). Columns: PR (number, state, CI glyph), walkthrough
-(none / N stops / stale), comments (M unresolved), owning pane (live /
-none). Sort: unresolved comments, then PR-without-walkthrough, then the
-rest, each group by PR number desc. Row click selects that branch's review
-row. Actions: **prepare** (message the owning pane to run the `walkthrough`
-skill; spawns one on the track if none is live), **merge** (message the
-owning pane to merge; disabled with a reason when no pane is live).
+Rows: every distinct `(repo_label, branch)` among live windows, merged with
+every `~/.claude/reviews/<repo>/<slug>` with no live window. Columns: PR
+(number, state incl. merged, CI glyph), walkthrough (none / N stops /
+stale by N), comments (M unresolved), owner (pane name / none / "open the
+branch first"). Sort: unresolved comments, then PR-without-walkthrough,
+then the rest; within a group by PR number desc, then branch. Merged rows
+sink to the bottom with a **clear** action.
+
+Actions: **prepare** (message the owner to run the `walkthrough` skill; with
+no owner but a worktree on disk, spawn one there — the picked addition),
+**merge** (message the owner; disabled with the reason when none), **clear**
+(remove the review dir; offered when the PR is merged or the branch has no
+worktree). Row click selects that branch's review row.
+
+**Rail placement:** the review row sits inside the branch sub-cluster when
+the track spans ≥2 branches, else at the top of the track body — one row
+per branch with a walkthrough, keyed `review:<repo>/<slug>`.
+
+**Cadence:** the reviews payload is one `GET /api/reviews` on a 10 s timer
+in the frontend (immediate on selecting the queue, on a comment post, and
+on prepare/merge/clear), held in a `reviews` signal that the rail, the
+header badge and the queue all read. It is not part of the state push. The
+route reads the last published state snapshot (`state_hub._last_blob`) for
+live windows — it never recomputes the blob.
 
 ### D7. Comments are an append plus a channel message
 
@@ -159,14 +214,25 @@ Why does this bypass the signals store? The rail reads it straight from poll.
 ```
 
 The pane acts and flips `resolved: no` → `yes`. The queue counts unresolved
-entries; the walkthrough view lists each stop's comments under it.
+entries; the walkthrough view lists each stop's comments under it. With no
+owner the append still happens and the response says it was not delivered
+(409); the next pane to prepare the branch is told to read `comments.md`.
 
 ### D8. The LGTM integration is removed in this change
 
 It is the thing being replaced; leaving it means two review rows. Removed:
-`lgtm.py`, `routes/lgtm.py`, the refresh task and SSE tasks in `app.py`, the
-`lgtm` field in the window view, the iframe `ReviewDetail`/`ReviewStart` and
-the `👁 review` chip, their tests, `docs/lgtm.md`, the CLAUDE.md row.
+`lgtm.py`, `routes/lgtm.py`, the lgtm tasks/router in `app.py`, the
+`cached_lgtm_state` uses in `routes/pane.py` and the `lgtm` field in
+`window_view.py`; `ReviewDetail`/`ReviewStart` and the iframe in
+`Detail.jsx`; `rewriteLgtmHost` in `util.js`; the `review` notify action
+(`notify/actions.js`, `alertFeed.js`); the `.detail-review*`,
+`.review-start-*`, `.icon-review*` CSS; the "add to LGTM" comment in
+`terminalCore.js`; `test_lgtm.py`, `tests/routes/test_lgtm.py`, the lgtm
+patches in `tests/routes/test_pane.py`, and the lgtm cases in
+`test_window_view.py`, `test_app.py`, `tests/routes/test_state.py`;
+`docs/lgtm.md`, the CLAUDE.md row and the Review-tab mention. The persisted
+`{kind: "review", worktree}` selection is dropped on restore (it named an
+LGTM session, which no longer exists).
 
 ### D9. The doc-enricher retires separately
 
@@ -179,144 +245,171 @@ this repo, so outside this spec's budget.
 
 ### Server
 
-**`periscope/reviews.py`** (new, pure; no HTTP)
+**`periscope/reviews.py`** (new; no HTTP)
 
-- `reviews_dir()` → `~/.claude/reviews`. Not periscope state, so prod and dev
+- `REVIEWS_DIR = ~/.claude/reviews`. Not periscope state, so prod and dev
   read the same tree (no `instance_file` split).
-- `slug_for(branch)` — `/` → `--`.
-- `walkthrough_path(repo_name, branch)` / `comments_path(...)`.
-- `parse_header(text)` → `{branch, head, pr, base, repo}` from the first
-  blockquote after the H1.
-- `count_stops(text)` → number of `##` headings.
-- `parse_comments(text)` → `[{ts, stop, resolved, body}]`; `unresolved(text)`.
-- `append_comment(repo_name, branch, stop, body, ts)` — append-only; creates
-  the file with no header if absent.
-- `list_reviews(windows)` → the queue rows: for each live window with a
-  branch, merged with every reviews-dir entry with no live window. Each row:
-  `{repo, branch, slug, pr: {...} | None, walkthrough: {stops, head,
-  stale_by} | None, unresolved, owner: {pid, session, index} | None,
-  worktree: path | None}`. `stale_by` = `git rev-list --count <head>..HEAD`
-  in the worktree when one exists, else `None`.
+- `slug_for(branch)` — `/` → `--`; `review_dir(repo_label, branch)`,
+  `walkthrough_path(...)`, `comments_path(...)`.
+- `parse_header(text)` → `{branch, head, pr, repo}` from the metadata
+  blockquote after the H1 (same pair rule as D3: split on ` · ` and `\n`).
+- `count_stops(text)`; `parse_comments(text)` → `[{ts, stop, resolved,
+  body}]`; `unresolved(text)`.
+- `append_comment(repo_label, branch, stop, body, ts)` — append-only;
+  creates the file if absent.
+- `clear_review(repo_label, branch)` — `shutil.rmtree` of that one dir.
+- `owner_for(windows, repo_label, branch)` → the window per D1 or `None`.
+- `worktree_for(windows, repo_label, branch)` → a path: the owner's cwd's
+  repo root if any window matches, else `worktrees.for_branch(repo_root,
+  branch)` where `repo_root` is any live window's `repo_key` for that
+  label; `None` when neither.
+- `stale_by(worktree, head)` → `git rev-list --count <head>..HEAD`, cached
+  by `(worktree, head, current HEAD sha)`; `None` without a worktree.
+- `list_reviews(windows)` → rows `{repo, branch, slug, pr: {number, state,
+  ci} | None, walkthrough: {stops, head, stale_by} | None, unresolved,
+  owner: {pid, pane_id, session, index, name} | None, worktree: path |
+  None}`. PR state for a row with a walkthrough header `pr:` uses
+  `cached_linked_pr_state` (sees merged); otherwise the window's `pr`/`ci`.
 
-**`periscope/routes/reviews.py`** (new)
+**`periscope/routes/reviews.py`** (new) — all `async def`, blocking work in
+`asyncio.to_thread`:
 
-- `GET /api/reviews` → `{rows: [...]}` (list_reviews over the current window
-  view).
-- `GET /api/reviews/walkthrough?repo=&branch=` → `{text, comments: [...],
-  head_now, stale_by}`; 404 when no file.
-- `POST /api/reviews/comment` `{repo, branch, stop, body}` → appends, then
-  `_deliver(owner_pane, "<review comment on stop '…'>\n\n<body>\n\n(in
-  ~/.claude/reviews/<repo>/<slug>/comments.md)", "periscope")`; 409 when no
-  owning pane is live (the append still happens — the comment is not lost;
-  the response says it was not delivered).
-- `POST /api/reviews/prepare` `{repo, branch}` → `_deliver` the prepare
-  prompt to the owning pane; when none is live, spawn one on the branch's
-  track with that prompt as the initial message (the picked addition) via
-  the existing `window_new` resume/plain path with the worktree as cwd.
+- `GET /api/reviews` → `{rows}` from `list_reviews(windows of
+  state_hub._last_blob or [])`.
+- `GET /api/reviews/walkthrough?repo=&branch=` → `{text, comments, head_now,
+  stale_by, diff}` where `diff` is `gitdiff.diff_for(worktree,
+  gitdiff.branch_base(worktree))` or `None` with no worktree; 404 with no
+  file.
+- `POST /api/reviews/comment` `{repo, branch, stop, body}` → append, then
+  `_deliver(owner.pane_id, msg, "periscope")`; 409 `{detail: "not
+  delivered: no owning pane"}` when no owner (append already done).
+- `POST /api/reviews/prepare` `{repo, branch}` → owner: `_deliver` the
+  prepare prompt; no owner + worktree: `channels.spawn_claude_with_prompt
+  (cwd=worktree, track_id=tracks.repo_default_track(repo_root), prompt)`;
+  neither: 409.
 - `POST /api/reviews/merge` `{repo, branch}` → `_deliver` the merge prompt;
-  409 with reason when no pane is live.
+  409 with reason when no owner.
+- `POST /api/reviews/clear` `{repo, branch}` → `clear_review`.
 
-The prepare prompt: "Run the `walkthrough` skill for this branch and write
-it to `<path>`." The merge prompt: "This branch has been reviewed. Merge it
-(your normal path — local merge or `gh pr merge` as the repo's convention
-says), then report."
+Prompts. Prepare: "Run the `walkthrough` skill for branch `<branch>` and
+write it to `<walkthrough_path>`; read `<comments_path>` first if it exists."
+Merge: "This branch has been reviewed in periscope and the comments in
+`<comments_path>` are resolved. Merge it by this repo's convention, then
+report."
 
-**`window_view.py`** — the `lgtm` field is removed. No new per-window field:
-the queue reads the reviews dir itself, and the rail's review row is gated
-on the queue payload (below).
+**`periscope/channels.py`** — the spawn-then-deliver-prompt sequence inlined
+in `_do_spawn_claude_tool` (window_new, wait for the consent dialog and TUI
+mount, paste the prompt) is extracted into `spawn_claude_with_prompt(cwd,
+track_id, prompt, *, name=None)`; the tool calls it. Behavior unchanged for
+the tool.
 
-**`app.py`** — drop the lgtm tasks and router; add the reviews router.
+**`window_view.py`**, **`routes/pane.py`**, **`app.py`** — lgtm removed;
+reviews router added.
 
 ### Frontend
 
 **`split/markdown.jsx`** — `renderMarkdown(text, {mermaid, meta, cite})`:
-- `mermaid: true` → a ` ```mermaid ` fence renders `<Mermaid code=…/>` from
-  the lazy preview chunk; falls back to the plain fence while loading or on
-  a mermaid parse error (error text under the fence).
-- `meta: true` → a blockquote whose only paragraph is `key: value · key:
-  value` pairs, directly following a heading, renders as `<div
-  class="md-meta">` of `<span class="md-meta-kv">` chips.
-- `cite: (ref) => vnode | null` → path tokens matching the chip rule are
-  passed to it; `null` leaves the text as is. The preview tab passes a chip
-  that opens the file tab at that line; the walkthrough passes one that
-  scrolls to the matching hunk.
+- the top-level walk gains sibling access so a blockquote can know the
+  previous block was a heading;
+- `meta: true` → a blockquote meeting the D3 rule, directly after a heading,
+  renders `<div class="md-meta">` of `<span class="md-meta-kv"
+  data-key=…>` chips; `refs:` values additionally pass through `cite`;
+- `mermaid: true` → a `mermaid` fence renders `<Mermaid code>`; otherwise
+  the plain fence;
+- `cite: (ref) => vnode | null` → text nodes and `inlineCode` nodes matching
+  the D3 citation rule are offered; `null` keeps the text.
 
-**`preview/Mermaid.jsx`** (new, in the lazy chunk) — `mermaid.render` into an
-inline SVG, theme from `prefers-color-scheme`; `mermaid` added to
-`package.json`.
+**`preview/Mermaid.jsx`** (new) — `import("mermaid")` on first mount,
+`mermaid.render` into inline SVG, theme from `prefers-color-scheme`, parse
+error shown as text under the fence. **`vite.config.js`** — `manualChunks`
+returns `"mermaid"` for `node_modules/mermaid` and its dependencies
+(`/mermaid/`, `/dagre/`, `/cytoscape/`, `/khroma/`, `/d3`…: anything the
+mermaid import graph pulls that isn't already in app) so it never lands in
+`app` or `preview`. `package.json` gains `mermaid`.
 
-**`preview/PreviewTabInner.jsx`** — the `.md` branch passes `{mermaid: true,
-meta: true, cite}`.
+**`preview/PreviewTabInner.jsx`** — the `.md` branch passes `{mermaid,
+meta, cite}` with a chip that opens the file tab at that line.
+
+**`diff/ChangesTab.jsx`** — `Hunk` and `Line` extracted and exported with
+props `{hunk, lang, hl}`; `FileBlock` uses them. No behavior change.
 
 **`review/walkthrough.js`** (new, pure) — `parseWalkthrough(text)` →
 `{header, problem, stops: [{id, title, kind, refs, bodyMarkdown}]}`;
 `matchRefs(refs, diffFiles)` → hunks per ref (`path` → every hunk in that
-file; `path:a-b` → hunks whose new-side range intersects).
+file; `path:a-b` → hunks whose new-side range — `new_start` plus the count
+of `ctx`+`add` lines — intersects `[a, b]`); `sortRows(rows)` per D6.
 
-**`review/Walkthrough.jsx`** (new) — fetches `/api/reviews/walkthrough` and
-`/api/fs/diff?scope=branch` for the owning pane (skipped when no worktree);
-renders the header + staleness chip, the problem paragraph, then each stop:
-badge row, prose via `renderMarkdown` (all three opts on), the matched hunks
-collapsed (reusing `ChangesTab`'s `FileHunks` component), the stop's
-comments, and a comment box posting to `/api/reviews/comment`.
+**`review/Walkthrough.jsx`** (new) — fetches `/api/reviews/walkthrough`;
+renders header + staleness chip, problem, then each stop: badge row, prose
+via `renderMarkdown` (all three opts on; the cite chip scrolls to the hunk
+when matched, else opens the file tab), matched hunks collapsed via `Hunk`,
+the stop's comments, and a comment box posting to `/api/reviews/comment`
+(a 409 shows "saved, not delivered — no pane on this branch").
 
-**`review/ReviewsQueue.jsx`** (new) — fetches `/api/reviews` on mount and
-every 10 s while selected; renders the table from D6 with the prepare/merge
-buttons.
+**`review/ReviewsQueue.jsx`** (new) — the D6 table from the `reviews`
+signal, with prepare/merge/clear.
 
-**`split/Detail.jsx`** — `ReviewDetail`/`ReviewStart` and the iframe go;
-`review:<key>` selections render `<Walkthrough>`; a new `reviews` selection
-renders `<ReviewsQueue>`.
+**`store.js`** — `reviews` signal + `refreshReviews()`; **`poll.js`** — the
+10 s timer (started with the state loop, stopped with it).
 
-**`split/Rail.jsx` / `RailRows.jsx`** — `reviewRowFor(trackId)` gates on the
-queue payload (a walkthrough exists for the track's branch) instead of
-`w.lgtm`; the row's key is `review:<repo>/<slug>`. The queue payload is
-fetched once per poll alongside `/api/state` (`poll.js`) into a signal, so
-the rail and the queue share it.
+**`split/Detail.jsx`** — lgtm views go; `review:<repo>/<slug>` renders
+`<Walkthrough>`; `reviews` renders `<ReviewsQueue>`.
 
-**`chrome/Header.jsx`** — a "Reviews" button (badge = total unresolved)
-selecting `reviews`; `open/classify.js` gets a `reviews` omnibox entry.
+**`split/Rail.jsx` / `RailRows.jsx` / `railTree.js`** — review rows per D6
+placement from the `reviews` signal; `selectKey` persists `{kind:
+"reviews"}` and `{kind: "review", repo, branch}`; **`main.jsx`** restores
+both and drops the legacy `{kind: "review", worktree}`.
 
-**CSS** — `md-meta`, stop cards, queue table, staleness chip, in the existing
-stylesheet.
+**`chrome/Header.jsx`** — "Reviews" button with the unresolved-count badge;
+**`open/classify.js` + `overlays/OpenOmnibox.jsx`** — a `reviews` entry.
 
-**Removed:** the `lgtm` references in `Detail.jsx`, `Rail.jsx`,
-`RailRows.jsx`, `attention.test.js`.
+**CSS** — `md-meta`, stop cards, queue table, staleness chip; the LGTM
+rules removed.
 
 ### Skill
 
 **`~/.claude/skills/walkthrough/SKILL.md`** replaces `review-map`. Same
 comprehension stance (problem statement with no code vocabulary; ranked by
 damage-if-wrong; written from the diff and live code, never from the PR
-body), but the output is D3's format at D2's path. It carries: the five
-kinds with a one-line test for each; the rule that a stop is a structural
-claim and refs are evidence, not prose; "reuse" stops must name the existing
-thing and why it is the right one (the #8867 check); a mermaid diagram on
-any stop that introduces or crosses a boundary; and the closing step — read
-`comments.md`, address, flip `resolved`. Out of this repo's file budget; the
-plan carries it as its own task.
+body), but the output is D3's format at D2's path, with the repo derivation
+one-liner verbatim. It carries: the five kinds with a one-line test for
+each; the rule that a stop is a structural claim and refs are evidence, not
+prose; "reuse" stops must name the existing thing and why it is the right
+one (the #8867 check); a mermaid diagram on any stop that introduces or
+crosses a boundary; and the closing step — read `comments.md`, address,
+flip `resolved`. Out of this repo's file budget; the plan carries it as its
+own task.
 
 ### Tests
 
 vitest:
-- `review/__tests__/walkthrough.test.js` — header parse, stop parse with and
-  without a conforming blockquote, unknown kind kept as text, ref matching
-  (whole file, intersecting range, no match).
-- `split/__tests__/markdown.test.js` — the meta blockquote only triggers
-  directly under a heading and only with `meta: true`; a mermaid fence is a
-  plain fence with `mermaid: false`; cite callback receives path tokens and
-  not prose.
-- queue sort (pure, exported from `ReviewsQueue.jsx` or a sibling).
+- `review/__tests__/walkthrough.test.js` — header parse (` · ` and newline
+  pairs), stop parse with and without a metadata blockquote, unknown kind
+  kept, ref matching (whole file, intersecting range, no match),
+  `sortRows`.
+- `split/__tests__/markdown.test.js` — the meta blockquote only fires
+  directly under a heading, only with `meta: true`, and not for a
+  bold-prefixed blockquote; a mermaid fence is a plain fence with `mermaid`
+  off; `cite` receives path tokens from text and inlineCode and not
+  `127.0.0.1:17374`.
+- `diff/__tests__` — `Hunk`/`Line` render the same lines as before
+  (snapshot of one hunk).
 
 pytest:
-- `tests/test_reviews.py` — path/slug mapping, header/comment parsing,
-  `append_comment` creates and appends, `list_reviews` merges live windows
-  with orphan review dirs and computes `stale_by` against a temp git repo.
+- `tests/test_reviews.py` — slug/path mapping, header/comment parsing,
+  `append_comment` creates and appends, `owner_for` picks the attached
+  claude window on the right branch (not another branch on the same
+  track), `list_reviews` merges live windows with orphan dirs, `stale_by`
+  against a temp git repo and its cache.
 - `tests/routes/test_reviews.py` — comment route appends then delivers
-  (patch `_deliver`, assert pane and message), 409 path still appends;
-  prepare with no live pane calls the spawn path; merge with no pane is 409.
-- removal: `test_lgtm.py`, `tests/routes/test_lgtm.py`, and the lgtm cases
-  in `test_window_view.py` / `test_app.py` / `test_state.py` go.
+  (patch `_deliver`, assert pane_id and message), 409 path still appends;
+  prepare with no owner but a worktree calls `spawn_claude_with_prompt`
+  (patched) with that cwd and the repo-default track; merge with no owner
+  is 409; clear removes the dir. Windows come from a patched
+  `state_hub._last_blob`; no state blob is computed, no threads spawn.
+- removals per D8.
 
-The rendered walkthrough and queue are checked in the browser at :17375
-with a hand-written walkthrough for this branch.
+Browser check at :17375 with a hand-written walkthrough for this branch:
+rail row placement under a multi-branch track, the queue sort, mermaid
+rendering and chunk loading (network tab: `mermaid-*.js` only on first
+fence), chips, hunks under stops, comment append (409 expected on dev).
