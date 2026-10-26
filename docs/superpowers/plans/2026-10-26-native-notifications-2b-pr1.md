@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Native banners gain buttons that don't make an agent act:
-- Review diff · Mark seen on `done`;
+- Mark seen on `done` (Review diff was held back in review until THI-433 keys review rows by worktree);
 - Open PR on `ci_failed`;
 - Clean up worktree · Open PR on `pr_merged`;
 - Spawn on {B} · Details on `usage`.
@@ -454,7 +454,7 @@ git commit -m "shell: banners carry buttons — the webview registers categories
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
-**Revised in review:** `category_specs` returns `(specs, dropped)` and dedupes (a repeated category id keeps its last definition, a repeated action id its first), logging what it dropped to `shell.log` at registration; `category_of` never falls back to `kind`, as specced; and a bad/missing `auth` fails closed (`Option<bool>`, only `Some(true)` sets `AuthenticationRequired`) rather than defaulting a destructive or authed action open.
+**Revised in review:** `category_specs` returns `(specs, dropped)` and dedupes (a repeated category id keeps its last definition, a repeated action id its first), logging what it dropped to `shell.log` at registration; `category_of` never falls back to `kind`, as specced; and a malformed `auth` (e.g. `"yes"`) drops the button rather than registering it unauthenticated; a missing or null `auth` means none is required.
 
 ---
 

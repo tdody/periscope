@@ -13,7 +13,7 @@
 
 | PR | What it adds | Agent acts? |
 |---|---|---|
-| **1. Shell + plain buttons** | <ul><li>The Rust category and action plumbing.</li><li>The JS dispatcher.</li><li>Review diff, Mark seen, Open PR, Clean up worktree, Spawn on {B} and Details.</li></ul> | No |
+| **1. Shell + plain buttons** | <ul><li>The Rust category and action plumbing.</li><li>The JS dispatcher.</li><li>Mark seen, Open PR, Clean up worktree, Spawn on {B} and Details (Review diff waits on THI-433).</li></ul> | No |
 | **2. Agent-acting buttons** | <ul><li>The `PermissionRequest` hook and `pending_permission`.</li><li>`/api/pane/permission` and `/api/pane/reply`.</li><li>Allow, Deny, Open, Send and Ask agent to fix.</li></ul> | Yes |
 
 - **The shell is generic.** It knows categories and actions only as data the webview sends, so PR 1's single `.app` rebuild covers both PRs.
