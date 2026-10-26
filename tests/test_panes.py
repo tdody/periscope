@@ -1145,6 +1145,17 @@ def test_a_command_beginning_tip_stays_in_the_bash_block():
     assert dialog_matches(without, "Bash", key)
 
 
+def test_unknown_chrome_above_the_command_fails_closed():
+    # Only a leading Tip (and its wrap) is skipped. Any other shallow row above
+    # the command, a future "⚠ sandbox disabled" say, stays in the block.
+    key = _bash_key("touch probe.txt", "Create empty probe.txt file")
+    warned = parse_permission_dialog(_dialog("bash.txt").replace(_TIP, " ⚠ sandbox disabled"))
+    assert warned is not None
+    assert not dialog_matches(warned, "Bash", key)
+    for name in ("bash.txt", "bash_narrow.txt"):
+        assert dialog_matches(parse_permission_dialog(_dialog(name)), "Bash", key)
+
+
 def test_a_bash_dialog_matches_across_a_wrap_and_a_bare_gutter():
     # A long row wraps mid-word onto an indented row; a blank line in a
     # multi-line command leaves a bare `│`. Neither may break the match.

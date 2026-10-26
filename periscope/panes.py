@@ -333,9 +333,10 @@ _RULE_REACH = 60
 # can't import this.
 VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")
 _FILE_HEADERS = {"Write": ("Create file", "Overwrite file"), "Edit": ("Edit file",)}
-# A Bash dialog's command and description sit at this indent or deeper; the
-# rows above them at less are its Tip, which a pane under ~84 columns wraps
-# onto a second row that no `Tip:` test would catch.
+# A Bash dialog's command and description sit at this indent or deeper. A
+# leading Tip row sits at less, and a pane under ~84 columns wraps it onto a
+# second shallow row that no `Tip:` test would catch. Without a leading Tip,
+# a shallow row above the command is unknown chrome and stays in the block.
 _COMMAND_INDENT = 3
 # A multi-line command's `│ ` gutter; a blank command line leaves a bare `│`.
 _GUTTER_RE = re.compile(r"^│(?=\s|$)")
@@ -611,8 +612,8 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
     and no other. No key, or a tool whose dialog isn't verified (NotebookEdit,
     WebFetch, MCP tools, …), never matches.
 
-    Bash: the digest of the whole command + description block (the body from
-    its first row indented 3+, so the Tip and its wrap stay out), gutter and
+    Bash: the digest of the whole command + description block (after a
+    leading Tip and its wrap, up to the first row indented 3+), gutter and
     whitespace squashed, EQUALS the key. Never a prefix or a substring: `git
     push origin main` vouched for `… --force`, two `cd <repo> && …` share
     their first 40 characters, and every `python3 - <<'EOF'` its first line.
@@ -636,7 +637,9 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
         if parsed["header"] != "Bash command":
             return False
         body = parsed["body"]
-        start = next((i for i, row in enumerate(body) if len(row) - len(row.lstrip()) >= _COMMAND_INDENT), len(body))
+        start = 0
+        if body and body[0].lstrip().startswith("Tip:"):
+            start = next((i for i, r in enumerate(body) if len(r) - len(r.lstrip()) >= _COMMAND_INDENT), len(body))
         block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in body[start:])
         return _bash_key(_squash(block)) == match_key
     shown = parsed["shown_path"]
