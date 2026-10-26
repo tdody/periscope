@@ -28,6 +28,7 @@ from periscope.panes import (
     _agent_last_seen,
     _focused_at,
     _spinner_last_seen,
+    composer_holds,
     composer_ready,
     dialog_matches,
     dialog_open,
@@ -1433,3 +1434,63 @@ def _with_composer_row(row: str) -> str:
 )
 def test_composer_ready(screen, ready):
     assert composer_ready(screen()) is ready
+
+
+# What a Claude that exited leaves: its last frame (composer and footer), then
+# the shell's output and prompt under it.
+_AFTER_EXIT = (
+    "\nResume this session with:\nclaude --resume 2f0c7d3e-5d8e-4b1a-9c55-0d7a1e2b3c4d\n"
+    "tom@mac periscope % git status\nOn branch main\ntom@mac periscope % \n"
+)
+
+
+def test_a_leftover_composer_above_a_shell_is_not_ready():
+    screen = _composer_capture("idle.txt").rstrip("\n") + _AFTER_EXIT
+    assert composer_ready(_composer_capture("idle.txt"))
+    assert not composer_ready(screen)
+    assert not composer_holds(screen.replace('\x1b[2mTry "fix lint errors"', "Postgres"), "Postgres")
+
+
+def test_a_footer_of_a_few_rows_still_reads_as_ready():
+    # Live 2.1.280 panes show 2-4 footer rows: mode hint, warnings, a status line.
+    extra = "\n  17% | ↑30k ↓74 | $0.50 | Opus 4.7 (1M context)\n  ⎿ 2 background tasks\n"
+    assert composer_ready(_composer_capture("idle.txt").rstrip("\n") + extra)
+
+
+_REPLY = "CI failed on #12: lint, unit. Please investigate and fix."
+
+
+@pytest.mark.parametrize(
+    ("screen", "holds"),
+    [
+        (lambda: _with_composer_row(f"\x1b[39m❯\xa0{_REPLY}"), True),
+        # Wrapped onto a second row, mid-word: whitespace is squashed out.
+        (lambda: _with_composer_row(f"\x1b[39m❯\xa0{_REPLY[:20]}\n  {_REPLY[20:]}"), True),
+        # A long paste Claude collapsed: the composer was empty, so it's ours.
+        (lambda: _with_composer_row("\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +3 lines]\x1b[39m"), True),
+        # Not there yet.
+        (lambda: _composer_capture("idle.txt"), False),
+        (lambda: _with_composer_row("\x1b[39m❯\xa0"), False),
+        # The same words as a dim suggestion are not the paste.
+        (lambda: _with_composer_row(f"\x1b[39m❯\xa0\x1b[2m{_REPLY}\x1b[0m"), False),
+        # Something else is in the composer.
+        (lambda: _with_composer_row("\x1b[39m❯\xa0rm -rf build"), False),
+        # Shell mode: Enter would run it.
+        (lambda: _with_composer_row(f"!\xa0{_REPLY}"), False),
+        # A dialog took focus: no composer.
+        (lambda: _dialog("bash.txt"), False),
+    ],
+    ids=[
+        "typed",
+        "wrapped",
+        "collapsed-paste",
+        "suggestion-only",
+        "empty",
+        "same-words-as-suggestion",
+        "other-text",
+        "shell-mode",
+        "dialog",
+    ],
+)
+def test_composer_holds(screen, holds):
+    assert composer_holds(screen(), _REPLY) is holds

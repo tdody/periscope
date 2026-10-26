@@ -771,33 +771,79 @@ def _detect_pending_input(raw_rows: list[str], plain_rows: list[str]) -> str | N
     return None
 
 
+# Non-empty rows the footer under the composer's lower rule may take: the
+# mode hint, warnings, a status line (live 2.1.280 panes show 2-4). A Claude
+# that exited leaves its last frame above the shell's output and prompt,
+# which push the count past this, so that frame never reads as a composer.
+_FOOTER_REACH = 6
+# How much of a reply's start the composer must show back before its Enter:
+# enough to tell it from anything else, short enough for the first row.
+_HOLDS_PREFIX = 24
+
+
+def _composer_rows(content: str) -> list[tuple[str, str]] | None:
+    """(raw, plain) of the non-empty rows between the LAST two full-width
+    rules, where Claude draws its composer, or None when there is no such
+    pair or more than _FOOTER_REACH rows follow it."""
+    raw_rows = content.rstrip("\n").split("\n")
+    plain_rows = [_strip_escapes(row).rstrip() for row in raw_rows]
+    rules = [i for i, row in enumerate(plain_rows) if DIALOG_RULE_RE.match(row)]
+    if len(rules) < 2:
+        return None
+    if sum(1 for row in plain_rows[rules[-1] + 1 :] if row.strip()) > _FOOTER_REACH:
+        return None
+    return [(raw_rows[i], plain_rows[i]) for i in range(rules[-2] + 1, rules[-1]) if plain_rows[i].strip()]
+
+
 def composer_ready(content: str) -> bool:
     """Whether Claude's composer sits at a plain, empty `❯` prompt, so a
     paste + Enter (POST /api/pane/reply) is a new message and nothing else.
 
     Decided positively, so anything unrecognised is "not ready": the composer
-    is the one non-empty row between the LAST two full-width rules (the
-    footer — mode hint, warnings, a status line — sits below them), it opens
-    with `❯`, and after it there's nothing or only Claude's dim/grey
-    suggestion (_input_is_ghost, on the -e capture). Shell mode swaps the `❯`
-    for `!` (2.1.280), and Enter then RUNS the text as a shell command; a
-    fresh session has no scrollback `❯` row for _detect_pending_input to
-    fall through to, so that scan can't be the gate. A draft, a pasted
-    block, a multi-row composer, a dialog (one rule, no composer) or any
-    other leading glyph all read as not ready: a false "not ready" costs a
-    409 that reveals the pane."""
-    raw_rows = content.rstrip("\n").split("\n")
-    plain_rows = [_strip_escapes(row).rstrip() for row in raw_rows]
-    rules = [i for i, row in enumerate(plain_rows) if DIALOG_RULE_RE.match(row)]
-    if len(rules) < 2:
+    is the one non-empty row between the LAST two full-width rules, with no
+    more than a footer's worth of rows (mode hint, warnings, a status line)
+    below them; it opens with `❯`, and after it there's nothing or only
+    Claude's dim/grey suggestion (_input_is_ghost, on the -e capture). Shell
+    mode swaps the `❯` for `!` (2.1.280), and Enter then RUNS the text as a
+    shell command; a fresh session has no scrollback `❯` row for
+    _detect_pending_input to fall through to, so that scan can't be the
+    gate. A draft, a pasted block, a multi-row composer, a dialog (one rule,
+    no composer) or any other leading glyph all read as not ready: a false
+    "not ready" costs a 409 that reveals the pane."""
+    rows = _composer_rows(content)
+    if not rows or len(rows) != 1:
         return False
-    inner = [i for i in range(rules[-2] + 1, rules[-1]) if plain_rows[i].strip()]
-    if len(inner) != 1:
-        return False
-    row = plain_rows[inner[0]].lstrip()
+    raw, plain = rows[0]
+    row = plain.lstrip()
     if not row.startswith("❯"):
         return False
-    return not row[1:].strip() or _input_is_ghost(raw_rows[inner[0]])
+    return not row[1:].strip() or _input_is_ghost(raw)
+
+
+def composer_holds(content: str, text: str) -> bool:
+    """Whether the composer now holds `text`, pasted a moment ago into the
+    empty composer composer_ready saw: the second look POST /api/pane/reply
+    takes before its Enter, because a dialog that renders in between takes
+    focus, and Enter on it confirms `1. Yes`.
+
+    The composer rows (as composer_ready finds them) must open with `❯`,
+    drawn as typed rather than as a suggestion, and read, whitespace
+    squashed since a long reply wraps, as the start of `text`; or show the
+    `[Pasted text #N …]` placeholder Claude collapses a long paste into,
+    which can only be this paste in a composer that was empty. A dialog has
+    no composer rows, and a shell-mode `!` row isn't `❯`."""
+    rows = _composer_rows(content)
+    if not rows:
+        return False
+    raw, plain = rows[0]
+    head = plain.lstrip()
+    if not head.startswith("❯") or _input_is_ghost(raw):
+        return False
+    shown = head[1:] + "".join(row for _raw, row in rows[1:])
+    if _PASTE_PLACEHOLDER_RE.match(shown.strip()):
+        return True
+    want = _squash(text)[:_HOLDS_PREFIX]
+    return bool(want) and _squash(shown).startswith(want)
 
 
 def _extract_recap(lines: list[str]) -> str | None:

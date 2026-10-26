@@ -10,11 +10,14 @@ where it runs, or on a half-typed draft, which Enter would submit with it.
 
 JSON bodies only. A POST without one is a CORS "simple" request any website
 could fire at localhost; application/json needs a preflight this server never
-answers. FastAPI parses a body with no Content-Type as JSON, so the type is
-checked explicitly.
+answers. FastAPI 0.136.1 already won't parse a body with no Content-Type as
+JSON (`strict_content_type`, on by default), but that's a setting, and the
+dependency is unpinned (older releases parsed it), so the type is checked
+here too: defence in depth, and a plain 415 rather than a 422.
 """
 
 import threading
+import time
 from collections import deque
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,6 +25,7 @@ from pydantic import BaseModel
 
 from periscope.log import log
 from periscope.panes import (
+    composer_holds,
     composer_ready,
     dialog_matches,
     dialog_open,
@@ -31,7 +35,7 @@ from periscope.panes import (
 )
 from periscope.pids import window_by_pid
 from periscope.routes.send import _send_to_target
-from periscope.session_status import session_state_for
+from periscope.session_status import live_session_id_for_pane, session_state_for
 from periscope.tmux import capture
 from periscope.turns import session_id_for_pane
 from periscope.window_view import pending_permission_row
@@ -66,6 +70,16 @@ _ANSWERED: deque[str] = deque(maxlen=256)
 # run a reply as a command.
 _SHELLS = frozenset({"bash", "csh", "dash", "fish", "ksh", "nu", "sh", "tcsh", "zsh"})
 
+# A reply goes in as two steps with a look in between: the paste, then the
+# Enter only once a fresh capture shows the paste in the composer and no
+# dialog. One look before the paste left ~150 ms (set-buffer, paste, settle)
+# for a permission dialog to render, take focus and be confirmed (`1. Yes`)
+# by the Enter, and "Ask agent to fix" goes to working agents, the panes
+# that raise them. The paste gets _PASTE_SETTLE_S to show before each look,
+# for at most _PASTE_LOOKS looks.
+_PASTE_SETTLE_S = 0.10
+_PASTE_LOOKS = 4
+
 
 class PermissionBody(BaseModel):
     pid: str
@@ -97,6 +111,21 @@ def _screen(pane_id: str) -> str:
         raise HTTPException(500, f"could not read the pane: {e}") from e
 
 
+def _submit_when_held(target: str, pane_id: str, text: str) -> bool:
+    """Send the reply's Enter once a fresh capture shows the paste in the
+    composer and no dialog; False, with nothing sent, when a dialog shows up
+    or the paste never does."""
+    for _ in range(_PASTE_LOOKS):
+        time.sleep(_PASTE_SETTLE_S)
+        screen = _screen(pane_id)
+        if dialog_open(screen):
+            return False
+        if composer_holds(screen, text):
+            _send_to_target(target, None, ["Enter"], address=pane_id)
+            return True
+    return False
+
+
 @router.post("/api/pane/permission")
 def pane_permission(body: PermissionBody):
     """Answer the pane's permission dialog: `allow` sends `1`, `deny` Escape.
@@ -124,7 +153,17 @@ def pane_permission(body: PermissionBody):
         if parsed is None or not dialog_matches(parsed, row["tool"], row["match_key"]):
             raise HTTPException(409, "the dialog on screen isn't the request's")
         _ANSWERED.append(body.request_id)
-        _send_to_target(target, None, keys, address=pane_id)
+        try:
+            _send_to_target(target, None, keys, address=pane_id)
+        except HTTPException:
+            log.warning(
+                "pane-action: %s on %s (%s, %s) failed after it was marked answered",
+                body.choice,
+                pid,
+                pane_id,
+                body.request_id,
+            )
+            raise
     log.info("pane-action: %s %s on %s (%s, %s)", body.choice, row["tool"], pid, pane_id, body.request_id)
     return {"ok": True}
 
@@ -143,13 +182,19 @@ def pane_reply(body: ReplyBody):
     rule out a Codex approval prompt, where a `y…` would approve). And 409
     unless the composer is at a plain, empty `❯` prompt (panes.composer_ready):
     in shell mode (`!`) Enter runs the text as a command, and on a draft it
-    submits the draft with it."""
+    submits the draft with it.
+
+    Then the paste goes in alone, and Enter follows only when a fresh capture
+    shows no dialog and the paste in the composer (panes.composer_holds);
+    otherwise 409, the reply left in the composer, unsent."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "nothing to send")
     with _ACT_LOCK:
-        _pid, pane_id, target, window = _live_pane(body.pid)
-        sess = session_state_for(session_id_for_pane(pane_id)) or {}
+        pid, pane_id, target, window = _live_pane(body.pid)
+        # Live only: the recorded pane_sessions row can name another pane's
+        # session after a resume or a reused %N.
+        sess = session_state_for(live_session_id_for_pane(pane_id)) or {}
         if sess.get("state") == "needs-input":
             waiting = sess.get("waiting_for") or "needs input"
             raise HTTPException(409, f"the pane has a dialog open ({waiting}) — answer it first")
@@ -166,5 +211,10 @@ def pane_reply(body: ReplyBody):
             raise HTTPException(
                 409, "the pane's composer isn't at a plain prompt — shell mode or a draft; open it to see"
             )
-        _send_to_target(target, text, ["Enter"], address=pane_id)
+        _send_to_target(target, text, [], address=pane_id)
+        if not _submit_when_held(target, pane_id, text):
+            raise HTTPException(
+                409, "the pane changed while the reply was typed — it's in the composer, unsent; open it"
+            )
+    log.info("pane-action: reply on %s (%s), %d chars", pid, pane_id, len(text))
     return {"ok": True}
