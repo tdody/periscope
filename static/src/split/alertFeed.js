@@ -31,7 +31,9 @@ export function selectPane(w) {
 }
 
 // Select a session's Review row (the live LGTM review, or its "Start
-// review →"), as clicking it in the rail does: rows are keyed by session.
+// review →"), as clicking it in the rail does. Today every managed pane
+// shares one tmux session, so this is ambiguous across worktrees — no
+// notify banner calls it yet (THI-433 re-keys review rows by worktree first).
 export function selectReview(session) {
   if (!session) return;
   railSelection.value = `review:${session}`;

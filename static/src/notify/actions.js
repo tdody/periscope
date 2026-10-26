@@ -4,10 +4,11 @@
 // onto macOS categories and reports a press on notification-action.
 //
 // A category is a fixed set of buttons, labels included, so copy.js gives
-// each banner the variant whose buttons all apply: no Review diff without a
-// branch, no Clean up without a worktree, and Spawn on {B} gets one category
-// per B. None of these make an agent act; Allow / Deny / reply are PR 2's
-// (docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md).
+// each banner the variant whose buttons all apply: no Clean up without a
+// worktree, no Open PR without a URL, and Spawn on {B} gets one category per
+// B. Review diff isn't offered yet — it waits on review rows keyed by
+// worktree (THI-433). None of these make an agent act; Allow / Deny / reply
+// are PR 2's (docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md).
 import { accountLabel } from "../accounts.js";
 import { pickSpawnAccount } from "../chrome/SpawnAccountPicker.jsx";
 import { openUsageDetails } from "../chrome/UsagePill.jsx";
@@ -22,6 +23,7 @@ const act = (id, title, opts = {}) => Object.freeze({ id, title, ...opts });
 // something in it. Open PR's browser comes forward on its own.
 const OPEN_PR = act("open_pr", "Open PR");
 const MARK_SEEN = act("mark_seen", "Mark seen");
+const CLEANUP = act("cleanup", "Clean up worktree", { foreground: true });
 const DETAILS = act("details", "Details", { foreground: true });
 
 // The whole set: macOS replaces it on each registration. Move targets are
@@ -29,10 +31,12 @@ const DETAILS = act("details", "Details", { foreground: true });
 // set because move_targets came back in another order.
 export function categories({ accounts = [], moveTargets = {} } = {}) {
   const set = [
-    { id: "done", actions: [act("review", "Review diff", { foreground: true }), MARK_SEEN] },
+    // No "done" category yet: Review diff waits on review rows keyed by
+    // worktree (THI-433), so every done banner gets done_seen only.
     { id: "done_seen", actions: [MARK_SEEN] },
     { id: "ci_failed_pr", actions: [OPEN_PR] },
-    { id: "pr_merged", actions: [act("cleanup", "Clean up worktree", { foreground: true }), OPEN_PR] },
+    { id: "pr_merged", actions: [CLEANUP, OPEN_PR] },
+    { id: "pr_merged_cleanup", actions: [CLEANUP] },
     { id: "pr_merged_pr", actions: [OPEN_PR] },
     { id: "usage", actions: [DETAILS] },
   ];
@@ -78,6 +82,8 @@ export function runAction({ target, action, data } = {}, o = OPENERS) {
         if (w) o.markReadySeen(w);
         return;
       case "review": {
+        // No category offers this button until THI-433 re-adds one; kept so
+        // the follow-up only touches categories() and copy.js.
         const session = w?.session || data.session;
         if (session) o.selectReview(session);
         else show();

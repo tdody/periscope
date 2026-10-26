@@ -24,14 +24,14 @@ describe("categories", () => {
   it("gives every banner variant its buttons", () => {
     const byId = Object.fromEntries(categories().map((c) => [c.id, c.actions.map((a) => a.id)]));
     expect(byId).toEqual({
-      done: ["review", "mark_seen"], done_seen: ["mark_seen"], ci_failed_pr: ["open_pr"],
-      pr_merged: ["cleanup", "open_pr"], pr_merged_pr: ["open_pr"], usage: ["details"],
+      done_seen: ["mark_seen"], ci_failed_pr: ["open_pr"],
+      pr_merged: ["cleanup", "open_pr"], pr_merged_cleanup: ["cleanup"], pr_merged_pr: ["open_pr"], usage: ["details"],
     });
   });
 
   it("brings the app forward only for buttons that show something in it", () => {
     const fg = categories().flatMap((c) => c.actions).filter((a) => a.foreground).map((a) => a.id);
-    expect(new Set(fg)).toEqual(new Set(["review", "cleanup", "details"]));
+    expect(new Set(fg)).toEqual(new Set(["cleanup", "details"]));
   });
 
   it("adds one labelled Spawn on {B} category per move target, sorted", () => {

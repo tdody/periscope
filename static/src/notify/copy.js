@@ -67,26 +67,37 @@ export function payloadFor(ev, ctx = {}) {
         // days old, and would ride every finished turn.
         subtitle: w.pr && w.pr_linked ? `${w.session} · PR #${w.pr}` : where(w),
         body: firstSentence(w.recap || w.last_line) || "Finished.",
-        // Review diff needs a branch to diff; Mark seen always applies.
-        category: w.branch ? "done" : "done_seen", data: { open: "pane", pid: w.pid, session: w.session },
+        // Review diff waits on review rows keyed by worktree (THI-433): every
+        // pane shares one tmux session, so a session-keyed review would open
+        // the wrong pane's.
+        category: "done_seen", data: { open: "pane", pid: w.pid, session: w.session },
       };
     case "ci_failed": {
       const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
+      const url = prUrl(w.repo_slug, w.pr);
       return {
         ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
         body: checks || "Checks are failing.",
-        // PR 2's Ask agent to fix adds a "ci_failed" category with that button.
-        category: "ci_failed_pr", data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid },
+        // No URL, no Open PR to offer (PR 2 adds the "ci_failed" category,
+        // with Ask agent to fix, regardless of a URL).
+        ...(url ? { category: "ci_failed_pr" } : {}),
+        data: { open: "url", url, pid: w.pid },
       };
     }
-    case "pr_merged":
+    case "pr_merged": {
+      const url = prUrl(w.repo_slug, w.pr);
+      let category;
+      if (w.cwd && url) category = "pr_merged";
+      else if (w.cwd) category = "pr_merged_cleanup";
+      else if (url) category = "pr_merged_pr";
       return {
         ...base, title: `PR #${w.pr} merged`,
         subtitle: w.pr_base ? `${w.session} · ${w.branch} → ${w.pr_base}` : where(w),
         body: "The worktree and its session can be cleaned up.",
-        category: w.cwd ? "pr_merged" : "pr_merged_pr",
-        data: { open: "url", url: prUrl(w.repo_slug, w.pr), pid: w.pid, cwd: w.cwd },
+        ...(category ? { category } : {}),
+        data: { open: "url", url, pid: w.pid, cwd: w.cwd },
       };
+    }
     case "usage": {
       const registry = ctx.accounts || [];
       const name = clip(registry.find((a) => a.id === ev.account)?.label || ev.account, 16);

@@ -171,7 +171,9 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
 }
 
 // A hung registration (dead IPC, say) must not stall every later banner
-// forever — race it so the chain always drains.
+// forever — race it so the chain always drains. WKWebView throttles timers
+// in a hidden window, so this is a backstop for a dead call, not a promise
+// that `invoke` resolves within it — in practice it doesn't hang.
 export const REGISTRATION_TIMEOUT_MS = 2000;
 
 // Serialises registration ahead of delivery through one promise chain: two

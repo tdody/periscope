@@ -114,14 +114,25 @@ describe("payloadFor", () => {
     expect(payloadFor(ev, { accounts: two, windows: [] }).title).toBe("Account ghost is running hot");
   });
 
-  it("gives each banner the category whose buttons all apply", () => {
-    expect(payloadFor({ kind: "done", w: w() })).toMatchObject({ category: "done", data: { pid: "p1", session: "periscope" } });
+  it("gives a done banner done_seen regardless of branch — Review diff waits on THI-433", () => {
+    expect(payloadFor({ kind: "done", w: w() })).toMatchObject({ category: "done_seen", data: { pid: "p1", session: "periscope" } });
     expect(payloadFor({ kind: "done", w: w({ branch: "" }) }).category).toBe("done_seen");
-    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).category).toBe("ci_failed_pr");
-    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, cwd: "/wt/a" }) })).toMatchObject({ category: "pr_merged", data: { cwd: "/wt/a" } });
-    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7 }) }).category).toBe("pr_merged_pr");
+  });
+
+  it("gives each other banner the category whose buttons all apply", () => {
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r" }) }).category).toBe("ci_failed_pr");
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", cwd: "/wt/a" }) })).toMatchObject({
+      category: "pr_merged", data: { cwd: "/wt/a" },
+    });
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) }).category).toBe("pr_merged_pr");
     // Their buttons are PR 2's: no category yet, so the shell shows none.
     expect(payloadFor({ kind: "needs_input", w: w() }).category).toBeUndefined();
+  });
+
+  it("offers no buttons on ci_failed or pr_merged without a URL", () => {
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).category).toBeUndefined();
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, cwd: "/wt/a" }) }).category).toBe("pr_merged_cleanup");
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7 }) }).category).toBeUndefined();
   });
 
   it("offers Spawn on the account a pane on A would move to, and only then", () => {
@@ -142,8 +153,10 @@ describe("payloadFor", () => {
     const ids = new Set(categories({ accounts, moveTargets }).map((c) => c.id));
     const alert = { name: "old", session: "s", message: "m" };
     const evs = [
-      { kind: "done", w: w() }, { kind: "done", w: w({ branch: "" }) }, { kind: "ci_failed", w: w({ pr: 7 }) },
-      { kind: "pr_merged", w: w({ pr: 7, cwd: "/wt" }) }, { kind: "pr_merged", w: w({ pr: 7 }) },
+      { kind: "done", w: w() }, { kind: "done", w: w({ branch: "" }) },
+      { kind: "ci_failed", w: w({ pr: 7 }) }, { kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r" }) },
+      { kind: "pr_merged", w: w({ pr: 7, cwd: "/wt" }) }, { kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", cwd: "/wt" }) },
+      { kind: "pr_merged", w: w({ pr: 7 }) }, { kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) },
       { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } },
       { kind: "usage", account: "c", meter: "week_all", m: { percent: 90 } },
       // PR 2 adds their categories; today's shell shows no buttons on these.

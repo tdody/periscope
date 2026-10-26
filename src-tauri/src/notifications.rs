@@ -58,7 +58,7 @@ const NOTIFY_EVENT: &str = "periscope:notify";
 const CLICK_EVENT: &str = "periscope:notification-clicked";
 /// Rust → webview: a banner with a kind was clicked: { target, kind, data }.
 const OPENED_EVENT: &str = "periscope:notification-opened";
-/// Webview → Rust: the whole category set (each kind's buttons), replacing the last.
+/// Webview → Rust: the whole category set (each banner variant's buttons), replacing the last.
 const CATEGORIES_EVENT: &str = "periscope:notify-categories";
 /// Rust → webview: a button on a kinded banner: { target, kind, action, text, data }.
 const ACTION_EVENT: &str = "periscope:notification-action";
