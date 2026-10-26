@@ -109,19 +109,19 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
 | action | Foreground | Does |
 |---|---|---|
-| `review` | yes | `selectReview(w)`: sets `railSelection` to `review:{w.session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
+| `review` | yes | `selectReview(session)` (the live pane's, else the banner's `data.session`): sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
 | `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. |
 | `open_pr` | no | `openExternal(data.url)`: the browser comes forward on its own. |
 | `cleanup` | yes | `openCleanupModal({ paths: [w.cwd] })`. Never deletes: the modal's own Archive button does, after you look. |
 | `spawn_on` | no | `pickSpawnAccount(B)`: the header picker's `pick`, exported. It pins every new spawn to B until set back to auto; the header pin shows it. |
 | `details` | yes | `openUsageDetails()` |
 
-- **A missing pane.** An action whose pane is gone (no window with `data.pid`) falls back to `revealPane(target)`, as a click does. `open_pr`, `spawn_on` and `details` don't need the pane.
+- **A missing pane.** An action whose pane is gone (no window with `data.pid`) uses the banner's own `data` (`session`, `cwd`) and falls back to `revealPane(target)` when that's missing too, as a click does. Mark seen does nothing, since a gone pane has no READY row left to dismiss. `open_pr`, `spawn_on` and `details` don't need the pane.
 - **`data` gains** `session` (for `review`) and `cwd` (for `cleanup`) on the banners that need them. `data.pid` is still the lookup key. The banner's own data is the fallback, since tmux renumbers windows.
 
 ### Server: `?paths=` on `/api/cleanup/candidates`
 
-- **`?paths=a&paths=b`** (a repeated query param) has `compute_candidates` evaluate only the worktrees containing those paths. A pane's `cwd` can be a subdirectory, so each path is resolved to its worktree root (`git -C path rev-parse --show-toplevel`, then realpath). The modal stays fast this way, rather than taking minutes.
+- **`?paths=a&paths=b`** (a repeated query param) has `compute_candidates` evaluate only the worktrees containing those paths, inside its usual walk of the known repos. A pane's `cwd` can be a subdirectory, so each path is resolved to its worktree root (`gitutil.worktree_root`: `git rev-parse --show-toplevel`, then realpath), and a repo holding none of them is skipped before its default branch is looked up. The modal stays fast this way, rather than taking minutes.
 - **A listed path that isn't a candidate** (still busy, or already archived) is simply absent.
 - **`CleanupModal`:**
   - `openCleanupModal({ paths })` fetches with `paths` and preselects what comes back;
