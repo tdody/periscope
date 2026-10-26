@@ -13,6 +13,7 @@ batches stamp_updates across all panes and writes them under one
 _STATE_LOCK acquisition for efficiency.
 """
 
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ from periscope.git_pr import (
     cached_pr_state,
 )
 from periscope.lgtm import cached_lgtm_state
+from periscope.log import log
 from periscope.panes import (
     clear_agent_state_transition,
     forget_agent,
@@ -237,10 +239,49 @@ def mem_signal(proc: dict | None) -> dict | None:
     return {"tier": tier, "rss_gb": round(rss / (1024 * 1024), 1), "age_s": age}
 
 
-# The PermissionRequest hook stamps its row just before the dialog renders,
-# and needs_since is whole seconds from the poll that first saw the pane
-# waiting: the row can predate it by a little under a poll.
-_PERMISSION_SKEW_S = 2
+# How far before needs_since the request's own row can be stamped. The hook
+# runs just before the dialog renders, but needs_since is when periscope first
+# SAW the wait: now_ts of the first state build whose session-file read says
+# waiting. Between them sit the hook -> render -> session-file latency, up to
+# 1 s of session_status's cached index, the tail of the build in flight when
+# the dialog appeared, state_hub's 1 s sleep between builds (3 s on the REST
+# fallback, poll.js POLL_MS), and the next build's window listing + git attach
+# before it takes now_ts. Flooring now_ts only shortens the gap, and a row
+# stamped mid-build can even land just after needs_since (kept: `>=`, no upper
+# bound). Too narrow silently drops the request's own row and Allow / Deny
+# with it; too wide only lets back-to-back prompts read as two rows: Open
+# only, the safe side.
+_PERMISSION_WINDOW_S = 5
+# A wait with no row in the window but one this far before it is a miss worth
+# a (debug) log line, once per wait, to calibrate _PERMISSION_WINDOW_S by hand.
+_PERMISSION_MISS_LOOKBACK_S = 15
+_permission_miss_checked: set[tuple[str, int]] = set()
+# A periscope.db error makes banners Open-only; say so, but not every tick.
+_PERMISSION_ERROR_LOG_EVERY_S = 60.0
+_permission_error_logged_at = 0.0
+
+
+def _log_permission_miss(pane_id: str, needs_since: int) -> None:
+    """Debug-log, once per (pane, wait), a request that fell just outside the
+    window: the evidence _PERMISSION_WINDOW_S is too narrow."""
+    key = (pane_id, needs_since)
+    if key in _permission_miss_checked:
+        return
+    if len(_permission_miss_checked) > 1024:  # one entry per wait; never needs to be long
+        _permission_miss_checked.clear()
+    _permission_miss_checked.add(key)
+    start = needs_since - _PERMISSION_WINDOW_S
+    missed = activity.pane_permissions_between(pane_id, needs_since - _PERMISSION_MISS_LOOKBACK_S, start)
+    if missed:
+        log.debug(
+            "pending_permission: %s waits since %d with no request in the last %ds, but %d in the %ds before — "
+            "_PERMISSION_WINDOW_S too narrow?",
+            pane_id,
+            needs_since,
+            _PERMISSION_WINDOW_S,
+            missed,
+            _PERMISSION_MISS_LOOKBACK_S - _PERMISSION_WINDOW_S,
+        )
 
 
 def pending_permission_row(pane_id: str, state: str | None, waiting_for: str | None, needs_since: int) -> dict | None:
@@ -257,12 +298,24 @@ def pending_permission_row(pane_id: str, state: str | None, waiting_for: str | N
 
     match_key is server-only (POST /api/pane/permission hands it to
     dialog_matches, recomputing this rather than trusting the banner's copy);
-    pending_permission_for is what /api/state publishes."""
+    pending_permission_for is what /api/state publishes. A periscope.db error
+    is None too: the banner degrades to Open only rather than the pane card
+    turning into an error view."""
+    global _permission_error_logged_at
     if state != "needs-input" or (waiting_for or "").lower() != "permission prompt":
         return None
     if not pane_id or not needs_since:
         return None
-    rows = activity.pane_permissions_since(pane_id, needs_since - _PERMISSION_SKEW_S)
+    try:
+        rows = activity.pane_permissions_since(pane_id, needs_since - _PERMISSION_WINDOW_S)
+        if not rows:
+            _log_permission_miss(pane_id, needs_since)
+    except sqlite3.Error:
+        now = time.monotonic()
+        if now - _permission_error_logged_at >= _PERMISSION_ERROR_LOG_EVERY_S:
+            _permission_error_logged_at = now
+            log.warning("pending_permission: reading pane_permissions failed; banners are Open only", exc_info=True)
+        return None
     if len(rows) != 1:
         return None
     request_id, tool, summary, match_key = rows[0]
@@ -391,7 +444,7 @@ def build_window_view(
     ):
         stamp_update = (pid, completed, acked, needs_since)
 
-    # One indexed read, and only for a pane waiting on a permission prompt.
+    # One indexed read (plus one per wait on a miss), only for a pane waiting on a permission prompt.
     pending_permission = pending_permission_for(
         w.get("pane_id") or "", parsed.get("state"), parsed.get("waiting_for"), needs_since
     )

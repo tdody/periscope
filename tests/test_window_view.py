@@ -44,6 +44,7 @@ def reset_panes_and_channels(monkeypatch):
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
+    window_view._permission_miss_checked.clear()
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
         _CHANNEL_UNREAD.clear()
@@ -63,6 +64,7 @@ def reset_panes_and_channels(monkeypatch):
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
+    window_view._permission_miss_checked.clear()
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
         _CHANNEL_UNREAD.clear()
@@ -987,3 +989,88 @@ def test_an_unkeyed_row_still_counts_against_the_one_row_rule(fresh_activity_db)
     _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
     _permission_row(fresh_activity_db, "%5", "b1b2c3d4e5f60718", 999.8, tool="WebFetch", match_key=None)
     assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+
+
+def test_the_window_reaches_exactly_five_seconds_before_needs_since(fresh_activity_db):
+    from periscope.window_view import pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 995.0)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000)["request_id"] == "a1b2c3d4e5f60718"
+    _permission_row(fresh_activity_db, "%6", "b1b2c3d4e5f60718", 994.99)
+    assert pending_permission_row("%6", "needs-input", "permission prompt", 1000) is None
+
+
+def test_a_row_stamped_after_needs_since_still_counts(fresh_activity_db):
+    # needs_since is the build's floored now_ts, taken before its fan-out reads
+    # the session file: the hook can stamp mid-build, after it.
+    from periscope.window_view import pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 1000.6)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000)["request_id"] == "a1b2c3d4e5f60718"
+
+
+def test_view_publishes_a_permission_request_from_the_session_file(mocker, clean_state, fresh_activity_db):
+    # The real path: a mapped pane's state and waiting_for come from Claude's
+    # session file, not the scrape (a permission dialog's footer is outside
+    # parse_pane's family).
+    from periscope.window_view import build_window_view
+
+    _stub_subsystems(mocker, pane_content="x")
+    mocker.patch(
+        "periscope.window_view.session_state_for",
+        return_value={"state": "needs-input", "status": "waiting", "waiting_for": "permission prompt"},
+    )
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 997.0)
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert (view["state"], view["needs_since"]) == ("needs-input", 1000)
+    assert view["pending_permission"] == {
+        "request_id": "a1b2c3d4e5f60718",
+        "tool": "Bash",
+        "summary": "touch probe.txt",
+    }
+
+
+def test_a_request_just_outside_the_window_is_logged_once_per_wait(fresh_activity_db, caplog):
+    import logging
+
+    from periscope.window_view import pending_permission_row
+
+    caplog.set_level(logging.DEBUG, logger="periscope")
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 990.0)
+    for _ in range(3):  # every tick of the same wait
+        assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    misses = [r for r in caplog.records if "too narrow" in r.getMessage()]
+    assert len(misses) == 1
+    assert misses[0].levelno == logging.DEBUG and "%5" in misses[0].getMessage()
+
+
+def test_a_wait_with_no_request_anywhere_logs_nothing(fresh_activity_db, caplog):
+    # A pane whose Claude hasn't loaded the hook: Open only, and not a miss.
+    import logging
+
+    from periscope.window_view import pending_permission_row
+
+    caplog.set_level(logging.DEBUG, logger="periscope")
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 980.0)  # an older wait's
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    assert not [r for r in caplog.records if "too narrow" in r.getMessage()]
+
+
+def test_a_db_error_leaves_the_banner_open_only_not_the_card_an_error(
+    mocker, clean_state, fresh_activity_db, monkeypatch, caplog
+):
+    import sqlite3
+
+    from periscope import window_view
+
+    monkeypatch.setattr(window_view, "_permission_error_logged_at", 0.0)
+    mocker.patch.object(
+        window_view.activity, "pane_permissions_since", side_effect=sqlite3.OperationalError("database is locked")
+    )
+    _waiting_on(mocker, "permission prompt")
+    view, _ = window_view.build_window_view(_window(), now_ts=1000)
+    assert view["state"] == "needs-input"
+    assert view["pending_permission"] is None
+    # Logged, but not again on the next tick.
+    assert window_view.pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    assert len([r for r in caplog.records if "Open only" in r.getMessage()]) == 1
