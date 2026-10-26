@@ -24,16 +24,12 @@
 // "periscope:notify-categories" (when the feed starts and whenever the set
 // changes, never per banner: registration is asynchronous and replaces the
 // set, so a banner posted right behind one can show no buttons). A banner
-// only gets buttons when it names a `category` explicitly — never falling
-// back to its `kind`, because 2b's category ids reuse 2a's kind names (done,
-// usage, pr_merged, …) and the registered set outlives the webview: after a
-// JS rollback, an old webview's kind:"done" banners would otherwise match a
-// stale category and grow buttons whose presses nothing listens for (a typed
-// reply silently lost). A press goes out on "periscope:notification-action"
-// as { target, kind, action, text, data }. This shell knows no kinds or
-// buttons: they're data, so a new button needs new JS, not a new .app. An
-// older shell drops the categories event and its banners carry no buttons;
-// an older webview registers none.
+// only gets buttons when it names a category explicitly — see `category_of`'s
+// doc for why there's no fallback to `kind`. A press goes out on
+// "periscope:notification-action" as { target, kind, action, text, data }.
+// This shell knows no kinds or buttons: they're data, so a new button needs
+// new JS, not a new .app. An older shell drops the categories event and its
+// banners carry no buttons; an older webview registers none.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -191,9 +187,9 @@ impl ReplySpec {
 
 /// One button, as the webview describes it. The flags are `Option` so a null
 /// from a newer or older webview reads as unset rather than failing the button.
-/// `reply` must be OMITTED for a plain button — sending `false` instead of
-/// leaving the key out fails to deserialize as `ReplySpec` and drops the whole
-/// button, not just the reply.
+/// `reply` must be omitted (or sent `null`) for a plain button — `false`
+/// fails to deserialize as `ReplySpec` and drops the whole button, not just
+/// the reply.
 #[derive(serde::Deserialize, Debug, PartialEq)]
 struct ActionSpec {
     #[serde(default, deserialize_with = "null_to_default")]
@@ -246,11 +242,13 @@ fn parse_category(c: &serde_json::Value) -> Option<(String, Vec<ActionSpec>, usi
     }
     let mut dropped = 0;
     let mut seen_ids = HashSet::new();
-    let actions = c
-        .get("actions")
-        .and_then(|a| a.as_array())
-        .map(|list| {
-            list.iter()
+    // Missing or explicit `null` means "no buttons," not a mistake — only a
+    // present-but-unreadable `actions` (present and not a list) is a drop.
+    let actions = match c.get("actions") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(v) => match v.as_array() {
+            Some(list) => list
+                .iter()
                 .filter_map(|v| match ActionSpec::deserialize(v) {
                     Ok(a) if !a.id.is_empty() && !a.title.is_empty() => {
                         // A repeated action id within one category would make
@@ -267,9 +265,13 @@ fn parse_category(c: &serde_json::Value) -> Option<(String, Vec<ActionSpec>, usi
                         None
                     }
                 })
-                .collect()
-        })
-        .unwrap_or_default();
+                .collect(),
+            None => {
+                dropped += 1;
+                Vec::new()
+            }
+        },
+    };
     Some((id, actions, dropped))
 }
 
@@ -374,10 +376,8 @@ define_class!(
                         }),
                     );
                 } else if !action.isEqualToString(dismiss) {
-                    // UNNotificationDismissActionIdentifier only arrives when
-                    // the category sets CustomDismissAction, which none of
-                    // ours do, so this guard is belt-and-suspenders — a plain
-                    // swipe-to-dismiss must never be mistaken for a button press.
+                    // Dismiss only arrives with CustomDismissAction, which we
+                    // never set; a swipe must never read as a press.
                     // A reply button's response is the text-input subclass.
                     let text = response
                         .downcast_ref::<UNTextInputNotificationResponse>()
@@ -770,7 +770,9 @@ mod tests {
         assert_eq!(ids, ["ok", "good"]);
         assert!(specs[0].actions.is_empty());
         assert_eq!(specs[1].actions.len(), 1);
-        assert_eq!(dropped, 4);
+        // 4 unreadable categories (null, "done", 5, {"id":7}) + "ok"'s
+        // `actions` present but not a list.
+        assert_eq!(dropped, 5);
     }
 
     #[test]
