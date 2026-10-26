@@ -16,9 +16,12 @@ from periscope.panes import parse_pane
 from periscope.routes import pane_actions
 
 _DIALOGS = Path(__file__).resolve().parent.parent / "fixtures" / "permission_dialogs"
+_COMPOSER = Path(__file__).resolve().parent.parent / "fixtures" / "composer"
 _IDLE = "⏺ Done.\n\n" + "─" * 60 + "\n❯ \n" + "─" * 60 + "\n  ⏵⏵ auto mode on (shift+tab to cycle)\n"
 # An idle Claude an unmapped pane still reads as Claude: its status line.
-_CLAUDE_ON_SCREEN = "⏺ Done.\n\n❯ \n  17% | ↑30k ↓74 | $0.50 | Opus 4.7 (1M context)\n"
+_CLAUDE_ON_SCREEN = (
+    "⏺ Done.\n\n" + "─" * 60 + "\n❯ \n" + "─" * 60 + "\n  17% | ↑30k ↓74 | $0.50 | Opus 4.7 (1M context)\n"
+)
 _SHELL = "tom@mac periscope % git status\nnothing to commit, working tree clean\ntom@mac periscope % \n"
 _ASK = (
     "─" * 60 + "\nWhich database?\n\n❯ 1. Postgres\n  2. SQLite\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n"
@@ -393,6 +396,9 @@ def test_reply_500s_and_sends_nothing_when_the_pane_cannot_be_read(client, pane,
     pane.assert_not_called()
 
 
+_NOT_AT_PROMPT = "the pane's composer isn't at a plain prompt — shell mode or a draft; open it to see"
+
+
 def _composer(prompt_row: str) -> str:
     """An idle Claude 2.1.280 screen as capture -e returns it: a past prompt
     (drawn white on grey, so it reads as typed) and its answer in scrollback,
@@ -417,7 +423,18 @@ def test_reply_409s_on_a_half_typed_draft(client, pane, idle, mocker, prompt_row
     mocker.patch.object(pane_actions, "capture", return_value=_composer(prompt_row))
     r = _reply(client)
     assert r.status_code == 409
-    assert r.json()["detail"] == "the pane has a half-typed draft — finish or clear it first"
+    assert r.json()["detail"] == _NOT_AT_PROMPT
+    pane.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["bash_empty.txt", "bash_draft.txt"])
+def test_reply_409s_in_shell_mode(client, pane, idle, mocker, name):
+    # Real 2.1.280 captures of a fresh session: `!` where `❯` was, and no
+    # scrollback prompt. Enter would run the reply as a shell command.
+    mocker.patch.object(pane_actions, "capture", return_value=(_COMPOSER / name).read_text())
+    r = _reply(client)
+    assert r.status_code == 409
+    assert r.json()["detail"] == _NOT_AT_PROMPT
     pane.assert_not_called()
 
 
@@ -432,5 +449,11 @@ def test_reply_409s_on_a_half_typed_draft(client, pane, idle, mocker, prompt_row
 )
 def test_reply_goes_to_an_empty_composer(client, pane, idle, mocker, prompt_row):
     mocker.patch.object(pane_actions, "capture", return_value=_composer(prompt_row))
+    assert _reply(client).status_code == 200
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])
+
+
+def test_reply_goes_to_a_real_idle_composer(client, pane, idle, mocker):
+    mocker.patch.object(pane_actions, "capture", return_value=(_COMPOSER / "idle.txt").read_text())
     assert _reply(client).status_code == 200
     pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])

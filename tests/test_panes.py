@@ -28,6 +28,7 @@ from periscope.panes import (
     _agent_last_seen,
     _focused_at,
     _spinner_last_seen,
+    composer_ready,
     dialog_matches,
     dialog_open,
     list_windows,
@@ -1360,3 +1361,64 @@ def test_a_hidden_control_in_a_command_does_not_break_the_match():
     key = hook.match_key("Bash", {"command": command, "description": "Create empty probe.txt file"})
     screen = _bash_screen(f"   {command}\n   Create empty probe.txt file")
     assert dialog_matches(parse_permission_dialog(screen), "Bash", key)
+
+
+# ── composer_ready: the plain, empty ❯ prompt a reply needs ────────────
+# Real Claude Code 2.1.280 captures (capture-pane -e, 100 columns, escapes
+# kept), the probe's scratch path in the banner replaced by /tmp/probe.
+_COMPOSER = Path(__file__).parent / "fixtures" / "composer"
+
+
+def _composer_capture(name: str) -> str:
+    return (_COMPOSER / name).read_text()
+
+
+def _with_composer_row(row: str) -> str:
+    # The idle capture with its composer row swapped for `row`.
+    lines = _composer_capture("idle.txt").split("\n")
+    assert lines[6].startswith("\x1b[39m❯")
+    lines[6] = row
+    return "\n".join(lines)
+
+
+@pytest.mark.parametrize(
+    ("screen", "ready"),
+    [
+        # `❯ Try "fix lint errors"`, the suggestion dim (SGR 2).
+        (lambda: _composer_capture("idle.txt"), True),
+        (lambda: _with_composer_row("\x1b[39m❯\xa0"), True),
+        # Shell mode: `!` instead of `❯`, its rules pink, `! for shell mode` in
+        # the footer. Enter would run the text as a shell command, and this
+        # fresh session has no scrollback `❯` row a fallback scan could find.
+        (lambda: _composer_capture("bash_empty.txt"), False),
+        (lambda: _composer_capture("bash_draft.txt"), False),
+        # Shell mode with no suggestion: nothing after the glyph, still not `❯`.
+        (lambda: _with_composer_row("!\xa0"), False),
+        # A typed draft is drawn in the default fg; a pasted block is grey
+        # but is the draft.
+        (lambda: _with_composer_row("\x1b[39m❯\xa0half a thought"), False),
+        (lambda: _with_composer_row("\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m"), False),
+        # Any other glyph opening the composer.
+        (lambda: _with_composer_row("#\xa0\x1b[2mremember this\x1b[0m"), False),
+        # A two-row composer is a multi-line draft.
+        (lambda: _with_composer_row("\x1b[39m❯\xa0\n  second line"), False),
+        # A dialog has one rule and no composer.
+        (lambda: _dialog("bash.txt"), False),
+        (lambda: "tom@mac periscope % \n", False),
+    ],
+    ids=[
+        "idle-suggestion",
+        "idle-empty",
+        "shell-mode-empty",
+        "shell-mode-draft",
+        "shell-mode-bare",
+        "typed-draft",
+        "pasted-block",
+        "other-glyph",
+        "two-rows",
+        "permission-dialog",
+        "no-composer",
+    ],
+)
+def test_composer_ready(screen, ready):
+    assert composer_ready(screen()) is ready

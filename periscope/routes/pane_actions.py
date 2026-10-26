@@ -5,8 +5,8 @@ and "Ask agent to fix" type a message into the pane (THI-426's rail card reuses
 both). Unlike /api/send, a raw key pipe, each re-checks the pane when pressed,
 because a banner can be minutes stale: Allow must only ever answer the request
 its banner was shown for, and a reply must never land in a dialog, where
-`1 sounds good` + Enter picks option 1, in a shell, where it runs, or on a
-half-typed draft, which Enter would submit with it.
+`1 sounds good` + Enter picks option 1, in a shell or Claude's shell mode,
+where it runs, or on a half-typed draft, which Enter would submit with it.
 
 JSON bodies only. A POST without one is a CORS "simple" request any website
 could fire at localhost; application/json needs a preflight this server never
@@ -21,7 +21,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from periscope.log import log
-from periscope.panes import dialog_matches, dialog_open, needs_since_for, parse_pane, parse_permission_dialog
+from periscope.panes import (
+    composer_ready,
+    dialog_matches,
+    dialog_open,
+    needs_since_for,
+    parse_pane,
+    parse_permission_dialog,
+)
 from periscope.pids import window_by_pid
 from periscope.routes.send import _send_to_target
 from periscope.session_status import session_state_for
@@ -132,8 +139,9 @@ def pane_reply(body: ReplyBody):
     and no agent on screen, or a shell in the foreground. A Codex pane has no
     Claude session and no Claude screen, so it gets the 409 (the route can't
     rule out a Codex approval prompt, where a `y…` would approve). And 409
-    when the composer holds a half-typed draft: the paste would be appended
-    to it and Enter would submit both."""
+    unless the composer is at a plain, empty `❯` prompt (panes.composer_ready):
+    in shell mode (`!`) Enter runs the text as a command, and on a draft it
+    submits the draft with it."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "nothing to send")
@@ -146,15 +154,15 @@ def pane_reply(body: ReplyBody):
         screen = _screen(target)
         if dialog_open(screen):
             raise HTTPException(409, "the pane has a dialog open — answer it first")
-        parsed = parse_pane(screen)
         foreground = (window.get("current_command") or "").lstrip("-")
-        if foreground in _SHELLS or not (sess or parsed.get("agent")):
+        if foreground in _SHELLS or not (sess or parse_pane(screen).get("agent")):
             raise HTTPException(409, "the pane isn't running an agent")
-        # The same signal the session pickers refuse on (routes/pane.py),
-        # read from the -e capture: Claude's suggestion is drawn dim or grey,
-        # and anything not drawn that way counts as typed, so an unrecognised
-        # suggestion costs a 409, never a merged message.
-        if parsed.get("pending_input"):
-            raise HTTPException(409, "the pane has a half-typed draft — finish or clear it first")
+        # Positive, not parse_pane's pending_input: that scan looks for the
+        # last `❯` row, and in shell mode (`!` in its place) it finds a past
+        # prompt in scrollback, or, in a fresh session, nothing at all.
+        if not composer_ready(screen):
+            raise HTTPException(
+                409, "the pane's composer isn't at a plain prompt — shell mode or a draft; open it to see"
+            )
         _send_to_target(target, text, ["Enter"])
     return {"ok": True}
