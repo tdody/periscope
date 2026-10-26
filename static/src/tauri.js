@@ -14,10 +14,13 @@
 //
 // Native notifications go through our own UNUserNotificationCenter bridge
 // in Rust (src-tauri/src/notifications.rs), not tauri-plugin-notification:
-// the plugin's macOS backend reports no click callback. We hand a banner
-// to Rust over the "periscope:notify" event and Rust hands the click back
-// over "periscope:notification-clicked" — events, because the webview is
-// a remote origin that can't invoke Rust commands.
+// the plugin's macOS backend reports no click callback. We hand a banner to
+// Rust over "periscope:notify" and the category set over
+// "periscope:notify-categories"; Rust hands a plain click back over
+// "periscope:notification-clicked", a kind-aware one over
+// "periscope:notification-opened", and a button press over
+// "periscope:notification-action" — events, because the webview is a
+// remote origin that can't invoke Rust commands.
 
 export function inTauri() {
   return typeof window !== "undefined"
@@ -68,8 +71,7 @@ export async function notify({ title, body, target = "", ...rest }) {
 
 // Register a handler for native-notification clicks. macOS already
 // foregrounds Periscope on click; the payload is the pane target so the
-// caller can open that pane's modal. transformCallback is the raw-JS way
-// to receive a Tauri event without the @tauri-apps/api event module.
+// caller can open that pane's modal.
 export async function onNotificationClick(cb) {
   if (!inTauri()) return;
   try {
