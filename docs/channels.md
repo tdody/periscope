@@ -123,3 +123,53 @@ reports installation/observation without claiming trust.
 Resolution falls back to newest-mtime-in-cwd when a pane has no recorded session
 yet. The earlier `channel_shim.py` recorder was removed — the hook's payload is
 strictly better (current vs spawn-frozen).
+
+## Permission requests (a banner's Allow / Deny)
+
+**`pane_permission_hook.py`** is `pane_session_hook.py`'s sibling:
+- **Registration.** The same `bin/periscope install-hook` registers it on Claude's `PermissionRequest` event, with no matcher, so it runs for every tool. `uninstall-hook` removes it.
+- **When it runs.** Claude runs it just before a permission dialog renders.
+- **How it reads and writes.** Like `pane_session_hook.py`, it reads `TMUX_PANE` and the hook payload, never an inherited env, and opens its own short-lived connection to prod's `periscope.db`.
+
+**What it records.** One `pane_permissions` row per dialog, and it prunes rows older than a day:
+- the pane id;
+- the session and agent ids. A subagent's call asks in its parent's pane;
+- the tool;
+- a display summary of at most 80 characters: Bash's whole command, a file tool's path, WebFetch's URL, or else the first string argument;
+- a `match_key`;
+- the time.
+
+The payload carries no `tool_use_id`, so `request_id` is a hash of the session, tool, input and time.
+
+**The match key** is what Allow must find on screen before it sends `1` (`panes.dialog_matches`):
+
+| Request | Key |
+|---|---|
+| Bash | `sha256:` of the command + description with all whitespace and hidden controls removed |
+| Edit / Write | the absolute path. The dialog's question path must be a `/`-boundary suffix of it |
+| anything else, or Bash with `dangerouslyDisableSandbox` | NULL, so the banner offers Open only |
+
+- **Bash's key is a digest, not the text.** Commands carry tokens, and `periscope.db` is 0644. The screen side hashes its own squashed block and compares the two.
+- **Two definitions, pinned together.** The hook runs on bare `python3` and can't import `periscope`, so it and `panes.py` each define `VERIFIABLE_TOOLS` and the hidden-control class, and tests pin the copies together.
+- **The column heals itself.** A table created before `match_key` gets it by `ALTER`, from whichever side opens the DB first (the hook, or `activity._conn`). Otherwise every INSERT would fail, silently.
+
+**Why it prints nothing and fails open.** A `PermissionRequest` hook's JSON stdout is read as its decision on the dialog. So this observer never prints, swallows every failure and exits 0: a broken recorder must never answer, or block, a prompt. Every failure costs the banner its Allow / Deny, never the dialog. Two layers back this up:
+- **The registration**, `python3 -I -S <path> || true`:
+  - `python3` can be the Mac's 3.9 with no venv, so the file stays 3.9-safe;
+  - `-I -S` keeps a site or venv out;
+  - `|| true` makes even a missing file exit 0.
+- **The busy wait.** SQLite's is 0.5 s, well inside Claude's 5 s hook timeout, since a busy wait overruns its budget about 3×.
+
+**What `install-hook` does to existing entries:**
+- **It joins only a matcher-less group** (`matcher` absent, `""` or `"*"`), so a user's matcher-scoped group can't narrow ours.
+- **It repoints an existing entry only when that entry's target is gone, or when it already points at this checkout.** Never another live checkout's: an install from a worktree would otherwise take over prod's entry, and removing the worktree would leave a dangling path.
+- **`pane_session_hook.py`'s entry ends in `|| true` too.** A nonzero `UserPromptSubmit` blocks the prompt.
+
+**Who reads it.**
+- **`window_view.pending_permission_for`** publishes `w.pending_permission = {request_id, tool, summary}` when exactly one row falls within 5 s of the wait's `needs_since` and that row has a key.
+- **`POST /api/pane/permission`** (`routes/pane_actions.py`) recomputes the row, key included, and checks it against a fresh capture before sending `1` or Escape (`docs/invariants.md`, invariant 20).
+
+**Gaps:**
+- **Prod's DB only.** The hook can't know which instance is looking, so a dev server never publishes `pending_permission`.
+- **Auto mode.** A pane in auto mode (2.1.280's default) asks only when auto mode defers to you.
+- **Old sessions.** A session that hasn't loaded the hook gets Open-only banners.

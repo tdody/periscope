@@ -132,6 +132,102 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
 ## PR 2: the buttons that make an agent act
 
+### Revised in implementation (PR 2)
+
+What shipped, checked against real Claude Code 2.1.280 captures (`tests/fixtures/permission_dialogs/`, `tests/fixtures/composer/`). **This supersedes the PR 2 sections below wherever they differ.** The plan's per-task notes say where the code moved from its blocks: `docs/superpowers/plans/2026-10-26-native-notifications-2b-pr2.md`.
+
+**Matching: an exact match, or no Allow.** The planned screen check (the summary's first 40 characters, or a file's basename, found anywhere in the dialog) vouched for the wrong dialog in review:
+- two `cd …/periscope && …` commands share their first 40 characters, and every `python3 - <<'EOF'` heredoc its first line;
+- `git push origin main` was found inside a dialog for `… --force`;
+- a Write row for `notes.md` matched a Bash dialog for `rm notes.md`;
+- an AskUserQuestion asking "Do you want to …?" passed as a permission dialog.
+
+So:
+- **The hook stores a `match_key`** beside the summary, which is now display only:
+  - **Bash:** `sha256:` + the hex digest of the squashed command + the squashed description. Squashed means all whitespace and the hidden controls removed, since a long command wraps mid-word on screen. It's a digest, not the text: a command can carry a token, and `periscope.db` is 0644.
+  - **Edit / Write:** the absolute `file_path`, in the clear, since the suffix check needs it.
+  - **Anything else** (NotebookEdit, WebFetch, MCP tools, …): no key. Their dialogs aren't verified, so their banners offer Open only.
+  - **A Bash call with `dangerouslyDisableSandbox` set:** no key. The flag isn't keyed and the dialog may not show it, so an unsandboxed retry would otherwise match a sandboxed row.
+- **`panes.parse_permission_dialog`** reads the capture bottom up, with CSI / OSC escapes stripped first (`capture` keeps them). Each step fails closed:
+  1. the footer is the **last** non-empty line, matching `Esc to cancel` but not AskUserQuestion's `Enter to select · … · Esc to cancel`;
+  2. the nearest `Do you want to …?` above it has `1. Yes` right under it, wherever the cursor is;
+  3. the full-width rule sits above that, within 60 rows, with no scrollback marker (`⏺`, `✻`, `⎿`) in between;
+  4. the header is the first row under the rule.
+- **`panes.dialog_matches(parsed, tool, match_key)`** replaces the planned `dialog_shows`, and is header-bound:
+  - **Bash:** the header is `Bash command`, and the digest of the body **equals** the key. The body is taken after a leading `Tip:` and its wrap, with `│` gutters dropped, then squashed. Never a prefix or a substring.
+  - **Write** (`Create file` / `Overwrite file`) **and Edit** (`Edit file`): the path in the question (`Do you want to create / overwrite / make this edit to <path>?`) is a `/`-boundary suffix of the stored absolute path, so `notes.md` can't vouch for `old-notes.md`. The body (a preview, a diff) is never read: it can mention any file.
+  - **Only `VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")` can match.** The hook runs on bare `python3` and can't import `periscope`, so it and `panes.py` each define that tuple and the hidden-control class (`\u` escapes, never the raw characters), and tests assert the copies agree.
+- **Accepted limits:**
+  - Squashing loses whitespace-only differences and the command/description boundary (`rm -rf / tmp/x` squashes as `rm -rf /tmp/x`). A wrapped screen can't recover either; the single-row rule and the request id narrow it.
+  - A file tool matches by file, not by change, so two pending edits to one file are interchangeable.
+  - A dialog more than 60 rows tall, or a question wrapped in a very narrow pane, doesn't parse: a 409 that reveals the pane.
+
+**The hook, `pane_permission_hook.py`:**
+- **It prints nothing and exits 0 on every path.** A `PermissionRequest` hook's JSON stdout is read as its answer to the dialog.
+- **py3.9-safe.** It's registered as `python3 -I -S <path> || true`, and `python3` can be the Mac's `/usr/bin/python3` (3.9). `-I -S` keeps a site or venv it doesn't own out; `|| true` turns even a missing file into exit 0.
+- **A 0.5 s busy budget.** SQLite's busy wait ran ~3× past a 2 s budget under contention, and Claude kills the hook at its 5 s timeout. A missed row only makes the banner Open-only.
+- **A self-healing `match_key` column.** A table created before it gets an `ALTER`, since the INSERT would otherwise fail, silently, forever. The server's `activity._conn` runs the same `ALTER`, so whichever opens the DB first leaves the shape the other expects.
+- **Bash's summary is the whole command**, whitespace collapsed, hidden controls stripped, clipped to 80. The first line alone showed `cd /tmp` for `cd /tmp && rm -rf build`.
+
+**`bin/periscope install-hook`:**
+- **joins only a matcher-less group** (`matcher` absent, `""` or `"*"`), so a user's matcher-scoped group can't narrow ours;
+- **repoints an existing entry only when its target is gone, or when it points at this same checkout** in an older form. Never another live checkout's: an install from a worktree would otherwise point prod's hook into the worktree, and removing the worktree would leave a dangling path behind;
+- **fails open:** both observers (`pane_session_hook.py` and this one) end in `|| true`, because a nonzero `UserPromptSubmit` blocks the prompt.
+
+**Publishing, `window_view.pending_permission_row` / `pending_permission_for`:**
+- **Exactly one row within 5 s of `needs_since`** (`created_at >= needs_since - 5`). `needs_since` is when periscope first saw the wait, and the hook's stamp can precede it by:
+  - the session-file write;
+  - session_status's 1 s index cache;
+  - the build in flight;
+  - `state_hub`'s 1 s sleep between builds.
+
+  Too narrow drops the row and the buttons with it; too wide only lets back-to-back prompts read as two rows, which means Open only.
+- **Keyed rows only.** The one row needs a `match_key`. Unkeyed rows still count toward "exactly one", since the dialog on screen may be theirs.
+- **The key never leaves the server.** `pending_permission_row` returns the full row for the route; `pending_permission_for` publishes `{request_id, tool, summary}`.
+- **Misses are logged at info.** A wait with no row in the window but one in the 10 s before it logs once per wait, to calibrate `_PERMISSION_WINDOW_S`. A DB error makes banners Open-only, with a warning at most once a minute.
+
+**The endpoints, `routes/pane_actions.py`:**
+- **JSON only.** 415 for anything but `application/json`. FastAPI's `strict_content_type` already refuses a typeless body, but the dependency is unpinned and older releases parsed one.
+- **Addressed by `%id`.** The pane is found by pid (`pids.window_by_pid`), then captured and sent to by its pane id: tmux re-resolves `session:index` when the keys go in, so a renumber or a split window's focus moving in between would land them on another pane. `_send_to_target` gains `address=` for this; focus and acted-at stay keyed by the target. 404 for no live pane or no pane id.
+- **Each request answered once, under a lock.** The checks and the send hold `_ACT_LOCK`, and the request id is marked answered before its key goes in. Two presses of one banner (the banner and the rail card, a double click) could otherwise both pass before Claude redraws, landing the second `1` in the composer or on the next dialog. A send that fails after the mark isn't retried from a banner; it's logged, and the pane is answered by hand.
+- **`/api/pane/permission`: the row, the request id and the screen.** 409 unless:
+  - the request wasn't answered from here already;
+  - the pane waits on a permission prompt;
+  - `pending_permission_row`, recomputed (the tool and key never come from the caller), has this `request_id`;
+  - `dialog_matches` holds on a fresh capture.
+- **`/api/pane/reply` refuses** with a 409 when:
+  - the live session is `needs-input`, with or without a `waiting_for`;
+  - `panes.dialog_open` sees a dialog on a fresh capture. It fails closed: an `Esc to cancel` in the last three lines counts;
+  - the pane isn't a Claude: a shell is in the foreground (a ctrl+z'd Claude keeps a live session file under zsh's prompt), or there's neither a live session nor Claude on screen. A Codex pane gets the 409, since its approval prompt can't be ruled out;
+  - `panes.composer_ready` fails. It passes only a plain, idle `❯` composer: one row between the last two full-width rules, empty or holding only Claude's dim/grey suggestion. Shell mode's `!` would run the text; a draft would be submitted with it; a near-black text colour is a draft, not a suggestion (the ghost greys now have a floor: RGB 64, 256-colour ramp entry 238).
+- **After the paste, a re-check before Enter.** The paste goes in alone. Enter follows only when a fresh capture (up to 4 looks, 100 ms apart) shows no dialog and `panes.composer_holds` the reply: its squashed first 24 characters, or Claude's `[Pasted text #N …]`. Otherwise it's a 409 and nothing is submitted; the paste may sit in the composer, or in a dialog that took focus. One look before the paste left ~150 ms for a dialog to render and take focus, and Enter on a dialog confirms `1. Yes`. The log line carries the pane and the length, never the text.
+
+**The banners:**
+- **Allow only with a published request.** `needs_permission` (Allow · Deny · Open) needs `w.pending_permission.request_id` and a pid. Otherwise the banner is `needs_dialog` (Open), with 2a's body.
+- **Reply and Ask agent to fix only on Claude panes** (`w.agent === "claude"` with a pid), since the server refuses everything else.
+  - `question` gets no category without one.
+  - A `ci_failed` whose window is the worktree's shell borrows another live Claude window on the same PR as its fixer, and `data.pid` is the fixer's.
+- **The `ci_failed` variants:**
+
+  | Category | When | Buttons |
+  |---|---|---|
+  | `ci_failed` | a fixer and a URL | Ask agent to fix · Open PR |
+  | `ci_failed_fix` | a fixer, no URL | Ask agent to fix |
+  | `ci_failed_pr` | a URL, no fixer | Open PR |
+  | none | neither | the click opens the pane |
+
+- **The categories PR 2 adds:** `needs_permission`, `needs_dialog`, `question`, `ci_failed`, `ci_failed_fix`.
+- **The Reply placeholder is a fixed "Reply…".** A category's buttons are static, so it can't name the pane. The button reads Reply; its text field's button reads Send.
+- **Auth.** Allow, Reply and Ask agent to fix need it. Deny is Escape, which only stops the agent, so it doesn't.
+- **A failed background press posts a notice.** These presses don't bring Periscope forward, so a toast or a revealed pane lands in a window nobody is looking at. Every failure therefore also posts a banner of kind `notice`:
+  - no category, `quiet_when_focused`;
+  - titled like "Couldn't allow", with the route's reason as the body;
+  - a click opens the pane by pid.
+
+  A 409 also reveals the pane; any other failure also reveals it and toasts. A banner with no pid, or Allow / Deny with no request id, posts the notice without calling the route.
+- **`util.postJson`** returns `{ ok, status, detail }` and never throws. A network failure, or no answer within 10 s, is status 0.
+- **An MCP tool's name reads as `tool (server)`** in a banner body. That's display only, and today unused: MCP rows carry no key, so they never publish.
+
 ### The hook, `pane_permission_hook.py`
 
 - **Registered** as a `PermissionRequest` hook (no matcher, so every tool) by `bin/periscope install-hook`, beside the existing entries. `uninstall-hook` removes it.
@@ -297,8 +393,9 @@ Both take a **JSON body**: a body-less POST with query params is a CORS simple r
 ## Done when
 
 - **Every button does what its row says.**
-- **Allow and Deny can only ever answer the request their banner was shown for.** It's checked against the request id and against the screen.
-- **No action that makes an agent act works from a locked screen** without authenticating.
-- **No reply lands in a dialog.**
+- **Allow and Deny can only ever answer the request their banner was shown for, and only once.** The request id is recomputed from the hook's row, the dialog on screen must match that row's key exactly (`dialog_matches`), and the key goes to the checked pane's `%id`. A tool whose dialog can't be verified gets Open only.
+- **No button that lets an agent proceed or types into it works from a locked screen** without authenticating. Deny, which only stops one, needs no auth.
+- **No reply lands in a dialog, a shell, Claude's shell mode, a Codex pane or on a draft.** Its Enter goes in only after a second look shows the paste in the composer and no dialog.
+- **A failed press always says so**, in a `notice` banner, since the app isn't brought forward for it.
 - **Clean up never deletes without the modal's confirmation.**
 - **Nothing changes in a browser tab, or for an older shell or webview.**
