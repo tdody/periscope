@@ -120,19 +120,47 @@ describe("payloadFor", () => {
   });
 
   it("gives each other banner the category whose buttons all apply", () => {
-    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r" }) }).category).toBe("ci_failed_pr");
     expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", cwd: "/wt/a" }) })).toMatchObject({
       category: "pr_merged", data: { cwd: "/wt/a" },
     });
     expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) }).category).toBe("pr_merged_pr");
-    // Their buttons are PR 2's: no category yet, so the shell shows none.
-    expect(payloadFor({ kind: "needs_input", w: w() }).category).toBeUndefined();
+    expect(payloadFor({ kind: "needs_input", w: w() }).category).toBe("needs_dialog");
   });
 
-  it("offers no buttons on ci_failed or pr_merged without a URL", () => {
-    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).category).toBeUndefined();
+  it("offers no PR buttons on pr_merged without a URL", () => {
     expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, cwd: "/wt/a" }) }).category).toBe("pr_merged_cleanup");
     expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7 }) }).category).toBeUndefined();
+  });
+
+  it("asks to allow the request the server named, and only then", () => {
+    const perm = { request_id: "a1b2c3d4e5f60718", tool: "Bash", summary: "touch probe.txt" };
+    const p = payloadFor({ kind: "needs_input", w: w({ waiting_for: "permission prompt", pending_permission: perm }) });
+    expect(p).toMatchObject({
+      title: "dual-moas needs you", subtitle: "periscope · main", body: "Allow Bash: touch probe.txt?",
+      category: "needs_permission", data: { open: "pane", pid: "p1", request_id: "a1b2c3d4e5f60718" },
+    });
+    expect(payloadFor({ kind: "needs_input", w: w({ pending_permission: { ...perm, summary: "" } }) }).body).toBe("Allow Bash?");
+    // Not named (two requests, or an older pane without the hook): Open only, 2a's words.
+    const unnamed = payloadFor({ kind: "needs_input", w: w({ waiting_for: "permission prompt", pending_permission: null }) });
+    expect(unnamed).toMatchObject({ body: "Waiting for your approval.", category: "needs_dialog", data: { pid: "p1" } });
+    expect(unnamed.data.request_id).toBeUndefined();
+    expect(payloadFor({ kind: "needs_input", w: w({ waiting_for: "approve AskUserQuestion" }) }).category).toBe("needs_dialog");
+  });
+
+  it("offers Reply on a question only while its pane is live", () => {
+    const alert = { target: "gone:2", name: "old", session: "s", message: "Which database?" };
+    expect(payloadFor({ kind: "question", w: w(), alert }).category).toBe("question");
+    expect(payloadFor({ kind: "question", w: null, alert }).category).toBeUndefined();
+  });
+
+  it("offers Ask agent to fix with a live pane, Open PR with a URL", () => {
+    const checks = [{ name: "test", state: "failure" }, { name: "lint", state: "success" }, { name: "e2e", state: "failure" }];
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", ci_checks: checks }) })).toMatchObject({
+      category: "ci_failed", data: { pid: "p1", pr: 7, checks: ["test", "e2e"] },
+    });
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) })).toMatchObject({ category: "ci_failed_fix", data: { checks: [] } });
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", pid: "" }) }).category).toBe("ci_failed_pr");
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, pid: "" }) }).category).toBeUndefined();
   });
 
   it("offers Spawn on the account a pane on A would move to, and only then", () => {
@@ -159,8 +187,10 @@ describe("payloadFor", () => {
       { kind: "pr_merged", w: w({ pr: 7 }) }, { kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) },
       { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } },
       { kind: "usage", account: "c", meter: "week_all", m: { percent: 90 } },
-      // PR 2 adds their categories; today's shell shows no buttons on these.
-      { kind: "needs_input", w: w() }, { kind: "question", w: w(), alert },
+      { kind: "needs_input", w: w() },
+      { kind: "needs_input", w: w({ pending_permission: { request_id: "r", tool: "Bash", summary: "ls" } }) },
+      { kind: "question", w: w(), alert }, { kind: "question", w: null, alert },
+      { kind: "ci_failed", w: w({ pr: 7, pid: "" }) }, { kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", pid: "" }) },
     ];
     for (const ev of evs) {
       const p = payloadFor(ev, ctx);

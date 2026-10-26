@@ -26,12 +26,25 @@ describe("categories", () => {
     expect(byId).toEqual({
       done_seen: ["mark_seen"], ci_failed_pr: ["open_pr"],
       pr_merged: ["cleanup", "open_pr"], pr_merged_cleanup: ["cleanup"], pr_merged_pr: ["open_pr"], usage: ["details"],
+      needs_permission: ["allow", "deny", "open"], needs_dialog: ["open"], question: ["send", "open"],
+      ci_failed: ["fix", "open_pr"], ci_failed_fix: ["fix"],
     });
   });
 
   it("brings the app forward only for buttons that show something in it", () => {
     const fg = categories().flatMap((c) => c.actions).filter((a) => a.foreground).map((a) => a.id);
-    expect(new Set(fg)).toEqual(new Set(["cleanup", "details"]));
+    expect(new Set(fg)).toEqual(new Set(["cleanup", "details", "open"]));
+  });
+
+  it("asks for Touch ID on every button that makes an agent act, and only those", () => {
+    const auth = categories().flatMap((c) => c.actions).filter((a) => a.auth).map((a) => a.id);
+    expect(new Set(auth)).toEqual(new Set(["allow", "send", "fix"]));
+  });
+
+  it("draws Deny red and gives Reply a text field", () => {
+    const actions = Object.fromEntries(categories().flatMap((c) => c.actions).map((a) => [a.id, a]));
+    expect(actions.deny.destructive).toBe(true);
+    expect(actions.send).toMatchObject({ title: "Reply", reply: { button: "Send", placeholder: "Reply…" } });
   });
 
   it("adds one labelled Spawn on {B} category per move target, sorted", () => {

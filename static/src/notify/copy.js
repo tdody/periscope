@@ -47,16 +47,31 @@ export function payloadFor(ev, ctx = {}) {
   const w = ev.w;
   const base = { kind: ev.kind, thread: ev.kind, target: w?.target || "", data: {} };
   switch (ev.kind) {
-    case "needs_input":
+    case "needs_input": {
+      // Allow / Deny only when the server could name the request the dialog
+      // asks (w.pending_permission, from the PermissionRequest hook); it
+      // re-checks that on screen before a key goes in. Otherwise Open only.
+      const perm = w.pending_permission;
+      if (perm?.request_id && w.pid) {
+        return {
+          ...base, title: `${pane(w)} needs you`, subtitle: where(w),
+          body: perm.summary ? `Allow ${perm.tool}: ${perm.summary}?` : `Allow ${perm.tool}?`,
+          category: "needs_permission", data: { open: "pane", pid: w.pid, request_id: perm.request_id },
+        };
+      }
       return {
         ...base, title: `${pane(w)} needs you`, subtitle: where(w),
-        body: NEEDS_BODY[waitKind(w.waiting_for)] || NEEDS_BODY.dialog, data: { open: "pane", pid: w.pid },
+        body: NEEDS_BODY[waitKind(w.waiting_for)] || NEEDS_BODY.dialog,
+        category: "needs_dialog", data: { open: "pane", pid: w.pid },
       };
+    }
     case "question": {
       const a = ev.alert;
       return {
         ...base, title: `${clip(w ? paneLabel(w) : a.name || a.session || "A session", 26)} asks`,
         subtitle: w ? where(w) : a.session || "", body: clip(a.message, 180), target: a.target || base.target,
+        // Reply types into the live pane; one that has gone has nowhere to send it.
+        ...(w?.pid ? { category: "question" } : {}),
         data: { open: "pane", pid: w?.pid ?? null },
       };
     }
@@ -75,13 +90,20 @@ export function payloadFor(ev, ctx = {}) {
     case "ci_failed": {
       const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
       const url = prUrl(w.repo_slug, w.pr);
+      // Ask agent to fix types into the pane, so it needs one; Open PR a URL.
+      let category;
+      if (w.pid && url) category = "ci_failed";
+      else if (w.pid) category = "ci_failed_fix";
+      else if (url) category = "ci_failed_pr";
       return {
         ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
         body: checks || "Checks are failing.",
-        // No URL, no Open PR to offer (PR 2 adds the "ci_failed" category,
-        // with Ask agent to fix, regardless of a URL).
-        ...(url ? { category: "ci_failed_pr" } : {}),
-        data: { open: "url", url, pid: w.pid },
+        ...(category ? { category } : {}),
+        // `checks`: the failing ones' names, for Ask agent to fix's message.
+        data: {
+          open: "url", url, pid: w.pid, pr: w.pr,
+          checks: (w.ci_checks || []).filter((c) => c.state === "failure").map((c) => c.name),
+        },
       };
     }
     case "pr_merged": {

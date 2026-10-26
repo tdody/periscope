@@ -5,10 +5,12 @@
 //
 // A category is a fixed set of buttons, labels included, so copy.js gives
 // each banner the variant whose buttons all apply: no Clean up without a
-// worktree, no Open PR without a URL, and Spawn on {B} gets one category per
-// B. Review diff isn't offered yet — it waits on review rows keyed by
-// worktree (THI-433). None of these make an agent act; Allow / Deny / reply
-// are PR 2's (docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md).
+// worktree, no Open PR without a URL, no Allow / Deny without a request the
+// server could name, and Spawn on {B} gets one category per B. Review diff
+// isn't offered yet — it waits on review rows keyed by worktree (THI-433).
+// Allow / Deny / Reply / Ask agent to fix make an agent act: they POST to
+// routes/pane_actions.py, which re-checks the pane when pressed
+// (docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md).
 import { accountLabel } from "../accounts.js";
 import { pickSpawnAccount } from "../chrome/SpawnAccountPicker.jsx";
 import { openUsageDetails } from "../chrome/UsagePill.jsx";
@@ -25,6 +27,10 @@ const OPEN_PR = act("open_pr", "Open PR");
 const MARK_SEEN = act("mark_seen", "Mark seen");
 const CLEANUP = act("cleanup", "Clean up worktree", { foreground: true });
 const DETAILS = act("details", "Details", { foreground: true });
+const OPEN = act("open", "Open", { foreground: true });
+// `auth`: Touch ID or the password first when the screen is locked — every
+// button that makes an agent act has it.
+const FIX = act("fix", "Ask agent to fix", { auth: true });
 
 // The whole set: macOS replaces it on each registration. Move targets are
 // deduped and sorted so the feed's change check doesn't resend an identical
@@ -39,6 +45,17 @@ export function categories({ accounts = [], moveTargets = {} } = {}) {
     { id: "pr_merged_cleanup", actions: [CLEANUP] },
     { id: "pr_merged_pr", actions: [OPEN_PR] },
     { id: "usage", actions: [DETAILS] },
+    // Deny is Escape ("No, and tell Claude what to do differently"), so it
+    // needs no auth; macOS draws it red.
+    {
+      id: "needs_permission",
+      actions: [act("allow", "Allow", { auth: true }), act("deny", "Deny", { destructive: true }), OPEN],
+    },
+    { id: "needs_dialog", actions: [OPEN] },
+    // A category's buttons are static, so the placeholder can't name the pane.
+    { id: "question", actions: [act("send", "Reply", { auth: true, reply: { button: "Send", placeholder: "Reply…" } }), OPEN] },
+    { id: "ci_failed", actions: [FIX, OPEN_PR] },
+    { id: "ci_failed_fix", actions: [FIX] },
   ];
   for (const to of [...new Set(Object.values(moveTargets || {}))].sort()) {
     // accounts may come back null from a caller that hasn't loaded the registry yet.
