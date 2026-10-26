@@ -102,6 +102,7 @@ The banners come from `static/src/notify/` and go through `src-tauri/src/notific
 - subtitles and threads;
 - quiet-while-focused: every banner sounds;
 - URL and usage clicks, which fall back to revealing the pane.
+- the buttons (2b): it never registers the categories the webview sends, so banners arrive without them. A **new shell with old JS** shows none either: old JS's banners never name a category, and the shell never falls back to a banner's kind (2b's category ids reuse 2a kind names), so even a set a newer webview left registered shows no buttons. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
 
 So **install a rebuilt `.app` before deploying JS** that relies on new shell fields.
 

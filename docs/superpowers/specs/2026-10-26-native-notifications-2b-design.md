@@ -110,13 +110,13 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 | action | Foreground | Does |
 |---|---|---|
 | `review` | yes | `selectReview(session)` (the live pane's, else the banner's `data.session`): sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
-| `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. |
+| `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. Client-side only, like a rail dismissal: after a webview reload or recycle the READY row is back (the done banner itself never repeats — its dedupe key is kept). A server-side ack is a possible follow-up. |
 | `open_pr` | no | `openExternal(data.url)`: the browser comes forward on its own. |
-| `cleanup` | yes | `openCleanupModal({ paths: [w.cwd] })`. Never deletes: the modal's own Archive button does, after you look. |
+| `cleanup` | yes | `openCleanupModal({ paths: [data.cwd || w.cwd] })`: the banner names the worktree whose PR merged, and the pane may have moved since. Never deletes: the modal's own Archive button does, after you look. |
 | `spawn_on` | no | `pickSpawnAccount(B)`: the header picker's `pick`, exported. It pins every new spawn to B until set back to auto; the header pin shows it. |
 | `details` | yes | `openUsageDetails()` |
 
-- **A missing pane.** An action whose pane is gone (no window with `data.pid`) uses the banner's own `data` (`session`, `cwd`) and falls back to `revealPane(target)` when that's missing too, as a click does. Mark seen does nothing, since a gone pane has no READY row left to dismiss. `open_pr`, `spawn_on` and `details` don't need the pane.
+- **A missing pane.** A fallback or a failed opener selects the live pane found by `data.pid`, and reveals `target` only when that pane is gone, as a click does. Mark seen does nothing, since a gone pane has no READY row left to dismiss. `open_pr`, `spawn_on` and `details` don't need the pane.
 - **`data` gains** `session` (for `review`) and `cwd` (for `cleanup`) on the banners that need them. `data.pid` is still the lookup key. The banner's own data is the fallback, since tmux renumbers windows.
 
 ### Server: `?paths=` on `/api/cleanup/candidates`

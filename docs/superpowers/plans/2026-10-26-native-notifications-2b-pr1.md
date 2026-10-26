@@ -1103,6 +1103,8 @@ git commit -m "notify: actions — the banner categories and what each button do
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
+**Revised in review:** the cleanup case shipped as `const cwd = data.cwd || w?.cwd;` (the banner's own data wins over a moved live pane); the fallbacks and the catch call `show()` (`selectPane` on the live pane found by `data.pid`, else `revealPane(target)`) rather than `revealPane(target)` directly; and "has no Spawn category with one account" was renamed to "has no Spawn category without move targets".
+
 ---
 
 ### Task 5: Banners name their category; the feed registers the set and routes presses
@@ -1249,7 +1251,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 In `docs/tauri-shell.md`, after the "**An old shell with new JS** loses:" list (before "So **install a rebuilt `.app`…"), add:
 
 ```markdown
-- the buttons (2b): it never registers the categories the webview sends, so banners arrive without them. A **new shell with old JS** registers none either. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
+- the buttons (2b): it never registers the categories the webview sends, so banners arrive without them. A **new shell with old JS** shows none either: old JS's banners never name a category, and the shell never falls back to a banner's kind (2b's category ids reuse 2a kind names), so even a set a newer webview left registered shows no buttons. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
 ```
 
 In `CLAUDE.md`'s reference table, the row starting ``| `static/src/notify/`, `notifications.rs`…`` becomes:
@@ -1263,7 +1265,7 @@ In `CLAUDE.md`'s reference table, the row starting ``| `static/src/notify/`, `no
 ```bash
 npm run build
 bin/check && npm test && uv run pytest -q
-(cd src-tauri && cargo test --lib notifications 2>&1 | tail -2 && cargo fmt --check)
+(cd src-tauri && cargo test notifications 2>&1 | tail -2 && rustfmt --check --edition 2021 src/notifications.rs)
 ```
 
 Expected:
