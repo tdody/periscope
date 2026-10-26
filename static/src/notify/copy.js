@@ -17,9 +17,11 @@ const clip = (s, n) => {
 const pane = (w) => clip(paneLabel(w), 26);
 const where = (w) => [w?.session, w?.branch].filter(Boolean).join(" · ");
 
-// Reply / Ask agent to fix type into the pane: it must be an agent's. byPr
-// can hand us the worktree's shell window, which shows the same PR.
-const agent = (x) => !!(x?.pid && x.agent);
+// Reply / Ask agent to fix type into the pane: it must be a live CLAUDE pane.
+// byPr can hand us the worktree's shell window, which shows the same PR. Not
+// Codex: the server's /api/pane/reply refuses it too, since dialog_open can't
+// see a Codex approval prompt and text there could approve something.
+const agent = (x) => !!(x?.pid && x.agent === "claude");
 
 // An MCP tool's wire name (mcp__server__tool) reads as `tool (server)`,
 // display-only — the server's screen check still compares the raw stored name.

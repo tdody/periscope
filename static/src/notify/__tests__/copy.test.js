@@ -162,13 +162,16 @@ describe("payloadFor", () => {
     );
   });
 
-  it("offers Reply on a question only while its pane is a live agent's", () => {
+  it("offers Reply on a question only while its pane is a live CLAUDE pane", () => {
     const alert = { target: "gone:2", name: "old", session: "s", message: "Which database?" };
     expect(payloadFor({ kind: "question", w: w(), alert }).category).toBe("question");
     expect(payloadFor({ kind: "question", w: null, alert }).category).toBeUndefined();
     // Not an agent (e.g. the worktree's shell window) and not stamped: no Reply.
     expect(payloadFor({ kind: "question", w: w({ agent: null }), alert }).category).toBeUndefined();
     expect(payloadFor({ kind: "question", w: w({ pid: "" }), alert }).category).toBeUndefined();
+    // Codex: the server's /api/pane/reply refuses it (dialog_open can't see
+    // a Codex approval prompt), so no Reply even though the pane is live.
+    expect(payloadFor({ kind: "question", w: w({ agent: "codex" }), alert }).category).toBeUndefined();
   });
 
   it("offers Ask agent to fix with a live agent pane, Open PR with a URL", () => {
@@ -181,12 +184,12 @@ describe("payloadFor", () => {
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, pid: "" }) }).category).toBeUndefined();
   });
 
-  it("finds an agent pane on the same PR when the notified window is a shell", () => {
+  it("finds a CLAUDE pane on the same PR when the notified window is a shell", () => {
     // window_view merges **pr into every window on the PR, so byPr can hand
     // copy.js the worktree's zsh window; Ask agent to fix must still land on
     // the agent's pane, found by prKey among the live windows.
     const shell = w({ pr: 7, repo_slug: "o/r", agent: null });
-    const agentPane = w({ pid: "p2", agent: "codex", pr: 7, repo_slug: "o/r" });
+    const agentPane = w({ pid: "p2", agent: "claude", pr: 7, repo_slug: "o/r" });
     expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [agentPane] })).toMatchObject({
       category: "ci_failed", data: { pid: "p2" },
     });
@@ -196,6 +199,20 @@ describe("payloadFor", () => {
     const noSibling = payloadFor({ kind: "ci_failed", w: w({ pr: 7, agent: null }) }, { windows: [] });
     expect(noSibling.category).toBeUndefined();
     expect(noSibling.data).toMatchObject({ pid: "p1" });
+  });
+
+  it("skips a Codex sibling on the same PR: the server can't see its approval prompt", () => {
+    const shell = w({ pr: 7, repo_slug: "o/r", agent: null });
+    const codexPane = w({ pid: "p2", agent: "codex", pr: 7, repo_slug: "o/r" });
+    const p = payloadFor({ kind: "ci_failed", w: shell }, { windows: [codexPane] });
+    // Falls back to Open PR, not Ask agent to fix, and the notified shell's
+    // own pid — never the Codex pane's.
+    expect(p.category).toBe("ci_failed_pr");
+    expect(p.data).toMatchObject({ pid: "p1" });
+    // A Codex pane is itself never a fixer, even for its own PR.
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", agent: "codex" }) }, { windows: [] }).category).toBe(
+      "ci_failed_pr",
+    );
   });
 
   it("offers Spawn on the account a pane on A would move to, and only then", () => {
