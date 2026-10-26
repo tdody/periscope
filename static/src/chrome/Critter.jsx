@@ -109,17 +109,17 @@ export function Critter({ sprite, mood = "calm", asleep = false, face = null, st
   const rootNodes = stride ? strideRoot(sprite) : sprite.root;
   const faceNodes = furious ? sprite.root.filter((n) => n.mood === "furious" || hasRole(n)) : [];
   // Furious, the face nodes are left out of the main pass below and drawn
-  // once, after the wash: drawn in both, two animated copies stack (one
-  // inside the wash's reduced opacity), which never fades to full and never
-  // reaches full opacity either — Nox's sparks topped out at ~0.51 — and the
-  // mismatch free-ran as a ghost-blink independently of the remount below.
+  // once, after the wash: drawn in both, two animated copies stack (the
+  // main-pass one under the wash), so a fading spark never fades as far as
+  // designed — Nox's sparks bottomed out at ~0.51 instead of 0.3 — and the
+  // two copies blinked out of step (a ghost-blink).
   const bodyNodes = furious ? rootNodes.filter((n) => !faceNodes.includes(n)) : rootNodes;
   return (
     // Furious, remount everything together (key): a CSS animation starts
     // when its element mounts, and the flush/face copies otherwise mount
     // later than the body (whenever the mood turns furious), free-running
-    // out of phase with it — measured 0.869 against the body's 0.774 on
-    // Jelly's tentacles, drifting the wash off them and Volt's arms, and
+    // out of phase with it — Jelly's tentacles measured 0.869 against the
+    // wash copy's 0.774, drifting the wash off them and Volt's arms, and
     // ghost-blinking the eyes. Entering or leaving furious now remounts the
     // whole critter, so every copy starts together.
     <g key={furious ? "furious" : "calm"} class="critter" data-face={face || undefined} data-worn={worn || undefined} data-holding={holding || undefined}>

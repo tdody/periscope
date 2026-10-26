@@ -350,11 +350,8 @@ describe("<Critter>", () => {
       expect(inner).not.toContain("fill=");
       expect(inner).not.toContain("data-mood");
       expect(inner).not.toContain("data-role");
-      // The face's own furious layer is redrawn after the flush group, and
-      // the teeth, inside its furious mouth, are the very last child of all
-      // (not merely after the furious layer: dropping the main pass's own
-      // exclusion of the face nodes would stack a second furious layer here
-      // too, after the teeth, and this pins there being nothing after them).
+      // The face's own furious layer is drawn after the flush group, and the
+      // teeth, inside its furious mouth, are the very last child of all.
       const afterFlush = html.slice(html.indexOf(group) + group.length);
       expect(afterFlush).toContain('data-mood="furious"');
       expect(afterFlush.lastIndexOf('stroke="#f3f5f8"')).toBeGreaterThan(afterFlush.lastIndexOf('data-mood="furious"'));
@@ -362,6 +359,11 @@ describe("<Critter>", () => {
       const teethMarkup = `<path d="${teeth.p}" fill="${teeth.a.fill}" stroke="${teeth.a.stroke}" ` +
         `stroke-width="${teeth.a["stroke-width"]}" stroke-linejoin="${teeth.a["stroke-linejoin"]}"></path>`;
       expect(html.endsWith(`${teethMarkup}</g></svg>`)).toBe(true);
+      // The face is drawn once: not also in the main pass before the wash,
+      // where a second animated copy would stack under it.
+      const beforeFlush = html.slice(0, html.indexOf(group));
+      expect(beforeFlush).not.toContain('data-mood="furious"');
+      expect(beforeFlush).not.toContain("data-role=");
     });
 
     it.each(["calm", "grumpy"])("draws no flush and no teeth for %s", (mood) => {
@@ -401,8 +403,9 @@ describe("<Critter>", () => {
 
     // The eyes/lids redrawn crisp after the wash are exactly the top-level
     // nodes carrying a role, or containing one: scope/jelly/ember/volt/octocat
-    // tag their eye groups directly (role="eye"); Nox's and Moss's lids are
-    // nested inside a role-less wrapper (role="lid", one level or more down).
+    // tag their eye groups directly (role="eye"), and Moss its lid
+    // (role="lid"); only Nox's lids are nested inside a role-less wrapper, so
+    // Nox alone exercises the "contains one at any depth" half of `hasRole`.
     // Deleting the "contains one at any depth" half of the filter (`hasRole`)
     // would pass the flush-group/teeth checks above untouched, since neither
     // looks at what comes after the flush group — this looks there directly.
