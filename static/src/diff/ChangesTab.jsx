@@ -32,7 +32,7 @@ const LANG_BY_EXT = {
   html: "html", htm: "html", md: "md", markdown: "md",
 };
 
-function langFor(path) {
+export function langFor(path) {
   const leaf = (path || "").split("/").pop() || "";
   const dot = leaf.lastIndexOf(".");
   return dot > 0 ? LANG_BY_EXT[leaf.slice(dot + 1).toLowerCase()] || "" : "";
@@ -43,7 +43,7 @@ function langFor(path) {
 // Segments always break on token boundaries, so highlighting each separately
 // only mis-tokenizes in the rare case where a change lands inside a string
 // literal — worth it to keep the changed span exact.
-function Text({ text, lang, hl }) {
+export function Text({ text, lang, hl }) {
   if (!hl || !lang) return text || " ";
   try {
     return hl(text, lang);
@@ -52,7 +52,7 @@ function Text({ text, lang, hl }) {
   }
 }
 
-function Line({ line, lang, hl }) {
+export function Line({ line, lang, hl }) {
   return (
     <div class={`dl dl-${line.kind}`}>
       <span class="dl-text">
@@ -64,6 +64,29 @@ function Line({ line, lang, hl }) {
             ))
           : <Text text={line.text} lang={lang} hl={hl} />}
       </span>
+    </div>
+  );
+}
+
+// One hunk: the "@@ line" head and its lines. Shared by the Changes tab (head
+// opens the file at that line) and the review walkthrough (no pane to open
+// into, so `onOpen` is null and the head is inert).
+export function Hunk({ hunk, lang, hl, onOpen, title }) {
+  return (
+    <div class="dhunk">
+      <button
+        type="button"
+        class="dhunk-head"
+        disabled={!onOpen}
+        title={onOpen ? title : undefined}
+        onClick={() => onOpen && onOpen(hunk.new_start)}
+      >
+        <span class="dhunk-range">@@ {hunk.new_start}</span>
+        {hunk.header ? <span class="dhunk-sym">{hunk.header}</span> : null}
+      </button>
+      {withIntraline(hunk.lines).map((l, j) => (
+        <Line line={l} lang={lang} hl={hl} key={j} />
+      ))}
     </div>
   );
 }
@@ -105,28 +128,17 @@ function FileBlock({ file, repo, review, hl }) {
         >{viewed ? "✓ viewed" : "viewed"}</button>
       </div>
       {open && file.hunks.map((h, i) => (
-        <div class="dhunk" key={i}>
-          {/* Opens the file at this hunk's line — reviewing and reading are the
-              same loop, and the diff already knows exactly where to land.
-              Absolute (repo + path) so it resolves no matter where the pane
-              has cd'd to. Deleted/binary files have nothing to open. */}
-          <button
-            type="button"
-            class="dhunk-head"
-            disabled={!openable}
-            title={openable ? `Open ${file.path}:${h.new_start}` : undefined}
-            onClick={() => openable && openFileTab({
-              path: `${repo}/${file.path}`,
-              line: h.new_start,
-            })}
-          >
-            <span class="dhunk-range">@@ {h.new_start}</span>
-            {h.header ? <span class="dhunk-sym">{h.header}</span> : null}
-          </button>
-          {withIntraline(h.lines).map((l, j) => (
-            <Line line={l} lang={lang} hl={hl} key={j} />
-          ))}
-        </div>
+        <Hunk
+          key={i}
+          hunk={h}
+          lang={lang}
+          hl={hl}
+          // Opens the file at this hunk's line — reviewing and reading are the
+          // same loop. Absolute (repo + path) so it resolves no matter where
+          // the pane has cd'd to. Deleted/binary files have nothing to open.
+          onOpen={openable ? (line) => openFileTab({ path: `${repo}/${file.path}`, line }) : null}
+          title={`Open ${file.path}:${h.new_start}`}
+        />
       ))}
       {open && file.truncated ? (
         <div class="dfile-trunc">diff truncated — open the file to see the rest</div>
