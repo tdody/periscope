@@ -80,6 +80,49 @@ def test_summary_strips_bidi_and_zero_width_controls():
     assert hook.summarize("WebFetch", {"url": "https://x⁦.example⁩.com"}) == "https://x.example.com"
 
 
+def test_match_key_per_tool():
+    # The real fixtures' requests (docs/channels.md "Pane → session mapping" /
+    # matching-v2.md): command + description, squashed and concatenated.
+    assert (
+        hook.match_key("Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"})
+        == "touchprobe.txtCreateemptyprobe.txtfile"
+    )
+    assert (
+        hook.match_key("Bash", {"command": "touch a.txt\ntouch b.txt", "description": "Create two files"})
+        == "toucha.txttouchb.txtCreatetwofiles"
+    )
+    # No description: just the squashed command.
+    assert hook.match_key("Bash", {"command": "touch probe.txt"}) == "touchprobe.txt"
+    # Edit/Write: the absolute path, unclipped.
+    assert hook.match_key("Write", {"file_path": "/r/notes.md", "content": "hello"}) == "/r/notes.md"
+    assert hook.match_key("Edit", {"file_path": "/r/src/app.py", "old_string": "x"}) == "/r/src/app.py"
+    # Unverifiable tools get no key, so they get no Allow.
+    assert hook.match_key("NotebookEdit", {"notebook_path": "/r/a.ipynb", "new_source": "x"}) is None
+    assert hook.match_key("WebFetch", {"url": "https://example.com/a"}) is None
+    assert hook.match_key("mcp__linear__save_issue", {"title": "Fix it"}) is None
+    assert hook.match_key("Bash", "not a dict") is None
+
+
+def test_match_key_strips_hidden_controls():
+    hidden = "‮rm​ -rf‌ /‍‎‏﻿"
+    assert hook.match_key("Bash", {"command": hidden}) == "rm-rf/"
+    assert hook.match_key("Write", {"file_path": "/r/notes⁦.md⁩"}) == "/r/notes.md"
+
+
+def test_a_row_lands_with_its_match_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("TMUX_PANE", "%56")
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(_payload(tool_input={"command": "touch probe.txt", "description": "Create empty probe.txt file"})),
+    )
+    hook.record()
+    db = tmp_path / "periscope" / "periscope.db"
+    with sqlite3.connect(db) as c:
+        [(key,)] = c.execute("SELECT match_key FROM pane_permissions").fetchall()
+    assert key == "touchprobe.txtCreateemptyprobe.txtfile"
+
+
 def test_request_id_is_16_hex_and_names_one_request():
     rid = hook.request_id("s", "Bash", {"command": "ls"}, 1000.5)
     assert len(rid) == 16 and all(c in "0123456789abcdef" for c in rid)

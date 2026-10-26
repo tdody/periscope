@@ -40,6 +40,7 @@ _SCHEMA = (
     "  request_id  TEXT PRIMARY KEY,"
     "  tool        TEXT NOT NULL,"
     "  summary     TEXT NOT NULL,"
+    "  match_key   TEXT,"
     "  created_at  REAL NOT NULL"
     ")"
 )
@@ -54,6 +55,44 @@ _FILE_TOOLS = ("Edit", "Write", "NotebookEdit")
 # something other than what Allow actually approves. Stripped before anything
 # else touches the text.
 _HIDDEN_RE = re.compile("[​-‏‪-‮⁦-⁩﻿]")
+
+# Tools whose dialog can be checked for an exact match before Allow fires
+# (routes/pane_actions.py, panes.dialog_matches). Mirrored in periscope/panes.py
+# — this constant must stay in sync with it (tests/test_panes.py asserts the
+# two agree) — because the hook runs on bare `python3` and can't import
+# periscope. Everything else (NotebookEdit, WebFetch, MCP tools, …) has no
+# verifiable on-screen match, so it gets no Allow.
+VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")
+
+
+def _squash(text: str) -> str:
+    """ALL whitespace and hidden controls removed (not just collapsed): the
+    exact-match key, paired with the same squash of the parsed dialog block in
+    panes.dialog_matches. Squashing (not collapsing) means a wrapped line in
+    the dialog still equals the unwrapped command here."""
+    return re.sub(r"\s+", "", _HIDDEN_RE.sub("", text))
+
+
+def match_key(tool_name: str, tool_input: object) -> str | None:
+    """What Allow must find verbatim on screen before it fires
+    (panes.dialog_matches), or None when the tool's dialog can't be verified.
+
+    Bash: the command and description squashed and concatenated — the dialog
+    shows both, and a stored key that's merely a PREFIX of the block (Task 1's
+    `git push origin main` matching `... --force`) must not match, which is
+    why this is compared for exact equality, never "as a substring".
+    Edit/Write: the absolute path, unclipped — paths don't wrap inside the
+    dialog's question line, so squashing would only hide a real difference."""
+    if not isinstance(tool_input, dict):
+        return None
+    if tool_name == "Bash":
+        cmd = str(tool_input.get("command") or "")
+        desc = str(tool_input.get("description") or "")
+        return _squash(cmd) + _squash(desc)
+    if tool_name in ("Edit", "Write"):
+        path = tool_input.get("file_path") or ""
+        return _HIDDEN_RE.sub("", str(path)) or None
+    return None
 
 
 def _clip(text: str, keep_end: bool = False) -> str:
@@ -115,7 +154,8 @@ def record() -> None:
         c.execute("DELETE FROM pane_permissions WHERE created_at < ?", (now - _KEEP_S,))
         c.execute(
             "INSERT OR IGNORE INTO pane_permissions "
-            "(pane_id, session_id, agent_id, request_id, tool, summary, created_at) VALUES (?,?,?,?,?,?,?)",
+            "(pane_id, session_id, agent_id, request_id, tool, summary, match_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
             (
                 pane,
                 sid,
@@ -123,6 +163,7 @@ def record() -> None:
                 request_id(sid, tool, tool_input, now),
                 tool,
                 summarize(tool, tool_input),
+                match_key(tool, tool_input),
                 now,
             ),
         )
