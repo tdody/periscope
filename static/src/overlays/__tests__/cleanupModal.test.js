@@ -35,4 +35,8 @@ describe("scopeOf", () => {
     paths.push("/wt/b");
     expect(out).toEqual(["/wt/a"]);
   });
+
+  it("treats a bare string as no scope, not characters to spread", () => {
+    expect(scopeOf("/wt/a")).toBe(null);
+  });
 });

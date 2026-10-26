@@ -22,10 +22,10 @@ const open = signal(false);
 // refresh() treats those two differently (see candidatesUrl's caller there).
 const scope = signal(null);
 
-// Copies (isolating the signal from caller mutation) and drops empties;
-// null/undefined stay null so "no scope" survives distinct from "[]".
+// Only an array counts as a scope (a string must not spread into characters);
+// filter() already copies, isolating the signal from caller mutation.
 export function scopeOf(paths) {
-  return paths == null ? null : [...paths].filter(Boolean);
+  return Array.isArray(paths) ? paths.filter(Boolean) : null;
 }
 
 function sameScope(a, b) {
@@ -37,13 +37,15 @@ function sameScope(a, b) {
 // `paths` scopes the list (and its preselection) to those worktrees. Same
 // scope as last time (e.g. the same banner clicked twice) keeps the existing
 // signal value so an in-flight edit isn't wiped by a no-op refetch.
-export function openCleanupModal({ paths } = {}) {
+export function openCleanupModal(opts) {
+  const { paths } = opts || {}; // tolerates openCleanupModal(null) too
   const next = scopeOf(paths);
   if (!sameScope(next, scope.value)) scope.value = next;
   open.value = true;
   track("overlay.open", { which: "cleanup", scoped: !!scope.value });
 }
 
+// Callers must not pass []: an empty scope never fetches (refresh() guards it).
 export function candidatesUrl(paths) {
   if (!paths?.length) return "/api/cleanup/candidates";
   return `/api/cleanup/candidates?${paths.map((p) => `paths=${encodeURIComponent(p)}`).join("&")}`;
@@ -127,11 +129,11 @@ export function CleanupModal() {
     setSubmitting(false);
     if (err) { setError(err); return; }
     if (result.failed && result.failed.length > 0) {
-      setError(
+      const msg =
         `Archived ${result.archived.length}, ${result.failed.length} failed: ` +
-        result.failed.map((f) => `${f.pinned_dir.split("/").pop()}: ${f.error}`).join("; ")
-      );
-      await refresh();
+        result.failed.map((f) => `${f.pinned_dir.split("/").pop()}: ${f.error}`).join("; ");
+      await refresh(); // refresh()'s setError("") would otherwise wipe msg before it's ever shown
+      setError((e) => e || msg);
       return;
     }
     close();
@@ -169,7 +171,7 @@ export function CleanupModal() {
           ) : candidates.length === 0 && !error ? (
             <div class="cleanup-empty">
               {scope.value
-                ? "Nothing to clean up here: only a worktree (never a main checkout) whose PR is merged or closed, whose remote branch is gone, or that sits idle."
+                ? "Nothing to clean up here. Cleanup only offers a worktree (never a main checkout) whose PR is merged or closed, whose remote branch is gone, or that sits idle."
                 : "No cleanup candidates. 🎉"}
             </div>
           ) : (
