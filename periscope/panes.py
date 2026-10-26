@@ -333,6 +333,10 @@ _RULE_REACH = 60
 # can't import this.
 VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")
 _FILE_HEADERS = {"Write": ("Create file", "Overwrite file"), "Edit": ("Edit file",)}
+# A Bash dialog's command and description sit at this indent or deeper; the
+# rows above them at less are its Tip, which a pane under ~84 columns wraps
+# onto a second row that no `Tip:` test would catch.
+_COMMAND_INDENT = 3
 # A multi-line command's `│ ` gutter; a blank command line leaves a bare `│`.
 _GUTTER_RE = re.compile(r"^│(?=\s|$)")
 # Mirrors pane_permission_hook._HIDDEN_RE (a test pins the two): the hook
@@ -545,7 +549,7 @@ def _bash_key(squashed: str) -> str:
 def parse_permission_dialog(content: str) -> dict | None:
     """The permission dialog ending a capture, or None. Returns its `text`
     (header row to footer row), `header` ("Bash command", "Create file", …),
-    `body` (the rows between header and question, less a leading Tip row),
+    `body` (the non-empty rows between header and question),
     `question`, and `shown_path` (a file tool's question path, else None).
 
     Read bottom up, each step failing closed:
@@ -584,14 +588,11 @@ def parse_permission_dialog(content: str) -> dict | None:
     inner = [i for i in filled if rule < i < question]
     if not inner:
         return None
-    body = [rows[i] for i in inner[1:]]
-    if body and body[0].lstrip().startswith("Tip:"):
-        body = body[1:]
     shown = _SHOWN_PATH_RE.match(rows[question])
     return {
         "text": "\n".join(rows[i] for i in filled if rule < i <= footer),
         "header": rows[inner[0]].strip(),
-        "body": body,
+        "body": [rows[i] for i in inner[1:]],
         "question": rows[question].strip(),
         "shown_path": shown.group(1) if shown else None,
     }
@@ -610,7 +611,8 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
     and no other. No key, or a tool whose dialog isn't verified (NotebookEdit,
     WebFetch, MCP tools, …), never matches.
 
-    Bash: the digest of the whole command + description block, gutter and
+    Bash: the digest of the whole command + description block (the body from
+    its first row indented 3+, so the Tip and its wrap stay out), gutter and
     whitespace squashed, EQUALS the key. Never a prefix or a substring: `git
     push origin main` vouched for `… --force`, two `cd <repo> && …` share
     their first 40 characters, and every `python3 - <<'EOF'` its first line.
@@ -621,13 +623,21 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
     Write / Edit: the header names the tool, and the question's path is a
     `/`-boundary suffix of the absolute key (the dialog shows it relative to
     the cwd); the boundary stops `notes.md` vouching for `old-notes.md`. The
-    body (a preview, a diff) is never consulted: it can mention any file."""
+    body (a preview, a diff) is never consulted: it can mention any file.
+    Accepted limits: a file tool matches by FILE, not by change, so two
+    pending edits to one file are interchangeable (the banner's consent is
+    file-level); and a relative path is suffix-matched, so a cwd change
+    within one wait could pair a stale row with a same-named file elsewhere
+    (that takes a hook miss, a cd and a same name in one needs-input
+    episode)."""
     if not (parsed and isinstance(match_key, str) and match_key and tool in VERIFIABLE_TOOLS):
         return False
     if tool == "Bash":
         if parsed["header"] != "Bash command":
             return False
-        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in parsed["body"])
+        body = parsed["body"]
+        start = next((i for i, row in enumerate(body) if len(row) - len(row.lstrip()) >= _COMMAND_INDENT), len(body))
+        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in body[start:])
         return _bash_key(_squash(block)) == match_key
     shown = parsed["shown_path"]
     return parsed["header"] in _FILE_HEADERS[tool] and bool(shown) and ("/" + match_key).endswith("/" + shown)

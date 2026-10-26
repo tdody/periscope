@@ -913,6 +913,7 @@ _DIALOGS = Path(__file__).parent / "fixtures" / "permission_dialogs"
 _RULE = "─" * 60
 _FOOTER = " Esc to cancel · Tab to amend"
 # bash.txt's command and description rows, which the synthetic dialogs swap.
+_TIP = ' Tip: auto mode handles these prompts for you — choose "switch to auto mode" below'
 _BASH_BLOCK = "   touch probe.txt\n   Create empty probe.txt file"
 # An idle Claude pane: no dialog, the input box at the bottom.
 _IDLE = "\n".join(
@@ -1011,6 +1012,8 @@ def _bash_key(command: str, description: str = "") -> str:
 # Each capture with the key of the request it shows.
 _FIXTURE_KEYS = [
     ("bash.txt", "Bash", _sha("touchprobe.txtCreateemptyprobe.txtfile")),
+    # The same request in a 70-column pane, its Tip wrapped onto a second row.
+    ("bash_narrow.txt", "Bash", _sha("touchprobe.txtCreateemptyprobe.txtfile")),
     ("bash_multiline.txt", "Bash", _sha("toucha.txttouchb.txtCreatetwofiles")),
     ("write.txt", "Write", "/tmp/probe/notes.md"),
     ("edit.txt", "Edit", "/tmp/probe/notes.md"),
@@ -1023,14 +1026,21 @@ _FIXTURE_KEYS = [
         (
             "bash.txt",
             "Bash command",
-            ["   touch probe.txt", "   Create empty probe.txt file"],
+            [_TIP, "   touch probe.txt", "   Create empty probe.txt file"],
+            "Do you want to proceed?",
+            None,
+        ),
+        (
+            "bash_narrow.txt",
+            "Bash command",
+            [_TIP[:65], " " + _TIP[66:], "   touch probe.txt", "   Create empty probe.txt file"],
             "Do you want to proceed?",
             None,
         ),
         (
             "bash_multiline.txt",
             "Bash command",
-            ["   │ touch a.txt", "   │ touch b.txt", "   Create two files"],
+            [_TIP, "   │ touch a.txt", "   │ touch b.txt", "   Create two files"],
             "Do you want to proceed?",
             None,
         ),
@@ -1054,7 +1064,7 @@ def test_parse_permission_dialog_reads_each_capture(name, header, body, question
     parsed = parse_permission_dialog(_dialog(name))
     assert parsed is not None
     assert parsed["header"] == header
-    assert parsed["body"] == body  # less the Tip row
+    assert parsed["body"] == body
     assert parsed["question"] == question
     assert parsed["shown_path"] == shown_path
     rows = parsed["text"].splitlines()
@@ -1073,7 +1083,12 @@ def test_dialog_matches_each_capture_with_its_own_key(name, tool, key):
 
 @pytest.mark.parametrize(
     ("name", "tool", "key"),
-    [(name, tool, key) for name, *_ in _FIXTURE_KEYS for other, tool, key in _FIXTURE_KEYS if other != name],
+    [
+        (name, tool, key)
+        for name, own_tool, own_key in _FIXTURE_KEYS
+        for _other, tool, key in _FIXTURE_KEYS
+        if (tool, key) != (own_tool, own_key)
+    ],
 )
 def test_dialog_matches_no_other_captures_key(name, tool, key):
     # A Write key on the Edit dialog of the same file, a Bash key on a file
@@ -1116,6 +1131,18 @@ def test_bash_heredocs_sharing_a_first_line_do_not_match():
     parsed = parse_permission_dialog(_bash_screen(f"{gutter}\n   Run it"))
     assert dialog_matches(parsed, "Bash", _bash_key(live, "Run it"))
     assert not dialog_matches(parsed, "Bash", _bash_key(stale, "Run it"))
+
+
+def test_a_command_beginning_tip_stays_in_the_bash_block():
+    # Only the rows above the command's indent are the Tip; a command row is
+    # kept whatever it starts with, with the Tip row above it or not.
+    key = _bash_key("Tip: echo hi", "Say hi")
+    with_tip = parse_permission_dialog(_bash_screen("   Tip: echo hi\n   Say hi"))
+    assert dialog_matches(with_tip, "Bash", key)
+    assert not dialog_matches(with_tip, "Bash", _bash_key("echo hi", "Say hi"))
+    without = parse_permission_dialog(_bash_screen("   Tip: echo hi\n   Say hi").replace(_TIP + "\n", ""))
+    assert without is not None and without["body"][0] == "   Tip: echo hi"
+    assert dialog_matches(without, "Bash", key)
 
 
 def test_a_bash_dialog_matches_across_a_wrap_and_a_bare_gutter():
@@ -1305,6 +1332,7 @@ def test_hidden_controls_agree_with_the_hook():
     ("name", "tool", "tool_input"),
     [
         ("bash.txt", "Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"}),
+        ("bash_narrow.txt", "Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"}),
         ("bash_multiline.txt", "Bash", {"command": "touch a.txt\ntouch b.txt", "description": "Create two files"}),
         ("write.txt", "Write", {"file_path": "/tmp/probe/notes.md", "content": "hello\n"}),
         ("edit.txt", "Edit", {"file_path": "/tmp/probe/notes.md", "old_string": "hello", "new_string": "goodbye"}),
