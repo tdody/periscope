@@ -2056,3 +2056,54 @@ def test_spawn_claude_sets_the_model_the_chooser_picked(mocker):
 
     args = _created_call(cap)
     assert "ANTHROPIC_MODEL=opus[1m]" in args
+
+
+def test_spawn_claude_with_prompt_pastes_and_tags(mocker):
+    from periscope import channels
+
+    tmux_mock = mocker.patch("periscope.channels.tmux", return_value="%9")
+    mocker.patch("periscope.channels._run", return_value=(0, ""))  # has-session ok
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "4"))
+    mocker.patch("periscope.channels.asyncio.sleep", new=AsyncMock())
+    mocker.patch("periscope.channels._plain_pane_snapshot", return_value="auto mode on")
+    mocker.patch("periscope.channels.note_focus")
+    mocker.patch("periscope.channels.note_action")
+    mocker.patch("periscope.channels.stamp_new_window", return_value="kid42")
+    mocker.patch("periscope.channels.set_window_fields")
+    move = mocker.patch("periscope.channels.tracks.move_pane")
+
+    out = asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", "/dev/repo", "do the thing", session="sess"))
+
+    assert out == {"target": "sess:4", "session": "sess", "index": 4, "pid": "kid42", "pane_id": "%9"}
+    set_buffer = [c for c in tmux_mock.call_args_list if c.args[:1] == ("set-buffer",)]
+    assert set_buffer and set_buffer[0].args[-1] == "do the thing"
+    paste = [c for c in tmux_mock.call_args_list if c.args[:1] == ("paste-buffer",)]
+    assert paste and paste[0].args[-1] == "sess:4"
+    move.assert_called_once_with("kid42", "/dev/repo")
+
+
+def test_spawn_claude_with_prompt_skips_track_when_none(mocker):
+    from periscope import channels
+
+    mocker.patch("periscope.channels.tmux", return_value="%9")
+    mocker.patch("periscope.channels._run", return_value=(0, ""))
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "4"))
+    mocker.patch("periscope.channels.asyncio.sleep", new=AsyncMock())
+    mocker.patch("periscope.channels._plain_pane_snapshot", return_value="auto mode on")
+    mocker.patch("periscope.channels.note_focus")
+    mocker.patch("periscope.channels.note_action")
+    mocker.patch("periscope.channels.stamp_new_window", return_value="kid42")
+    mocker.patch("periscope.channels.set_window_fields")
+    move = mocker.patch("periscope.channels.tracks.move_pane")
+
+    asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", None, "go", session="sess"))
+    move.assert_not_called()
+
+
+def test_spawn_claude_with_prompt_raises_on_tmux_failure(mocker):
+    from periscope import channels
+
+    mocker.patch("periscope.channels._run", return_value=(0, ""))
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(False, "boom"))
+    with pytest.raises(channels.SpawnFailed, match="boom"):
+        asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", None, "go", session="sess"))
