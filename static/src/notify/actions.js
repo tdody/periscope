@@ -15,9 +15,11 @@ import { accountLabel } from "../accounts.js";
 import { pickSpawnAccount } from "../chrome/SpawnAccountPicker.jsx";
 import { openUsageDetails } from "../chrome/UsagePill.jsx";
 import { openCleanupModal } from "../overlays/CleanupModal.jsx";
+import { showToast } from "../overlays/Toast.jsx";
 import { markReadySeen, revealPane, selectPane, selectReview } from "../split/alertFeed.js";
 import { windows } from "../store.js";
-import { openExternal } from "../tauri.js";
+import { notify, openExternal } from "../tauri.js";
+import { postJson } from "../util.js";
 import { usageCategory } from "./copy.js";
 
 const act = (id, title, opts = {}) => Object.freeze({ id, title, ...opts });
@@ -66,14 +68,73 @@ export function categories({ accounts = [], moveTargets = {} } = {}) {
 
 export const OPENERS = Object.freeze({
   openExternal, openUsageDetails, pickSpawnAccount, openCleanupModal, markReadySeen, selectReview, selectPane, revealPane,
+  post: postJson, toast: showToast, notify,
 });
+
+// What a failed agent-acting press says in its toast.
+const ACT_LABEL = { allow: "Allow", deny: "Deny", send: "Reply", fix: "Ask agent to fix" };
+
+// The short verb a failed agent-acting press names itself in its follow-up
+// native banner ("Couldn't allow — …") — distinct from ACT_LABEL, which names
+// the button for the toast.
+const NOTICE_VERB = { allow: "allow", deny: "deny", send: "send", fix: "fix" };
+
+// The message Ask agent to fix types into the pane: the PR and the names of
+// its failing checks (copy.js puts them in data.checks).
+export function fixMessage(pr, checks) {
+  const what = checks?.length ? `${checks.join(" · ")}.` : "Checks are failing.";
+  return `CI failed on #${pr}: ${what} Please investigate and fix.`;
+}
+
+// A press that makes the agent act. The server re-checks the pane and
+// answers 409 when the banner no longer matches it (another request, the
+// dialog gone, a dialog just opened): that only needs the pane shown as it is
+// now. Any other failure shows it too, with the error. Allow / Deny / Send /
+// Fix are background presses — the app isn't brought forward for them — so
+// show() and the toast land in a hidden window where nobody sees them; a
+// plain follow-up banner (kind "notice", no category, data.open: "pane" —
+// openFromBanner already opens that by pid) is what actually reaches the
+// user, on every failure. Success needs nothing: the pane's next state shows
+// it working. Never rejects.
+async function agentAct(action, path, body, show, o) {
+  const notice = (reason) => {
+    try {
+      o.notify({ kind: "notice", title: `Couldn't ${NOTICE_VERB[action]} — ${reason}`, data: { open: "pane", pid: body.pid } });
+    } catch (e) {
+      console.error("[notify] follow-up failed", e);
+    }
+  };
+  try {
+    if (!body.pid) {
+      show();
+      return;
+    }
+    const r = await o.post(path, body);
+    if (r?.ok) return;
+    show();
+    if (r?.status === 409) {
+      notice("the dialog changed");
+    } else {
+      o.toast(`${ACT_LABEL[action]} failed: ${r?.detail || "no answer"}`, "bad", 6000);
+      notice(r?.detail || "no answer");
+    }
+  } catch (e) {
+    console.error("[notify] action failed", action, e);
+    try {
+      show();
+    } catch (e2) {
+      console.error("[notify] reveal failed", e2);
+    }
+  }
+}
 
 // A pressed button, as the shell reports it. The pane is found by pid first:
 // tmux renumbers windows, so target can name a neighbour by now — `show`
 // selects the live pane found by pid, falling back to revealPane(target)
 // (the banner's own, possibly-stale, pane) only once that pane is gone too.
-// Never throws: a failed press still shows you something.
-export function runAction({ target, action, data } = {}, o = OPENERS) {
+// Never throws: a failed press still shows you something. The agent-acting
+// presses return agentAct's promise, which never rejects either.
+export function runAction({ target, action, text, data } = {}, o = OPENERS) {
   // A default covers only a missing data; the shell's Info defaults it to null.
   data ||= {};
   let w;
@@ -116,6 +177,20 @@ export function runAction({ target, action, data } = {}, o = OPENERS) {
         else show();
         return;
       }
+      case "allow":
+      case "deny":
+        return agentAct(action, "/api/pane/permission", { pid: data.pid, request_id: data.request_id, choice: action }, show, o);
+      case "send": {
+        // An empty reply says nothing; there's nothing to send.
+        const reply = String(text || "").trim();
+        if (!reply) return;
+        return agentAct(action, "/api/pane/reply", { pid: data.pid, text: reply }, show, o);
+      }
+      case "fix":
+        return agentAct(action, "/api/pane/reply", { pid: data.pid, text: fixMessage(data.pr, data.checks) }, show, o);
+      case "open":
+        show();
+        return;
       default:
         console.warn("[notify] unknown action", action);
     }

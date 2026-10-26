@@ -173,3 +173,25 @@ export async function apiCall(label, path, opts = {}) {
   track(`api:${label}`, { path, method, ok: true });
   return data;
 }
+
+// A JSON POST that reports how it went instead of toasting: { ok, status,
+// detail }. For callers that treat a status as an answer — a 409 from
+// /api/pane/permission means "the banner is stale", not an error — which
+// apiCall hides behind null after toasting. Never throws: a network failure
+// is status 0. A JSON body is also what the agent-acting routes require
+// (routes/pane_actions.py), so this always sends one.
+export async function postJson(path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, status: 0, detail: err?.message || String(err) };
+  }
+  let data = {};
+  try { data = (await res.json()) || {}; } catch (_) {}
+  // FastAPI's 422 detail is a list of errors: say the status instead.
+  const detail = typeof data.detail === "string" ? data.detail : data.error || `HTTP ${res.status}`;
+  return { ok: res.ok, status: res.status, detail };
+}

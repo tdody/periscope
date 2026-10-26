@@ -8,11 +8,12 @@ vi.mock("../../tauri.js", () => ({
   onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(async () => {}),
 }));
 const { windows } = await import("../../store.js");
-const { categories, runAction, OPENERS } = await import("../actions.js");
+const { categories, fixMessage, runAction, OPENERS } = await import("../actions.js");
 
 const openers = () => ({
   openExternal: vi.fn(), openUsageDetails: vi.fn(), pickSpawnAccount: vi.fn(), openCleanupModal: vi.fn(),
   markReadySeen: vi.fn(), selectReview: vi.fn(), selectPane: vi.fn(), revealPane: vi.fn(),
+  post: vi.fn(async () => ({ ok: true, status: 200, detail: "" })), toast: vi.fn(), notify: vi.fn(),
 });
 
 afterEach(() => {
@@ -187,8 +188,141 @@ describe("runAction", () => {
   it("ignores an action it doesn't know, and tolerates null data from the shell", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const o = openers();
-    runAction({ target: "s:1", action: "allow", data: null }, o);
+    runAction({ target: "s:1", action: "frobnicate", data: null }, o);
     expect(warn).toHaveBeenCalled();
     expect(Object.values(o).some((f) => f.mock.calls.length)).toBe(false);
   });
+});
+
+describe("runAction: the buttons that make an agent act", () => {
+  const PERMISSION = { pid: "p1", request_id: "a1b2c3d4e5f60718" };
+
+  it("Allow and Deny answer the banner's request on its pane", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
+    expect(o.post).toHaveBeenLastCalledWith("/api/pane/permission", { ...PERMISSION, choice: "allow" });
+    await runAction({ target: "s:1", action: "deny", data: PERMISSION }, o);
+    expect(o.post).toHaveBeenLastCalledWith("/api/pane/permission", { ...PERMISSION, choice: "deny" });
+    // Success shows nothing more: the pane's next state shows it working.
+    expect(o.selectPane).not.toHaveBeenCalled();
+    expect(o.toast).not.toHaveBeenCalled();
+  });
+
+  it("a 409 (the banner went stale) shows the pane as it is now, without a toast", async () => {
+    const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 409, detail: "stale" })) };
+    windows.value = [{ pid: "p1", target: "s:4" }];
+    await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
+    expect(o.selectPane).toHaveBeenCalledWith(windows.value[0]);
+    expect(o.toast).not.toHaveBeenCalled();
+  });
+
+  it("any other failure shows the pane and toasts the error", async () => {
+    const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 500, detail: "tmux died" })) };
+    windows.value = [];
+    await runAction({ target: "s:1", action: "deny", data: PERMISSION }, o);
+    expect(o.revealPane).toHaveBeenCalledWith("s:1");
+    expect(o.toast).toHaveBeenCalledWith("Deny failed: tmux died", "bad", 6000);
+  });
+
+  it("never rejects, even when the request itself throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const o = { ...openers(), post: vi.fn(async () => { throw new Error("boom"); }) };
+    await expect(runAction({ target: "s:1", action: "allow", data: PERMISSION }, o)).resolves.toBeUndefined();
+    expect(o.revealPane).toHaveBeenCalledWith("s:1");
+  });
+
+  it("a banner without a pane has nothing to answer: it reveals instead", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "allow", data: { request_id: "a1b2c3d4e5f60718" } }, o);
+    expect(o.post).not.toHaveBeenCalled();
+    expect(o.revealPane).toHaveBeenCalledWith("s:1");
+  });
+
+  it("Reply sends the typed text, trimmed; an empty reply does nothing", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "send", text: "  Postgres, please ", data: { pid: "p1" } }, o);
+    expect(o.post).toHaveBeenCalledWith("/api/pane/reply", { pid: "p1", text: "Postgres, please" });
+    o.post.mockClear();
+    await runAction({ target: "s:1", action: "send", text: "   ", data: { pid: "p1" } }, o);
+    await runAction({ target: "s:1", action: "send", data: { pid: "p1" } }, o);
+    expect(Object.values(o).some((f) => f.mock.calls.length)).toBe(false);
+  });
+
+  it("Ask agent to fix tells the pane which checks failed on which PR", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "fix", data: { pid: "p1", pr: 7, checks: ["test", "lint"] } }, o);
+    expect(o.post).toHaveBeenCalledWith("/api/pane/reply", {
+      pid: "p1", text: "CI failed on #7: test · lint. Please investigate and fix.",
+    });
+    expect(fixMessage(7, [])).toBe("CI failed on #7: Checks are failing. Please investigate and fix.");
+  });
+
+  it("Open shows the live pane, else reveals the banner's target", () => {
+    const o = openers();
+    windows.value = [{ pid: "p1", target: "s:4" }];
+    runAction({ target: "s:1", action: "open", data: { pid: "p1" } }, o);
+    expect(o.selectPane).toHaveBeenCalledWith(windows.value[0]);
+    windows.value = [];
+    runAction({ target: "s:1", action: "open", data: { pid: "p1" } }, o);
+    expect(o.revealPane).toHaveBeenCalledWith("s:1");
+  });
+});
+
+describe("runAction: every category's action is handled", () => {
+  // The controller's cross-check: a new button added to categories() without
+  // a runAction case would fall to "default" and warn, silently doing
+  // nothing on a real press. Walk every action id any category can carry
+  // (including a usage_to_* one, so spawn_on is in the set) and assert none
+  // of them hit that default.
+  it("every action id that categories() can register has a case (no unknown-action warning)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    const ids = new Set(categories({ accounts, moveTargets: { default: "b" } }).flatMap((c) => c.actions.map((a) => a.id)));
+    const data = {
+      pid: "p1", request_id: "a1b2c3d4e5f60718", url: "https://github.com/o/r/pull/7",
+      pr: 7, checks: ["test"], spawn_to: "b", cwd: "/wt", session: "s",
+    };
+    for (const action of ids) {
+      await runAction({ target: "s:1", action, text: "hi", data }, openers());
+    }
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("runAction: the follow-up banner on a failed background press", () => {
+  const PERMISSION = { pid: "p1", request_id: "a1b2c3d4e5f60718" };
+  const CASES = [
+    ["allow", { target: "s:1", action: "allow", data: PERMISSION }],
+    ["deny", { target: "s:1", action: "deny", data: PERMISSION }],
+    ["send", { target: "s:1", action: "send", text: "hi", data: { pid: "p1" } }],
+    ["fix", { target: "s:1", action: "fix", data: { pid: "p1", pr: 7, checks: ["test"] } }],
+  ];
+
+  for (const [verb, evt] of CASES) {
+    it(`${verb}: a 409 posts a plain follow-up banner, clickable back to the pane`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 409, detail: "stale" })) };
+      await runAction(evt, o);
+      expect(o.notify).toHaveBeenCalledWith({
+        kind: "notice", title: `Couldn't ${verb} — the dialog changed`, data: { open: "pane", pid: "p1" },
+      });
+    });
+
+    it(`${verb}: any other failure posts a plain follow-up banner naming the reason`, async () => {
+      const o = { ...openers(), post: vi.fn(async () => ({ ok: false, status: 500, detail: "tmux died" })) };
+      await runAction(evt, o);
+      expect(o.notify).toHaveBeenCalledWith({
+        kind: "notice", title: `Couldn't ${verb} — tmux died`, data: { open: "pane", pid: "p1" },
+      });
+    });
+  }
+
+  it("a success posts no follow-up banner", async () => {
+    const o = openers();
+    await runAction({ target: "s:1", action: "allow", data: PERMISSION }, o);
+    expect(o.notify).not.toHaveBeenCalled();
+  });
+
+  // The banner's own click routing (data.open: "pane") is the same shape
+  // copy.js's needs_input banner already uses, and feed.test.js's
+  // openFromBanner suite covers selecting the pane by pid from it.
 });
