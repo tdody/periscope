@@ -1035,13 +1035,13 @@ def test_a_request_just_outside_the_window_is_logged_once_per_wait(fresh_activit
 
     from periscope.window_view import pending_permission_row
 
-    caplog.set_level(logging.DEBUG, logger="periscope")
+    caplog.set_level(logging.INFO, logger="periscope")  # prod's level
     _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 990.0)
     for _ in range(3):  # every tick of the same wait
         assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
     misses = [r for r in caplog.records if "too narrow" in r.getMessage()]
     assert len(misses) == 1
-    assert misses[0].levelno == logging.DEBUG and "%5" in misses[0].getMessage()
+    assert misses[0].levelno == logging.INFO and "%5" in misses[0].getMessage()
 
 
 def test_a_wait_with_no_request_anywhere_logs_nothing(fresh_activity_db, caplog):
@@ -1050,7 +1050,7 @@ def test_a_wait_with_no_request_anywhere_logs_nothing(fresh_activity_db, caplog)
 
     from periscope.window_view import pending_permission_row
 
-    caplog.set_level(logging.DEBUG, logger="periscope")
+    caplog.set_level(logging.INFO, logger="periscope")  # prod's level
     _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 980.0)  # an older wait's
     assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
     assert not [r for r in caplog.records if "too narrow" in r.getMessage()]

@@ -253,7 +253,8 @@ def mem_signal(proc: dict | None) -> dict | None:
 # only, the safe side.
 _PERMISSION_WINDOW_S = 5
 # A wait with no row in the window but one this far before it is a miss worth
-# a (debug) log line, once per wait, to calibrate _PERMISSION_WINDOW_S by hand.
+# an info line (prod's level, so a hand check sees it), once per wait, to
+# calibrate _PERMISSION_WINDOW_S.
 _PERMISSION_MISS_LOOKBACK_S = 15
 _permission_miss_checked: set[tuple[str, int]] = set()
 # A periscope.db error makes banners Open-only; say so, but not every tick.
@@ -262,7 +263,7 @@ _permission_error_logged_at = 0.0
 
 
 def _log_permission_miss(pane_id: str, needs_since: int) -> None:
-    """Debug-log, once per (pane, wait), a request that fell just outside the
+    """Log, once per (pane, wait), a request that fell just outside the
     window: the evidence _PERMISSION_WINDOW_S is too narrow."""
     key = (pane_id, needs_since)
     if key in _permission_miss_checked:
@@ -273,7 +274,7 @@ def _log_permission_miss(pane_id: str, needs_since: int) -> None:
     start = needs_since - _PERMISSION_WINDOW_S
     missed = activity.pane_permissions_between(pane_id, needs_since - _PERMISSION_MISS_LOOKBACK_S, start)
     if missed:
-        log.debug(
+        log.info(
             "pending_permission: %s waits since %d with no request in the last %ds, but %d in the %ds before — "
             "_PERMISSION_WINDOW_S too narrow?",
             pane_id,
