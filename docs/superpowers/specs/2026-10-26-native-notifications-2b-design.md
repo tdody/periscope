@@ -89,11 +89,13 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
   | Banner | Category | Buttons |
   |---|---|---|
-  | `done`, the pane has a branch | `done` | **Review diff** · Mark seen |
-  | `done`, no branch | `done_seen` | Mark seen |
-  | `ci_failed` | `ci_failed_pr` | Open PR (PR 2 adds the `ci_failed` category, with **Ask agent to fix**) |
-  | `pr_merged`, the pane has a `cwd` | `pr_merged` | **Clean up worktree** · Open PR |
-  | `pr_merged`, no `cwd` | `pr_merged_pr` | Open PR |
+  | `done` | `done_seen` | Mark seen (Review diff is deferred to THI-433: every pane shares one tmux session, so a session-keyed review row would open the wrong pane's) |
+  | `ci_failed`, a URL | `ci_failed_pr` | Open PR (PR 2 adds the `ci_failed` category, with **Ask agent to fix**) |
+  | `ci_failed`, no URL | none | the click still opens the pane |
+  | `pr_merged`, a `cwd` and a URL | `pr_merged` | **Clean up worktree** · Open PR |
+  | `pr_merged`, a `cwd`, no URL | `pr_merged_cleanup` | **Clean up worktree** |
+  | `pr_merged`, a URL, no `cwd` | `pr_merged_pr` | Open PR |
+  | `pr_merged`, neither | none | the click still opens the pane |
   | `usage`, `moveTargets[A]` is another account B | `usage_to_{B}` | **Spawn on {B label}** · Details |
   | `usage`, no B | `usage` | Details |
   | `needs_input`, `question` | none in PR 1 | the click still opens the pane |
@@ -109,7 +111,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
 | action | Foreground | Does |
 |---|---|---|
-| `review` | yes | `selectReview(session)` (the live pane's, else the banner's `data.session`): sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
+| `review` | yes | Deferred to THI-433: no category offers this button yet, since every pane shares one tmux session (`config.MANAGED_SESSION`) and a session-keyed review row would open the wrong pane's. `selectReview(session)` and `runAction`'s `review` case stay, ready for the follow-up: `selectReview(session)` (the live pane's, else the banner's `data.session`) sets `railSelection` to `review:{session}` and saves it as `lastSelected`, as Rail's `selectKey` does. Detail shows the live LGTM review, or "Start review →" when there's none. |
 | `mark_seen` | no | `markReadySeen(w)`: adds the pid to `dismissedReadyPids`, without selecting. Split out of `openReadyPane`, which keeps calling it. Client-side only, like a rail dismissal: after a webview reload or recycle the READY row is back (the done banner itself never repeats — its dedupe key is kept). A server-side ack is a possible follow-up. |
 | `open_pr` | no | `openExternal(data.url)`: the browser comes forward on its own. |
 | `cleanup` | yes | `openCleanupModal({ paths: [data.cwd || w.cwd] })`: the banner names the worktree whose PR merged, and the pane may have moved since. Never deletes: the modal's own Archive button does, after you look. |
@@ -125,7 +127,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 - **A listed path that isn't a candidate** (still busy, or already archived) is simply absent.
 - **`CleanupModal`:**
   - `openCleanupModal({ paths })` fetches with `paths` and preselects what comes back;
-  - **with nothing back,** it says "This worktree isn't ready to clean up." with the usual reasons;
+  - **with nothing back,** it says "Nothing to clean up here. Cleanup only offers a worktree (never a main checkout) whose PR is merged or closed, whose remote branch is gone, or that sits idle.";
   - **without `paths`,** it behaves as today.
 
 ## PR 2: the buttons that make an agent act
@@ -286,9 +288,8 @@ Both take a **JSON body**: a body-less POST with query params is a CORS simple r
 
 ## Deploying
 
-- **PR 1:** rebuild and relaunch the shell **before** deploying the JS.
+- **PR 1:** rebuild/relaunch the shell and deploy the JS (merge + `bin/periscope restart`) in either order — each half without the other just means no buttons yet (old shell: never registers the new categories; old JS: never names one), same as any other version-skew gap (`docs/tauri-shell.md`).
   - Run `cargo tauri build` in `src-tauri/`; the running app is `target/release/bundle/macos/Periscope.app`.
-  - Then merge and run `bin/periscope restart`.
 - **PR 2:**
   - Merge, then `bin/periscope install-hook`, which registers `PermissionRequest`, then `bin/periscope restart`.
   - Claude reads hooks at session start, so the hook covers only sessions started after the install. Older panes get the dialog variant (Open only) until they restart.

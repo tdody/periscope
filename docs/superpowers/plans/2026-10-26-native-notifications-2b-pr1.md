@@ -454,6 +454,8 @@ git commit -m "shell: banners carry buttons — the webview registers categories
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
 
+**Revised in review:** `category_specs` returns `(specs, dropped)` and dedupes (a repeated category id keeps its last definition, a repeated action id its first), logging what it dropped to `shell.log` at registration; `category_of` never falls back to `kind`, as specced; and a bad/missing `auth` fails closed (`Option<bool>`, only `Some(true)` sets `AuthenticationRequired`) rather than defaulting a destructive or authed action open.
+
 ---
 
 ### Task 2: Server: `?paths=` scopes cleanup candidates to a worktree
@@ -612,6 +614,8 @@ git commit -m "cleanup: ?paths= evaluates only the worktrees holding those dirs,
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+**Revised in review:** `compute_candidates`'s `wanted` is `{worktree_root(p) for p in set(paths) if p} if paths is not None else None` — blank and duplicate entries drop out, and an all-blank list still evaluates as an empty set (never falls through to `None`'s full walk, which would surface the server's own checkout). `test_gitutil.py`'s `worktree_root` cases run against real git (including through a symlink), not a mocked `_run`.
 
 ---
 
@@ -776,6 +780,8 @@ git commit -m "openers for banner buttons: markReadySeen, selectReview, pickSpaw
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+**Revised in review:** `CleanupModal` gained a `loadSeq` guard so a stale load never lands over a newer scoped one, `scopeOf`/`sameScope` helpers (arrays only — a string must not spread into characters) replace the plan's inline `paths?.length ? paths : null`, Archive stays `disabled` while `loading` (not just `submitting`/empty), and a partial archive failure's error message survives the post-failure `refresh()` instead of being wiped by its `setError("")`.
 
 ---
 
@@ -1236,6 +1242,10 @@ git commit -m "notify: each banner names the category whose buttons apply; the f
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+**Revised in review:** registration and delivery go through `makeDelivery`'s single promise chain — each step catches its own failure, and a hung `setNotifyCategories` races `REGISTRATION_TIMEOUT_MS` rather than the plan's bare `if (cats) setNotifyCategories(cats)` — so one slow or failed registration can't stall later banners. The category-set build runs inside its own try/catch so a bad `accounts`/`moveTargets` shape can't cost the pass. `out()` carries `categories` on every return by default (not just when the set changes), so an early return can't silently drop a pending registration.
+
+**Revised in the final whole-branch review:** Review diff is deferred to THI-433 (every `done` banner gets `done_seen` only — every managed pane shares one tmux session, so a session-keyed review would open the wrong pane's); Open PR is offered only with a URL, adding `pr_merged_cleanup` (Clean up only) for a `cwd` with no URL and dropping `ci_failed`'s category entirely when it has neither.
 
 ---
 
