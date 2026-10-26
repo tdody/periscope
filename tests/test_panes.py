@@ -10,11 +10,14 @@ preserve the "report every failing case in one go" property the original
 file had.
 """
 
+import hashlib
+import re
 import textwrap
 from pathlib import Path
 
 import pytest
 
+import pane_permission_hook as hook
 from periscope.panes import (
     ACTIVE_OP_RE,
     AGENT_STICKY_S,
@@ -25,12 +28,13 @@ from periscope.panes import (
     _agent_last_seen,
     _focused_at,
     _spinner_last_seen,
+    dialog_matches,
     dialog_open,
-    dialog_shows,
     list_windows,
     note_action,
     note_focus,
     parse_pane,
+    parse_permission_dialog,
     permission_dialog,
     smooth_agent,
     smooth_spinner,
@@ -899,12 +903,17 @@ def test_drop_target_focus_pops_both_dicts():
     panes._focused_at.pop("sess:2", None)  # cleanup
 
 
-# ── Permission dialogs (a banner's Allow / Deny; routes/pane_actions.py) ──
+# ── Permission dialogs (a banner's Allow; routes/pane_actions.py) ──
 # Real captures from Claude Code 2.1.280 (`tmux capture-pane -p`), the scratch
-# path replaced by /tmp/probe. Bash's option 2 wraps mid-word, as it did live.
+# path replaced by /tmp/probe and padded so option 2 still wraps mid-word, as
+# it did live. Allow sends `1` on dialog_matches' word, so every negative here
+# is a dialog it must never approve.
 
 _DIALOGS = Path(__file__).parent / "fixtures" / "permission_dialogs"
 _RULE = "─" * 60
+_FOOTER = " Esc to cancel · Tab to amend"
+# bash.txt's command and description rows, which the synthetic dialogs swap.
+_BASH_BLOCK = "   touch probe.txt\n   Create empty probe.txt file"
 # An idle Claude pane: no dialog, the input box at the bottom.
 _IDLE = "\n".join(
     [
@@ -928,7 +937,7 @@ _QUOTED = "\n".join(
         " ❯ 1. Yes",
         "   2. No",
         "",
-        " Esc to cancel · Tab to amend",
+        _FOOTER,
         "",
         _RULE,
         "❯ ",
@@ -936,6 +945,7 @@ _QUOTED = "\n".join(
         "  ⏵⏵ auto mode on (shift+tab to cycle)",
     ]
 )
+_ASK_FOOTER = "Enter to select · ↑/↓ to navigate · Esc to cancel"
 # AskUserQuestion: a choice dialog, not a permission one.
 _ASK = "\n".join(
     [
@@ -947,7 +957,22 @@ _ASK = "\n".join(
         "❯ 1. Postgres",
         "  2. SQLite",
         "",
-        "Enter to select · ↑/↓ to navigate · Esc to cancel",
+        _ASK_FOOTER,
+    ]
+)
+# AskUserQuestion asking yes/no: the rule, "Do you want to …?" and `❯ 1. Yes`
+# are all there; only its footer says it's no permission dialog.
+_ASK_YES = "\n".join(
+    [
+        "⏺ Bash(npm publish)",
+        "  ⎿  Interrupted",
+        _RULE,
+        " ☐ Publish",
+        " Do you want to run npm publish now?",
+        " ❯ 1. Yes",
+        "   2. No",
+        "",
+        _ASK_FOOTER,
     ]
 )
 
@@ -956,81 +981,343 @@ def _dialog(name: str) -> str:
     return (_DIALOGS / name).read_text()
 
 
-def test_permission_dialog_reads_a_bash_prompt_from_its_rule_to_its_footer():
-    dialog = permission_dialog(_dialog("bash.txt"))
-    assert dialog is not None
-    rows = dialog.splitlines()
-    assert rows[0] == " Bash command"
-    assert "   touch probe.txt" in rows
-    assert rows[-1] == " Esc to cancel · Tab to amend"
-    # Not the scrollback above the rule: `⏺ Bash(touch probe.txt)` quotes the
-    # same command and must not vouch for whatever dialog is up.
-    assert "⏺" not in dialog
+def _bash_screen(block: str) -> str:
+    """bash.txt with its command and description rows replaced by `block`."""
+    return _dialog("bash.txt").replace(_BASH_BLOCK, block)
 
 
-def test_permission_dialog_reads_a_write_prompt():
-    dialog = permission_dialog(_dialog("write.txt"))
-    assert dialog is not None
-    assert " notes.md" in dialog.splitlines()
-    assert " Do you want to create notes.md?" in dialog.splitlines()
-
-
-def test_permission_dialog_strips_the_capture_colours():
-    # capture() keeps SGR escapes (-e); the live dialog colours ❯ and Yes.
-    coloured = _dialog("bash.txt").replace(
-        " ❯ 1. Yes",
-        " \x1b[38;2;177;185;249m❯\x1b[39m \x1b[38;2;153;153;153m1.\x1b[39m \x1b[38;2;177;185;249mYes\x1b[39m",
+def _write_screen(shown: str, preview: str = "  1 hello") -> str:
+    """write.txt asking about `shown` (its path row and question), with
+    `preview` for its one preview row."""
+    return (
+        _dialog("write.txt")
+        .replace(" notes.md\n╌", f" {shown}\n╌")
+        .replace("create notes.md?", f"create {shown}?")
+        .replace("  1 hello", preview)
     )
-    dialog = permission_dialog(coloured)
-    assert dialog is not None
-    assert "\x1b" not in dialog
 
 
-@pytest.mark.parametrize("screen", [_IDLE, _QUOTED, _ASK, ""], ids=["idle", "quoted", "ask", "empty"])
+def _sha(squashed: str) -> str:
+    return "sha256:" + hashlib.sha256(squashed.encode()).hexdigest()
+
+
+def _bash_key(command: str, description: str = "") -> str:
+    """A Bash request's key as the hook stores it (pane_permission_hook.
+    match_key; the agreement tests at the end pin the two): a digest of the
+    command and description, whitespace squashed out."""
+    return _sha(re.sub(r"\s+", "", command) + re.sub(r"\s+", "", description))
+
+
+# Each capture with the key of the request it shows.
+_FIXTURE_KEYS = [
+    ("bash.txt", "Bash", _sha("touchprobe.txtCreateemptyprobe.txtfile")),
+    ("bash_multiline.txt", "Bash", _sha("toucha.txttouchb.txtCreatetwofiles")),
+    ("write.txt", "Write", "/tmp/probe/notes.md"),
+    ("edit.txt", "Edit", "/tmp/probe/notes.md"),
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "header", "body", "question", "shown_path"),
+    [
+        (
+            "bash.txt",
+            "Bash command",
+            ["   touch probe.txt", "   Create empty probe.txt file"],
+            "Do you want to proceed?",
+            None,
+        ),
+        (
+            "bash_multiline.txt",
+            "Bash command",
+            ["   │ touch a.txt", "   │ touch b.txt", "   Create two files"],
+            "Do you want to proceed?",
+            None,
+        ),
+        (
+            "write.txt",
+            "Create file",
+            [" notes.md", "╌" * 110, "  1 hello", "╌" * 110],
+            "Do you want to create notes.md?",
+            "notes.md",
+        ),
+        (
+            "edit.txt",
+            "Edit file",
+            [" notes.md", "╌" * 110, " 1 -hello", " 1 +goodbye", "╌" * 110],
+            "Do you want to make this edit to notes.md?",
+            "notes.md",
+        ),
+    ],
+)
+def test_parse_permission_dialog_reads_each_capture(name, header, body, question, shown_path):
+    parsed = parse_permission_dialog(_dialog(name))
+    assert parsed is not None
+    assert parsed["header"] == header
+    assert parsed["body"] == body  # less the Tip row
+    assert parsed["question"] == question
+    assert parsed["shown_path"] == shown_path
+    rows = parsed["text"].splitlines()
+    assert rows[0] == " " + header
+    assert rows[-1] == _FOOTER
+    # Bounded by the rule: the scrollback above it (`⏺ Bash(touch …)`,
+    # `⏺ Update(notes.md)`) names the request too, and must never be read.
+    assert "⏺" not in parsed["text"]
+    assert permission_dialog(_dialog(name)) == parsed["text"]
+
+
+@pytest.mark.parametrize(("name", "tool", "key"), _FIXTURE_KEYS)
+def test_dialog_matches_each_capture_with_its_own_key(name, tool, key):
+    assert dialog_matches(parse_permission_dialog(_dialog(name)), tool, key)
+
+
+@pytest.mark.parametrize(
+    ("name", "tool", "key"),
+    [(name, tool, key) for name, *_ in _FIXTURE_KEYS for other, tool, key in _FIXTURE_KEYS if other != name],
+)
+def test_dialog_matches_no_other_captures_key(name, tool, key):
+    # A Write key on the Edit dialog of the same file, a Bash key on a file
+    # dialog, …: the header names the tool, and Allow answers only that tool.
+    assert not dialog_matches(parse_permission_dialog(_dialog(name)), tool, key)
+
+
+def test_a_bash_dialog_needs_its_description_too():
+    parsed = parse_permission_dialog(_dialog("bash.txt"))
+    assert dialog_matches(parsed, "Bash", _bash_key("touch probe.txt", "Create empty probe.txt file"))
+    assert not dialog_matches(parsed, "Bash", _bash_key("touch probe.txt", "Touch the probe"))
+    assert not dialog_matches(parsed, "Bash", _bash_key("touch probe.txt"))
+    # A key stored in the clear (not the hook's digest) never matches.
+    assert not dialog_matches(parsed, "Bash", "touchprobe.txtCreateemptyprobe.txtfile")
+
+
+def test_a_bash_key_that_is_a_prefix_of_the_dialog_does_not_match():
+    # The old screen token matched anywhere: `git push origin main` vouched
+    # for this dialog.
+    parsed = parse_permission_dialog(_bash_screen("   git push origin main --force\n   Push to main"))
+    assert dialog_matches(parsed, "Bash", _bash_key("git push origin main --force", "Push to main"))
+    assert not dialog_matches(parsed, "Bash", _bash_key("git push origin main", "Push to main"))
+    assert not dialog_matches(parsed, "Bash", _bash_key("git push origin main"))
+
+
+def test_bash_commands_sharing_a_cd_prefix_do_not_match():
+    # Same cwd, so the same first 40 characters: the old token's whole reach.
+    cwd = "/Users/someone/github/tomplex/periscope"
+    live, stale = f"cd {cwd} && git push --force origin main", f"cd {cwd} && uv run pytest -q"
+    assert live[:40] == stale[:40]
+    parsed = parse_permission_dialog(_bash_screen(f"   {live}\n   Run it"))
+    assert dialog_matches(parsed, "Bash", _bash_key(live, "Run it"))
+    assert not dialog_matches(parsed, "Bash", _bash_key(stale, "Run it"))
+
+
+def test_bash_heredocs_sharing_a_first_line_do_not_match():
+    live = "python3 - <<'EOF'\nimport shutil; shutil.rmtree('build')\nEOF"
+    stale = "python3 - <<'EOF'\nprint('hello')\nEOF"
+    gutter = "\n".join(f"   │ {row}" for row in live.split("\n"))
+    parsed = parse_permission_dialog(_bash_screen(f"{gutter}\n   Run it"))
+    assert dialog_matches(parsed, "Bash", _bash_key(live, "Run it"))
+    assert not dialog_matches(parsed, "Bash", _bash_key(stale, "Run it"))
+
+
+def test_a_bash_dialog_matches_across_a_wrap_and_a_bare_gutter():
+    # A long row wraps mid-word onto an indented row; a blank line in a
+    # multi-line command leaves a bare `│`. Neither may break the match.
+    wrapped = _bash_screen("   python3 scripts/regenerate_fix\n   tures.py --out tests\n   Regenerate")
+    key = _bash_key("python3 scripts/regenerate_fixtures.py --out tests", "Regenerate")
+    assert dialog_matches(parse_permission_dialog(wrapped), "Bash", key)
+    blank = _bash_screen(
+        "   │ python3 - <<'EOF'\n   │ import os\n   │\n   │ print(os.getcwd())\n   │ EOF\n   Print the cwd"
+    )
+    key = _bash_key("python3 - <<'EOF'\nimport os\n\nprint(os.getcwd())\nEOF", "Print the cwd")
+    assert dialog_matches(parse_permission_dialog(blank), "Bash", key)
+
+
+def test_a_file_key_never_matches_a_bash_dialog_naming_the_file():
+    parsed = parse_permission_dialog(_bash_screen("   rm notes.md\n   Remove the notes"))
+    assert parsed is not None
+    assert not dialog_matches(parsed, "Write", "/tmp/probe/notes.md")
+    assert not dialog_matches(parsed, "Edit", "/tmp/probe/notes.md")
+
+
+def test_a_file_dialog_matches_its_path_on_a_slash_boundary():
+    # The dialog shows the path relative to the cwd; the key is absolute.
+    write = parse_permission_dialog(_dialog("write.txt"))
+    assert not dialog_matches(write, "Write", "/tmp/probe/old-notes.md")
+    assert not dialog_matches(write, "Write", "/tmp/probe/notes.md.bak")
+    docs = parse_permission_dialog(_write_screen("docs/notes.md"))
+    assert docs is not None and docs["shown_path"] == "docs/notes.md"
+    assert dialog_matches(docs, "Write", "/tmp/probe/docs/notes.md")
+    assert not dialog_matches(docs, "Write", "/tmp/probe/notes.md")
+    # A path shown absolute must match whole.
+    hosts = parse_permission_dialog(_write_screen("/etc/hosts"))
+    assert dialog_matches(hosts, "Write", "/etc/hosts")
+    assert not dialog_matches(hosts, "Write", "/tmp/etc/hosts")
+
+
+def test_a_write_preview_naming_another_file_does_not_vouch_for_it():
+    parsed = parse_permission_dialog(_write_screen("notes.md", "  1 see /tmp/probe/other.md"))
+    assert dialog_matches(parsed, "Write", "/tmp/probe/notes.md")
+    assert not dialog_matches(parsed, "Write", "/tmp/probe/other.md")
+
+
+@pytest.mark.parametrize("tool", ["NotebookEdit", "WebFetch", "mcp__linear__save_issue", ""])
+def test_dialog_matches_never_vouches_for_an_unverified_tool(tool):
+    for name, _tool, key in _FIXTURE_KEYS:
+        assert not dialog_matches(parse_permission_dialog(_dialog(name)), tool, key)
+
+
+@pytest.mark.parametrize("key", [None, ""])
+def test_dialog_matches_needs_a_key(key):
+    for name, tool, _key in _FIXTURE_KEYS:
+        assert not dialog_matches(parse_permission_dialog(_dialog(name)), tool, key)
+
+
+def test_dialog_matches_needs_a_dialog():
+    for _name, tool, key in _FIXTURE_KEYS:
+        assert not dialog_matches(None, tool, key)
+
+
+@pytest.mark.parametrize(
+    "screen", [_IDLE, _QUOTED, _ASK, _ASK_YES, ""], ids=["idle", "quoted", "ask", "ask-yes", "empty"]
+)
 def test_permission_dialog_is_none_without_one(screen):
+    assert parse_permission_dialog(screen) is None
     assert permission_dialog(screen) is None
 
 
+def test_an_ask_user_question_is_turned_away_by_its_footer():
+    # Everything else about _ASK_YES reads as a permission dialog.
+    assert parse_permission_dialog(_ASK_YES.replace(_ASK_FOOTER, _FOOTER)) is not None
+
+
+def test_parse_permission_dialog_stops_at_the_scrollback_without_a_rule():
+    # bash.txt's rule gone: the search must not run on into `⏺ Bash(touch
+    # probe.txt)`, nor take a rule beyond it for the dialog's.
+    no_rule = _dialog("bash.txt").replace("─" * 110 + "\n", "")
+    assert parse_permission_dialog(no_rule) is None
+    beyond = no_rule.replace("⏺ Bash(touch probe.txt)", "─" * 110 + "\n⏺ Bash(touch probe.txt)")
+    assert parse_permission_dialog(beyond) is None
+
+
+def test_parse_permission_dialog_looks_60_rows_up_for_the_rule():
+    tall = [f"echo {i}" for i in range(50)]
+    screen = _bash_screen("\n".join(f"   │ {row}" for row in tall) + "\n   Echo")
+    assert dialog_matches(parse_permission_dialog(screen), "Bash", _bash_key("\n".join(tall), "Echo"))
+    taller = _bash_screen("\n".join(f"   │ echo {i}" for i in range(70)) + "\n   Echo")
+    assert parse_permission_dialog(taller) is None
+
+
+def test_parse_permission_dialog_takes_only_a_column_0_rule():
+    # Indented, it's a reply's hr or a command's line, not the dialog's edge.
+    screen = "\n".join(
+        [_RULE, " Bash command", "   touch probe.txt", " Do you want to proceed?", " ❯ 1. Yes", "   2. No", "", _FOOTER]
+    )
+    assert parse_permission_dialog(screen) is not None
+    assert parse_permission_dialog(screen.replace(_RULE, "  " + _RULE)) is None
+
+
+def test_parse_permission_dialog_needs_the_footer_last_and_yes_right_under_the_question():
+    bash = _dialog("bash.txt")
+    assert parse_permission_dialog(bash + "$ ") is None  # a shell that cat'd it
+    assert parse_permission_dialog(bash.replace(" ❯ 1. Yes", " ❯ 1. Allow")) is None
+    assert parse_permission_dialog(bash.replace(" Do you want to proceed?\n", " Do you want to proceed?\n\n")) is None
+
+
 def test_dialog_open_sees_permission_and_choice_dialogs():
-    assert dialog_open(_dialog("bash.txt"))
-    assert dialog_open(_dialog("write.txt"))
+    for name, *_ in _FIXTURE_KEYS:
+        assert dialog_open(_dialog(name))
     assert dialog_open(_ASK)
+    assert dialog_open(_ASK_YES)
     assert not dialog_open(_IDLE)
     assert not dialog_open(_QUOTED)
+    assert not dialog_open("")
 
 
-def test_dialog_shows_the_bash_command_it_asks_about():
-    dialog = permission_dialog(_dialog("bash.txt"))
-    assert dialog_shows(dialog, "Bash", "touch probe.txt")
-    assert not dialog_shows(dialog, "Bash", "rm -rf build")
-    assert not dialog_shows(dialog, "Bash", "")
-
-
-def test_dialog_shows_a_long_command_across_a_mid_word_wrap():
-    # The token is the summary's first 40 characters; the dialog wrapped
-    # inside them, onto an indented row.
-    wrapped = _dialog("bash.txt").replace(
-        "   touch probe.txt", "   python3 scripts/regenerate_fix\n   tures.py --source /tmp/probe/captures --out tests"
+def test_a_dialog_with_the_cursor_on_option_2_is_still_open_and_still_matches():
+    moved = (
+        _dialog("bash.txt").replace(" ❯ 1. Yes", "   1. Yes").replace("   2. Yes, and always", " ❯ 2. Yes, and always")
     )
-    dialog = permission_dialog(wrapped)
-    assert dialog is not None
-    assert dialog_shows(
-        dialog, "Bash", "python3 scripts/regenerate_fixtures.py --source /tmp/probe/captures --out tests"
+    assert dialog_open(moved)
+    # `1` picks Yes wherever the cursor is, so Allow still applies.
+    assert dialog_matches(parse_permission_dialog(moved), "Bash", _FIXTURE_KEYS[0][2])
+
+
+def test_dialog_open_fails_closed_on_a_dialog_it_cannot_parse():
+    # A narrow pane wraps the question: no Allow, and no Reply typed into it.
+    narrow = _dialog("edit.txt").replace(
+        " Do you want to make this edit to notes.md?", " Do you want to make this\n edit to notes.md?"
     )
+    assert parse_permission_dialog(narrow) is None
+    assert dialog_open(narrow)
+    # A row under the footer (a new status line, say): the same.
+    trailing = _dialog("bash.txt") + "  ⏵⏵ accept edits on"
+    assert parse_permission_dialog(trailing) is None
+    assert dialog_open(trailing)
 
 
-def test_dialog_shows_a_file_by_its_basename():
-    # The dialog shows the path relative to the cwd; the hook stores it absolute.
-    dialog = permission_dialog(_dialog("write.txt"))
-    assert dialog_shows(dialog, "Write", "/tmp/probe/notes.md")
-    assert dialog_shows(dialog, "Write", "…/a/clipped/very/long/path/notes.md")
-    assert not dialog_shows(dialog, "Write", "/tmp/probe/other.md")
+@pytest.mark.parametrize(("name", "tool", "key"), _FIXTURE_KEYS)
+def test_escapes_in_the_capture_neither_hide_the_dialog_nor_reach_the_match(name, tool, key):
+    # capture() keeps escapes (-e): colon-form SGR and OSC 8 links, which
+    # _ANSI_SGR_RE misses, on every row and around the names that matter.
+    screen = "\n".join(f"\x1b[4:3m{row}\x1b[0m" if row else row for row in _dialog(name).split("\n"))
+    for word in ("probe.txt", "a.txt", "notes.md"):
+        screen = screen.replace(word, f"\x1b]8;;http://x\x1b\\{word}\x1b]8;;\x1b\\")
+    parsed = parse_permission_dialog(screen)
+    assert parsed is not None
+    assert "\x1b" not in parsed["text"]
+    assert dialog_matches(parsed, tool, key)
+    assert dialog_open(screen)
 
 
-def test_the_keys_pane_actions_sends_select_what_they_should():
-    # Allow sends `1`: option 1 is Yes in every dialog. Deny sends Escape,
-    # never a number: No is option 4 for Bash and 3 for Write.
-    bash = permission_dialog(_dialog("bash.txt")).splitlines()
-    write = permission_dialog(_dialog("write.txt")).splitlines()
-    assert " ❯ 1. Yes" in bash and " ❯ 1. Yes" in write
-    assert "   4. No" in bash and "   3. No" in write
+def test_truecolour_and_bel_terminated_links_are_stripped_too():
+    bash = _dialog("bash.txt").replace(
+        " ❯ 1. Yes",
+        " \x1b[38;2;177;185;249m❯\x1b[39m \x1b[38;2;153;153;153m1.\x1b[39m \x1b[38;2;177;185;249mYes\x1b[39m",
+    )
+    assert dialog_matches(parse_permission_dialog(bash), "Bash", _FIXTURE_KEYS[0][2])
+    write = _dialog("write.txt").replace(
+        "create notes.md?", "create \x1b]8;;file:///tmp/probe/notes.md\x07notes.md\x1b]8;;\x07?"
+    )
+    parsed = parse_permission_dialog(write)
+    assert parsed is not None and parsed["shown_path"] == "notes.md"
+    assert dialog_matches(parsed, "Write", "/tmp/probe/notes.md")
+
+
+# ── The hook's half of the match. pane_permission_hook.py runs on bare
+# python3 and can't import periscope, so what both sides share is mirrored,
+# and pinned here.
+
+
+def test_verifiable_tools_agree_with_the_hook():
+    from periscope import panes
+
+    assert panes.VERIFIABLE_TOOLS == hook.VERIFIABLE_TOOLS
+
+
+def test_hidden_controls_agree_with_the_hook():
+    # The hook strips them from its key; the screen side must strip the same.
+    from periscope import panes
+
+    every = "".join(map(chr, range(0x110000)))
+    assert set(panes._HIDDEN_RE.findall(every)) == set(hook._HIDDEN_RE.findall(every))
+
+
+@pytest.mark.parametrize(
+    ("name", "tool", "tool_input"),
+    [
+        ("bash.txt", "Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"}),
+        ("bash_multiline.txt", "Bash", {"command": "touch a.txt\ntouch b.txt", "description": "Create two files"}),
+        ("write.txt", "Write", {"file_path": "/tmp/probe/notes.md", "content": "hello\n"}),
+        ("edit.txt", "Edit", {"file_path": "/tmp/probe/notes.md", "old_string": "hello", "new_string": "goodbye"}),
+    ],
+)
+def test_the_hooks_key_for_each_captured_request_matches_its_dialog(name, tool, tool_input):
+    key = hook.match_key(tool, tool_input)
+    assert key == next(k for n, _t, k in _FIXTURE_KEYS if n == name)
+    assert dialog_matches(parse_permission_dialog(_dialog(name)), tool, key)
+
+
+def test_a_hidden_control_in_a_command_does_not_break_the_match():
+    command = "touch\N{ZERO WIDTH SPACE} probe.txt\N{SOFT HYPHEN}"
+    key = hook.match_key("Bash", {"command": command, "description": "Create empty probe.txt file"})
+    screen = _bash_screen(f"   {command}\n   Create empty probe.txt file")
+    assert dialog_matches(parse_permission_dialog(screen), "Bash", key)

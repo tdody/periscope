@@ -12,7 +12,7 @@ the resume-in-flight check and by routes/sessions / routes/history for
 the resume orchestration).
 """
 
-import os
+import hashlib
 import re
 import time
 
@@ -304,24 +304,46 @@ NEEDS_INPUT_FOOTER_RE = re.compile(
     r"(?:Enter\s+to\s+\w+|↑/↓|Submit\b).*Esc\s+to\s+cancel",
 )
 
-# A permission dialog (Bash, Write, Edit, …), which a native banner's Allow /
-# Deny answers (routes/pane_actions.py). Its footer, "Esc to cancel · Tab to
-# amend" in 2.1.280, is outside NEEDS_INPUT_FOOTER_RE's family, so it's known
-# by its own shape: a "Do you want to …?" question, "❯ 1. Yes" on the next
-# line, and the footer ending the screen. Any one of them can turn up in a
-# reply; a dialog Claude quotes in a reply still has the input box below it.
+# A permission dialog (Bash, Write, Edit, …), which a native banner's Allow
+# answers by sending `1` (routes/pane_actions.py): a wrong match approves the
+# wrong request, so every rule below fails closed. Its footer, "Esc to cancel ·
+# Tab to amend" in 2.1.280, is outside NEEDS_INPUT_FOOTER_RE's family, so it's
+# known by its own shape (parse_permission_dialog).
 PERMISSION_QUESTION_RE = re.compile(r"^\s*Do you want to .+\?\s*$")
-PERMISSION_YES_RE = re.compile(r"^\s*❯\s*1\.\s+Yes\b")
+# ❯ is the cursor; the user may have moved it off option 1.
+PERMISSION_YES_RE = re.compile(r"^\s*(?:❯\s*)?1\.\s+Yes\b")
 DIALOG_CANCEL_RE = re.compile(r"\bEsc\s+to\s+cancel\b")
-# The full-width rule Claude draws above the dialog: where its text starts.
-DIALOG_RULE_RE = re.compile(r"^\s*─{20,}\s*$")
-# Lines the question can sit above the footer: the options under it wrap
-# (Bash's "always allow access to <dir>" does), but not past a dozen.
-_PERMISSION_TAIL = 12
-# Tools whose dialog names the file relative to the cwd, while the hook
-# records it absolute (pane_permission_hook.py): matched on the basename.
-_FILE_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
+# The full-width rule Claude draws above the dialog, at column 0: a reply's hr
+# is indented under its ⏺, a command's line under its gutter.
+DIALOG_RULE_RE = re.compile(r"^─{20,}\s*$")
+# A file tool's question names its path, relative to the cwd.
+_SHOWN_PATH_RE = re.compile(r"^\s*Do you want to (?:create|overwrite|make this edit to) (.+?)\?\s*$")
+# A turn, a finished spinner, a tool result: scrollback, never dialog. The
+# search for the rule stops at one, so a rule-less screen can't pull the
+# `⏺ Bash(…)` above it into the "dialog".
+_SCROLLBACK_RE = re.compile(r"^\s*[⏺✻⎿]")
+# Non-empty rows the question can sit above the footer: the options wrap
+# (Bash's "always allow access to <dir>" does), but not past this.
+_QUESTION_REACH = 16
+# Rows the rule can sit above the question. A taller dialog (a long heredoc,
+# a big preview) gets no Allow: a 409 that reveals the pane.
+_RULE_REACH = 60
+# Tools whose dialog Allow can verify (dialog_matches). Mirrors
+# pane_permission_hook.VERIFIABLE_TOOLS: the hook runs on bare python3 and
+# can't import this.
+VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")
+_FILE_HEADERS = {"Write": ("Create file", "Overwrite file"), "Edit": ("Edit file",)}
+# A multi-line command's `│ ` gutter; a blank command line leaves a bare `│`.
+_GUTTER_RE = re.compile(r"^│(?=\s|$)")
+# Mirrors pane_permission_hook._HIDDEN_RE (a test pins the two): the hook
+# strips bidi, zero-width and other invisible controls from its key, so the
+# screen side strips the same set. Escapes, never raw characters (trojan source).
+_HIDDEN_RE = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
 _WS_RE = re.compile(r"\s+")
+# Every CSI (colon-form SGR included) and OSC (OSC 8 hyperlinks included).
+# capture() keeps escapes (-e), and _ANSI_SGR_RE's `[\d;]*m` leaves a
+# `\x1b[4:3m` on ❯ or a linkified path in place, breaking the line's shape.
+_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
 RECAP_RE = re.compile(r"※ recap:\s*(?P<text>.+?)(?=\n\s*[─❯]|\Z)", re.DOTALL)
 PROMPT_LINE_RE = re.compile(r"^❯\s*(?P<input>.*)$")
@@ -503,48 +525,128 @@ def _detect_needs_input(lines: list[str]) -> bool:
     return any(NEEDS_INPUT_FOOTER_RE.search(line) for line in lines[-5:])
 
 
-def permission_dialog(content: str) -> str | None:
-    """The permission dialog on screen, as its lines from below the rule
-    Claude draws above it down to its "Esc to cancel" footer, or None when
-    there isn't one. `content` is a capture; SGR escapes are stripped here.
+def _strip_escapes(text: str) -> str:
+    return _ESCAPE_RE.sub("", text)
 
-    From the rule, not the question: Bash's command sits above the question
-    line. Never further up: the scrollback's `⏺ Bash(touch probe.txt)` can
-    quote the same command, and must not vouch for a different dialog."""
-    _raw, _plain, lines = _split_buffers(content)
-    # The footer ends the screen (a status row may follow it).
-    tail = range(len(lines) - 1, max(len(lines) - 3, -1), -1)
-    footer = next((i for i in tail if DIALOG_CANCEL_RE.search(lines[i])), None)
-    if footer is None:
+
+def _squash(text: str) -> str:
+    """All whitespace and hidden controls removed, as for the hook's match
+    key: a long command wraps mid-word onto an indented row, so only a
+    whitespace-free compare survives the wrap."""
+    return _WS_RE.sub("", _HIDDEN_RE.sub("", text))
+
+
+def _bash_key(squashed: str) -> str:
+    # The hook stores a digest, not the command: commands carry tokens, and
+    # periscope.db is 0644 (pane_permission_hook.match_key).
+    return "sha256:" + hashlib.sha256(squashed.encode()).hexdigest()
+
+
+def parse_permission_dialog(content: str) -> dict | None:
+    """The permission dialog ending a capture, or None. Returns its `text`
+    (header row to footer row), `header` ("Bash command", "Create file", …),
+    `body` (the rows between header and question, less a leading Tip row),
+    `question`, and `shown_path` (a file tool's question path, else None).
+
+    Read bottom up, each step failing closed:
+    - the footer is the LAST line and matches `Esc to cancel`, but not
+      AskUserQuestion's "Enter to select · … · Esc to cancel", whose
+      "Do you want to …?" + `❯ 1. Yes` otherwise pass for a permission dialog;
+    - the nearest question above it has `1. Yes` right under it;
+    - the full-width rule is above that, with no scrollback in between. The
+      rule bounds the body: the scrollback's `⏺ Bash(touch probe.txt)` quotes
+      a command too, and must never vouch for a different dialog."""
+    rows = [row.rstrip() for row in _strip_escapes(content).split("\n")]
+    filled = [i for i, row in enumerate(rows) if row.strip()]
+    if not filled:
         return None
-    above = range(footer - 1, max(footer - 1 - _PERMISSION_TAIL, -1), -1)
-    question = next((i for i in above if PERMISSION_QUESTION_RE.match(lines[i])), None)
-    if question is None or not PERMISSION_YES_RE.match(lines[question + 1]):
+    footer = filled[-1]
+    if not DIALOG_CANCEL_RE.search(rows[footer]) or NEEDS_INPUT_FOOTER_RE.search(rows[footer]):
         return None
-    top = next((i for i in range(question - 1, -1, -1) if DIALOG_RULE_RE.match(lines[i])), None)
-    if top is None:
+    question = None
+    for i in reversed(filled[-1 - _QUESTION_REACH : -1]):
+        if PERMISSION_QUESTION_RE.match(rows[i]):
+            question = i
+            break
+        if DIALOG_RULE_RE.match(rows[i]) or _SCROLLBACK_RE.match(rows[i]):
+            return None
+    if question is None or not PERMISSION_YES_RE.match(rows[question + 1]):
         return None
-    return "\n".join(lines[top + 1 : footer + 1])
+    rule = None
+    for i in range(question - 1, max(question - 1 - _RULE_REACH, -1), -1):
+        if DIALOG_RULE_RE.match(rows[i]):
+            rule = i
+            break
+        if _SCROLLBACK_RE.match(rows[i]):
+            return None
+    if rule is None:
+        return None
+    inner = [i for i in filled if rule < i < question]
+    if not inner:
+        return None
+    body = [rows[i] for i in inner[1:]]
+    if body and body[0].lstrip().startswith("Tip:"):
+        body = body[1:]
+    shown = _SHOWN_PATH_RE.match(rows[question])
+    return {
+        "text": "\n".join(rows[i] for i in filled if rule < i <= footer),
+        "header": rows[inner[0]].strip(),
+        "body": body,
+        "question": rows[question].strip(),
+        "shown_path": shown.group(1) if shown else None,
+    }
+
+
+def permission_dialog(content: str) -> str | None:
+    """The permission dialog ending a capture, as its text from header to
+    footer, or None (parse_permission_dialog)."""
+    parsed = parse_permission_dialog(content)
+    return parsed["text"] if parsed else None
+
+
+def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> bool:
+    """Whether a parsed permission dialog asks exactly what the hook recorded
+    (pane_permission_hook.match_key), so Allow's `1` approves that request
+    and no other. No key, or a tool whose dialog isn't verified (NotebookEdit,
+    WebFetch, MCP tools, …), never matches.
+
+    Bash: the digest of the whole command + description block, gutter and
+    whitespace squashed, EQUALS the key. Never a prefix or a substring: `git
+    push origin main` vouched for `… --force`, two `cd <repo> && …` share
+    their first 40 characters, and every `python3 - <<'EOF'` its first line.
+    Accepted limit: squashing loses whitespace-only differences and the
+    command/description boundary (`rm -rf / tmp/x` squashes as `rm -rf
+    /tmp/x`), which the wrapped screen can't recover; the single-row rule and
+    the request id narrow it.
+    Write / Edit: the header names the tool, and the question's path is a
+    `/`-boundary suffix of the absolute key (the dialog shows it relative to
+    the cwd); the boundary stops `notes.md` vouching for `old-notes.md`. The
+    body (a preview, a diff) is never consulted: it can mention any file."""
+    if not (parsed and isinstance(match_key, str) and match_key and tool in VERIFIABLE_TOOLS):
+        return False
+    if tool == "Bash":
+        if parsed["header"] != "Bash command":
+            return False
+        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in parsed["body"])
+        return _bash_key(_squash(block)) == match_key
+    shown = parsed["shown_path"]
+    return parsed["header"] in _FILE_HEADERS[tool] and bool(shown) and ("/" + match_key).endswith("/" + shown)
 
 
 def dialog_open(content: str) -> bool:
-    """Whether any Claude dialog is up in a capture: a choice dialog's footer
-    (AskUserQuestion and its family) or a permission dialog. Text typed into
-    one picks an option — `1 sounds good` + Enter answers "Yes" — so
-    POST /api/pane/reply refuses while one is open."""
-    _raw, _plain, lines = _split_buffers(content)
-    return _detect_needs_input(lines) or permission_dialog(content) is not None
-
-
-def dialog_shows(dialog: str, tool: str, summary: str) -> bool:
-    """Whether a permission dialog's text names the request the hook recorded:
-    the file's basename for a file tool, else the summary's first 40
-    characters. All whitespace is dropped on both sides, since a long line
-    wraps mid-word onto an indented row. This is what stops a stale row from
-    approving a different dialog that happens to be up."""
-    token = os.path.basename(summary) if tool in _FILE_TOOLS else summary[:40]
-    token = _WS_RE.sub("", token)
-    return bool(token) and token in _WS_RE.sub("", dialog)
+    """Whether a Claude dialog may be up in a capture. Text typed into one
+    picks an option — `1 sounds good` + Enter answers "Yes" — so POST
+    /api/pane/reply refuses while one is open. Fails closed: an `Esc to
+    cancel` anywhere in the last three lines counts, so a dialog
+    parse_permission_dialog can't read (its question wrapped in a narrow
+    pane, a new footer) still blocks a reply. A false positive only costs a
+    409 that reveals the pane."""
+    lines = [row for row in _strip_escapes(content).split("\n") if row.strip()]
+    return (
+        _detect_needs_input(lines)
+        or parse_permission_dialog(content) is not None
+        or any(DIALOG_CANCEL_RE.search(line) for line in lines[-3:])
+    )
 
 
 _SGR_SPLIT_RE = re.compile(r"(\x1b\[[0-9;]*m)")
