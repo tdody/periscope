@@ -315,7 +315,13 @@ def compute_candidates(repo_filter: str | None = None, paths: list[str] | None =
     alive_worktree_cwds: set[str] = {os.path.realpath(w["cwd"]) for w in list_windows() if w.get("cwd")}
     idle_threshold = int(get_settings().get("cleanup_idle_days") or IDLE_THRESHOLD_DAYS)
 
-    wanted = {worktree_root(p) for p in paths} if paths else None
+    # Blank entries are dropped and inputs deduped. "Asked about something but
+    # nothing usable" must stay an EMPTY set (evaluates nothing) — never None,
+    # which means "no filter" and triggers a full walk. A blank path (`[""]`)
+    # would otherwise resolve `git -C "" rev-parse --show-toplevel` to the
+    # SERVER's own cwd, surfacing its own checkout as a one-click-from-Archive
+    # candidate in dev.
+    wanted = {worktree_root(p) for p in set(paths) if p} if paths is not None else None
     candidates: list[Candidate] = []
     for repo in sorted(repos):
         # `_cached_worktrees` returns [(realpath, branch_or_none), ...]

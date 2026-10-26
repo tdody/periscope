@@ -124,6 +124,31 @@ def test_compute_candidates_paths_evaluates_only_those_worktrees(mocker):
     default.assert_called_once_with("/r")
 
 
+def test_compute_candidates_blank_path_evaluates_nothing(mocker):
+    # `?paths=` with no value arrives as `[""]`. A blank path must never
+    # resolve to the server's own checkout (`git -C "" rev-parse
+    # --show-toplevel` answers for the server's cwd) — it must evaluate
+    # nothing, not fall back to a full walk.
+    mocker.patch.object(
+        cleanup, "all_projects", return_value={"/r/a": _project("a", "s", "/r"), "/q/b": _project("b", "s", "/q")}
+    )
+    mocker.patch.object(
+        cleanup.worktrees,
+        "_cached_worktrees",
+        side_effect=lambda repo: {"/r": [("/r", "main"), ("/r/a", "fa"), ("/r/c", "fc")], "/q": [("/q/b", "fb")]}[repo],
+    )
+    default = mocker.patch.object(cleanup, "_detect_default_branch", return_value="main")
+    evaluate = mocker.patch.object(cleanup, "_evaluate_worktree")
+    mocker.patch("periscope.panes.list_windows", return_value=[])
+    mocker.patch("periscope.store.all_windows", return_value={})
+    mocker.patch.object(cleanup, "get_settings", return_value={})
+
+    assert cleanup.compute_candidates(paths=[""]) == []
+
+    default.assert_not_called()
+    evaluate.assert_not_called()
+
+
 def test_compute_candidates_without_paths_walks_every_worktree(mocker):
     mocker.patch.object(cleanup, "all_projects", return_value={"/r/a": _project("a", "s", "/r")})
     mocker.patch.object(cleanup.worktrees, "_cached_worktrees", return_value=[("/r/a", "fa"), ("/r/c", "fc")])
