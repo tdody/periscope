@@ -246,7 +246,7 @@ case "$1" in
     # UserPromptSubmit catches every prompt (migrates pre-hook panes on next
     # message). PermissionRequest runs pane_permission_hook.py on every
     # permission dialog (no matcher: every tool) so a native banner can offer
-    # Allow / Deny for exactly that request; it prints nothing, since any
+    # Allow / Deny for exactly that request; it prints nothing, since JSON
     # output would answer the dialog. SessionEnd runs the history indexer
     # (`history/`) so the finished transcript is summarized into
     # ~/.claude/history.db — without it the /history search UI has nothing
@@ -263,10 +263,15 @@ case "$1" in
     python3 - "$REPO" "$(account_settings_files)" <<'PY'
 import json, os, shlex, sys
 repo = sys.argv[1]
-pane_cmd = f"python3 {shlex.quote(os.path.join(repo, 'pane_session_hook.py'))}"
+# `|| true`: these two are pure observers (no matcher — every tool), so a
+# missing file must still exit 0. Claude treats a nonzero UserPromptSubmit as
+# BLOCKING the prompt, and this install can repoint pane_session_hook.py's
+# entry too (see _target_missing below) — if that ever leaves a dangling path
+# for a moment, every prompt in every pane must still get through.
+pane_cmd = f"python3 {shlex.quote(os.path.join(repo, 'pane_session_hook.py'))} || true"
 # -I -S: isolated, no site/sitecustomize — stdlib only, so this still runs
 # under a bare /usr/bin/python3 with no venv or PYTHONPATH poisoning it.
-perm_cmd = f"python3 -I -S {shlex.quote(os.path.join(repo, 'pane_permission_hook.py'))}"
+perm_cmd = f"python3 -I -S {shlex.quote(os.path.join(repo, 'pane_permission_hook.py'))} || true"
 # `cd` + `uv run`: Claude fires hooks from the pane's cwd, and `-m history`
 # only resolves from the checkout with its venv.
 hist_cmd = f"cd {shlex.quote(repo)} && uv run python -m history hook"
@@ -276,6 +281,24 @@ wanted = (
     ("PermissionRequest", perm_cmd, "pane_permission_hook.py", 5),
     ("SessionEnd", hist_cmd, "-m history hook", 120),
 )
+
+def _target_missing(command):
+    # Whether the entry we're about to repoint is actually dead. Without
+    # this, installing from a worktree would rewrite prod's (or another
+    # worktree's) still-live entry to point in here — then removing this
+    # worktree leaves `python3 <gone>.py` behind, which exits 2, which Claude
+    # reads as BLOCKING every prompt until someone reinstalls from main.
+    try:
+        toks = shlex.split(command)
+    except ValueError:
+        return False
+    for i, t in enumerate(toks):
+        if t.endswith(".py"):
+            return not os.path.exists(t)
+        if t == "cd" and i + 1 < len(toks):
+            return not os.path.isdir(toks[i + 1])
+    return False
+
 for p in sys.argv[2].splitlines():
     if not os.path.isdir(os.path.dirname(p)):
         continue          # that account isn't set up on this machine
@@ -290,10 +313,10 @@ for p in sys.argv[2].splitlines():
         existing = next((h for g in groups for h in g.get("hooks", [])
                           if marker in h.get("command", "")), None)
         if existing is not None:
-            # Re-running install from a different checkout (a worktree, say)
-            # must repoint a stale path, not leave it dangling alongside a
-            # second, newly-added entry.
-            if existing.get("command") != cmd:
+            # Repoint only when the CURRENT target is gone: never steal a
+            # live entry (prod's, or another worktree's) just because this
+            # install's own path differs from it.
+            if existing.get("command") != cmd and _target_missing(existing.get("command", "")):
                 existing["command"] = cmd
                 existing["timeout"] = timeout
                 added.append(ev)

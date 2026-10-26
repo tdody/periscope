@@ -7,11 +7,12 @@ banner can offer Allow / Deny for exactly that request
 answers it). Claude runs the hook before the dialog renders, so the row is
 there by the time periscope sees the pane waiting.
 
-It only observes. Whatever a PermissionRequest hook prints is read as its
-decision on the dialog, so this one prints NOTHING, swallows every failure and
-always exits 0: a broken hook must never answer, or block, a prompt. The
-payload carries no tool_use_id, so a request is named by a hash of what it
-asks and when (`request_id`).
+It only observes. A PermissionRequest hook's JSON stdout is read as its
+decision on the dialog (plain stdout just reaches Claude's debug log) — this
+one still prints NOTHING regardless, swallows every failure, and always
+exits 0: a broken hook must never answer, or block, a prompt. The payload
+carries no tool_use_id, so a request is named by a hash of what it asks and
+when (`request_id`).
 
 Writes one row into `pane_permissions` in
 <XDG_CONFIG_HOME|~/.config>/periscope/periscope.db, opening its own short-lived
@@ -105,12 +106,20 @@ def match_key(tool_name: str, tool_input: object) -> str | None:
     whitespace-only differences and the boundary between command and
     description (`rm -rf / tmp/x` and `rm -rf /tmp/x` squash the same). The
     single pending-request-per-pane rule and the request id narrow this to a
-    non-issue in practice."""
+    non-issue in practice.
+
+    A Bash request with `dangerouslyDisableSandbox` set gets no key at all:
+    that flag isn't keyed (only command + description are), and the dialog
+    may not show it, so an unsandboxed retry of the same command would
+    otherwise match a stale sandboxed row's key. Open-only is the safe
+    fallback."""
     if tool_name not in VERIFIABLE_TOOLS:
         return None
     if not isinstance(tool_input, dict):
         return None
     if tool_name == "Bash":
+        if tool_input.get("dangerouslyDisableSandbox"):
+            return None
         block = _squash(str(tool_input.get("command") or "")) + _squash(str(tool_input.get("description") or ""))
         return "sha256:" + hashlib.sha256(block.encode()).hexdigest() if block else None
     # Edit / Write, the only tools left after the VERIFIABLE_TOOLS gate above.

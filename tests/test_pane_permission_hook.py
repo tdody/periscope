@@ -1,9 +1,9 @@
 """pane_permission_hook.py — the PermissionRequest recorder behind a banner's
 Allow / Deny — and its registration by `bin/periscope install-claude-hook`.
 
-Whatever a PermissionRequest hook prints is read as its decision on the
-dialog, so the subprocess tests pin the one property that matters most: it
-prints nothing and exits 0, whatever it's fed."""
+A PermissionRequest hook's JSON stdout is read as its decision on the dialog,
+so the subprocess tests pin the one property that matters most: it prints
+nothing and exits 0, whatever it's fed."""
 
 import contextlib
 import hashlib
@@ -26,8 +26,9 @@ SCRIPT = REPO / "pane_permission_hook.py"
 
 # The full set _HIDDEN_RE strips, as code points — not \u string literals,
 # so this file carries no raw bidi/zero-width bytes and no backslash-u text
-# that could itself be misread. See tests/fixtures/permission_dialogs/ for
-# the real dialog captures these hashes are checked against.
+# that could itself be misread. Mirrored by panes.py's squash;
+# tests/test_panes.py (fa77a5e) asserts the two sets, and VERIFIABLE_TOOLS,
+# agree.
 _HIDDEN_CODEPOINTS = (
     0x00AD,
     0x061C,
@@ -146,6 +147,17 @@ def test_match_key_per_tool():
     assert hook.match_key("Write", {}) is None
 
 
+def test_match_key_is_none_for_a_sandbox_disabled_bash_request():
+    # dangerouslyDisableSandbox isn't keyed (only command + description are),
+    # and the dialog may not show it — so an unsandboxed retry of the same
+    # command must not match a stale sandboxed row's key. Open-only instead.
+    assert hook.match_key("Bash", {"command": "touch probe.txt", "dangerouslyDisableSandbox": True}) is None
+    # Falsy/absent: keyed normally.
+    assert hook.match_key("Bash", {"command": "touch probe.txt", "dangerouslyDisableSandbox": False}) == _bash_key(
+        "touchprobe.txt"
+    )
+
+
 def test_match_key_is_non_none_exactly_for_verifiable_tools():
     tool_input = {"command": "touch probe.txt", "file_path": "/r/notes.md", "description": "d"}
     assert hook.VERIFIABLE_TOOLS == ("Bash", "Edit", "Write")
@@ -234,7 +246,7 @@ def test_rows_older_than_a_day_are_pruned_on_insert(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(_payload()))
     hook.record()
     db = tmp_path / "periscope" / "periscope.db"
-    with sqlite3.connect(db) as c:
+    with contextlib.closing(sqlite3.connect(db)) as c, c:
         c.execute("UPDATE pane_permissions SET created_at = ?", (time.time() - 2 * 86400,))
     monkeypatch.setattr("sys.stdin", io.StringIO(_payload(tool_input={"command": "ls"})))
     hook.record()
@@ -250,8 +262,9 @@ def test_no_tmux_pane_writes_nothing(tmp_path, monkeypatch):
 
 
 def _run_hook(stdin: str, xdg: Path, pane: str = "%9", python: str = sys.executable) -> subprocess.CompletedProcess:
+    # -I -S: exactly what bin/periscope registers (isolated, stdlib only).
     return subprocess.run(
-        [python, str(SCRIPT)],
+        [python, "-I", "-S", str(SCRIPT)],
         input=stdin,
         text=True,
         capture_output=True,
@@ -304,7 +317,9 @@ def _periscope(home: Path, *args: str) -> subprocess.CompletedProcess:
 
 def _entry_script_path(command: str) -> Path:
     assert command.startswith("python3 -I -S ")
-    [path] = shlex.split(command[len("python3 -I -S ") :])
+    # `|| true` trails the registered command (fail-open), so there can be
+    # more than one token left once the fixed prefix is stripped.
+    path, *_rest = shlex.split(command[len("python3 -I -S ") :])
     return Path(path)
 
 
@@ -356,6 +371,8 @@ def test_install_repoints_a_stale_path(tmp_path):
     claude.mkdir()
     settings = claude / "settings.json"
     stale = {
+        # /old/checkout doesn't exist on disk: this is the "repoint" case —
+        # the entry's target is actually gone, so rewriting it is safe.
         "matcher": "",
         "hooks": [{"type": "command", "command": "python3 -I -S /old/checkout/pane_permission_hook.py", "timeout": 5}],
     }
@@ -371,6 +388,57 @@ def test_install_repoints_a_stale_path(tmp_path):
     [entry] = groups[0]["hooks"]
     assert "/old/checkout/" not in entry["command"]
     assert _entry_script_path(entry["command"]).resolve() == SCRIPT
+
+
+def test_install_does_not_repoint_a_live_target_at_another_checkout(tmp_path):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    other_checkout = tmp_path / "other-checkout"
+    other_checkout.mkdir()
+    (other_checkout / "pane_permission_hook.py").write_text("# a live checkout, not this one\n")
+    settings = claude / "settings.json"
+    live_command = f"python3 -I -S {other_checkout / 'pane_permission_hook.py'} || true"
+    live = {"matcher": "", "hooks": [{"type": "command", "command": live_command, "timeout": 5}]}
+    settings.write_text(json.dumps({"hooks": {"PermissionRequest": [live]}}))
+
+    r = _periscope(tmp_path, "install-claude-hook")
+    assert r.returncode == 0, r.stderr
+    groups = json.loads(settings.read_text())["hooks"]["PermissionRequest"]
+    # The existing entry's target still resolves (prod's, or another
+    # worktree's, live checkout): installing from HERE must never hijack it —
+    # removing THIS worktree later would otherwise leave that other pane's
+    # hook pointing at a dead path, blocking every prompt there (exit 2 on
+    # UserPromptSubmit).
+    assert len(groups) == 1
+    [entry] = groups[0]["hooks"]
+    assert entry["command"] == live_command
+
+
+def test_install_entries_fail_open_and_uninstall_still_finds_them(tmp_path):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    settings = claude / "settings.json"
+    settings.write_text(json.dumps({"hooks": {}}))
+
+    r = _periscope(tmp_path, "install-claude-hook")
+    assert r.returncode == 0, r.stderr
+    hooks = json.loads(settings.read_text())["hooks"]
+    # pane_session_hook.py (SessionStart/UserPromptSubmit) and
+    # pane_permission_hook.py (PermissionRequest) are pure observers: a
+    # missing file must still exit 0, since Claude treats a nonzero
+    # UserPromptSubmit as BLOCKING the prompt.
+    for ev in ("SessionStart", "UserPromptSubmit", "PermissionRequest"):
+        [entry] = hooks[ev][0]["hooks"]
+        assert entry["command"].endswith(" || true")
+    # The history indexer (SessionEnd) doesn't gate a prompt, so it's plain.
+    [hist_entry] = hooks["SessionEnd"][0]["hooks"]
+    assert not hist_entry["command"].endswith(" || true")
+
+    r = _periscope(tmp_path, "uninstall-claude-hook")
+    assert r.returncode == 0, r.stderr
+    # The marker substring match still finds each entry despite the
+    # trailing " || true", so uninstall removes all four, leaving nothing.
+    assert json.loads(settings.read_text()).get("hooks", {}) == {}
 
 
 def _table_shape(c: sqlite3.Connection) -> tuple[list, list]:
