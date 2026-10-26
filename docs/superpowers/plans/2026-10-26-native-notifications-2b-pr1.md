@@ -146,17 +146,20 @@ Expected: the vitest notify suites pass, and cargo reports `test result: ok`. Th
     }
 
     #[test]
-    fn a_kinded_banner_names_its_category_defaulting_to_its_kind() {
-        assert_eq!(category_of(&parse_request(FULL).unwrap()), Some("ci_failed"));
+    fn a_banner_gets_buttons_only_when_it_names_a_category() {
+        // FULL carries a kind but no category — no fallback, so no buttons.
+        assert_eq!(category_of(&parse_request(FULL).unwrap()), None);
         let named = parse_request(r#"{"title":"t","body":"b","kind":"done","category":"done_seen"}"#)
             .unwrap();
         assert_eq!(category_of(&named), Some("done_seen"));
-        // A plain banner (an older webview's) carries no category, so no buttons.
+        // An explicit null category is still no category — no fallback to kind.
+        let null = parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
+        assert_eq!(category_of(&null), None);
+        // A plain banner (an older webview's) carries no kind, so no buttons
+        // even if a category somehow rode along.
         let plain =
             parse_request(r#"{"title":"t","body":"b","target":"s:1","category":"done"}"#).unwrap();
         assert_eq!(category_of(&plain), None);
-        let null = parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
-        assert_eq!(category_of(&null), Some("done"));
     }
 
     #[test]
@@ -190,12 +193,17 @@ Expected: a compile failure: `cannot find function category_specs` / `category_o
 // Buttons (2b): the webview registers the whole category set on
 // "periscope:notify-categories" (when the feed starts and whenever the set
 // changes, never per banner: registration is asynchronous and replaces the
-// set, so a banner posted right behind one can show no buttons). A kinded
-// banner names its category; a press goes out on
-// "periscope:notification-action" as { target, kind, action, text, data }.
-// This shell knows no kinds or buttons: they're data, so a new button needs
-// new JS, not a new .app. An older shell drops the categories event and its
-// banners carry no buttons; an older webview registers none.
+// set, so a banner posted right behind one can show no buttons). A banner
+// only gets buttons when it names a `category` explicitly — never falling
+// back to its `kind`, because 2b's category ids reuse 2a's kind names (done,
+// usage, pr_merged, …) and the registered set outlives the webview: after a
+// JS rollback, an old webview's kind:"done" banners would otherwise match a
+// stale category and grow buttons whose presses nothing listens for (a typed
+// reply silently lost). A press goes out on "periscope:notification-action"
+// as { target, kind, action, text, data }. This shell knows no kinds or
+// buttons: they're data, so a new button needs new JS, not a new .app. An
+// older shell drops the categories event and its banners carry no buttons;
+// an older webview registers none.
 ```
 
 **(b)** Change the imports to:
@@ -234,16 +242,14 @@ const ACTION_EVENT: &str = "periscope:notification-action";
 **(e)** After `fn user_info_json…`, add the pure helpers:
 
 ```rust
-/// The category a banner's buttons come from: its own, else its kind's. `None`
-/// for a plain banner, so an older webview's banner never grows buttons.
+/// The category a banner's buttons come from: its own, explicitly named.
+/// Never falls back to `kind` — 2b's category ids reuse 2a's kind names
+/// (done, usage, pr_merged, …), and the registered set outlives the webview,
+/// so a kind-only fallback would let an old webview's plain-kind banner
+/// (after a JS rollback) match a stale category and grow buttons whose
+/// presses nothing listens for.
 fn category_of(req: &NotifyRequest) -> Option<&str> {
-    if req.kind.is_empty() {
-        None
-    } else if req.category.is_empty() {
-        Some(&req.kind)
-    } else {
-        Some(&req.category)
-    }
+    (!req.kind.is_empty() && !req.category.is_empty()).then_some(req.category.as_str())
 }
 
 /// A text-input button's labels (UNTextInputNotificationAction).

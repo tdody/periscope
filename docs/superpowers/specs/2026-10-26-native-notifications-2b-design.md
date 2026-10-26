@@ -48,7 +48,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
   - Every field is `#[serde(default)]` and tolerates `null`, as `NotifyRequest` does.
   - A pure `category_specs(&str)` parses and validates the set: an action needs an `id` and a `title`; an action that fails is dropped, not the whole category. It's cargo-tested.
 - **When the set is registered.** The webview sends it when the feed starts and again whenever it changes. It's never sent from `send()`, because registration is asynchronous and replaces the whole set, so a banner posted straight after it can arrive without buttons.
-- **`NotifyRequest` gains `category`,** defaulting to `kind`. It's set as `categoryIdentifier` on kinded banners only, so an older webview's plain banner has none.
+- **`NotifyRequest` gains `category`.** No fallback to `kind`: 2b's category ids reuse 2a's kind names (`done`, `usage`, `pr_merged`, …), and the registered set outlives the webview, so a kind-only fallback would let an old webview's plain `kind:"done"` banners match a stale category after a JS rollback and grow buttons whose presses nothing listens for. A banner only gets `categoryIdentifier` when it names `category` explicitly, and only when it also has a `kind` — a plain (kindless) banner never gets one.
 - **`did_receive` routes by action identifier:**
 
   | Action | What it emits |
@@ -72,7 +72,7 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
   | Combination | Result |
   |---|---|
   | Old shell, new JS | Nothing listens for the categories event, and `category` is an unknown field, so banners arrive without buttons, as in 2a. |
-  | New shell, old JS | No categories are ever registered, so there are no buttons. |
+  | New shell, old JS | Old JS's banners never name a category, so even a set a newer webview left registered shows no buttons. |
 
   `docs/tauri-shell.md` gains a line for this.
 - **Delivery when the webview is down.** An action that arrives while the webview is being rebuilt (a recycle) is lost, as a click is today. Every action is safe to lose: the banner stays in Notification Center, and the pane still shows what's waiting.
