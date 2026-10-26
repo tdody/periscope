@@ -244,10 +244,14 @@ case "$1" in
     # pane -> session). SessionStart fires at startup AND on /clear (immediate,
     # before the first prompt — a fresh pane shows its OWN transcript at once);
     # UserPromptSubmit catches every prompt (migrates pre-hook panes on next
-    # message). SessionEnd runs the history indexer (`history/`) so the
-    # finished transcript is summarized into ~/.claude/history.db — without
-    # it the /history search UI has nothing behind it. Idempotent merge —
-    # joins existing hook groups, preserves everything else.
+    # message). PermissionRequest runs pane_permission_hook.py on every
+    # permission dialog (no matcher: every tool) so a native banner can offer
+    # Allow / Deny for exactly that request; it prints nothing, since any
+    # output would answer the dialog. SessionEnd runs the history indexer
+    # (`history/`) so the finished transcript is summarized into
+    # ~/.claude/history.db — without it the /history search UI has nothing
+    # behind it. Idempotent merge — joins an existing matcher-less hook group,
+    # preserves everything else.
     #
     # Runs for EVERY account config dir, not just ~/.claude. Claude reads hooks
     # from whichever CLAUDE_CONFIG_DIR it was launched under, so a second-account
@@ -260,12 +264,14 @@ case "$1" in
 import json, os, sys
 repo = sys.argv[1]
 pane_cmd = f"python3 {repo}/pane_session_hook.py"
+perm_cmd = f"python3 {repo}/pane_permission_hook.py"
 # `cd` + `uv run`: Claude fires hooks from the pane's cwd, and `-m history`
 # only resolves from the checkout with its venv.
 hist_cmd = f"cd {repo} && uv run python -m history hook"
 wanted = (
     ("SessionStart", pane_cmd, "pane_session_hook.py", 5),
     ("UserPromptSubmit", pane_cmd, "pane_session_hook.py", 5),
+    ("PermissionRequest", perm_cmd, "pane_permission_hook.py", 5),
     ("SessionEnd", hist_cmd, "-m history hook", 120),
 )
 for p in sys.argv[2].splitlines():
@@ -283,8 +289,11 @@ for p in sys.argv[2].splitlines():
                for g in groups for h in g.get("hooks", [])):
             continue
         entry = {"type": "command", "command": cmd, "timeout": timeout}
-        if groups:
-            groups[0].setdefault("hooks", []).append(entry)   # join an existing group
+        # Join only a group without a matcher: a matcher-scoped one (a user's
+        # "Bash" PermissionRequest group, say) would silently narrow ours.
+        open_group = next((g for g in groups if not g.get("matcher")), None)
+        if open_group is not None:
+            open_group.setdefault("hooks", []).append(entry)
         else:
             groups.append({"matcher": "", "hooks": [entry]})
         added.append(ev)
@@ -313,11 +322,12 @@ for p in sys.argv[1].splitlines():
     except FileNotFoundError:
         continue
     h = d.get("hooks", {})
-    for ev in ("SessionStart", "UserPromptSubmit", "SessionEnd"):
+    for ev in ("SessionStart", "UserPromptSubmit", "PermissionRequest", "SessionEnd"):
         groups = h.get(ev, [])
         for g in groups:
             g["hooks"] = [x for x in g.get("hooks", [])
                           if "pane_session_hook.py" not in x.get("command", "")
+                          and "pane_permission_hook.py" not in x.get("command", "")
                           and "-m history hook" not in x.get("command", "")]
         groups = [g for g in groups if g.get("hooks")]
         if groups:
