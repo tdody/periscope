@@ -188,3 +188,11 @@ def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
         pass
 
     assert called["count"] == 1
+
+
+def test_app_includes_pane_actions_router():
+    from periscope.app import app
+
+    paths = [r.path for r in app.routes if hasattr(r, "path")]
+    assert "/api/pane/permission" in paths
+    assert "/api/pane/reply" in paths
