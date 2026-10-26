@@ -4,6 +4,7 @@
 
 import { meterLabel } from "../chrome/usageRules.js";
 import { paneLabel, plural, prUrl, waitKind } from "../util.js";
+import { prKey } from "./detect.js";
 
 // Cut by code point, not UTF-16 code unit — a pane name ending in an emoji
 // or other surrogate-pair character would otherwise leave a lone surrogate
@@ -15,6 +16,17 @@ const clip = (s, n) => {
 };
 const pane = (w) => clip(paneLabel(w), 26);
 const where = (w) => [w?.session, w?.branch].filter(Boolean).join(" · ");
+
+// Reply / Ask agent to fix type into the pane: it must be an agent's. byPr
+// can hand us the worktree's shell window, which shows the same PR.
+const agent = (x) => !!(x?.pid && x.agent);
+
+// An MCP tool's dotted name, display-only — the server's screen check still
+// compares the raw stored name.
+const toolLabel = (t) => {
+  const m = /^mcp__(.+?)__(.+)$/.exec(t || "");
+  return m ? `${m[2]} (${m[1]})` : t || "this";
+};
 
 // The first sentence of a pane's last words, for a done banner. A sentence
 // ends at `.`/`!`/`?` only when followed by whitespace-then-capital/digit (or
@@ -55,7 +67,7 @@ export function payloadFor(ev, ctx = {}) {
       if (perm?.request_id && w.pid) {
         return {
           ...base, title: `${pane(w)} needs you`, subtitle: where(w),
-          body: perm.summary ? `Allow ${perm.tool}: ${perm.summary}?` : `Allow ${perm.tool}?`,
+          body: perm.summary ? `Allow ${toolLabel(perm.tool)}: ${perm.summary}?` : `Allow ${toolLabel(perm.tool)}?`,
           category: "needs_permission", data: { open: "pane", pid: w.pid, request_id: perm.request_id },
         };
       }
@@ -71,7 +83,7 @@ export function payloadFor(ev, ctx = {}) {
         ...base, title: `${clip(w ? paneLabel(w) : a.name || a.session || "A session", 26)} asks`,
         subtitle: w ? where(w) : a.session || "", body: clip(a.message, 180), target: a.target || base.target,
         // Reply types into the live pane; one that has gone has nowhere to send it.
-        ...(w?.pid ? { category: "question" } : {}),
+        ...(agent(w) ? { category: "question" } : {}),
         data: { open: "pane", pid: w?.pid ?? null },
       };
     }
@@ -90,10 +102,13 @@ export function payloadFor(ev, ctx = {}) {
     case "ci_failed": {
       const checks = (w.ci_checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join(" · ");
       const url = prUrl(w.repo_slug, w.pr);
-      // Ask agent to fix types into the pane, so it needs one; Open PR a URL.
+      // Ask agent to fix types into an agent's pane: w itself, or — since
+      // window_view merges **pr into every window on the PR, including the
+      // worktree's shell — another live window on the same PR that is one.
+      const fixer = agent(w) ? w : (ctx.windows || []).find((x) => agent(x) && prKey(x) === prKey(w));
       let category;
-      if (w.pid && url) category = "ci_failed";
-      else if (w.pid) category = "ci_failed_fix";
+      if (fixer?.pid && url) category = "ci_failed";
+      else if (fixer?.pid) category = "ci_failed_fix";
       else if (url) category = "ci_failed_pr";
       return {
         ...base, title: `CI failed on #${w.pr}`, subtitle: [w.session, paneLabel(w)].filter(Boolean).join(" · "),
@@ -101,7 +116,7 @@ export function payloadFor(ev, ctx = {}) {
         ...(category ? { category } : {}),
         // `checks`: the failing ones' names, for Ask agent to fix's message.
         data: {
-          open: "url", url, pid: w.pid, pr: w.pr,
+          open: "url", url, pid: fixer?.pid, pr: w.pr,
           checks: (w.ci_checks || []).filter((c) => c.state === "failure").map((c) => c.name),
         },
       };

@@ -36,7 +36,7 @@ describe("categories", () => {
     expect(new Set(fg)).toEqual(new Set(["cleanup", "details", "open"]));
   });
 
-  it("asks for Touch ID on every button that makes an agent act, and only those", () => {
+  it("asks for Touch ID on every button that lets an agent proceed or types into it, and only those", () => {
     const auth = categories().flatMap((c) => c.actions).filter((a) => a.auth).map((a) => a.id);
     expect(new Set(auth)).toEqual(new Set(["allow", "send", "fix"]));
   });

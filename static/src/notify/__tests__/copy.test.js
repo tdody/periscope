@@ -13,7 +13,7 @@ const { summaryPayload } = await import("../burst.js");
 
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])/;
 
-const w = (over = {}) => ({ pid: "p1", target: "s:1", session: "periscope", name: "dual-moas", branch: "main", ...over });
+const w = (over = {}) => ({ pid: "p1", target: "s:1", session: "periscope", name: "dual-moas", branch: "main", agent: "claude", ...over });
 
 describe("payloadFor", () => {
   it("words a needs-input banner by what the pane waits on", () => {
@@ -145,15 +145,33 @@ describe("payloadFor", () => {
     expect(unnamed).toMatchObject({ body: "Waiting for your approval.", category: "needs_dialog", data: { pid: "p1" } });
     expect(unnamed.data.request_id).toBeUndefined();
     expect(payloadFor({ kind: "needs_input", w: w({ waiting_for: "approve AskUserQuestion" }) }).category).toBe("needs_dialog");
+    // An unstamped pane ("" pid) can't be named even with a request_id on hand.
+    const noPid = payloadFor({ kind: "needs_input", w: w({ pid: "", waiting_for: "permission prompt", pending_permission: perm }) });
+    expect(noPid).toMatchObject({ category: "needs_dialog", body: "Waiting for your approval." });
+    expect(noPid.data.request_id).toBeUndefined();
   });
 
-  it("offers Reply on a question only while its pane is live", () => {
+  it("names an MCP tool as name (server), and falls back without one", () => {
+    const mcp = payloadFor({
+      kind: "needs_input",
+      w: w({ pending_permission: { request_id: "r", tool: "mcp__linear-personal__save_issue", summary: "x" } }),
+    });
+    expect(mcp.body).toBe("Allow save_issue (linear-personal): x?");
+    expect(payloadFor({ kind: "needs_input", w: w({ pending_permission: { request_id: "r", tool: "", summary: "" } }) }).body).toBe(
+      "Allow this?",
+    );
+  });
+
+  it("offers Reply on a question only while its pane is a live agent's", () => {
     const alert = { target: "gone:2", name: "old", session: "s", message: "Which database?" };
     expect(payloadFor({ kind: "question", w: w(), alert }).category).toBe("question");
     expect(payloadFor({ kind: "question", w: null, alert }).category).toBeUndefined();
+    // Not an agent (e.g. the worktree's shell window) and not stamped: no Reply.
+    expect(payloadFor({ kind: "question", w: w({ agent: null }), alert }).category).toBeUndefined();
+    expect(payloadFor({ kind: "question", w: w({ pid: "" }), alert }).category).toBeUndefined();
   });
 
-  it("offers Ask agent to fix with a live pane, Open PR with a URL", () => {
+  it("offers Ask agent to fix with a live agent pane, Open PR with a URL", () => {
     const checks = [{ name: "test", state: "failure" }, { name: "lint", state: "success" }, { name: "e2e", state: "failure" }];
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", ci_checks: checks }) })).toMatchObject({
       category: "ci_failed", data: { pid: "p1", pr: 7, checks: ["test", "e2e"] },
@@ -161,6 +179,20 @@ describe("payloadFor", () => {
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) })).toMatchObject({ category: "ci_failed_fix", data: { checks: [] } });
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", pid: "" }) }).category).toBe("ci_failed_pr");
     expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, pid: "" }) }).category).toBeUndefined();
+  });
+
+  it("finds an agent pane on the same PR when the notified window is a shell", () => {
+    // window_view merges **pr into every window on the PR, so byPr can hand
+    // copy.js the worktree's zsh window; Ask agent to fix must still land on
+    // the agent's pane, found by prKey among the live windows.
+    const shell = w({ pr: 7, repo_slug: "o/r", agent: null });
+    const agentPane = w({ pid: "p2", agent: "codex", pr: 7, repo_slug: "o/r" });
+    expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [agentPane] })).toMatchObject({
+      category: "ci_failed", data: { pid: "p2" },
+    });
+    // No agent pane anywhere: Open PR only when there's a URL, else nothing.
+    expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [] }).category).toBe("ci_failed_pr");
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, agent: null }) }, { windows: [] }).category).toBeUndefined();
   });
 
   it("offers Spawn on the account a pane on A would move to, and only then", () => {

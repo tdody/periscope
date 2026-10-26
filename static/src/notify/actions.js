@@ -29,7 +29,7 @@ const CLEANUP = act("cleanup", "Clean up worktree", { foreground: true });
 const DETAILS = act("details", "Details", { foreground: true });
 const OPEN = act("open", "Open", { foreground: true });
 // `auth`: Touch ID or the password first when the screen is locked — every
-// button that makes an agent act has it.
+// button that lets an agent proceed or types into it; Deny only stops one.
 const FIX = act("fix", "Ask agent to fix", { auth: true });
 
 // The whole set: macOS replaces it on each registration. Move targets are
