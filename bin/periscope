@@ -261,13 +261,15 @@ case "$1" in
     # error anywhere. The dirs are the account registry in prod's state.json
     # (store.get_accounts); ones that don't exist on this machine are skipped.
     python3 - "$REPO" "$(account_settings_files)" <<'PY'
-import json, os, sys
+import json, os, shlex, sys
 repo = sys.argv[1]
-pane_cmd = f"python3 {repo}/pane_session_hook.py"
-perm_cmd = f"python3 {repo}/pane_permission_hook.py"
+pane_cmd = f"python3 {shlex.quote(os.path.join(repo, 'pane_session_hook.py'))}"
+# -I -S: isolated, no site/sitecustomize — stdlib only, so this still runs
+# under a bare /usr/bin/python3 with no venv or PYTHONPATH poisoning it.
+perm_cmd = f"python3 -I -S {shlex.quote(os.path.join(repo, 'pane_permission_hook.py'))}"
 # `cd` + `uv run`: Claude fires hooks from the pane's cwd, and `-m history`
 # only resolves from the checkout with its venv.
-hist_cmd = f"cd {repo} && uv run python -m history hook"
+hist_cmd = f"cd {shlex.quote(repo)} && uv run python -m history hook"
 wanted = (
     ("SessionStart", pane_cmd, "pane_session_hook.py", 5),
     ("UserPromptSubmit", pane_cmd, "pane_session_hook.py", 5),
@@ -285,13 +287,22 @@ for p in sys.argv[2].splitlines():
     added = []
     for ev, cmd, marker, timeout in wanted:
         groups = hooks.setdefault(ev, [])
-        if any(marker in h.get("command", "")
-               for g in groups for h in g.get("hooks", [])):
+        existing = next((h for g in groups for h in g.get("hooks", [])
+                          if marker in h.get("command", "")), None)
+        if existing is not None:
+            # Re-running install from a different checkout (a worktree, say)
+            # must repoint a stale path, not leave it dangling alongside a
+            # second, newly-added entry.
+            if existing.get("command") != cmd:
+                existing["command"] = cmd
+                existing["timeout"] = timeout
+                added.append(ev)
             continue
         entry = {"type": "command", "command": cmd, "timeout": timeout}
-        # Join only a group without a matcher: a matcher-scoped one (a user's
-        # "Bash" PermissionRequest group, say) would silently narrow ours.
-        open_group = next((g for g in groups if not g.get("matcher")), None)
+        # Join only a matcher-less group: None, "" and "*" all mean "every
+        # tool" — a scoped one (a user's "Bash" PermissionRequest group, say)
+        # would silently narrow ours.
+        open_group = next((g for g in groups if g.get("matcher") in (None, "", "*")), None)
         if open_group is not None:
             open_group.setdefault("hooks", []).append(entry)
         else:

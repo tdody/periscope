@@ -5,19 +5,61 @@ Whatever a PermissionRequest hook prints is read as its decision on the
 dialog, so the subprocess tests pin the one property that matters most: it
 prints nothing and exits 0, whatever it's fed."""
 
+import contextlib
+import hashlib
 import io
 import json
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import pytest
+
 import pane_permission_hook as hook
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "pane_permission_hook.py"
+
+# The full set _HIDDEN_RE strips, as code points — not \u string literals,
+# so this file carries no raw bidi/zero-width bytes and no backslash-u text
+# that could itself be misread. See tests/fixtures/permission_dialogs/ for
+# the real dialog captures these hashes are checked against.
+_HIDDEN_CODEPOINTS = (
+    0x00AD,
+    0x061C,
+    0x180E,
+    0x200B,
+    0x200C,
+    0x200D,
+    0x200E,
+    0x200F,
+    0x202A,
+    0x202B,
+    0x202C,
+    0x202D,
+    0x202E,
+    0x2060,
+    0x2066,
+    0x2067,
+    0x2068,
+    0x2069,
+    0xFEFF,
+)
+
+
+def _salted(text: str) -> str:
+    """`text` with every hidden control spliced in once, mid-string."""
+    half = len(text) // 2
+    hidden = "".join(chr(c) for c in _HIDDEN_CODEPOINTS)
+    return text[:half] + hidden + text[half:]
+
+
+def _bash_key(squashed: str) -> str:
+    return "sha256:" + hashlib.sha256(squashed.encode()).hexdigest()
 
 
 def _payload(tool="Bash", tool_input=None, **extra) -> str:
@@ -37,7 +79,7 @@ def _payload(tool="Bash", tool_input=None, **extra) -> str:
 
 
 def _rows(db: Path) -> list[tuple]:
-    with sqlite3.connect(db) as c:
+    with contextlib.closing(sqlite3.connect(db)) as c, c:
         return c.execute(
             "SELECT pane_id, session_id, agent_id, request_id, tool, summary FROM pane_permissions"
         ).fetchall()
@@ -61,39 +103,37 @@ def test_summary_per_tool():
 def test_summary_is_capped_at_80_characters():
     long_cmd = hook.summarize("Bash", {"command": "echo " + "a" * 200})
     assert len(long_cmd) == 80 and long_cmd.endswith("…")
-    # A path keeps its end: the dialog is matched on the basename.
+    # A path keeps its end, so the banner still shows the filename.
     long_path = hook.summarize("Write", {"file_path": "/very" * 40 + "/notes.md"})
     assert len(long_path) == 80 and long_path.startswith("…") and long_path.endswith("/notes.md")
 
 
 def test_bash_summary_is_the_whole_multiline_command():
-    # The banner's screen check strips all whitespace, so a summary spanning
-    # lines still matches a dialog that wraps the same command.
+    # Display only: a banner that only showed the first line of a multi-line
+    # command would mislead whoever Touch-IDs against it.
     assert hook.summarize("Bash", {"command": "cd /tmp\nrm -rf build"}) == "cd /tmp rm -rf build"
     long_cmd = hook.summarize("Bash", {"command": "echo a\n" + "b " * 100})
     assert len(long_cmd) == 80 and long_cmd.endswith("…")
 
 
 def test_summary_strips_bidi_and_zero_width_controls():
-    hidden = "‮rm​ -rf‌ /‍‎‏﻿"
-    assert hook.summarize("Bash", {"command": hidden}) == "rm -rf /"
-    assert hook.summarize("WebFetch", {"url": "https://x⁦.example⁩.com"}) == "https://x.example.com"
+    assert hook.summarize("Bash", {"command": _salted("rm -rf /")}) == "rm -rf /"
+    assert hook.summarize("WebFetch", {"url": _salted("https://x.example.com")}) == "https://x.example.com"
 
 
 def test_match_key_per_tool():
-    # The real fixtures' requests (docs/channels.md "Pane → session mapping" /
-    # matching-v2.md): command + description, squashed and concatenated.
-    assert (
-        hook.match_key("Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"})
-        == "touchprobe.txtCreateemptyprobe.txtfile"
-    )
-    assert (
-        hook.match_key("Bash", {"command": "touch a.txt\ntouch b.txt", "description": "Create two files"})
-        == "toucha.txttouchb.txtCreatetwofiles"
-    )
-    # No description: just the squashed command.
-    assert hook.match_key("Bash", {"command": "touch probe.txt"}) == "touchprobe.txt"
-    # Edit/Write: the absolute path, unclipped.
+    # The real fixtures' requests (tests/fixtures/permission_dialogs/): the
+    # command + description, squashed and hashed.
+    assert hook.match_key(
+        "Bash", {"command": "touch probe.txt", "description": "Create empty probe.txt file"}
+    ) == _bash_key("touchprobe.txtCreateemptyprobe.txtfile")
+    assert hook.match_key(
+        "Bash", {"command": "touch a.txt\ntouch b.txt", "description": "Create two files"}
+    ) == _bash_key("toucha.txttouchb.txtCreatetwofiles")
+    # No description: just the squashed command, hashed.
+    assert hook.match_key("Bash", {"command": "touch probe.txt"}) == _bash_key("touchprobe.txt")
+    # Edit/Write: the absolute path, in the clear (not hashed) and unclipped —
+    # the suffix check on the shown path needs the real string.
     assert hook.match_key("Write", {"file_path": "/r/notes.md", "content": "hello"}) == "/r/notes.md"
     assert hook.match_key("Edit", {"file_path": "/r/src/app.py", "old_string": "x"}) == "/r/src/app.py"
     # Unverifiable tools get no key, so they get no Allow.
@@ -101,26 +141,24 @@ def test_match_key_per_tool():
     assert hook.match_key("WebFetch", {"url": "https://example.com/a"}) is None
     assert hook.match_key("mcp__linear__save_issue", {"title": "Fix it"}) is None
     assert hook.match_key("Bash", "not a dict") is None
+    # Empty normalises to None, not a hash of the empty string.
+    assert hook.match_key("Bash", {}) is None
+    assert hook.match_key("Write", {}) is None
+
+
+def test_match_key_is_non_none_exactly_for_verifiable_tools():
+    tool_input = {"command": "touch probe.txt", "file_path": "/r/notes.md", "description": "d"}
+    assert hook.VERIFIABLE_TOOLS == ("Bash", "Edit", "Write")
+    for tool in hook.VERIFIABLE_TOOLS:
+        assert hook.match_key(tool, tool_input) is not None
+    for tool in ("NotebookEdit", "WebFetch", "Glob", "mcp__x__y"):
+        assert tool not in hook.VERIFIABLE_TOOLS
+        assert hook.match_key(tool, tool_input) is None
 
 
 def test_match_key_strips_hidden_controls():
-    hidden = "‮rm​ -rf‌ /‍‎‏﻿"
-    assert hook.match_key("Bash", {"command": hidden}) == "rm-rf/"
-    assert hook.match_key("Write", {"file_path": "/r/notes⁦.md⁩"}) == "/r/notes.md"
-
-
-def test_a_row_lands_with_its_match_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.setenv("TMUX_PANE", "%56")
-    monkeypatch.setattr(
-        "sys.stdin",
-        io.StringIO(_payload(tool_input={"command": "touch probe.txt", "description": "Create empty probe.txt file"})),
-    )
-    hook.record()
-    db = tmp_path / "periscope" / "periscope.db"
-    with sqlite3.connect(db) as c:
-        [(key,)] = c.execute("SELECT match_key FROM pane_permissions").fetchall()
-    assert key == "touchprobe.txtCreateemptyprobe.txtfile"
+    assert hook.match_key("Bash", {"command": _salted("rm -rf /")}) == _bash_key("rm-rf/")
+    assert hook.match_key("Write", {"file_path": _salted("/r/notes.md")}) == "/r/notes.md"
 
 
 def test_request_id_is_16_hex_and_names_one_request():
@@ -139,6 +177,55 @@ def test_a_row_lands_for_the_pane(tmp_path, monkeypatch):
     [(pane, sid, agent, rid, tool, summary)] = _rows(tmp_path / "periscope" / "periscope.db")
     assert (pane, sid, agent, tool, summary) == ("%56", "sess-1", "agent-7", "Bash", "touch probe.txt")
     assert len(rid) == 16
+
+
+def test_agent_id_is_stored_as_a_string(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("TMUX_PANE", "%56")
+    monkeypatch.setattr("sys.stdin", io.StringIO(_payload(agent_id=42)))
+    hook.record()
+    [(_, _, agent, _, _, _)] = _rows(tmp_path / "periscope" / "periscope.db")
+    assert agent == "42"
+
+
+def test_a_row_lands_with_its_match_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("TMUX_PANE", "%56")
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(_payload(tool_input={"command": "touch probe.txt", "description": "Create empty probe.txt file"})),
+    )
+    hook.record()
+    db = tmp_path / "periscope" / "periscope.db"
+    with contextlib.closing(sqlite3.connect(db)) as c, c:
+        [(key,)] = c.execute("SELECT match_key FROM pane_permissions").fetchall()
+    assert key == _bash_key("touchprobe.txtCreateemptyprobe.txtfile")
+
+
+def test_an_existing_table_without_match_key_gets_the_column_added(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("TMUX_PANE", "%56")
+    db = tmp_path / "periscope" / "periscope.db"
+    db.parent.mkdir(parents=True)
+    with contextlib.closing(sqlite3.connect(db)) as c, c:
+        c.execute(
+            "CREATE TABLE pane_permissions ("
+            "  pane_id TEXT NOT NULL,"
+            "  session_id TEXT,"
+            "  agent_id TEXT,"
+            "  request_id TEXT PRIMARY KEY,"
+            "  tool TEXT NOT NULL,"
+            "  summary TEXT NOT NULL,"
+            "  created_at REAL NOT NULL"
+            ")"
+        )
+    monkeypatch.setattr("sys.stdin", io.StringIO(_payload()))
+    hook.record()  # must not fail silently against the pre-match_key schema
+    with contextlib.closing(sqlite3.connect(db)) as c, c:
+        cols = {row[1] for row in c.execute("PRAGMA table_info(pane_permissions)")}
+        [(key,)] = c.execute("SELECT match_key FROM pane_permissions").fetchall()
+    assert "match_key" in cols
+    assert key == _bash_key("touchprobe.txt")
 
 
 def test_rows_older_than_a_day_are_pruned_on_insert(tmp_path, monkeypatch):
@@ -162,9 +249,9 @@ def test_no_tmux_pane_writes_nothing(tmp_path, monkeypatch):
     assert not (tmp_path / "periscope" / "periscope.db").exists()
 
 
-def _run_hook(stdin: str, xdg: Path, pane: str = "%9") -> subprocess.CompletedProcess:
+def _run_hook(stdin: str, xdg: Path, pane: str = "%9", python: str = sys.executable) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SCRIPT)],
+        [python, str(SCRIPT)],
         input=stdin,
         text=True,
         capture_output=True,
@@ -191,6 +278,19 @@ def test_the_hook_prints_nothing_and_exits_0_on_an_unwritable_db(tmp_path):
     assert (r.returncode, r.stdout, r.stderr) == (0, "", "")
 
 
+def test_the_hook_runs_under_the_system_python3_when_present(tmp_path):
+    # bin/periscope registers this with a bare `python3` (-I -S, stdlib only),
+    # which on a Mac can resolve to /usr/bin/python3 (3.9) rather than this
+    # repo's uv-managed interpreter — every prompt would get a hook-error
+    # notice and no row if the file didn't stay 3.9-compatible.
+    system_python3 = "/usr/bin/python3"
+    if not os.path.exists(system_python3):
+        pytest.skip("no /usr/bin/python3 on this machine")
+    r = _run_hook(_payload(), tmp_path, python=system_python3)
+    assert (r.returncode, r.stdout, r.stderr) == (0, "", "")
+    assert len(_rows(tmp_path / "periscope" / "periscope.db")) == 1
+
+
 def _periscope(home: Path, *args: str) -> subprocess.CompletedProcess:
     # HOME redirects both ~/.claude and the state.json the account list comes from.
     return subprocess.run(
@@ -200,6 +300,12 @@ def _periscope(home: Path, *args: str) -> subprocess.CompletedProcess:
         env={**os.environ, "HOME": str(home)},
         timeout=60,
     )
+
+
+def _entry_script_path(command: str) -> Path:
+    assert command.startswith("python3 -I -S ")
+    [path] = shlex.split(command[len("python3 -I -S ") :])
+    return Path(path)
 
 
 def test_install_registers_permission_request_for_every_tool_and_uninstall_removes_it(tmp_path):
@@ -217,8 +323,9 @@ def test_install_registers_permission_request_for_every_tool_and_uninstall_remov
     assert groups[1]["matcher"] == ""
     [entry] = groups[1]["hooks"]
     assert entry["timeout"] == 5
-    assert entry["command"].startswith("python3 ")
-    assert Path(entry["command"].split(" ", 1)[1]).resolve() == SCRIPT
+    # -I -S: stdlib-only, so this runs even under a bare /usr/bin/python3 with
+    # no venv or site/sitecustomize poisoning it.
+    assert _entry_script_path(entry["command"]).resolve() == SCRIPT
     # Idempotent.
     _periscope(tmp_path, "install-claude-hook")
     assert json.loads(settings.read_text())["hooks"]["PermissionRequest"] == groups
@@ -226,3 +333,41 @@ def test_install_registers_permission_request_for_every_tool_and_uninstall_remov
     r = _periscope(tmp_path, "uninstall-claude-hook")
     assert r.returncode == 0, r.stderr
     assert json.loads(settings.read_text())["hooks"]["PermissionRequest"] == [mine]
+
+
+def test_install_joins_a_group_whose_matcher_is_star(tmp_path):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    settings = claude / "settings.json"
+    settings.write_text(json.dumps({"hooks": {"PermissionRequest": [{"matcher": "*", "hooks": []}]}}))
+
+    r = _periscope(tmp_path, "install-claude-hook")
+    assert r.returncode == 0, r.stderr
+    groups = json.loads(settings.read_text())["hooks"]["PermissionRequest"]
+    # "*" (like None or "") means "every tool": joined, not duplicated into a
+    # second, "" matcher group.
+    assert len(groups) == 1
+    assert groups[0]["matcher"] == "*"
+    assert len(groups[0]["hooks"]) == 1
+
+
+def test_install_repoints_a_stale_path(tmp_path):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    settings = claude / "settings.json"
+    stale = {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "python3 -I -S /old/checkout/pane_permission_hook.py", "timeout": 5}],
+    }
+    settings.write_text(json.dumps({"hooks": {"PermissionRequest": [stale]}}))
+
+    r = _periscope(tmp_path, "install-claude-hook")
+    assert r.returncode == 0, r.stderr
+    groups = json.loads(settings.read_text())["hooks"]["PermissionRequest"]
+    # Repointed in place, not appended as a second entry: re-running install
+    # from a different checkout (a worktree, say) must not leave the old path
+    # dangling alongside the new one.
+    assert len(groups) == 1
+    [entry] = groups[0]["hooks"]
+    assert "/old/checkout/" not in entry["command"]
+    assert _entry_script_path(entry["command"]).resolve() == SCRIPT
