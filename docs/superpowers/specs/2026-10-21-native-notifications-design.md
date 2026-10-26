@@ -12,6 +12,9 @@ handout). Lands after the critter picker
   worktree, Spawn on {B}, plus the server pieces they need: the permission hook
   and the guarded endpoints.
 
+**2b is designed in `2026-10-26-native-notifications-2b-design.md` (THI-422),
+which supersedes this spec's 2b sections wherever they disagree.**
+
 Out of scope here: the critter image in notifications (handout phase 2; its
 `notify.critter` toggle arrives with it) and the menu bar extra (phase 3).
 
