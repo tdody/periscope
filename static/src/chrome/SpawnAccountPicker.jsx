@@ -24,6 +24,7 @@ export async function pickSpawnAccount(id) {
     body: JSON.stringify({ spawn_account: id }),
   });
   if (!res) spawnAccount.value = prev;
+  return !!res;
 }
 
 export function SpawnAccountPicker() {

@@ -13,6 +13,7 @@ afterEach(() => {
   dismissedNeedsPids.value = new Set();
   dismissedReadyPids.value = new Set();
   railSelection.value = null;
+  prefs.setLastSelected.mockClear();
 });
 
 describe("row clicks shared by the rail and Clawd", () => {
@@ -47,6 +48,7 @@ describe("what a done banner's buttons do", () => {
     markReadySeen({ pid: "c" });
     expect([...dismissedReadyPids.value]).toEqual(["c"]);
     expect(railSelection.value).toBe(null);
+    expect(prefs.setLastSelected).not.toHaveBeenCalled();
     markReadySeen(null);
     expect(dismissedReadyPids.value.size).toBe(1);
   });
@@ -54,9 +56,11 @@ describe("what a done banner's buttons do", () => {
   it("Review diff selects the session's review row and remembers it", () => {
     selectReview("periscope");
     expect(railSelection.value).toBe("review:periscope");
-    expect(prefs.setLastSelected).toHaveBeenCalledWith({ kind: "review", worktree: "periscope" });
+    expect(prefs.setLastSelected).toHaveBeenLastCalledWith({ kind: "review", worktree: "periscope" });
     railSelection.value = null;
+    prefs.setLastSelected.mockClear();
     selectReview("");
     expect(railSelection.value).toBe(null);
+    expect(prefs.setLastSelected).not.toHaveBeenCalled();
   });
 });
