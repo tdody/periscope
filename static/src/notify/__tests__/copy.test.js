@@ -6,9 +6,10 @@ import { firstSentence, payloadFor } from "../copy.js";
 // modules that reach tauri.js; feed.test.js's mock, unused here otherwise.
 vi.mock("../../tauri.js", () => ({
   inTauri: () => false, notify: vi.fn(), onNotificationClick: vi.fn(), onNotificationOpened: vi.fn(),
-  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(),
+  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(async () => {}),
 }));
 const { categories } = await import("../actions.js");
+const { summaryPayload } = await import("../burst.js");
 
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])/;
 
@@ -134,21 +135,27 @@ describe("payloadFor", () => {
     expect(payloadFor(ev, { accounts, moveTargets: { default: "default" } }).category).toBe("usage");
   });
 
-  it("only names categories that actions.js registers", () => {
+  it("only names categories that actions.js registers, or none", () => {
     const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
     const moveTargets = { default: "b", b: "default" };
     const ctx = { accounts, windows: [], moveTargets };
     const ids = new Set(categories({ accounts, moveTargets }).map((c) => c.id));
+    const alert = { name: "old", session: "s", message: "m" };
     const evs = [
       { kind: "done", w: w() }, { kind: "done", w: w({ branch: "" }) }, { kind: "ci_failed", w: w({ pr: 7 }) },
       { kind: "pr_merged", w: w({ pr: 7, cwd: "/wt" }) }, { kind: "pr_merged", w: w({ pr: 7 }) },
       { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } },
       { kind: "usage", account: "c", meter: "week_all", m: { percent: 90 } },
+      // PR 2 adds their categories; today's shell shows no buttons on these.
+      { kind: "needs_input", w: w() }, { kind: "question", w: w(), alert },
     ];
     for (const ev of evs) {
       const p = payloadFor(ev, ctx);
-      expect(ids.has(p.category)).toBe(true);
+      expect(p.category === undefined || ids.has(p.category)).toBe(true);
     }
+    // A burst summary carries no category either.
+    const summary = summaryPayload([{ kind: "needs_input", w: w() }]);
+    expect(summary.category === undefined || ids.has(summary.category)).toBe(true);
   });
 });
 

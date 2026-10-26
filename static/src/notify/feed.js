@@ -75,7 +75,7 @@ export function openFromBanner({ target, data } = {}) {
   else revealPane(target);
 }
 
-const NO_NEWS = { sends: [], flush: [], badge: null, categories: null };
+const NO_NEWS = { sends: [], flush: [], badge: null };
 
 // One pass -> what to do: { state, recent, held, heldSince, lastBadge,
 // lastCategories } to carry to the next pass, `sends` and `flush` (a
@@ -96,8 +96,12 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
     held = [];
     heldSince = null;
   }
+  // Stays null unless the set below actually changes; `out` always carries
+  // it (default, not opt-in) so a future early return can't silently drop a
+  // pending registration the way this one used to.
+  let cats = null;
   const out = (extra) => ({
-    state, recent, held, heldSince, lastBadge, lastCategories, ...NO_NEWS, flush,
+    state, recent, held, heldSince, lastBadge, lastCategories, ...NO_NEWS, flush, categories: cats,
     timerAt: held.length ? heldSince + BURST_MS : null,
     ...extra,
   });
@@ -107,11 +111,21 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
   // The buttons each banner category carries, sent whole when the set
   // changes (accounts or move targets moved) and on a JS context's first pass
   // (lastCategories starts undefined), which covers a reload and a recycle.
-  // Never at post time: registration is asynchronous (tauri.js).
-  const set = categories({ accounts: snap.accounts, moveTargets: snap.moveTargets });
-  const setKey = JSON.stringify(set);
-  const cats = setKey === lastCategories ? null : set;
-  lastCategories = setKey;
+  // Ordering (makeDelivery) narrows, not closes, the window: macOS registers
+  // categories asynchronously too (tauri.js), so a banner needing a
+  // brand-new category can still show no buttons once. A thrown builder (a
+  // malformed accounts/moveTargets shape) must not cost the pass — keep the
+  // last-registered set and retry next pass, same as a bad banner below.
+  try {
+    const set = categories({ accounts: snap.accounts, moveTargets: snap.moveTargets });
+    const setKey = JSON.stringify(set);
+    if (setKey !== lastCategories) {
+      cats = set;
+      lastCategories = setKey;
+    }
+  } catch (e) {
+    console.error("[notify] category set failed", e);
+  }
   // Panes waiting on you, as the rail counts them, not alert rows. Computed
   // before the seeding/editing skip below, so a fresh context that can't seed
   // yet still sets the dock badge.
@@ -126,7 +140,7 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
   // windows the feed doesn't seed, so usage and window-less question banners
   // stay silent until a window exists; an accepted edge) or have its windows
   // held back by a rename/drag. Waiting only delays the seed.
-  if (!state && (!snap.windows.length || ctx.editing)) return out({ badge, categories: cats });
+  if (!state && (!snap.windows.length || ctx.editing)) return out({ badge });
   const sends = [];
   // Mid-rename/drag applyState freezes `windows` but still moves `alerts`;
   // detecting on that mix would pair new alerts with stale panes. The badge
@@ -153,7 +167,30 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
       heldSince ??= nowMs;
     }
   }
-  return out({ sends, badge, categories: cats });
+  return out({ sends, badge });
+}
+
+// Serialises registration ahead of delivery through one promise chain: two
+// IPC emits aren't ordered (each an async call on a multi-threaded runtime),
+// so a later pass's banners (or flushHeld's timer, running off the same
+// chain) could otherwise overtake a pending registration, and two
+// registrations could land out of order. Ordering narrows, not closes, the
+// window: macOS itself registers categories asynchronously (tauri.js), so a
+// banner needing a brand-new category can still show no buttons once. `io`
+// is injectable for testing.
+export function makeDelivery(io = { setNotifyCategories, notify }) {
+  let ready = Promise.resolve();
+  return (cats, payloads) => {
+    if (cats) ready = ready.then(() => io.setNotifyCategories(cats));
+    if (payloads.length) {
+      ready = ready.then(() => {
+        for (const p of payloads) io.notify(p);
+      });
+    }
+    // setNotifyCategories never rejects, but the guard keeps a future throw
+    // (a bad `notify` call, say) from wedging every later delivery.
+    ready = ready.catch((e) => console.error("[notify] delivery failed", e));
+  };
 }
 
 let started = false;
@@ -165,6 +202,9 @@ export function startNotifyFeed() {
   const resumed = resumeState(storage, Date.now());
   let ctx = { state: null, held: [], heldSince: null, ...resumed, recent: [], lastBadge: undefined, lastCategories: undefined };
   const save = (nowMs) => saveState(storage, ctx.state, nowMs, ctx.held, ctx.heldSince);
+  // Shared by the effect and flushHeld, so a registration queued by either
+  // one stays ahead of every banner from both.
+  const deliver = makeDelivery();
   let timer = null;
   // The heldSince + BURST_MS the live `timer` targets, so a pass that flushes
   // the old batch and holds a new one in the same tick reschedules instead of
@@ -182,7 +222,7 @@ export function startNotifyFeed() {
     if (!batch.length) return;
     if (ctx.state) save(Date.now());
     const bctx = { accounts: accounts.peek(), windows: windows.peek() || [], moveTargets: moveTargets.peek() };
-    notify({ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
+    deliver(null, [{ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused }]);
   };
 
   onNotificationOpened(openFromBanner);
@@ -204,17 +244,9 @@ export function startNotifyFeed() {
         const { sends, flush, badge, categories: cats, timerAt, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
         ctx = next;
         if (ctx.state && (ctx.state !== prev.state || ctx.held !== prev.held)) save(nowMs);
-        // Two emits aren't ordered (each an async IPC command on a
-        // multi-threaded runtime), so a pass that registers a new set posts
-        // its banners only once that registration resolves — otherwise a
-        // banner needing a brand-new category could reach the shell first
-        // and show no buttons. setNotifyCategories swallows its own errors,
-        // so `.finally` always posts.
-        const post = () => {
-          for (const p of [...flush, ...sends]) notify(p);
-        };
-        if (cats) setNotifyCategories(cats).finally(post);
-        else post();
+        // deliver() queues this pass's registration (if any) ahead of its
+        // banners on the shared chain (see makeDelivery).
+        deliver(cats, [...flush, ...sends]);
         // Reschedule whenever the target deadline moves, not just when a
         // timer is/isn't running — a pass that flushes the old batch and
         // holds a new one in the same tick must drop the stale timer, or it
