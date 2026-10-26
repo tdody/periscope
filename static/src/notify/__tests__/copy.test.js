@@ -190,9 +190,12 @@ describe("payloadFor", () => {
     expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [agentPane] })).toMatchObject({
       category: "ci_failed", data: { pid: "p2" },
     });
-    // No agent pane anywhere: Open PR only when there's a URL, else nothing.
+    // No agent pane anywhere: Open PR only when there's a URL, else nothing —
+    // but a plain click still finds the notified (shell) pane by pid.
     expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [] }).category).toBe("ci_failed_pr");
-    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, agent: null }) }, { windows: [] }).category).toBeUndefined();
+    const noSibling = payloadFor({ kind: "ci_failed", w: w({ pr: 7, agent: null }) }, { windows: [] });
+    expect(noSibling.category).toBeUndefined();
+    expect(noSibling.data).toMatchObject({ pid: "p1" });
   });
 
   it("offers Spawn on the account a pane on A would move to, and only then", () => {

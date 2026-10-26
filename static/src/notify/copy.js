@@ -21,8 +21,8 @@ const where = (w) => [w?.session, w?.branch].filter(Boolean).join(" · ");
 // can hand us the worktree's shell window, which shows the same PR.
 const agent = (x) => !!(x?.pid && x.agent);
 
-// An MCP tool's dotted name, display-only — the server's screen check still
-// compares the raw stored name.
+// An MCP tool's wire name (mcp__server__tool) reads as `tool (server)`,
+// display-only — the server's screen check still compares the raw stored name.
 const toolLabel = (t) => {
   const m = /^mcp__(.+?)__(.+)$/.exec(t || "");
   return m ? `${m[2]} (${m[1]})` : t || "this";
@@ -82,7 +82,8 @@ export function payloadFor(ev, ctx = {}) {
       return {
         ...base, title: `${clip(w ? paneLabel(w) : a.name || a.session || "A session", 26)} asks`,
         subtitle: w ? where(w) : a.session || "", body: clip(a.message, 180), target: a.target || base.target,
-        // Reply types into the live pane; one that has gone has nowhere to send it.
+        // Reply types into an agent's live pane; one that has gone, or isn't
+        // one (the worktree's shell), has nowhere to send it.
         ...(agent(w) ? { category: "question" } : {}),
         data: { open: "pane", pid: w?.pid ?? null },
       };
@@ -115,8 +116,11 @@ export function payloadFor(ev, ctx = {}) {
         body: checks || "Checks are failing.",
         ...(category ? { category } : {}),
         // `checks`: the failing ones' names, for Ask agent to fix's message.
+        // `pid`: the fixer's when Ask agent to fix is offered, else w's own —
+        // a plain click / Open still finds the notified pane by pid even with
+        // no agent around to fix it (target can name a neighbour by now).
         data: {
-          open: "url", url, pid: fixer?.pid, pr: w.pr,
+          open: "url", url, pid: fixer?.pid || w.pid, pr: w.pr,
           checks: (w.ci_checks || []).filter((c) => c.state === "failure").map((c) => c.name),
         },
       };
