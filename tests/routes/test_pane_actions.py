@@ -391,3 +391,46 @@ def test_reply_500s_and_sends_nothing_when_the_pane_cannot_be_read(client, pane,
     mocker.patch.object(pane_actions, "capture", side_effect=RuntimeError("can't find pane"))
     assert _reply(client).status_code == 500
     pane.assert_not_called()
+
+
+def _composer(prompt_row: str) -> str:
+    """An idle Claude 2.1.280 screen as capture -e returns it: a past prompt
+    (drawn white on grey, so it reads as typed) and its answer in scrollback,
+    then the composer row between its rules."""
+    rule = "─" * 60
+    past = "\x1b[38;2;80;80;80m\x1b[48;2;55;55;55m❯ \x1b[38;2;255;255;255mWhich database should we use?\x1b[39m\x1b[49m"
+    return f"{past}\n\n⏺ Postgres or SQLite?\n\n{rule}\n{prompt_row}\n{rule}\n  ⏵⏵ auto mode on (shift+tab to cycle)\n"
+
+
+@pytest.mark.parametrize(
+    "prompt_row",
+    [
+        # A draft is drawn in the default fg, like the ❯ (2.1.280).
+        "\x1b[39m❯\xa0half a thought",
+        # A paste placeholder is grey like a suggestion, but it is the draft.
+        "\x1b[39m❯\xa0\x1b[38;5;240m[Pasted text #1 +40 lines]\x1b[39m",
+    ],
+    ids=["draft", "pasted-block"],
+)
+def test_reply_409s_on_a_half_typed_draft(client, pane, idle, mocker, prompt_row):
+    # The paste would be appended to the draft, and Enter would submit both.
+    mocker.patch.object(pane_actions, "capture", return_value=_composer(prompt_row))
+    r = _reply(client)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "the pane has a half-typed draft — finish or clear it first"
+    pane.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "prompt_row",
+    [
+        "\x1b[39m❯\xa0",
+        # Claude's suggestion, dim (SGR 2), as live 2.1.280 panes draw it.
+        '\x1b[39m❯\xa0\x1b[2mtry "how does the poll loop work"\x1b[0m',
+    ],
+    ids=["empty", "suggestion"],
+)
+def test_reply_goes_to_an_empty_composer(client, pane, idle, mocker, prompt_row):
+    mocker.patch.object(pane_actions, "capture", return_value=_composer(prompt_row))
+    assert _reply(client).status_code == 200
+    pane.assert_called_once_with("s:4", "Postgres, please", ["Enter"])

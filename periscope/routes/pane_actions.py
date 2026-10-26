@@ -5,7 +5,8 @@ and "Ask agent to fix" type a message into the pane (THI-426's rail card reuses
 both). Unlike /api/send, a raw key pipe, each re-checks the pane when pressed,
 because a banner can be minutes stale: Allow must only ever answer the request
 its banner was shown for, and a reply must never land in a dialog, where
-`1 sounds good` + Enter picks option 1, or in a shell, where it runs.
+`1 sounds good` + Enter picks option 1, in a shell, where it runs, or on a
+half-typed draft, which Enter would submit with it.
 
 JSON bodies only. A POST without one is a CORS "simple" request any website
 could fire at localhost; application/json needs a preflight this server never
@@ -130,7 +131,9 @@ def pane_reply(body: ReplyBody):
     family). 409 too when the pane isn't running an agent: no live session
     and no agent on screen, or a shell in the foreground. A Codex pane has no
     Claude session and no Claude screen, so it gets the 409 (the route can't
-    rule out a Codex approval prompt, where a `y…` would approve)."""
+    rule out a Codex approval prompt, where a `y…` would approve). And 409
+    when the composer holds a half-typed draft: the paste would be appended
+    to it and Enter would submit both."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "nothing to send")
@@ -143,8 +146,15 @@ def pane_reply(body: ReplyBody):
         screen = _screen(target)
         if dialog_open(screen):
             raise HTTPException(409, "the pane has a dialog open — answer it first")
+        parsed = parse_pane(screen)
         foreground = (window.get("current_command") or "").lstrip("-")
-        if foreground in _SHELLS or not (sess or parse_pane(screen).get("agent")):
+        if foreground in _SHELLS or not (sess or parsed.get("agent")):
             raise HTTPException(409, "the pane isn't running an agent")
+        # The same signal the session pickers refuse on (routes/pane.py),
+        # read from the -e capture: Claude's suggestion is drawn dim or grey,
+        # and anything not drawn that way counts as typed, so an unrecognised
+        # suggestion costs a 409, never a merged message.
+        if parsed.get("pending_input"):
+            raise HTTPException(409, "the pane has a half-typed draft — finish or clear it first")
         _send_to_target(target, text, ["Enter"])
     return {"ok": True}
