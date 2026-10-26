@@ -34,6 +34,10 @@ const NEEDS_BODY = {
 };
 const CHECK_MARK = { failure: "✗", pending: "⟳", success: "✓" };
 
+// A usage banner's category when it can offer Spawn on {B}: one per B,
+// because a category's buttons, labels included, are fixed (notify/actions.js).
+export const usageCategory = (to) => `usage_to_${to}`;
+
 // Each event's banner: { kind, title, subtitle, body, target, thread, data }.
 // `target` is the pane, so an older shell's plain click can still reveal it;
 // `data` says what a click opens. ctx: { accounts, windows }.
