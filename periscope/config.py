@@ -49,14 +49,14 @@ CLAUDE_EXEC = f"claude {CHANNEL_FLAG} server:periscope"
 # every periscope-spawned pane already goes through — spawns are `send-keys` into
 # an interactive shell, not a bare exec.
 #
-# Carried as an ENV VAR on the tmux window, never as the `claude lab` argv word
+# Carried as an ENV VAR on the tmux window, never as the `claude full` argv word
 # the wrapper also accepts: the wrapper consumes that word and execs `command
-# claude --settings '{...}'`, so `lab` never reaches claude's argv and neither
+# claude --settings '{...}'`, so `full` never reaches claude's argv and neither
 # the rail's profile attribution nor resurrect's save-file rewrite could observe
 # it. Env is the one carrier all three parties read — the same reason
 # CLAUDE_CONFIG_DIR is set this way (see tmux.env_args).
 PROFILE_ENV_VAR = "CLAUDE_WRAPPER_PROFILE"
-CLAUDE_PROFILES = ("default", "lab")
+CLAUDE_PROFILES = ("default", "full")
 
 # Model override for a spawned pane. Claude Code reads this env var as the
 # session model (precedence: --model > ANTHROPIC_MODEL > settings.json), so it

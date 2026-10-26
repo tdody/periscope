@@ -117,7 +117,7 @@ describe("<Rail> render smoke", () => {
       pane_id: "%1", ...over,
     });
     windows.value = [
-      pane({ pid: "lab", profile: "lab" }),
+      pane({ pid: "full", profile: "full" }),
       pane({ pid: "normal", index: 1, target: "managed:1", profile: "default", pane_id: "%2" }),
       // A pre-profiles server stamps no field at all — must read as normal,
       // not as an unlabeled chip.
@@ -126,7 +126,7 @@ describe("<Rail> render smoke", () => {
 
     const html = render(<Rail />);
     expect(html.split('class="rail-profile"').length - 1).toBe(1);
-    expect(html).toContain(">lab</span>");
+    expect(html).toContain(">full</span>");
   });
 
   it("offers the move-account action on Claude panes only, labeled with its destination", () => {

@@ -475,7 +475,7 @@ def build_window_view(
         "account": pane_accounts.get(w.get("pane_id") or "", "default"),
         # Which `claude` wrapper profile this pane runs — i.e. which plugin set
         # and system prompt. Same reasoning as the account: nothing else on the
-        # card distinguishes a lab pane from a normal one, and the difference
+        # card distinguishes a full-profile pane from a default one, and the difference
         # changes what the pane can do.
         "profile": pane_profiles.get(w.get("pane_id") or "", "default"),
         # The pane header's model/effort pickers. Claude reports effort nowhere

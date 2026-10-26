@@ -155,18 +155,18 @@ def test_account_prefix_not_doubled():
 # --- wrapper profile prefix ---------------------------------------------
 #
 # Same argv-invisibility as the account, one step worse: the `claude` wrapper
-# consumes a typed `lab` and execs `command claude --settings '{...}'`, so the
+# consumes a typed `full` and execs `command claude --settings '{...}'`, so the
 # profile is absent from argv even when it WAS typed. Without re-emitting it a
-# lab pane restores on the default plugin set, silently.
+# full pane restores on the default plugin set, silently.
 
 
 def test_profile_prefix_emitted_with_resume():
     pane_map, sess_map = _maps()
     line = _pane_line("s", "1", "1", _both_channels())
-    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%56": "lab"})
+    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%56": "full"})
     assert changed
     assert out.split("\t")[10] == (
-        f":CLAUDE_WRAPPER_PROFILE=lab claude --resume {SID}"
+        f":CLAUDE_WRAPPER_PROFILE=full claude --resume {SID}"
         " --dangerously-load-development-channels server:lgtm"
         " --dangerously-load-development-channels server:periscope"
     )
@@ -175,24 +175,24 @@ def test_profile_prefix_emitted_with_resume():
 def test_profile_prefix_emitted_without_session():
     """No pane_sessions row: --resume is lost, but the profile must NOT be."""
     line = _pane_line("s", "1", "1", "claude")
-    out, changed = resurrect._rewrite_line(line, {"s:1.1": "%56"}, {}, {}, {"%56": "lab"})
+    out, changed = resurrect._rewrite_line(line, {"s:1.1": "%56"}, {}, {}, {"%56": "full"})
     assert changed
-    assert out.split("\t")[10] == ":CLAUDE_WRAPPER_PROFILE=lab claude"
+    assert out.split("\t")[10] == ":CLAUDE_WRAPPER_PROFILE=full claude"
 
 
 def test_account_and_profile_prefixes_coexist():
-    """The two axes are independent — a lab pane on account B carries both."""
+    """The two axes are independent — a full pane on account B carries both."""
     pane_map, sess_map = _maps()
     line = _pane_line("s", "1", "1", "claude")
-    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {"%56": ALT}, {"%56": "lab"})
+    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {"%56": ALT}, {"%56": "full"})
     assert changed
-    assert out.split("\t")[10] == (f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_WRAPPER_PROFILE=lab claude --resume {SID}")
+    assert out.split("\t")[10] == (f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_WRAPPER_PROFILE=full claude --resume {SID}")
 
 
 def test_default_profile_gets_no_prefix():
     pane_map, sess_map = _maps()
     line = _pane_line("s", "1", "1", "claude")
-    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%99": "lab"})
+    out, changed = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%99": "full"})
     assert changed
     assert out.split("\t")[10] == f":claude --resume {SID}"
 
@@ -221,8 +221,8 @@ def test_model_prefix_NOT_emitted_with_resume():
 
 def test_model_prefix_orders_after_account_and_profile():
     line = _pane_line("s", "1", "1", "claude")
-    out, _ = resurrect._rewrite_line(line, {"s:1.1": "%56"}, {}, {"%56": ALT}, {"%56": "lab"}, {"%56": "opus"})
-    assert out.split("\t")[10] == (f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_WRAPPER_PROFILE=lab ANTHROPIC_MODEL=opus claude")
+    out, _ = resurrect._rewrite_line(line, {"s:1.1": "%56"}, {}, {"%56": ALT}, {"%56": "full"}, {"%56": "opus"})
+    assert out.split("\t")[10] == (f":CLAUDE_CONFIG_DIR={ALT} CLAUDE_WRAPPER_PROFILE=full ANTHROPIC_MODEL=opus claude")
 
 
 # --- effort flag (--effort) ----------------------------------------------------
@@ -251,8 +251,8 @@ def test_effort_flag_dropped_on_resume():
 def test_profile_prefix_not_doubled():
     pane_map, sess_map = _maps()
     line = _pane_line("s", "1", "1", _both_channels())
-    once, _ = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%56": "lab"})
-    twice, _ = resurrect._rewrite_line(once, pane_map, sess_map, {}, {"%56": "lab"})
+    once, _ = resurrect._rewrite_line(line, pane_map, sess_map, {}, {"%56": "full"})
+    twice, _ = resurrect._rewrite_line(once, pane_map, sess_map, {}, {"%56": "full"})
     assert twice == once
     assert twice.count("CLAUDE_WRAPPER_PROFILE") == 1
 
@@ -417,7 +417,7 @@ def test_duplicate_resume_grouped_by_the_session_each_line_renders_with():
 # A pane with an account, profile or spawn model leaves _rewrite_line by the
 # env-prefix route, not the early return — the usual periscope-spawned pane,
 # and a row-less one keeps its captured --resume there too.
-@pytest.mark.parametrize("envs", [({}, {}, {}), ({"%56": ALT}, {"%56": "lab"}, {"%56": "opus"})], ids=["bare", "env"])
+@pytest.mark.parametrize("envs", [({}, {}, {}), ({"%56": ALT}, {"%56": "full"}, {"%56": "opus"})], ids=["bare", "env"])
 def test_a_line_renders_the_session_it_is_grouped_by(cmd, row, envs):
     # _duplicate_resumes groups by _line_session; _rewrite_line renders by its
     # own route. Let them disagree and a duplicate escapes the grouping, or a

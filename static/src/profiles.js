@@ -5,18 +5,18 @@
 // that ever grows.
 //
 // Orthogonal to the ACCOUNT (accounts.js): the account picks which subscription
-// a pane bills, the profile picks what it can do. A lab pane on account B is a
-// normal combination, not a conflict.
+// a pane bills, the profile picks what it can do. A full pane on account B is an
+// ordinary combination, not a conflict.
 export const PROFILES = [
-  { id: "default", label: "normal" },
-  { id: "lab", label: "lab" },
+  { id: "default", label: "default" },
+  { id: "full", label: "full" },
 ];
 
 // Whether a launch target should carry the profile at all.
 //
 // Same guard, and the same reason, as `sendsAccount`: the server sets it as a
 // tmux `-e` var, so every process in that window inherits it. A SHELL window
-// that carried it would run a hand-typed `claude` on the lab plugin set
+// that carried it would run a hand-typed `claude` on the full plugin set
 // silently — and invisibly, because the rail's profile chip is derived from a
 // live claude process, which a shell window has none of. Codex doesn't go
 // through the claude wrapper at all.
