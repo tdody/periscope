@@ -170,26 +170,39 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
   return out({ sends, badge });
 }
 
+// A hung registration (dead IPC, say) must not stall every later banner
+// forever — race it so the chain always drains.
+export const REGISTRATION_TIMEOUT_MS = 2000;
+
 // Serialises registration ahead of delivery through one promise chain: two
 // IPC emits aren't ordered (each an async call on a multi-threaded runtime),
 // so a later pass's banners (or flushHeld's timer, running off the same
 // chain) could otherwise overtake a pending registration, and two
 // registrations could land out of order. Ordering narrows, not closes, the
 // window: macOS itself registers categories asynchronously (tauri.js), so a
-// banner needing a brand-new category can still show no buttons once. `io`
-// is injectable for testing.
+// banner needing a brand-new category can still show no buttons once. Each
+// step catches its own failure, so a failed (or merely slow) registration
+// still posts that same call's banners, and one bad payload doesn't cost the
+// rest of its batch. `io` is injectable for testing.
 export function makeDelivery(io = { setNotifyCategories, notify }) {
   let ready = Promise.resolve();
   return (cats, payloads) => {
-    if (cats) ready = ready.then(() => io.setNotifyCategories(cats));
+    if (cats) {
+      ready = ready
+        .then(() => Promise.race([io.setNotifyCategories(cats), new Promise((r) => setTimeout(r, REGISTRATION_TIMEOUT_MS))]))
+        .catch((e) => console.error("[notify] registration failed", e));
+    }
     if (payloads.length) {
       ready = ready.then(() => {
-        for (const p of payloads) io.notify(p);
+        for (const p of payloads) {
+          try {
+            io.notify(p);
+          } catch (e) {
+            console.error("[notify] post failed", e);
+          }
+        }
       });
     }
-    // setNotifyCategories never rejects, but the guard keeps a future throw
-    // (a bad `notify` call, say) from wedging every later delivery.
-    ready = ready.catch((e) => console.error("[notify] delivery failed", e));
   };
 }
 
