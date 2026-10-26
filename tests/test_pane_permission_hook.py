@@ -414,6 +414,30 @@ def test_install_does_not_repoint_a_live_target_at_another_checkout(tmp_path):
     assert entry["command"] == live_command
 
 
+def test_install_rewrites_an_entry_for_this_same_checkout_to_the_current_form(tmp_path):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    settings = claude / "settings.json"
+    # The old form: no `|| true`, this worktree's own real path. Running
+    # install-hook from main after this merges must move an entry like this
+    # (prod's, say) onto the current fail-open form, not leave it alone just
+    # because it already resolves.
+    old_form = f"python3 {REPO / 'pane_session_hook.py'}"
+    mine = {"matcher": "", "hooks": [{"type": "command", "command": old_form, "timeout": 5}]}
+    settings.write_text(json.dumps({"hooks": {"SessionStart": [mine]}}))
+
+    r = _periscope(tmp_path, "install-claude-hook")
+    assert r.returncode == 0, r.stderr
+    groups = json.loads(settings.read_text())["hooks"]["SessionStart"]
+    assert len(groups) == 1
+    [entry] = groups[0]["hooks"]
+    assert entry["command"] == old_form + " || true"
+
+    # Idempotent.
+    _periscope(tmp_path, "install-claude-hook")
+    assert json.loads(settings.read_text())["hooks"]["SessionStart"] == groups
+
+
 def test_install_entries_fail_open_and_uninstall_still_finds_them(tmp_path):
     claude = tmp_path / ".claude"
     claude.mkdir()
