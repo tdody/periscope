@@ -23,13 +23,19 @@
 // Buttons (2b): the webview registers the whole category set on
 // "periscope:notify-categories" (when the feed starts and whenever the set
 // changes, never per banner: registration is asynchronous and replaces the
-// set, so a banner posted right behind one can show no buttons). A kinded
-// banner names its category; a press goes out on
-// "periscope:notification-action" as { target, kind, action, text, data }.
-// This shell knows no kinds or buttons: they're data, so a new button needs
-// new JS, not a new .app. An older shell drops the categories event and its
-// banners carry no buttons; an older webview registers none.
+// set, so a banner posted right behind one can show no buttons). A banner
+// only gets buttons when it names a `category` explicitly — never falling
+// back to its `kind`, because 2b's category ids reuse 2a's kind names (done,
+// usage, pr_merged, …) and the registered set outlives the webview: after a
+// JS rollback, an old webview's kind:"done" banners would otherwise match a
+// stale category and grow buttons whose presses nothing listens for (a typed
+// reply silently lost). A press goes out on "periscope:notification-action"
+// as { target, kind, action, text, data }. This shell knows no kinds or
+// buttons: they're data, so a new button needs new JS, not a new .app. An
+// older shell drops the categories event and its banners carry no buttons;
+// an older webview registers none.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use block2::{DynBlock, RcBlock};
@@ -47,6 +53,7 @@ use objc2_user_notifications::{
     UNNotificationRequest, UNNotificationResponse, UNTextInputNotificationAction,
     UNTextInputNotificationResponse, UNUserNotificationCenter, UNUserNotificationCenterDelegate,
 };
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Listener};
 
 /// Webview → Rust: post this banner.
@@ -152,16 +159,14 @@ fn user_info_json(req: &NotifyRequest) -> Option<String> {
     }
 }
 
-/// The category a banner's buttons come from: its own, else its kind's. `None`
-/// for a plain banner, so an older webview's banner never grows buttons.
+/// The category a banner's buttons come from: its own, explicitly named.
+/// Never falls back to `kind` — 2b's category ids reuse 2a's kind names
+/// (done, usage, pr_merged, …), and the registered set outlives the webview,
+/// so a kind-only fallback would let an old webview's plain-kind banner
+/// (after a JS rollback) match a stale category and grow buttons whose
+/// presses nothing listens for.
 fn category_of(req: &NotifyRequest) -> Option<&str> {
-    if req.kind.is_empty() {
-        None
-    } else if req.category.is_empty() {
-        Some(&req.kind)
-    } else {
-        Some(&req.category)
-    }
+    (!req.kind.is_empty() && !req.category.is_empty()).then_some(req.category.as_str())
 }
 
 /// A text-input button's labels (UNTextInputNotificationAction).
@@ -173,8 +178,22 @@ struct ReplySpec {
     placeholder: String,
 }
 
+impl ReplySpec {
+    /// The native button needs a label even when the webview left it empty.
+    fn button_title(&self) -> &str {
+        if self.button.is_empty() {
+            "Send"
+        } else {
+            &self.button
+        }
+    }
+}
+
 /// One button, as the webview describes it. The flags are `Option` so a null
 /// from a newer or older webview reads as unset rather than failing the button.
+/// `reply` must be OMITTED for a plain button — sending `false` instead of
+/// leaving the key out fails to deserialize as `ReplySpec` and drops the whole
+/// button, not just the reply.
 #[derive(serde::Deserialize, Debug, PartialEq)]
 struct ActionSpec {
     #[serde(default, deserialize_with = "null_to_default")]
@@ -195,17 +214,20 @@ impl ActionSpec {
     /// `auth`: Touch ID / password before it runs from a locked screen.
     /// `foreground`: bring Periscope forward. `destructive`: drawn red.
     fn options(&self) -> UNNotificationActionOptions {
-        let mut bits = 0;
-        if self.auth == Some(true) {
-            bits |= UNNotificationActionOptions::AuthenticationRequired.0;
-        }
-        if self.foreground == Some(true) {
-            bits |= UNNotificationActionOptions::Foreground.0;
-        }
-        if self.destructive == Some(true) {
-            bits |= UNNotificationActionOptions::Destructive.0;
-        }
-        UNNotificationActionOptions(bits)
+        let mut opts = UNNotificationActionOptions::empty();
+        opts.set(
+            UNNotificationActionOptions::AuthenticationRequired,
+            self.auth == Some(true),
+        );
+        opts.set(
+            UNNotificationActionOptions::Foreground,
+            self.foreground == Some(true),
+        );
+        opts.set(
+            UNNotificationActionOptions::Destructive,
+            self.destructive == Some(true),
+        );
+        opts
     }
 }
 
@@ -215,32 +237,75 @@ struct CategorySpec {
     actions: Vec<ActionSpec>,
 }
 
+/// One category object pulled apart into (id, usable actions, actions
+/// dropped). `None` when the category itself isn't usable (no string id).
+fn parse_category(c: &serde_json::Value) -> Option<(String, Vec<ActionSpec>, usize)> {
+    let id = c.get("id")?.as_str()?.to_string();
+    if id.is_empty() {
+        return None;
+    }
+    let mut dropped = 0;
+    let mut seen_ids = HashSet::new();
+    let actions = c
+        .get("actions")
+        .and_then(|a| a.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|v| match ActionSpec::deserialize(v) {
+                    Ok(a) if !a.id.is_empty() && !a.title.is_empty() => {
+                        // A repeated action id within one category would make
+                        // a press ambiguous — keep the first, drop the rest.
+                        if seen_ids.insert(a.id.clone()) {
+                            Some(a)
+                        } else {
+                            dropped += 1;
+                            None
+                        }
+                    }
+                    _ => {
+                        dropped += 1;
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some((id, actions, dropped))
+}
+
 /// The categories the webview asked for, keeping what's usable: a category
 /// needs an id, a button an id and a title. A bad button is dropped, not its
-/// category, so a field this shell can't read costs as little as possible.
+/// category, so a field this shell can't read costs as little as possible. A
+/// repeated category id keeps its LAST definition (macOS registration is a
+/// wholesale replace, so that's what "repeated" means); a repeated action id
+/// within a category keeps its FIRST (see `parse_category`). Returns how many
+/// entries were unusable, so `init` can log "why no button" to shell.log.
 /// `Err` only when the payload isn't a JSON list at all.
-fn category_specs(payload: &str) -> Result<Vec<CategorySpec>, serde_json::Error> {
+fn category_specs(payload: &str) -> Result<(Vec<CategorySpec>, usize), serde_json::Error> {
     let raw: Vec<serde_json::Value> = serde_json::from_str(payload)?;
-    Ok(raw
-        .into_iter()
-        .filter_map(|c| {
-            let id = c.get("id")?.as_str()?.to_string();
-            if id.is_empty() {
-                return None;
+    let mut order: Vec<String> = Vec::new();
+    let mut by_id: HashMap<String, Vec<ActionSpec>> = HashMap::new();
+    let mut dropped = 0usize;
+    for c in &raw {
+        match parse_category(c) {
+            Some((id, actions, action_drops)) => {
+                dropped += action_drops;
+                if !by_id.contains_key(&id) {
+                    order.push(id.clone());
+                }
+                by_id.insert(id, actions); // last definition wins
             }
-            let actions = c
-                .get("actions")
-                .and_then(|a| a.as_array())
-                .map(|list| {
-                    list.iter()
-                        .filter_map(|v| serde_json::from_value::<ActionSpec>(v.clone()).ok())
-                        .filter(|a| !a.id.is_empty() && !a.title.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
-            Some(CategorySpec { id, actions })
+            None => dropped += 1,
+        }
+    }
+    let specs = order
+        .into_iter()
+        .map(|id| {
+            let actions = by_id.remove(&id).unwrap_or_default();
+            CategorySpec { id, actions }
         })
-        .collect())
+        .collect();
+    Ok((specs, dropped))
 }
 
 /// What a button press tells the webview: the banner's context plus which
@@ -309,6 +374,10 @@ define_class!(
                         }),
                     );
                 } else if !action.isEqualToString(dismiss) {
+                    // UNNotificationDismissActionIdentifier only arrives when
+                    // the category sets CustomDismissAction, which none of
+                    // ours do, so this guard is belt-and-suspenders — a plain
+                    // swipe-to-dismiss must never be mistaken for a button press.
                     // A reply button's response is the text-input subclass.
                     let text = response
                         .downcast_ref::<UNTextInputNotificationResponse>()
@@ -388,7 +457,15 @@ pub fn init(app: &AppHandle) {
 
     app.listen(CATEGORIES_EVENT, |event| {
         match category_specs(event.payload()) {
-            Ok(specs) => register_categories(&specs),
+            Ok((specs, dropped)) => {
+                // "Why did my button not show up?" starts here, not in a debugger.
+                let ids: Vec<&str> = specs.iter().map(|c| c.id.as_str()).collect();
+                crate::recycle::shell_log(&format!(
+                    "periscope: registered {} categories {ids:?}; dropped {dropped}",
+                    specs.len()
+                ));
+                register_categories(&specs);
+            }
             Err(e) => crate::recycle::shell_log(&format!("periscope: bad categories payload: {e}")),
         }
     });
@@ -409,12 +486,11 @@ fn register_categories(specs: &[CategorySpec]) {
                         let title = NSString::from_str(&a.title);
                         match &a.reply {
                             Some(r) => {
-                                let button = if r.button.is_empty() { "Send" } else { &r.button };
                                 let text_action = UNTextInputNotificationAction::actionWithIdentifier_title_options_textInputButtonTitle_textInputPlaceholder(
                                     &id,
                                     &title,
                                     a.options(),
-                                    &NSString::from_str(button),
+                                    &NSString::from_str(r.button_title()),
                                     &NSString::from_str(&r.placeholder),
                                 );
                                 Retained::into_super(text_action)
@@ -431,7 +507,7 @@ fn register_categories(specs: &[CategorySpec]) {
                     &NSString::from_str(&c.id),
                     &NSArray::from_retained_slice(&actions),
                     &NSArray::new(),
-                    UNNotificationCategoryOptions(0),
+                    UNNotificationCategoryOptions::empty(),
                 )
             })
             .collect();
@@ -606,7 +682,7 @@ mod tests {
 
     #[test]
     fn category_specs_keeps_every_usable_action() {
-        let specs = category_specs(
+        let (specs, dropped) = category_specs(
             r#"[
             {"id":"done","actions":[{"id":"review","title":"Review diff","foreground":true},
                                     {"id":"mark_seen","title":"Mark seen"}]},
@@ -615,18 +691,22 @@ mod tests {
         ]"#,
         )
         .unwrap();
+        assert_eq!(dropped, 0);
         assert_eq!(specs.len(), 2);
         assert_eq!(specs[0].id, "done");
         let ids: Vec<&str> = specs[0].actions.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(ids, ["review", "mark_seen"]);
         assert_eq!(
-            specs[0].actions[0].options().0,
-            UNNotificationActionOptions::Foreground.0
+            specs[0].actions[0].options(),
+            UNNotificationActionOptions::Foreground
         );
-        assert_eq!(specs[0].actions[1].options().0, 0);
         assert_eq!(
-            specs[1].actions[0].options().0,
-            UNNotificationActionOptions::AuthenticationRequired.0
+            specs[0].actions[1].options(),
+            UNNotificationActionOptions::empty()
+        );
+        assert_eq!(
+            specs[1].actions[0].options(),
+            UNNotificationActionOptions::AuthenticationRequired
         );
         assert_eq!(
             specs[1].actions[0].reply,
@@ -641,7 +721,7 @@ mod tests {
     fn category_specs_drops_a_bad_action_not_its_category() {
         // The shell outlives the JS that sends this: an action it can't read
         // costs that one button, never the category's other buttons.
-        let specs = category_specs(
+        let (specs, dropped) = category_specs(
             r#"[{"id":"done","actions":[{"id":"","title":"x"},{"title":"no id"},
                                         {"id":"ok","title":"OK"},{"id":"bad","title":5}]},
                 {"actions":[]},
@@ -653,16 +733,22 @@ mod tests {
         assert_eq!(specs[0].actions[0].id, "ok");
         assert_eq!(specs[1].id, "empty");
         assert!(specs[1].actions.is_empty());
+        // 3 unusable actions in "done" + 1 category with no string id.
+        assert_eq!(dropped, 4);
     }
 
     #[test]
     fn category_specs_tolerates_nulls() {
-        let specs = category_specs(
+        let (specs, dropped) = category_specs(
             r#"[{"id":"d","actions":[{"id":"a","title":"A","auth":null,"foreground":null,
                                       "destructive":null,"reply":null}]}]"#,
         )
         .unwrap();
-        assert_eq!(specs[0].actions[0].options().0, 0);
+        assert_eq!(dropped, 0);
+        assert_eq!(
+            specs[0].actions[0].options(),
+            UNNotificationActionOptions::empty()
+        );
         assert!(specs[0].actions[0].reply.is_none());
     }
 
@@ -672,35 +758,129 @@ mod tests {
     }
 
     #[test]
+    fn category_specs_tolerates_malformed_top_level_shapes() {
+        // Each of null / a bare string / a number / an id that isn't a string
+        // is a category this shell can't read — drop it, keep going.
+        let (specs, dropped) = category_specs(
+            r#"[null, "done", 5, {"id":7}, {"id":"ok","actions":"nope"},
+                {"id":"good","actions":[{"id":"a","title":"A"}]}]"#,
+        )
+        .unwrap();
+        let ids: Vec<&str> = specs.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["ok", "good"]);
+        assert!(specs[0].actions.is_empty());
+        assert_eq!(specs[1].actions.len(), 1);
+        assert_eq!(dropped, 4);
+    }
+
+    #[test]
+    fn category_specs_dedupes_repeated_category_ids_keeping_the_last() {
+        // macOS registration is a wholesale replace, so a repeated id in one
+        // payload means "this is the real definition," not "add a second one."
+        let (specs, _) = category_specs(
+            r#"[{"id":"d","actions":[{"id":"old","title":"Old"}]},
+                {"id":"other","actions":[]},
+                {"id":"d","actions":[{"id":"new","title":"New"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].id, "d");
+        assert_eq!(specs[0].actions[0].id, "new");
+        assert_eq!(specs[1].id, "other");
+    }
+
+    #[test]
+    fn category_specs_dedupes_repeated_action_ids_keeping_the_first() {
+        // Unlike the category id, an action id's meaning can't be "replace" —
+        // a press names one action id, so a duplicate must resolve to exactly
+        // one definition, and the first one is the one the webview meant.
+        let (specs, dropped) = category_specs(
+            r#"[{"id":"d","actions":[{"id":"a","title":"First"},{"id":"a","title":"Second"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(specs[0].actions.len(), 1);
+        assert_eq!(specs[0].actions[0].title, "First");
+        assert_eq!(dropped, 1);
+    }
+
+    #[test]
     fn action_options_combine() {
-        let specs = category_specs(
+        let (specs, _) = category_specs(
             r#"[{"id":"d","actions":[{"id":"a","title":"A","auth":true,"destructive":true}]}]"#,
         )
         .unwrap();
         assert_eq!(
-            specs[0].actions[0].options().0,
-            UNNotificationActionOptions::AuthenticationRequired.0
-                | UNNotificationActionOptions::Destructive.0
+            specs[0].actions[0].options(),
+            UNNotificationActionOptions::AuthenticationRequired
+                | UNNotificationActionOptions::Destructive
         );
     }
 
     #[test]
-    fn a_kinded_banner_names_its_category_defaulting_to_its_kind() {
+    fn a_malformed_auth_fails_closed() {
+        // An unreadable `auth` must cost the button, not grant it — guessing
+        // "no auth required" would let PR 2's Allow/Send buttons run unlocked.
+        let (specs, _) = category_specs(
+            r#"[{"id":"d","actions":[{"id":"allow","title":"Allow","auth":"yes"},
+                                      {"id":"open","title":"Open"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(specs[0].actions.len(), 1);
+        assert_eq!(specs[0].actions[0].id, "open");
+    }
+
+    #[test]
+    fn reply_button_title_defaults_to_send() {
+        let empty = ReplySpec {
+            button: "".into(),
+            placeholder: "".into(),
+        };
+        assert_eq!(empty.button_title(), "Send");
+        let set = ReplySpec {
+            button: "Go".into(),
+            placeholder: "".into(),
+        };
+        assert_eq!(set.button_title(), "Go");
+    }
+
+    #[test]
+    fn reply_button_title_defaults_to_send_from_json() {
+        // `reply: {}` and an explicit null button both arrive from the
+        // webview as an empty label, not a parse failure.
+        let (specs, _) =
+            category_specs(r#"[{"id":"d","actions":[{"id":"a","title":"A","reply":{}}]}]"#)
+                .unwrap();
         assert_eq!(
-            category_of(&parse_request(FULL).unwrap()),
-            Some("ci_failed")
+            specs[0].actions[0].reply.as_ref().unwrap().button_title(),
+            "Send"
         );
+        let (specs, _) = category_specs(
+            r#"[{"id":"d","actions":[{"id":"a","title":"A","reply":{"button":null}}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            specs[0].actions[0].reply.as_ref().unwrap().button_title(),
+            "Send"
+        );
+    }
+
+    #[test]
+    fn a_banner_gets_buttons_only_when_it_names_a_category() {
+        // FULL carries a kind but no category — no fallback, so no buttons.
+        assert_eq!(category_of(&parse_request(FULL).unwrap()), None);
         let named =
             parse_request(r#"{"title":"t","body":"b","kind":"done","category":"done_seen"}"#)
                 .unwrap();
         assert_eq!(category_of(&named), Some("done_seen"));
-        // A plain banner (an older webview's) carries no category, so no buttons.
+        // An explicit null category is still no category — no fallback to kind.
+        let null =
+            parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
+        assert_eq!(category_of(&null), None);
+        // A plain banner (an older webview's) carries no kind, so no buttons
+        // even if a category somehow rode along.
         let plain =
             parse_request(r#"{"title":"t","body":"b","target":"s:1","category":"done"}"#).unwrap();
         assert_eq!(category_of(&plain), None);
-        let null =
-            parse_request(r#"{"title":"t","body":"b","kind":"done","category":null}"#).unwrap();
-        assert_eq!(category_of(&null), Some("done"));
     }
 
     #[test]
