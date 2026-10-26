@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { waitKind } from "../../util.js";
 import { firstSentence, payloadFor } from "../copy.js";
+
+// actions.js (imported below for the category cross-check) pulls in UI
+// modules that reach tauri.js; feed.test.js's mock, unused here otherwise.
+vi.mock("../../tauri.js", () => ({
+  inTauri: () => false, notify: vi.fn(), onNotificationClick: vi.fn(), onNotificationOpened: vi.fn(),
+  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(),
+}));
+const { categories } = await import("../actions.js");
 
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])/;
 
@@ -103,6 +111,44 @@ describe("payloadFor", () => {
     const ev = { kind: "usage", account: "ghost", meter: "week_all", m: { percent: 50 } };
     const two = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
     expect(payloadFor(ev, { accounts: two, windows: [] }).title).toBe("Account ghost is running hot");
+  });
+
+  it("gives each banner the category whose buttons all apply", () => {
+    expect(payloadFor({ kind: "done", w: w() })).toMatchObject({ category: "done", data: { pid: "p1", session: "periscope" } });
+    expect(payloadFor({ kind: "done", w: w({ branch: "" }) }).category).toBe("done_seen");
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) }).category).toBe("ci_failed_pr");
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, cwd: "/wt/a" }) })).toMatchObject({ category: "pr_merged", data: { cwd: "/wt/a" } });
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7 }) }).category).toBe("pr_merged_pr");
+    // Their buttons are PR 2's: no category yet, so the shell shows none.
+    expect(payloadFor({ kind: "needs_input", w: w() }).category).toBeUndefined();
+  });
+
+  it("offers Spawn on the account a pane on A would move to, and only then", () => {
+    const ev = { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } };
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    expect(payloadFor(ev, { accounts, moveTargets: { default: "b" } })).toMatchObject({
+      category: "usage_to_b", data: { open: "usage", spawn_to: "b" },
+    });
+    expect(payloadFor(ev, { accounts, moveTargets: {} })).toMatchObject({ category: "usage", data: { open: "usage" } });
+    expect(payloadFor(ev, { accounts }).data.spawn_to).toBeUndefined();
+    expect(payloadFor(ev, { accounts, moveTargets: { default: "default" } }).category).toBe("usage");
+  });
+
+  it("only names categories that actions.js registers", () => {
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    const moveTargets = { default: "b", b: "default" };
+    const ctx = { accounts, windows: [], moveTargets };
+    const ids = new Set(categories({ accounts, moveTargets }).map((c) => c.id));
+    const evs = [
+      { kind: "done", w: w() }, { kind: "done", w: w({ branch: "" }) }, { kind: "ci_failed", w: w({ pr: 7 }) },
+      { kind: "pr_merged", w: w({ pr: 7, cwd: "/wt" }) }, { kind: "pr_merged", w: w({ pr: 7 }) },
+      { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } },
+      { kind: "usage", account: "c", meter: "week_all", m: { percent: 90 } },
+    ];
+    for (const ev of evs) {
+      const p = payloadFor(ev, ctx);
+      expect(ids.has(p.category)).toBe(true);
+    }
   });
 });
 

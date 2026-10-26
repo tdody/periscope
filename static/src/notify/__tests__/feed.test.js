@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../tauri.js", () => ({
   inTauri: () => false, notify: vi.fn(), onNotificationClick: vi.fn(), onNotificationOpened: vi.fn(),
-  openExternal: vi.fn(), setBadgeCount: vi.fn(),
+  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(),
 }));
 const tauri = await import("../../tauri.js");
 const { railSelection, windows } = await import("../../store.js");
@@ -69,6 +69,7 @@ describe("startNotifyFeed", () => {
   it("does nothing in a plain browser tab", () => {
     startNotifyFeed();
     expect(tauri.onNotificationOpened).not.toHaveBeenCalled();
+    expect(tauri.onNotificationAction).not.toHaveBeenCalled();
     expect(tauri.setBadgeCount).not.toHaveBeenCalled();
   });
 });
@@ -192,5 +193,19 @@ describe("runPass", () => {
     expect(r.held).toHaveLength(2);
     expect(r.heldSince).toBe(1000 + BURST_MS);
     expect(r.timerAt).toBe(1000 + 2 * BURST_MS);
+  });
+
+  it("sends the category set on the first pass, then only when it changes", () => {
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    const first = runPass(fresh(), snapOf([win()], { accounts, moveTargets: { default: "b" } }), PREFS, 0);
+    expect(first.categories.map((c) => c.id)).toContain("usage_to_b");
+    const ctx = fresh({ state: first.state, lastBadge: first.lastBadge, lastCategories: first.lastCategories });
+    expect(runPass(ctx, snapOf([win()], { accounts, moveTargets: { default: "b" } }), PREFS, 1000).categories).toBeNull();
+    const moved = runPass(ctx, snapOf([win()], { accounts, moveTargets: { default: "b", b: "default" } }), PREFS, 1000);
+    expect(moved.categories.map((c) => c.id)).toContain("usage_to_default");
+  });
+
+  it("sends no categories before the first /api/state", () => {
+    expect(runPass(fresh(), snapOf([], { alerts: null }), PREFS, 0).categories).toBeNull();
   });
 });
