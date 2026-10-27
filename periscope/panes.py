@@ -1042,10 +1042,13 @@ def parse_pane(content: str) -> dict:
 
     spinner = _detect_spinner(body)
 
-    needs_input = _detect_needs_input(lines)
+    # A permission dialog's footer ("Esc to cancel · Tab to amend" in 2.1.280)
+    # is outside NEEDS_INPUT_FOOTER_RE's family, so it's read by its own shape
+    # (THI-435); the loose "Esc to cancel" dialog_open takes also fires on toasts.
+    needs_input = _detect_needs_input(lines) or parse_permission_dialog(content) is not None
     # The dialog footer is Claude-specific UI; seeing it means the pane IS
-    # Claude even if STATUS_RE missed (the dialog occupies the bottom rows
-    # where the status line normally lives).
+    # Claude even if the composer and status line didn't show (the dialog
+    # occupies the bottom rows where they normally live).
     if needs_input:
         agent = "claude"
 

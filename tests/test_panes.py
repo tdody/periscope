@@ -1508,6 +1508,18 @@ def test_a_hidden_control_in_a_command_does_not_break_the_match():
     assert dialog_matches(parse_permission_dialog(screen), "Bash", key)
 
 
+@pytest.mark.parametrize("name", ["bash.txt", "bash_multiline.txt", "bash_narrow.txt", "edit.txt", "write.txt"])
+def test_parse_pane_reads_a_permission_dialog_as_needs_input(name):
+    # THI-435: its footer, "Esc to cancel · Tab to amend", is outside
+    # NEEDS_INPUT_FOOTER_RE, and the dialog hides the composer and status
+    # line, so an unmapped pane read as a shell typing "1. Yes".
+    parsed = parse_pane(_dialog(name))
+    assert parsed["agent"] == "claude"
+    assert parsed["state"] == "needs-input"
+    assert parsed["needs_input"] is True
+    assert parsed["pending_input"] is None
+
+
 # ── composer_ready: the plain, empty ❯ prompt a reply needs ────────────
 # Real Claude Code 2.1.280 captures (capture-pane -e, 100 columns, escapes
 # kept), the probe's scratch path in the banner replaced by /tmp/probe.
