@@ -366,9 +366,11 @@ TOOL_CALL_RE = re.compile(r"^[^\x00-\x7f]\s+\w+\(")
 # (`keep going`, etc.) to restart. When the most recent `⎿` line is an
 # API Error the pane is silently blocked waiting on a human nudge. A
 # later non-error `⎿` means a subsequent turn succeeded and the flag
-# should clear.
+# should clear. A stream cut mid-response ("The response stopped
+# arriving") renders as an assistant `⏺` line instead (THI-436), so both
+# glyphs count as the error.
 TOOL_RESULT_RE = re.compile(r"^\s*⎿\s+")
-API_ERROR_RE = re.compile(r"^\s*⎿\s+API Error:")
+API_ERROR_RE = re.compile(r"^\s*[⎿⏺]\s+API Error:")
 
 
 def all_pane_ids() -> set[str]:
@@ -952,10 +954,12 @@ def _detect_asked_question(lines: list[str]) -> bool:
 
 
 def _detect_api_error(lines: list[str]) -> bool:
-    """True when the most recent `⎿` tool-result line is an API Error.
+    """True when the most recent `⎿` tool-result line is an API Error,
+    or a `⏺ API Error:` line sits below it.
 
     Claude Code renders rate-limit / transport failures as a normal tool
-    result whose body begins "API Error:" and then STOPS — no auto-retry;
+    result whose body begins "API Error:" (or, for a stream cut, as an
+    assistant `⏺ API Error:` line) and then STOPS — no auto-retry;
     the turn just ends until the user nudges it (`keep going`, etc.). The
     flag tracks "pane is silently blocked". A later non-error `⎿` means a
     subsequent turn succeeded and the flag clears.
