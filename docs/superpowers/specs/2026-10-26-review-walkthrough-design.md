@@ -206,12 +206,15 @@ groups follow: local branches with a live pane and no PR (sprint work not
 yet pushed), and `~/.claude/reviews/<repo>/<slug>` dirs matching neither.
 
 Each row carries a **role**: `mine` or `review-requested` (with the author).
-Columns: branch + repo + role/author, PR (number, draft, state incl.
-merged, CI glyph), walkthrough (none / N stops / stale by N), comments (M
+Columns: branch + repo + role/author, PR (number, then the row's Linear
+ticket when one is known — alone when there's no PR — then draft, state
+incl. merged, CI glyph), walkthrough (none / N stops / stale by N), comments (M
 unresolved), who (the owning pane's name, else "opened by <author>", with a
 "no pane" / "not checked out" state line). PR numbers link to GitHub; the
 URL comes from the origin remote, so header-only rows link too. Sort is
-readiness-major: rows with a live pane, then rows with a worktree on disk,
+readiness-major (a search box in the header then filters the sorted rows
+client-side — THI-442, `2026-10-27-reviews-queue-improvements-design.md`
+D4/D5): rows with a live pane, then rows with a worktree on disk,
 then neither; merged last. Within a tier: unresolved comments, then
 review-requested, then PR-without-walkthrough, then the rest, then
 local-no-PR; then PR number desc, then branch.
@@ -310,12 +313,19 @@ this repo, so outside this spec's budget.
   is `mine` for the first list. `cached_open_prs(repo_root)` is the 60 s
   stale-while-revalidate wrapper (background `_bg` fetch on miss/stale,
   same shape as `git_pr.cached_pr_state`); `[]` when `gh` is absent.
-- `list_reviews(windows, repos)` → rows `{repo, branch, slug, role: "mine"
-  | "review-requested" | "local", pr: {number, title, draft, state, ci,
-  author} | None, walkthrough: {stops, head, stale_by} | None, unresolved,
-  owner: {pid, pane_id, session, index, name} | None, worktree: path |
-  None}`. `repos` is the list of known repo roots (the route passes
-  `open_ops.discover_repos()`); `repo` is each root's basename. Row order
+- `list_reviews(windows, repos, team_keys)` → rows `{repo, branch, slug,
+  role: "mine" | "review-requested" | "local", pr: {number, title, draft,
+  state, ci, author, url} | None, walkthrough: {stops, head, stale_by} |
+  None, unresolved, comments, owner: {pid, pane_id, session, index, name} |
+  None, worktree: path | None}` plus the pane payload's five Linear ticket
+  fields (`linked_linear`, `linked_linear_title`, `linked_linear_status`,
+  `linear_ticket`, `linear_ticket_source`): the owner pane's link, else
+  `git_pr.linear_ticket_for` over the row's own branch and PR title —
+  decided here, never in the browser (THI-442,
+  `2026-10-27-reviews-queue-improvements-design.md` D1). `team_keys` is
+  `settings.linear_team_keys`, passed in by the route. `repos` is the list
+  of known repo roots (the route passes `open_ops.discover_repos()`);
+  `repo` is each root's basename. Row order
   of assembly: PRs per repo, then live `(repo_label, branch)` pairs with no
   PR (`role: local`), then orphan review dirs. A row with a walkthrough
   header `pr:` not in the open lists uses `cached_linked_pr_state` (sees
