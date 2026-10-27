@@ -572,7 +572,7 @@ export function Detail() {
       {isQueue && <ReviewsQueue />}
       {isReview && (reviews.value === null ? <div class="wt-empty">loading…</div>
         : reviewRow ? <Walkthrough key={`${reviewRow.repo}/${reviewRow.branch}`} repo={reviewRow.repo} branch={reviewRow.branch}
-            sig={`${reviewRow.walkthrough?.head}|${reviewRow.walkthrough?.stale_by}|${reviewRow.unresolved}`} />
+            sig={`${reviewRow.walkthrough?.head}|${reviewRow.walkthrough?.stale_by}|${reviewRow.unresolved}|${reviewRow.comments}`} />
         : <EmptyDetail />)}
       {trPids.map((pid) => {
         const tw = lookupWindow(pid);

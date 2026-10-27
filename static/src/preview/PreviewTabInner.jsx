@@ -231,7 +231,7 @@ export function PreviewTabInner({ entry, active = true }) {
         setDirty(false);          // the buffer now matches disk by definition
         setConflict(false);
         setSaveError(null);
-        setState({ loading: false, error: null, content: data.content, lang: data.language, resolved: data.path });
+        setState({ loading: false, error: null, content: data.content, lang: data.language, resolved: data.path, repo: data.repo });
       } catch (e) {
         if (alive) setState({ loading: false, error: String(e), content: null, lang: null, resolved: null });
       }
@@ -602,12 +602,15 @@ export function PreviewTabInner({ entry, active = true }) {
                 resolveUrl: state.resolved ? makeResolveUrl(target, state.resolved) : null,
                 meta: true,
                 mermaid: true,
+                // Cites are repo-relative to the DOC's checkout (fs_read's
+                // `repo`), not the pane's cwd — a spec previewed from another
+                // repo, or a pane that cd'd, would otherwise open the wrong file.
                 cite: (c) => (
                   <button
                     type="button"
                     class="md-cite"
                     title={`open ${c.path}${c.start ? `:${c.start}` : ""}`}
-                    onClick={() => openFileTab({ path: c.path, line: c.start })}
+                    onClick={() => openFileTab({ path: state.repo ? `${state.repo}/${c.path}` : c.path, line: c.start })}
                   >{c.raw}</button>
                 ),
               })}
