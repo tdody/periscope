@@ -72,8 +72,8 @@ RESUME_EXPIRY_S = 30 * 60  # forget about a resume after 30 min idle
 _spinner_last_seen: dict[str, tuple[str, float]] = {}
 SPINNER_GRACE_S = 4.0
 
-# Per-target "is this a Claude pane" stickiness. Detection is via STATUS_RE
-# matching CC's bottom status line, but CC's interactive dialogs (e.g.
+# Per-target "is this a Claude pane" stickiness. Detection is via CC's
+# composer or STATUS_RE (parse_pane), but CC's interactive dialogs (e.g.
 # AskUserQuestion) take over the screen and temporarily hide that line — we
 # don't want the card to flip back to "shell" while the user is mid-prompt.
 _agent_last_seen: dict[str, tuple[str, float]] = {}
@@ -234,7 +234,8 @@ def recency_stamps_for(target: str) -> dict:
     }
 
 
-# Status line at the bottom of every Claude pane:
+# One statusLine script's output, the only one context % and model are read
+# from. Other scripts' (or none) fall back to the composer (THI-434):
 #   "  24% | ↑235k ↓479 | $17.04 | Opus 4.7 (1M context)"
 STATUS_RE = re.compile(r"^\s*(?P<context>\d+)%\s*\|\s*↑\S+\s+↓\S+\s*\|\s*\$[\d.,]+\s*\|\s*(?P<model>.+?)\s*$")
 
@@ -366,9 +367,11 @@ TOOL_CALL_RE = re.compile(r"^[^\x00-\x7f]\s+\w+\(")
 # (`keep going`, etc.) to restart. When the most recent `⎿` line is an
 # API Error the pane is silently blocked waiting on a human nudge. A
 # later non-error `⎿` means a subsequent turn succeeded and the flag
-# should clear.
+# should clear. A stream cut mid-response ("The response stopped
+# arriving") renders as an assistant `⏺` line instead (THI-436), so both
+# glyphs count as the error.
 TOOL_RESULT_RE = re.compile(r"^\s*⎿\s+")
-API_ERROR_RE = re.compile(r"^\s*⎿\s+API Error:")
+API_ERROR_RE = re.compile(r"^\s*[⎿⏺]\s+API Error:")
 
 
 def all_pane_ids() -> set[str]:
@@ -483,8 +486,8 @@ def _is_chrome_line(line: str) -> bool:
 def _detect_status(lines: list[str]) -> dict | None:
     """Claude Code's bottom status line ("X% | ↑n ↓n | $cost | model"),
     searched in the last 4 non-empty lines. Its presence signals "this is
-    a Claude pane" and yields the context+model fields. Returns the regex
-    groupdict, or None if absent.
+    a Claude pane" (as does the composer, _detect_composer) and yields the
+    context+model fields. Returns the regex groupdict, or None if absent.
 
     Branch/PR/CI used to be parsed from a custom statusline rendered above
     this — periscope now derives them from the pane's cwd via git/gh.
@@ -775,8 +778,16 @@ def _detect_pending_input(raw_rows: list[str], plain_rows: list[str]) -> str | N
 # Non-empty rows the footer under the composer's lower rule may take: the
 # mode hint, warnings, a status line (live 2.1.280 panes show 2-4). A Claude
 # that exited leaves its last frame above the shell's output and prompt,
-# which push the count past this, so that frame never reads as a composer.
+# which push the count past this once the shell has printed anything.
 _FOOTER_REACH = 6
+# Right after exit they don't: "Press Ctrl-C again to exit", this line, the
+# resume command and the prompt is four rows (THI-434, from live scrollback).
+_EXITED_RE = re.compile(r"^Resume this session with:")
+# The footer reach for telling a Claude pane from a shell, where nothing is
+# typed into the pane on the strength of it: background agents list under the
+# status line one row each (7 rows with 3 of them, live), and a reply's
+# tighter _FOOTER_REACH would read those panes as shells.
+_DETECT_FOOTER_REACH = 12
 # How much of a reply's start the composer must show back before its Enter:
 # enough to tell it from anything else, short enough for the first row.
 _HOLDS_PREFIX = 24
@@ -803,21 +814,41 @@ def _dialog_above(rows: list[str]) -> bool:
     return False
 
 
-def _composer_rows(content: str) -> list[tuple[str, str]] | None:
+def _composer_rows(content: str, footer_reach: int = _FOOTER_REACH) -> list[tuple[str, str]] | None:
     """(raw, plain) of the non-empty rows between the LAST two full-width
     rules, where Claude draws its composer, or None when there is no such
-    pair, more than _FOOTER_REACH rows follow it, or part of a dialog shows
-    above it (_dialog_above)."""
+    pair, more than `footer_reach` rows follow it, Claude's exit line follows
+    it, or part of a dialog shows above it (_dialog_above)."""
     raw_rows = content.rstrip("\n").split("\n")
     plain_rows = [_strip_escapes(row).rstrip() for row in raw_rows]
     rules = [i for i, row in enumerate(plain_rows) if DIALOG_RULE_RE.match(row)]
     if len(rules) < 2:
         return None
-    if sum(1 for row in plain_rows[rules[-1] + 1 :] if row.strip()) > _FOOTER_REACH:
+    footer = [row for row in plain_rows[rules[-1] + 1 :] if row.strip()]
+    if len(footer) > footer_reach or any(_EXITED_RE.match(row) for row in footer):
         return None
     if _dialog_above(plain_rows[: rules[-2]]):
         return None
     return [(raw_rows[i], plain_rows[i]) for i in range(rules[-2] + 1, rules[-1]) if plain_rows[i].strip()]
+
+
+def _detect_composer(content: str) -> bool:
+    """Whether Claude's composer, `❯` (or shell mode's `!`) between its two
+    full-width rules, sits at the bottom of the pane. Claude's own chrome,
+    unlike the status line, which is whatever the user's statusLine script
+    prints: STATUS_RE knows one script's, so every other pane read as a
+    shell (THI-434)."""
+    rows = _composer_rows(content, _DETECT_FOOTER_REACH)
+    return bool(rows) and rows[0][1].lstrip().startswith(("❯", "!"))
+
+
+def _last_rule_index(lines: list[str]) -> int:
+    """Index of the last full-width rule in `lines`, the composer's lower one
+    when _detect_composer found it; -1 when there is none."""
+    for i in range(len(lines) - 1, -1, -1):
+        if DIALOG_RULE_RE.match(_strip_escapes(lines[i])):
+            return i
+    return -1
 
 
 def composer_ready(content: str) -> bool:
@@ -952,10 +983,12 @@ def _detect_asked_question(lines: list[str]) -> bool:
 
 
 def _detect_api_error(lines: list[str]) -> bool:
-    """True when the most recent `⎿` tool-result line is an API Error.
+    """True when the most recent `⎿` tool-result line is an API Error,
+    or a `⏺ API Error:` line sits below it.
 
     Claude Code renders rate-limit / transport failures as a normal tool
-    result whose body begins "API Error:" and then STOPS — no auto-retry;
+    result whose body begins "API Error:" (or, for a stream cut, as an
+    assistant `⏺ API Error:` line) and then STOPS — no auto-retry;
     the turn just ends until the user nudges it (`keep going`, etc.). The
     flag tracks "pane is silently blocked". A later non-error `⎿` means a
     subsequent turn succeeded and the flag clears.
@@ -1000,9 +1033,14 @@ def parse_pane(content: str) -> dict:
     raw_rows, plain_rows, lines = _split_buffers(content)
 
     status = _detect_status(lines)
-    agent = "claude" if status is not None else None
+    composer = _detect_composer(content)
+    agent = "claude" if status is not None or composer else None
+    # Under the composer's lower rule is footer: mode hints, warnings and the
+    # statusLine script's output, which can read as a spinner (a script's
+    # line truncated to `🤖 op…`) or as the last reply. Content is above it.
+    body = lines[: _last_rule_index(lines) + 1] if composer else lines
 
-    spinner = _detect_spinner(lines)
+    spinner = _detect_spinner(body)
 
     needs_input = _detect_needs_input(lines)
     # The dialog footer is Claude-specific UI; seeing it means the pane IS
@@ -1016,10 +1054,10 @@ def parse_pane(content: str) -> dict:
     pending_input = None if needs_input else _detect_pending_input(raw_rows, plain_rows)
 
     recap = _extract_recap(lines)
-    last_line = _last_meaningful_line(lines)
+    last_line = _last_meaningful_line(body)
 
-    asked_question = _detect_asked_question(lines) if agent == "claude" and not needs_input else False
-    api_error = _detect_api_error(lines) if agent == "claude" else False
+    asked_question = _detect_asked_question(body) if agent == "claude" and not needs_input else False
+    api_error = _detect_api_error(body) if agent == "claude" else False
 
     state = _resolve_state(agent, needs_input, asked_question, spinner)
 

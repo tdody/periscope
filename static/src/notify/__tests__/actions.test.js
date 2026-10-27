@@ -26,10 +26,17 @@ describe("categories", () => {
     const byId = Object.fromEntries(categories().map((c) => [c.id, c.actions.map((a) => a.id)]));
     expect(byId).toEqual({
       done_seen: ["mark_seen"], ci_failed_pr: ["open_pr"],
-      pr_merged: ["cleanup", "open_pr"], pr_merged_cleanup: ["cleanup"], pr_merged_pr: ["open_pr"], usage: ["details"],
-      needs_permission: ["allow", "deny", "open"], needs_dialog: ["open"], question: ["send", "open"],
-      ci_failed: ["fix", "open_pr"], ci_failed_fix: ["fix"],
+      pr_merged: ["cleanup"], pr_merged_cleanup: ["cleanup"], pr_merged_pr: ["open_pr"], usage: ["details"],
+      needs_permission: ["allow"], needs_dialog: ["open"], question: ["send"],
+      ci_failed: ["fix"], ci_failed_fix: ["fix"],
     });
+  });
+
+  it("gives each category exactly one button, so macOS shows it instead of folding it into Options", () => {
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    for (const c of categories({ accounts, moveTargets: { default: "b", b: "default" } })) {
+      expect(c.actions, c.id).toHaveLength(1);
+    }
   });
 
   it("brings the app forward only for buttons that show something in it", () => {
@@ -42,9 +49,9 @@ describe("categories", () => {
     expect(new Set(auth)).toEqual(new Set(["allow", "send", "fix"]));
   });
 
-  it("draws Deny red and gives Reply a text field", () => {
+  it("gives Reply a text field, and offers no Deny button (the click opens the pane)", () => {
     const actions = Object.fromEntries(categories().flatMap((c) => c.actions).map((a) => [a.id, a]));
-    expect(actions.deny.destructive).toBe(true);
+    expect(actions.deny).toBeUndefined();
     expect(actions.send).toMatchObject({ title: "Reply", reply: { button: "Send", placeholder: "Reply…" } });
   });
 
@@ -52,7 +59,7 @@ describe("categories", () => {
     const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }, { id: "c", label: "C" }];
     const usage = categories({ accounts, moveTargets: { default: "c", b: "c", c: "b" } }).filter((c) => c.id.startsWith("usage_to_"));
     expect(usage.map((c) => c.id)).toEqual(["usage_to_b", "usage_to_c"]);
-    expect(usage[1].actions.map((a) => [a.id, a.title])).toEqual([["spawn_on", "Spawn on C"], ["details", "Details"]]);
+    expect(usage[1].actions.map((a) => [a.id, a.title])).toEqual([["spawn_on", "Spawn on C"]]);
   });
 
   it("has no Spawn category without move targets", () => {

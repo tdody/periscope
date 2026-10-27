@@ -20,7 +20,8 @@ from periscope.routes import pane_actions, send
 _DIALOGS = Path(__file__).resolve().parent.parent / "fixtures" / "permission_dialogs"
 _COMPOSER = Path(__file__).resolve().parent.parent / "fixtures" / "composer"
 _IDLE = "⏺ Done.\n\n" + "─" * 60 + "\n❯ \n" + "─" * 60 + "\n  ⏵⏵ auto mode on (shift+tab to cycle)\n"
-# An idle Claude an unmapped pane still reads as Claude: its status line.
+# An idle Claude an unmapped pane still reads as Claude: its composer (_IDLE,
+# whatever the status line, THI-434), and the status line STATUS_RE knows.
 _CLAUDE_ON_SCREEN = (
     "⏺ Done.\n\n" + "─" * 60 + "\n❯ \n" + "─" * 60 + "\n  17% | ↑30k ↓74 | $0.50 | Opus 4.7 (1M context)\n"
 )
@@ -400,11 +401,12 @@ def test_reply_goes_to_a_working_agent(client, pane, mocker):
     _assert_replied(pane)
 
 
-def test_reply_goes_to_an_unmapped_pane_showing_claude(client, pane, mocker):
-    assert parse_pane(_CLAUDE_ON_SCREEN)["agent"] == "claude"
+@pytest.mark.parametrize("screen", [_IDLE, _CLAUDE_ON_SCREEN], ids=["composer", "status-line"])
+def test_reply_goes_to_an_unmapped_pane_showing_claude(client, pane, mocker, screen):
+    assert parse_pane(screen)["agent"] == "claude"
     mocker.patch.object(pane_actions, "live_session_id_for_pane", return_value=None)
     mocker.patch.object(pane_actions, "session_state_for", return_value=None)
-    _screens(mocker, _CLAUDE_ON_SCREEN, _typed(_CLAUDE_ON_SCREEN))
+    _screens(mocker, screen, _typed(screen))
     assert _reply(client).status_code == 200
     _assert_replied(pane)
 
@@ -603,7 +605,9 @@ def test_reply_takes_only_a_live_session_as_an_agent(client, pane, mocker):
     mocker.patch.object(
         pane_actions, "session_state_for", side_effect=lambda sid: idle_state if sid == "sid-1" else None
     )
-    mocker.patch.object(pane_actions, "capture", return_value=_IDLE)
+    # No composer on screen: one is evidence on its own (THI-434). Taken as
+    # an agent here, the press would 409 at the composer check instead.
+    mocker.patch.object(pane_actions, "capture", return_value="⏺ Done.\n")
     r = _reply(client)
     assert r.status_code == 409
     assert "isn't running an agent" in r.json()["detail"]
