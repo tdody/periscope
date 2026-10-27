@@ -107,8 +107,9 @@ it by convention.
 - `<branch-slug>` is the branch with every `/` → `--`.
 
 One writer per file: the pane writes `walkthrough.md`; periscope only ever
-appends to `comments.md`; the pane edits `comments.md` only to flip
-`resolved`. Periscope removes the whole dir only on the row's **clear**.
+appends to `comments.md`; the pane edits `comments.md` only to add a reply
+paragraph inside an entry and flip its `resolved`. Periscope removes the
+whole dir only on the row's **clear**.
 
 ### D3. Markdown with three conventions, each degrading to plain markdown
 
@@ -239,7 +240,8 @@ the owning pane as a channel message naming the stop:
 Why does this bypass the signals store? The rail reads it straight from poll.
 ```
 
-The pane acts and flips `resolved: no` → `yes`. The queue counts unresolved
+The pane acts, appends a `Reply (<head>): …` paragraph inside the entry, and
+flips `resolved: no` → `yes` once addressed. The queue counts unresolved
 entries; the walkthrough view lists each stop's comments under it. With no
 owner the append still happens and the response says it was not delivered
 (409); the next pane to prepare the branch is told to read `comments.md`.
@@ -330,9 +332,9 @@ this repo, so outside this spec's budget.
 
 Prompts. Prepare: "Run the `walkthrough` skill for branch `<branch>` and
 write it to `<walkthrough_path>`; read `<comments_path>` first if it exists."
-Merge: "This branch has been reviewed in periscope and the comments in
-`<comments_path>` are resolved. Merge it by this repo's convention, then
-report."
+Merge: "This branch has been reviewed in periscope. Read `<comments_path>`
+first: if every entry is `resolved: yes`, merge it by this repo's convention
+and report; otherwise reply with what is still open and do not merge."
 
 **`periscope/channels.py`** — the spawn-then-deliver-prompt sequence inlined
 in `_do_spawn_claude_tool` (window_new, wait for the consent dialog and TUI
@@ -414,9 +416,9 @@ one-liner verbatim. It carries: the five kinds with a one-line test for
 each; the rule that a stop is a structural claim and refs are evidence, not
 prose; "reuse" stops must name the existing thing and why it is the right
 one (the #8867 check); a mermaid diagram on any stop that introduces or
-crosses a boundary; and the closing step — read `comments.md`, address,
-flip `resolved`. Out of this repo's file budget; the plan carries it as its
-own task.
+crosses a boundary; and the closing step — read `comments.md`, address each
+entry with a reply paragraph, flip `resolved`. Out of this repo's file
+budget; the plan carries it as its own task.
 
 ### Tests
 
