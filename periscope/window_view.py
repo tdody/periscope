@@ -29,6 +29,7 @@ from periscope.git_pr import (
     cached_git_state,
     cached_linked_pr_state,
     cached_pr_state,
+    linear_ticket_for,
 )
 from periscope.log import log
 from periscope.panes import (
@@ -477,6 +478,10 @@ def build_window_view(
     linked_linear = persisted.get("linked_linear")
     linked_linear_title = persisted.get("linked_linear_title")
     linked_linear_status = persisted.get("linked_linear_status")
+    # Without a link, the ticket the PR title or branch names (THI-441). Its
+    # own fields, not linked_linear: the Inspector says "linked by claude" of
+    # that one, and offers + link Linear ticket only while it's unset.
+    derived = None if linked_linear else linear_ticket_for(git.get("branch"), pr.get("pr_title"))
     if linked_pr:
         pr = dict(pr)
         # Keep `pr` an int to match the auto-detected path (pr_state_for
@@ -559,6 +564,8 @@ def build_window_view(
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
+        "linear_ticket": derived[0] if derived else None,
+        "linear_ticket_source": derived[1] if derived else None,
         # The track this tab belongs to — the sole organizational primitive.
         # (project_pinned_dir / workspace_id / project_name / project_archived
         # are gone; the frontend groups purely by track_id.)

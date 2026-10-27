@@ -16,6 +16,7 @@ from periscope.git_pr import (
     cached_git_state,
     git_signal_for,
     git_state_for,
+    linear_ticket_for,
     linked_pr_state_for,
     pr_state_for,
 )
@@ -191,6 +192,32 @@ def test_ci_checks_names_each_check_failing_first():
         {"name": "ci/legacy", "state": "pending"},
         {"name": "lint", "state": "success"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("branch", "pr_title", "want"),
+    [
+        # A PR title opening with the ticket wins: "THI-435: …" is how these PRs
+        # are titled, and it names the ticket even when the branch doesn't.
+        ("feature/permission-dialog-needs-input", "THI-435: parse_pane reads …", ("THI-435", "pr_title")),
+        ("tdody/fdy-8562-restack", "[FDY-8600] restack the runbook", ("FDY-8600", "pr_title")),
+        # Linear's branch shape, <user>/<key>-<num>-<slug>. fdy's PR titles are
+        # conventional commits that never name the ticket (THI-441).
+        ("tdody/fdy-8562-checkpoint-tooling", "feat(outcomes): restack", ("FDY-8562", "branch")),
+        ("thibaultdody/thi-435-parse-pane", None, ("THI-435", "branch")),
+        ("fdy-8562", "", ("FDY-8562", "branch")),
+        # Shapes that aren't tickets: a one-digit number (utf-8, vue-3), a date,
+        # a slug with no number, a ticket mid-segment, a ticket mid-title.
+        ("feat/utf-8-handling", None, None),
+        ("ds/2024-06-11_lift_pt_1", None, None),
+        ("tdody/fix-rollup-blocklist-by-name", None, None),
+        ("worktree-thi-435-permission-dialog", None, None),
+        ("main", "feat(outcome-report): parse ISO-8601 dates", None),
+        (None, None, None),
+    ],
+)
+def test_linear_ticket_for(branch, pr_title, want):
+    assert linear_ticket_for(branch, pr_title) == want
 
 
 def test_ci_checks_caps_the_list():

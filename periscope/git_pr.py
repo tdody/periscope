@@ -382,6 +382,27 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
     return events
 
 
+# A Linear ticket named by its PR's title ("THI-435: …", "[FDY-8600] …") or by
+# a branch in Linear's own shape, <user>/<key>-<num>-<slug> (THI-441): until
+# then link_linear was the only way to a ticket chip. Only the title's start
+# and the last segment's start count, and a branch needs 2+ digits: `utf-8`,
+# `vue-3` and a title quoting ISO-8601 aren't tickets.
+_TITLE_TICKET_RE = re.compile(r"^\[?([A-Z][A-Z0-9]{1,9}-\d+)\]?(?=[:\s])")
+_BRANCH_TICKET_RE = re.compile(r"^([a-z]{2,5}-\d{2,})(?:-|$)", re.IGNORECASE)
+
+
+def linear_ticket_for(branch: str | None, pr_title: str | None) -> tuple[str, str] | None:
+    """(ticket id, "pr_title" | "branch") named by the pane's PR title or its
+    branch, the title first, or None."""
+    m = _TITLE_TICKET_RE.match(pr_title or "")
+    if m:
+        return m.group(1), "pr_title"
+    m = _BRANCH_TICKET_RE.match((branch or "").rsplit("/", 1)[-1])
+    if m:
+        return m.group(1).upper(), "branch"
+    return None
+
+
 def cached_pr_state(path: str, branch: str | None) -> dict | None:
     """Stale-while-revalidate. Returns cached data instantly; kicks off a
     refresh in a background thread if the cache is missing or expired. The
