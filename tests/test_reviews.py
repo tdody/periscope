@@ -530,8 +530,9 @@ def test_row_ticket_respects_linear_team_keys(mocker):
 
 
 def test_row_ticket_reads_the_prs_branch_not_its_pr_n_checkout(mocker):
-    # The owner pane sits on `pr-45`, which names no ticket; the row's headRefName does.
-    wins = [_win(pid="rv", branch="pr-45", cwd="/wt/pr-45")]
+    # The owner pane sits on `pr-45`, which names no ticket; the row's headRefName does —
+    # and the owner payload's own derived ticket never leaks into the row.
+    wins = [_win(pid="rv", branch="pr-45", cwd="/wt/pr-45", linear_ticket="ABC-12", linear_ticket_source="branch")]
     prs = [_pr(45, "thibaultdody/thi-442-x", title="queue", role="review-requested")]
     row = _rows_by_branch(mocker, prs, wins)["thibaultdody/thi-442-x"]
     assert row["owner"]["pid"] == "rv"
