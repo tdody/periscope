@@ -29,9 +29,8 @@ async function act(url, row, setNote, setBusy) {
   }
 }
 
-// PR refs read like every other one in periscope (mono, fg-1, violet when merged,
-// struck when closed): unstyled, this link was the UA's default blue. The ticket
-// follows the number; with no PR it fills the cell alone.
+// The PR ref (classes shared with every PR badge — see styles.css) with the
+// row's Linear ticket after it; with no PR the ticket fills the cell alone.
 function PrCell({ row }) {
   const lin = linearTicket(row);
   const linLink = lin && <a class="rq-linear" href={lin.href} target="_blank" rel="noopener" title={lin.tip}>{lin.id}</a>;
@@ -101,9 +100,10 @@ export function ReviewsQueue() {
     <div class="reviews-queue">
       <header class="wt-head">
         <h2>Reviews</h2>
-        <span class="wt-sub">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
+        <span class="wt-sub" aria-live="polite">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
         {/* type=search: WebKit and Chromium clear it on Esc and draw the ✕ themselves. */}
         <input type="search" class="rq-search" placeholder="filter branches, PRs, people, tickets" aria-label="filter reviews"
+          spellcheck={false} autocomplete="off"
           value={query} onInput={(e) => { reviewsQuery.value = e.currentTarget.value; }} />
       </header>
       {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
