@@ -105,3 +105,17 @@ def test_clear_review_removes_only_that_dir(tmp_path):
     assert not (tmp_path / "fdy" / "feat--x").exists()
     assert (tmp_path / "fdy" / "feat--y").exists()
     reviews.clear_review("fdy", "nope")  # missing dir is a no-op
+
+
+def test_parse_comments_tolerates_hand_edited_resolved_line():
+    text = "## 2026-10-26T09:14 · A\n> resolved: no\n\nfirst\n\n## 2026-10-26T09:20 · B  \n> resolved: Yes \n\nsecond\n"
+    got = reviews.parse_comments(text)
+    assert [(c["stop"], c["resolved"], c["body"]) for c in got] == [("A", False, "first"), ("B", True, "second")]
+
+
+def test_clear_review_refuses_paths_outside_reviews_dir(tmp_path):
+    reviews.append_comment("fdy", "feat/x", "S", "b", "2026-10-26T09:14")
+    for repo, branch in (("", ""), ("..", "x")):
+        with pytest.raises(ValueError):
+            reviews.clear_review(repo, branch)
+    assert (tmp_path / "fdy" / "feat--x" / "comments.md").exists()

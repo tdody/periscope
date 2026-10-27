@@ -24,7 +24,7 @@ REVIEWS_DIR = Path(os.path.expanduser("~/.claude/reviews"))
 # without a markdown parser.
 _PAIR_RE = re.compile(r"^([a-z-]+): (.+)$")
 _COMMENT_HEAD_RE = re.compile(r"^## (\d{4}-\d\d-\d\dT\d\d:\d\d) · (.+)$")
-_RESOLVED_RE = re.compile(r"^> resolved: (yes|no)$")
+_RESOLVED_RE = re.compile(r"^> resolved: (yes|no)$", re.IGNORECASE)
 
 
 class Header(TypedDict):
@@ -131,21 +131,26 @@ def parse_comments(text: str) -> list[Comment]:
     out: list[Comment] = []
     i = 0
     while i < len(lines):
-        m = _COMMENT_HEAD_RE.match(lines[i])
-        r = _RESOLVED_RE.match(lines[i + 1]) if m and i + 1 < len(lines) else None
+        m = _COMMENT_HEAD_RE.match(lines[i].rstrip())
+        r = _RESOLVED_RE.match(lines[i + 1].strip()) if m and i + 1 < len(lines) else None
         if not (m and r):
             i += 1
             continue
         body: list[str] = []
         j = i + 2
         while j < len(lines):
-            m2 = _COMMENT_HEAD_RE.match(lines[j])
-            if m2 and j + 1 < len(lines) and _RESOLVED_RE.match(lines[j + 1]):
+            m2 = _COMMENT_HEAD_RE.match(lines[j].rstrip())
+            if m2 and j + 1 < len(lines) and _RESOLVED_RE.match(lines[j + 1].strip()):
                 break
             body.append(lines[j])
             j += 1
         out.append(
-            {"ts": m.group(1), "stop": m.group(2), "resolved": r.group(1) == "yes", "body": "\n".join(body).strip()}
+            {
+                "ts": m.group(1),
+                "stop": m.group(2),
+                "resolved": r.group(1).lower() == "yes",
+                "body": "\n".join(body).strip(),
+            }
         )
         i = j
     return out
@@ -159,6 +164,7 @@ def unresolved(text: str) -> int:
 
 
 def append_comment(repo: str, branch: str, stop: str, body: str, ts: str) -> None:
+    # ts must be minute-precision %Y-%m-%dT%H:%M: _COMMENT_HEAD_RE only parses that, so seconds would write an unparseable entry.
     path = comments_path(repo, branch)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
@@ -169,4 +175,5 @@ def clear_review(repo: str, branch: str) -> None:
     d = review_dir(repo, branch).resolve()
     if not d.is_relative_to(REVIEWS_DIR.resolve()) or d == REVIEWS_DIR.resolve():
         raise ValueError(f"refusing to remove {d}: outside the reviews dir")
-    shutil.rmtree(d, ignore_errors=True)
+    if d.exists():  # only a missing dir is a no-op; permission errors must surface
+        shutil.rmtree(d)
