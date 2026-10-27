@@ -153,11 +153,13 @@ commit `static/dist/` whenever `static/src/` changes** — boot has no build ste
 
 ## Status-line parsing
 
-Claude Code renders a two-line block at the bottom of its pane; `STATUS_RE`
-matches the bottom line (context %, model) and `TITLE_RE` the line above
-(project, branch, git state, PR URL). **If Claude changes its status format
-these break and every window looks like a shell** — fix the regexes first when
-triaging that, and add a case to `tests/test_panes.py`.
+A pane is Claude when its composer (`❯` between two full-width rules) sits at
+the bottom, or `STATUS_RE` matches. The status line is whatever the user's
+statusLine script prints, so `STATUS_RE` reads one script's format (context %,
+model) and is optional. **If Claude changes its composer chrome every window
+without that status line looks like a shell** — fix `_composer_rows` /
+`_detect_composer` first when triaging that, and add a case to
+`tests/test_panes.py`.
 
 ## Conventions
 

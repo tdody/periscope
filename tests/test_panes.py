@@ -97,6 +97,14 @@ REGEX_CASES: list[tuple[str, str, bool]] = [
 # the verb extraction landed on that exact word.
 
 STATUS_LINE = "  17% | ↑30k ↓74 | $0.50 | Opus 4.7 (1M context)"
+# THI-434: the status line is whatever the user's statusLine script prints, and
+# STATUS_RE only knows the one above. This is another script's, from a live pane.
+CUSTOM_STATUS_LINE = (
+    "  📁 periscope 🌿 main ?3 ✅ CI:pass  |  🧠█░░░░░░░░░ 13% 📨 2 📤 381"
+    " | session: 134.0k in / 381 out 💰 $2.33 🤖 opus ⚡xhigh"
+)
+# The full-width rules Claude draws above and below its composer.
+RULE = "─" * 60
 
 PARSE_CASES: list[tuple[str, str, str, str | None]] = [
     # The screenshot Tom hit: multi-word phrase + trailing `…` + ↓-arrow
@@ -422,6 +430,76 @@ PARSE_CASES: list[tuple[str, str, str, str | None]] = [
         "needs-input",
         None,
     ),
+    # THI-434: a status line STATUS_RE can't read. The composer between
+    # Claude's two rules is Claude's own, whatever the statusLine script.
+    (
+        "custom-statusline-idle",
+        textwrap.dedent(f"""\
+        ⏺ Done.
+
+        ✻ Brewed for 5s
+
+        {RULE}
+        ❯
+        {RULE}
+        {CUSTOM_STATUS_LINE}
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← 2 agents
+    """),
+        "idle",
+        None,
+    ),
+    (
+        "custom-statusline-working",
+        textwrap.dedent(f"""\
+        ✽ Schlepping… (21s · ↓ 1.3k tokens)
+        {RULE}
+        ❯
+        {RULE}
+        {CUSTOM_STATUS_LINE}
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← 2 agents
+    """),
+        "working",
+        "Schlepping",
+    ),
+    # Background agents list themselves under the status line, one row each,
+    # so the footer outgrows the 6 rows a reply allows (live pane, 3 agents).
+    (
+        "custom-statusline-background-agents",
+        textwrap.dedent(f"""\
+        ✻ Waiting for 3 background agents to finish
+        {RULE}
+        ❯
+        {RULE}
+        {CUSTOM_STATUS_LINE}
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← 2 agents
+          ⏺ main
+          ◯ general-purpose  Checking victory pull_data.py bq_env
+          ◯ general-purpose  Updating contrast tokens in head.html
+          ◯ general-purpose  Testing compact_json script escaping
+          ⧉  wusa-artifact-weekly
+    """),
+        "idle",
+        None,
+    ),
+    # What Claude leaves on exit (a live 2.1.280 pane's scrollback): its last
+    # frame, composer and all, then the resume hint and the shell's prompt.
+    (
+        "exited-leaves-its-composer",
+        textwrap.dedent(f"""\
+        ✻ Cooked for 11s · done 1:58 PM
+
+        {RULE}
+        ❯
+        {RULE}
+          Press Ctrl-C again to exit
+
+        Resume this session with:
+        claude --resume 66bbba62-eef3-4417-bd6d-7f2cd292c5b3
+        ➜  periscope git:(main) ✗
+    """),
+        "shell",
+        None,
+    ),
 ]
 
 
@@ -668,6 +746,23 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
 
         ❯
         {STATUS_LINE}
+    """),
+        True,
+    ),
+    # The same error under a status line STATUS_RE can't read (THI-434): the
+    # pane must still count as Claude for the error to count at all.
+    (
+        "assistant-glyph-custom-statusline",
+        textwrap.dedent(f"""\
+        ⏺ API Error: The response stopped arriving. The response above may be incomplete.
+
+        ✻ Brewed for 4m 37s · done 9:29 AM
+
+        {RULE}
+        ❯
+        {RULE}
+        {CUSTOM_STATUS_LINE}
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← 2 agents
     """),
         True,
     ),
@@ -1487,6 +1582,25 @@ def test_a_leftover_composer_above_a_shell_is_not_ready():
     assert composer_ready(_composer_capture("idle.txt"))
     assert not composer_ready(screen)
     assert not composer_holds(screen.replace('\x1b[2mTry "fix lint errors"', "Postgres"), "Postgres")
+
+
+def test_a_composer_left_by_a_claude_that_just_exited_is_not_ready():
+    # Right after exit nothing has pushed the frame up yet: "Press Ctrl-C again
+    # to exit", the resume hint and the prompt fit inside _FOOTER_REACH.
+    screen = _composer_capture("idle.txt").rstrip("\n") + (
+        "\n  Press Ctrl-C again to exit\n\nResume this session with:\n"
+        "claude --resume 66bbba62-eef3-4417-bd6d-7f2cd292c5b3\n➜  periscope git:(main) ✗ \n"
+    )
+    assert not composer_ready(screen)
+    assert parse_pane(screen)["agent"] is None
+
+
+def test_a_claude_with_no_status_line_parses_as_claude():
+    # No statusLine configured at all (the default): THI-434.
+    parsed = parse_pane(_composer_capture("idle.txt"))
+    assert parsed["agent"] == "claude"
+    assert parsed["state"] == "idle"
+    assert parsed["context_pct"] is None
 
 
 def test_a_footer_of_a_few_rows_still_reads_as_ready():
