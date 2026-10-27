@@ -6,10 +6,14 @@ import render from "preact-render-to-string";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prefsSignal } from "../../prefs.js";
 import { accounts, usage, wallSpans, walls } from "../../store.js";
-import { CRITTERS, critterById, hatTransform, hueRotate, spriteBox } from "../critters.js";
+import {
+  CLAWD_HEIGHT, CRITTER_HEIGHT, CRITTERS, cheerGlyphs, critterById, hatTransform, holdTip, holdTipInScene, hueRotate,
+  limbGlyphs, placement, r4, sceneToSprite, spriteBox,
+} from "../critters.js";
+import { BELL_REACH, KEYS_REACH } from "../TamaDuty.jsx";
 import { Tamagotchi, TamaScene } from "../Tamagotchi.jsx";
-import { FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
-import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE } from "../tamagotchi.js";
+import { BASS_FRET, Bass, FRIEND_HUE, PASTIME_SCENES } from "../TamaPastimes.jsx";
+import { activityAt, activityLabel, BRUNCH, MEALS, PASTIMES, SCHEDULE, SKIN, Y0 } from "../tamagotchi.js";
 
 const ids = [...new Set([...SCHEDULE.map((s) => s.id).filter(Boolean), ...PASTIMES.map((p) => p.id)])];
 
@@ -447,7 +451,6 @@ describe("<Tamagotchi>", () => {
 describe("Clawd on duty", () => {
   const scene = (activity, duty, extra = {}) =>
     render(<TamaScene activity={activity} duty={duty && { label: "2", more: 0, ...duty }} {...extra} />);
-  const count = (html, needle) => html.split(needle).length - 1;
 
   it("draws the bubble, with its +N, only while something is on duty", () => {
     expect(scene("code", null)).not.toContain("tama-bubble");
@@ -577,7 +580,6 @@ describe("critters", () => {
   const scene = (critter, activity, extra = {}) =>
     render(<TamaScene activity={activity} walled={activity === "nap" ? { day: null, time: "3pm" } : null}
                       critter={critter} {...extra} />);
-  const count = (html, needle) => html.split(needle).length - 1;
 
   it.each(critters.map((c) => [c.id, c]))("%s takes Clawd's place in every scene", (_id, c) => {
     for (const id of scenes) {
@@ -588,7 +590,12 @@ describe("critters", () => {
       // would pass even for a mascot that drew nothing of its own.
       expect(html.slice(html.indexOf('class="tama-creature')), id).toContain('class="critter"');
       expect(html, id).not.toContain("tama-body");
-      expect(html, id).not.toContain("tama-legs-a");
+      // Clawd's own legs, standing or striding (Tamagotchi.jsx's `!sprite`
+      // guard), can never draw for a critter — but the critter's own stride
+      // draws this same class (critters.js strideRoot) in run/cycle/dog, so
+      // check Clawd's skin instead of the class, which the critter never
+      // paints with.
+      expect(groupAt(html, html.indexOf('<g class="tama-creature')), id).not.toContain(`fill="${SKIN}"`);
     }
   });
 
@@ -596,6 +603,18 @@ describe("critters", () => {
     const html = render(<TamaScene activity="code" />);
     expect(html).toContain("tama-body");
     expect(html).not.toContain("data-critter");
+  });
+
+  // Guards placement()'s geometry (tx, ty, top) and what derives from it
+  // (like the heat shimmer's `<Head dy>`) — it must come out rounded like the
+  // rest of the module's geometry, or an unrounded float leaks as
+  // `-2.000000000000001` or `6.999999999999999` into the markup instead of a
+  // clean `-2`/`7`.
+  it.each(critters.map((c) => [c.id, c]))("%s's markup carries no float noise in run, beer, code or read", (_id, c) => {
+    for (const activity of ["run", "beer", "code", "read"]) {
+      const html = scene(c, activity);
+      expect(html, activity).not.toMatch(/\d\.\d*0000000\d|\d\.\d*9999999\d/);
+    }
   });
 
   it("scales the critter about the view box, not styles.css's fill-box pivot", () => {
@@ -624,12 +643,17 @@ describe("critters", () => {
     expect(own).not.toContain('data-mood="calm"');
     expect(html).toContain("tama-smoke");
     expect(html).not.toContain("tama-brows");
-    expect(html).not.toContain("tama-hand");
+    // Its own typing paws (TamaDuty TypingPaws), in its limb colour, not Clawd's skin.
+    expect(html).toContain("tama-hand");
+    expect(html).not.toContain(`fill="${SKIN}"`);
   });
 
   it("rides the furious heat shimmer up onto a seated critter's head", () => {
     const html = scene(critterById("ember"), "code", { mood: "furious" });
-    expect(html).toMatch(/<g transform="translate\(0 -2\)"><g class="tama-shimmer"/);
+    // code's pose is seated at x0 3 (Tamagotchi.jsx POSES); the shimmer rides
+    // up by however much higher the critter's own head sits than Clawd's (Y0).
+    const headDy = r4(placement(critterById("ember").sprite, { x0: 3, sitting: true }).top - Y0);
+    expect(html).toContain(`<g transform="translate(0 ${headDy})"><g class="tama-shimmer"`);
   });
 
   it("stays calm in the critter while on duty, as Clawd does", () => {
@@ -646,12 +670,17 @@ describe("critters", () => {
     expect(scene(volt, "sleep", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain('data-role="shut"');
   });
 
-  it("drops the overlays drawn for Clawd's body", () => {
+  it("drops Clawd's own overlays, drawing its own hands in their place", () => {
     const moss = critterById("moss");
     const done = scene(moss, "code", { duty: { kind: "done", label: "1", more: 0 } });
-    expect(done).toContain("tama-sparkle");
-    expect(done).not.toContain("tama-cheer");
-    expect(scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } })).not.toContain("tama-slap");
+    expect(done).toContain("tama-sparkle"); // the scene's own overlay, not sprite-gated
+    // Its own arms up (critters.js cheerGlyphs), not Clawd's ArmsUp (SKIN).
+    expect(done).toContain("tama-cheer");
+    expect(done).not.toContain(`fill="${SKIN}"`);
+    const bell = scene(moss, "code", { duty: { kind: "bell", label: "1", more: 0 } });
+    // Its own slap (TamaDuty SlapPaw), not Clawd's SlapHand (SKIN).
+    expect(bell).toContain("tama-slap");
+    expect(bell).not.toContain(`fill="${SKIN}"`);
   });
 
   it("fits Clawd's hats to the critter's head, inside its own group", () => {
@@ -853,6 +882,36 @@ describe("critter hats and worn props follow Clawd's in every scene", () => {
   });
 });
 
+const count = (html, needle) => html.split(needle).length - 1;
+// Every critter, Clawd left out: both "critters at their pastimes" and
+// "critters' hands at the desk" walk the same set.
+const holders = CRITTERS.filter((c) => c.sprite).map((c) => [c.id, c]);
+// Whether `needle` lies inside the <g> that opens at `open`: that group never closes before it.
+const inside = (html, open, needle) => {
+  const at = html.indexOf(needle, open);
+  let depth = 0;
+  for (const m of html.slice(open, at).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return false;
+  }
+  return at > open;
+};
+// The placement the mascot's wrapper was actually drawn with.
+const drawnPlace = (html) => {
+  const [, tx, ty, scale] = /<g class="tama-critter"[^>]*transform="translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)"/
+    .exec(html.slice(html.indexOf('class="tama-creature')));
+  return { tx: Number(tx), ty: Number(ty), scale: Number(scale) };
+};
+// The <g …> group opening at `open`, whole.
+const groupAt = (html, open) => {
+  let depth = 0;
+  for (const m of html.slice(open).matchAll(/<g[\s>]|<\/g>/g)) {
+    depth += m[0] === "</g>" ? -1 : 1;
+    if (depth === 0) return html.slice(open, open + m.index + 4);
+  }
+  return html.slice(open);
+};
+
 describe("critters at their pastimes", () => {
   const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
   const nox = critterById("nox");
@@ -875,8 +934,6 @@ describe("critters at their pastimes", () => {
     expect(scene(nox, "cook")).toContain(`${seat}<g class="tama-toque"`);
   });
 
-  const count = (html, needle) => html.split(needle).length - 1;
-
   // Parses a wrapper's `translate(a b) scale(sx[ sy])` and maps the sprite's
   // own box (spriteBox) through it: pins the geometry itself, not just the
   // placement() call that produced it, so a wrong x0 or a dropped mirror
@@ -887,7 +944,7 @@ describe("critters at their pastimes", () => {
     const ty = Number(m[2]);
     const sx = Number(m[3]);
     const sy = m[4] !== undefined ? Number(m[4]) : sx;
-    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h) };
+    return { centreX: tx + sx * (box.x + box.w / 2), feetY: ty + sy * (box.y + box.h), scale: sy };
   }
 
   it("has a beer with a friend of its own kind: mirrored, in other colours, smiling", () => {
@@ -917,7 +974,11 @@ describe("critters at their pastimes", () => {
     const centres = transforms.map((t) => mapBoxThrough(t, box).centreX);
     expect(centres[0]).toBeCloseTo(21.65, 2); // kid x 17.4 + 4.25
     expect(centres[1]).toBeCloseTo(29.65, 2); // kid x 25.4 + 4.25
-    for (const t of transforms) expect(mapBoxThrough(t, box).feetY).toBeCloseTo(19, 2);
+    for (const t of transforms) {
+      const mapped = mapBoxThrough(t, box);
+      expect(mapped.feetY).toBeCloseTo(19, 2);
+      expect(mapped.scale * box.h).toBeCloseTo(CRITTER_HEIGHT / 2); // half its own height, not Clawd's
+    }
     expect(count(html, 'class="tama-kid')).toBe(2);
   });
 
@@ -929,6 +990,398 @@ describe("critters at their pastimes", () => {
     expect(render(<TamaScene activity="beer" />)).toContain('fill="#6f93d6"');
     expect(render(<TamaScene activity="beer" />)).not.toContain('class="critter"');
     expect(render(<TamaScene activity="kids" />)).not.toContain('class="critter"');
+  });
+
+  const HELD = [["beer", "pint"], ["coffee", "mug"], ["cook", "spoon"], ["garden", "can"], ["dog", "leash"]];
+
+  it.each(holders)("%s's own wrapper stands it CRITTER_HEIGHT tall, however the scene seats it", (_id, c) => {
+    for (const activity of ["code", "beer"]) {
+      const html = render(<TamaScene activity={activity} critter={c} />);
+      const { scale } = drawnPlace(html);
+      expect(scale * spriteBox(c.sprite).h).toBeCloseTo(CRITTER_HEIGHT);
+    }
+  });
+
+  // The Halloween sheet (GhostSheet) is cut for Clawd's body: at CRITTER_HEIGHT
+  // a tall critter's ears/horns/antenna poke through its top. Under a sheet a
+  // critter goes back to CLAWD_HEIGHT; a plain run (no sheet) is the control.
+  it.each(holders)("%s's own wrapper goes back to CLAWD_HEIGHT under a Halloween sheet", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const halloween = render(<TamaScene activity="run" trick season="autumn" occasion="halloween" critter={c} />);
+    expect(drawnPlace(halloween).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+    const plain = render(<TamaScene activity="run" critter={c} />);
+    expect(drawnPlace(plain).scale * box.h).toBeCloseTo(CRITTER_HEIGHT);
+  });
+
+  // Same reasoning as the mascot's own sheet, for the kids' little sheets
+  // (KidSheet): both go back to half Clawd's height, not half the critter's.
+  it.each(holders)("%s's kids go back to half CLAWD_HEIGHT under their Halloween sheets", (_id, c) => {
+    const box = spriteBox(c.sprite);
+    const html = render(<TamaScene activity="kids" trick critter={c} />);
+    const behind = html.slice(0, html.indexOf('class="tama-creature'));
+    const transforms = [...behind.matchAll(/<g class="tama-critter"[^>]*transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(transforms).toHaveLength(2);
+    for (const t of transforms) expect(mapBoxThrough(t, box).scale * box.h).toBeCloseTo(CLAWD_HEIGHT / 2);
+    // Both ghost scenes: the mascot's own wrapper too, same as the Halloween run.
+    expect(drawnPlace(html).scale * box.h).toBeCloseTo(CLAWD_HEIGHT);
+  });
+
+  it.each(holders)("%s holds the pint, the mug, the spoon, the can and the leash itself", (_id, c) => {
+    for (const [activity, kind] of HELD) {
+      const html = render(<TamaScene activity={activity} critter={c} season="summer" />);
+      expect(html.slice(html.indexOf('class="tama-creature')), activity).toContain(`data-holding="${kind}"`);
+    }
+  });
+
+  it.each(holders)("%s's pint, mug and can sit inside its own critter wrapper, once, and Clawd's don't float beside it", (_id, c) => {
+    const beer = render(<TamaScene activity="beer" critter={c} />);
+    const mascotOpen = beer.indexOf('<g class="tama-critter"', beer.indexOf('class="tama-creature'));
+    const friendOpen = beer.indexOf('<g class="tama-critter"', beer.indexOf('class="tama-friend"'));
+    const pint = 'class="tama-pint tama-clink"';
+    expect(count(beer, pint)).toBe(2); // the mascot's and the friend's, no Clawd float beside either
+    expect(inside(beer, mascotOpen, pint)).toBe(true);
+    expect(inside(beer, friendOpen, pint)).toBe(true);
+    // The mirror already turns the friend's clink toward the mascot; tama-clink2 would turn it back.
+    expect(beer).not.toContain("tama-clink2");
+    // The pint sits at Clawd's size: CritterHeld undoes the wrapper's own scale.
+    const [hx, hy] = holdTip(c.sprite, "pint");
+    expect(beer).toContain(`translate(${hx} ${hy}) scale(${r4(1 / drawnPlace(beer).scale)}) translate(0 -11.5)`);
+    const mugBody = 'x="25.5" y="12" width="3.4" height="4.6"';
+    const coffee = render(<TamaScene activity="coffee" critter={c} />);
+    const coffeeOpen = coffee.indexOf('<g class="tama-critter"', coffee.indexOf('class="tama-creature'));
+    expect(count(coffee, mugBody)).toBe(1);
+    expect(inside(coffee, coffeeOpen, mugBody)).toBe(true);
+    const garden = render(<TamaScene activity="garden" critter={c} />);
+    const gardenOpen = garden.indexOf('<g class="tama-critter"', garden.indexOf('class="tama-creature'));
+    expect(count(garden, 'class="tama-can"')).toBe(1);
+    expect(inside(garden, gardenOpen, 'class="tama-can"')).toBe(true);
+  });
+
+  it.each(holders)("%s's spoon and leash start at its own tip, wherever it was actually drawn", (_id, c) => {
+    const cook = render(<TamaScene activity="cook" critter={c} />);
+    // Inside .tama-creature, not just anywhere: it bobs with the critter's own group.
+    expect(inside(cook, cook.indexOf('<g class="tama-creature'), 'class="tama-spoon"')).toBe(true);
+    expect(count(cook, 'class="tama-spoon"')).toBe(1);
+    const [sx, sy] = holdTipInScene(c.sprite, "spoon", drawnPlace(cook));
+    expect(cook).toContain(`<line class="tama-spoon" x1="${sx}" y1="${sy}"`);
+    const dog = render(<TamaScene activity="dog" critter={c} />);
+    const [lx, ly] = holdTipInScene(c.sprite, "leash", drawnPlace(dog));
+    expect(dog).toContain(`d="M${lx} ${ly} Q23 12.4 28.1 15"`);
+  });
+
+  it("curls a tail up to hold, so the resting one goes, the friend's too", () => {
+    expect(render(<TamaScene activity="code" critter={nox} />)).toContain("crit-nox-1");
+    expect(render(<TamaScene activity="beer" critter={nox} />)).not.toContain("crit-nox-1");
+  });
+
+  it("moves a holding critter's startle glyph off its held prop, to the body's left", () => {
+    const c = critterById("ember");
+    const x = r4(spriteBox(c.sprite).x - 1.4);
+    const html = scene(c, "beer", { duty: { kind: "bell", label: "1", urgent: false, more: 0 } });
+    expect(html).toContain(`class="tama-startle" fill="#f2c14e"><rect x="${x}"`);
+  });
+
+  it("pins BASS_FRET inside the neck's own band, not off its edge", () => {
+    const { x0 } = PASTIME_SCENES.music.pose;
+    const x = x0 + BASS_FRET.dx;
+    // The neck is Bass's first path, a quadrilateral (top edge, then bottom):
+    // read off the markup, so a redrawn neck re-checks the fret against itself.
+    const d = render(<Bass x0={x0} />).match(/<path d="([^"]+)"/)[1];
+    const [a, b, c, e] = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+    const edgeY = ([x1, y1], [x2, y2]) => y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+    // Along the neck too: past its ends the edge lines run on into the headstock.
+    expect(x).toBeGreaterThan(a[0]);
+    expect(x).toBeLessThan(b[0]);
+    expect(BASS_FRET.y).toBeGreaterThan(edgeY(a, b));
+    expect(BASS_FRET.y).toBeLessThan(edgeY(c, e));
+  });
+
+  it.each(holders)("%s plays the bass: its limb frets the neck in front, a paw strums, no skin hands", (_id, c) => {
+    const html = render(<TamaScene activity="music" critter={c} />);
+    const mascot = html.slice(html.indexOf('class="tama-creature'));
+    expect(mascot).toContain('data-holding="bass"');
+    const wrapAt = mascot.indexOf('<g class="tama-critter"');
+    const bassAt = mascot.indexOf('<g class="tama-bass"');
+    expect(inside(mascot, wrapAt, 'class="tama-bass"')).toBe(true); // bobs and scales back with the critter
+    // The bass's own group undoes the wrapper's placement exactly (not a swapped
+    // translate/scale order, and view-box, not fill-box, so scale() pivots at 0,0):
+    // off by either, the bass lands ~1.5 units from the fret spot.
+    const { tx, ty, scale } = drawnPlace(html);
+    expect(mascot).toContain(`<g style="transform-box: view-box" transform="scale(${1 / scale}) translate(${-tx} ${-ty})"><g class="tama-bass"`);
+    const bass = groupAt(mascot, bassAt);
+    expect(bass).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-bass"')).toBe(1); // no stray copy
+    expect(count(bass, 'class="tama-strum"')).toBe(1);
+    expect(bass).toContain(`fill="${c.sprite.limb.color}"`);
+    const { x0 } = PASTIME_SCENES.music.pose;
+    // Pinned the way the spoon line is (holdTipInScene): the strum paw's own spot.
+    expect(bass).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5"`);
+    // The limb reaches the fret spot through the placement actually drawn, after the bass.
+    const tip = sceneToSprite(drawnPlace(html), [x0 + BASS_FRET.dx, BASS_FRET.y]);
+    const last = limbGlyphs(c.sprite, "bass", tip).at(-1).g.at(-1).r;
+    const lastRect = `<rect x="${last[0]}" y="${last[1]}" width="${last[2]}" height="${last[3]}">`;
+    expect(mascot.indexOf(lastRect)).toBeGreaterThan(bassAt + bass.length - 1);
+  });
+
+  it.each(holders)("%s holds the controller in two paws, the right one tapping, no skin thumb", (_id, c) => {
+    const html = render(<TamaScene activity="game" critter={c} />);
+    const mascot = html.slice(html.indexOf('class="tama-creature'));
+    expect(mascot).toContain('data-holding="controller"');
+    const wrapAt = mascot.indexOf('<g class="tama-critter"');
+    const ctlAt = mascot.indexOf('<g class="tama-controller"');
+    const ctl = groupAt(mascot, ctlAt);
+    expect(ctl).not.toContain(`fill="${SKIN}"`);
+    expect(mascot).not.toContain(`fill="${SKIN}"`); // Clawd's skin appears nowhere in a critter's scene
+    expect(count(mascot, 'class="tama-controller"')).toBe(1); // no stray copy
+    expect(count(ctl, `fill="${c.sprite.limb.color}"`)).toBe(2);
+    expect(count(ctl, 'class="tama-thumb"')).toBe(1);
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // The right paw (at x0 + 10) taps; the left (x0 + 6.2) carries no class.
+    expect(ctl).toContain(`class="tama-thumb" x="${x0 + 10}" y="14.3"`);
+    expect(ctl).toContain(`<rect x="${x0 + 6.2}" y="14.3"`);
+    expect(inside(mascot, wrapAt, 'class="tama-controller"')).toBe(false); // in front, in scene units
+    expect(ctlAt).toBeGreaterThanOrEqual(wrapAt + groupAt(mascot, wrapAt).length); // after the whole wrapper closes
+  });
+
+  const tailCritters = [nox, critterById("ember")];
+  it.each(tailCritters.map((c) => [c.id, c]))("%s frets with the tail, so it stops resting, but holds the controller in paws, so it rests", (_id, c) => {
+    const tailAnim = `crit-${c.id}-1`;
+    expect(render(<TamaScene activity="music" critter={c} />)).not.toContain(tailAnim);
+    const game = render(<TamaScene activity="game" critter={c} />);
+    expect(game).toContain(tailAnim);
+    // Nox's tail (and so its paws) is outlined; Ember's isn't — each follows its own limb.
+    const { color, outline } = c.sprite.limb;
+    if (outline) {
+      expect(game).toContain(`stroke="${outline}" stroke-width="0.25"`); // its black paws outlined on the dark controller
+    } else {
+      expect(game).toContain(`<rect class="tama-thumb" x="${PASTIME_SCENES.game.pose.x0 + 10}" y="14.3" width="1.6" height="1.3" rx="0.25" fill="${color}"></rect>`);
+    }
+  });
+
+  it("rounds a tentacle's paw, not a square corner", () => {
+    const jelly = critterById("jelly");
+    const music = render(<TamaScene activity="music" critter={jelly} />);
+    const { x0 } = PASTIME_SCENES.music.pose;
+    expect(music).toContain(`class="tama-strum" x="${x0 + 7.3}" y="14.5" width="1.3" height="1" rx="0.5"`); // h/2 of its 1-unit strum paw
+  });
+
+  it("draws Clawd armless at the console, two SKIN paws on the grips instead of a lone thumb", () => {
+    const game = render(<TamaScene activity="game" />);
+    const { x0 } = PASTIME_SCENES.game.pose;
+    // Row 2's arm cells (tamagotchi.js BODY): x 1–2 and 15–16, gone from the game body.
+    expect(game).not.toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 15}" y="13"`);
+    expect(game).not.toContain(`<rect x="${x0 + 16}" y="13"`);
+    const ctlAt = game.indexOf('<g class="tama-controller"');
+    const ctl = groupAt(game, ctlAt);
+    expect(count(ctl, `fill="${SKIN}"`)).toBe(2);
+    expect(count(ctl, 'class="tama-thumb"')).toBe(1);
+    // The coding pose shares Clawd's x0 with the game one, and keeps its arms.
+    const code = render(<TamaScene activity="code" />);
+    expect(code).toContain(`<rect x="${x0 + 1}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 2}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 15}" y="13"`);
+    expect(code).toContain(`<rect x="${x0 + 16}" y="13"`);
+  });
+
+  it.each(holders)("%s's side arms (if any) go at the console, and come back everywhere else", (_id, c) => {
+    const game = render(<TamaScene activity="game" critter={c} />);
+    if (["ember", "volt", "moss"].includes(c.id)) {
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const armNeedle = c.id === "ember" ? '<rect x="3" y="9"' : c.id === "volt" ? '<rect x="2" y="9"' : '<rect x="4" y="10"';
+      expect(code, c.id).toContain(armNeedle);
+      expect(game, c.id).not.toContain(armNeedle);
+    } else {
+      // No hold-arms at all (scope, jelly, nox, octocat): `paws` has nothing
+      // to hide, so its own <g class="critter">…</g> group is unheld's,
+      // byte for byte, plus the `data-holding` the controller adds — the
+      // same equivalence the Nox "!" test uses (critterRender.test.jsx).
+      const code = render(<TamaScene activity="code" critter={c} />);
+      const critterAt = (html) => html.indexOf('<g class="critter"');
+      const gameGroup = groupAt(game, critterAt(game));
+      const codeGroup = groupAt(code, critterAt(code));
+      expect(gameGroup.replace(' data-holding="controller"', ""), c.id).toBe(codeGroup);
+    }
+  });
+});
+
+describe("critters' hands at the desk", () => {
+  const duty = (kind) => ({ duty: { kind, label: "1", urgent: false, more: 0 } });
+  // The mascot's own group, whole: what it draws must bob, shake and hop with it.
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
+  // The limb's last rect, as Node draws it, for a reach to a scene point through the drawn placement.
+  const limbEnd = (c, html, point) => {
+    const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), point)).at(-1).g.at(-1).r;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}">`;
+  };
+
+  it.each(holders)("%s types when grumpy or furious: its limb at the keys, two paws tapping", (_id, c) => {
+    for (const mood of ["grumpy", "furious"]) {
+      const html = render(<TamaScene activity="code" mood={mood} working={2} critter={c} />);
+      const mascot = mascotOf(html);
+      expect(mascot, mood).toContain(limbEnd(c, html, KEYS_REACH));
+      const fill = `fill="${c.sprite.limb.color}"`;
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-hand" x="20.7" y="11.9"[^>]*${fill}`));
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-hand tama-hand2" x="22.7" y="11.9"[^>]*${fill}`));
+      expect(mascot).not.toContain(`fill="${SKIN}"`); // not Clawd's hands
+      expect(mascot).not.toContain("tama-cheer"); // a reach and a cheer never together
+    }
+  });
+
+  it("types and slaps with its tail, so the resting one goes", () => {
+    for (const id of ["nox", "ember"]) {
+      const c = critterById(id);
+      expect(render(<TamaScene activity="code" mood="grumpy" working={2} critter={c} />)).not.toContain(`crit-${id}-1`);
+      expect(render(<TamaScene activity="code" critter={c} {...duty("bell")} />)).not.toContain(`crit-${id}-1`);
+    }
+  });
+
+  it("reaches Clawd's own hand spots: the first paw's middle, the slap paw's lower edge", () => {
+    expect(KEYS_REACH[0]).toBeCloseTo(20.7 + 1.1 / 2);
+    expect(KEYS_REACH[1]).toBeCloseTo(11.9 + 0.8 / 2);
+    expect(BELL_REACH[0]).toBeCloseTo(21.6 + 1.2 / 2);
+    expect(BELL_REACH[1]).toBeCloseTo(8.7 + 0.9);
+  });
+
+  it.each(holders)("%s keeps its desk hands at the desk: no slap, reach or cheer away from it", (_id, c) => {
+    for (const activity of ["eat", "sleep"]) {
+      const html = render(<TamaScene activity={activity} critter={c} {...duty("bell")} />);
+      expect(html, activity).not.toContain("tama-slap");
+      expect(mascotOf(html), activity).not.toContain(limbEnd(c, html, BELL_REACH));
+    }
+    expect(render(<TamaScene activity="eat" critter={c} {...duty("done")} />)).not.toContain("tama-cheer");
+  });
+
+  it.each(holders)("%s slaps the service bell, at the desk and when it wakes from the walled nap", (_id, c) => {
+    const desk = render(<TamaScene activity="code" critter={c} {...duty("bell")} />);
+    const nap = render(<TamaScene activity="nap" walled={{ day: null, time: "3pm" }} critter={c} {...duty("bell")} />);
+    for (const html of [desk, nap]) {
+      const mascot = mascotOf(html);
+      expect(mascot).toContain(limbEnd(c, html, BELL_REACH));
+      expect(mascot).toMatch(new RegExp(`<rect class="tama-slap" x="21.6" y="8.7"[^>]*fill="${c.sprite.limb.color}"`));
+      expect(mascot).not.toContain(`fill="${SKIN}"`);
+    }
+  });
+
+  it.each(holders)("%s puts its arms up for a done and a merged PR", (_id, c) => {
+    for (const kind of ["done", "merged"]) {
+      const html = render(<TamaScene activity="code" critter={c} {...duty(kind)} party={kind === "merged"} />);
+      const wrapAt = html.indexOf('<g class="tama-critter"', html.indexOf('class="tama-creature'));
+      expect(inside(html, wrapAt, 'class="tama-cheer'), kind).toBe(true);
+      expect(count(html, 'class="tama-cheer')).toBe(cheerGlyphs(c.sprite).length);
+      expect(mascotOf(html)).not.toContain(`fill="${SKIN}"`); // not Clawd's ArmsUp
+    }
+  });
+
+  it("keeps the hands for their moments: no paws or cheer while calmly coding", () => {
+    for (const [, c] of holders) {
+      const html = render(<TamaScene activity="code" working={2} critter={c} />);
+      expect(html).not.toContain("tama-hand");
+      expect(html).not.toContain("tama-cheer");
+      expect(html).not.toContain("tama-slap");
+    }
+  });
+});
+
+describe("critters' strides and seats", () => {
+  const scene = (critter, activity, extra = {}) => render(<TamaScene activity={activity} critter={critter} {...extra} />);
+  // The mascot's own group, whole, same reason as critters' hands above: a
+  // beer/kids friend striding or seated too (it isn't) must not leak in.
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
+  const STRIDE = ["run", "cycle", "dog"];
+  // Each seated pastime, with the extra prop that makes it seated in the
+  // test (sled only sits in winter's own markup path; nap needs its walled
+  // clock): code and read sit by their own POSES entry, game/swim/sled by
+  // PASTIME_SCENES's.
+  const SEATED = [
+    ["code", {}], ["read", {}], ["game", {}], ["sled", { season: "winter" }], ["swim", {}],
+    ["nap", { walled: { day: null, time: "3pm" } }],
+  ];
+
+  it.each(holders)("%s strides on the run, the bike and the dog walk", (_id, c) => {
+    for (const activity of STRIDE) {
+      const mascot = mascotOf(scene(c, activity));
+      expect(mascot, activity).toContain('class="tama-legs-a"');
+      expect(mascot, activity).toContain('class="tama-legs-b"');
+    }
+    // code and beer have no stride (PASTIME_SCENES / POSES): no second frame to swap.
+    for (const activity of ["code", "beer"]) {
+      expect(mascotOf(scene(c, activity)), activity).not.toContain("tama-legs-b");
+    }
+  });
+
+  // One needle per critter's own legs rect (critterSprites.js's `legs`
+  // node), scoped to the mascot's own group so a beer scene's mirrored
+  // friend — the same sprite, outside this group, in Behind — can't make an
+  // absence check pass for the wrong reason.
+  const LEG_NEEDLES = {
+    scope: ['x="5" y="16"', 'x="13" y="16"'],
+    ember: ['x="6" y="16"'],
+    volt: ['x="5" y="15"'],
+    moss: ['x="6" y="16"'],
+    octocat: ['x="4" y="14"', 'x="15" y="16"'],
+  };
+
+  it.each(Object.entries(LEG_NEEDLES))("%s draws its legs standing but none of them seated", (id, needles) => {
+    const c = critterById(id);
+    // Standing first: an absence seated proves nothing if the needle was
+    // never the legs to begin with.
+    const standing = mascotOf(scene(c, "beer"));
+    for (const needle of needles) expect(standing, needle).toContain(needle);
+    for (const [activity, extra] of SEATED) {
+      const mascot = mascotOf(scene(c, activity, extra));
+      for (const needle of needles) expect(mascot, `${activity} ${needle}`).not.toContain(needle);
+    }
+  });
+
+  it("keeps Nox's toes and Jelly's tentacles drawn seated — their own keepSeated legs", () => {
+    const nox = critterById("nox");
+    const jelly = critterById("jelly");
+    for (const [activity, extra] of SEATED) {
+      expect(mascotOf(scene(nox, activity, extra)), activity).toContain('x="6" y="17"');
+      expect(mascotOf(scene(jelly, activity, extra)), activity).toContain('x="6" y="13"');
+    }
+  });
+
+  it.each(holders)("%s's seated body ends on the seat, like Clawd's", (_id, c) => {
+    for (const [activity, extra] of SEATED) {
+      const html = scene(c, activity, extra);
+      const { ty, scale } = drawnPlace(html);
+      const { y, h } = spriteBox(c.sprite, { seated: true });
+      expect(ty + scale * (y + h), activity).toBeCloseTo(17, 3);
+    }
+  });
+
+  // The controller is drawn at Clawd's fixed spot, not through the critter's
+  // own wrapper — a seated critter with hidden legs (`drop` in placement())
+  // otherwise sits low enough that it covers its own mouth or eyes (Scope,
+  // Octocat). Tamagotchi.jsx lowers it with the body instead, capped at the
+  // seat (0.8). Mood layers are `mood: "calm"` in the sprite data; eyes are
+  // `role: "eye"` — both collected recursively, in sprite units, then mapped
+  // through the placement actually drawn.
+  function faceRects(nodes, inFace = false) {
+    return nodes.flatMap((n) => {
+      const own = inFace || n.mood === "calm" || n.role === "eye";
+      return n.r ? (own ? [n.r] : []) : faceRects(n.g, own);
+    });
+  }
+
+  it.each(holders)("%s's controller never covers its calm mouth or eyes", (_id, c) => {
+    const { x0 } = PASTIME_SCENES.game.pose;
+    const html = scene(c, "game");
+    const { drop } = placement(c.sprite, { x0, sitting: true });
+    const shift = Math.min(drop, 0.8);
+    const ctlShift = Number(/<g transform="translate\(0 ([-\d.e]+)\)"><g class="tama-controller"/.exec(html)[1]);
+    expect(ctlShift, c.id).toBeCloseTo(shift);
+    const { tx, ty, scale } = drawnPlace(html);
+    const ctl = { x0: x0 + 6.2, x1: x0 + 11.6, y0: 14.2 + shift, y1: 16.2 + shift };
+    for (const [x, y, w, h] of faceRects(c.sprite.root)) {
+      const box = { x0: tx + scale * x, x1: tx + scale * (x + w), y0: ty + scale * y, y1: ty + scale * (y + h) };
+      const overlaps = box.x0 < ctl.x1 && box.x1 > ctl.x0 && box.y0 < ctl.y1 && box.y1 > ctl.y0;
+      expect(overlaps, `${c.id} [${x}, ${y}, ${w}, ${h}]`).toBe(false);
+    }
   });
 });
 
@@ -953,6 +1406,52 @@ describe("<Tamagotchi> with a critter", () => {
     const html = render(<Tamagotchi />);
     expect(html).not.toContain("data-critter");
     expect(html).toContain('title="Claude is coding (1pm–5pm)');
+  });
+});
+
+describe("critters flush red when furious at the desk", () => {
+  const mascotOf = (html) => groupAt(html, html.indexOf('<g class="tama-creature'));
+  const flushGroupAt = (html) => {
+    const mascot = mascotOf(html);
+    const open = mascot.indexOf('<g class="tama-flush"');
+    return open < 0 ? null : groupAt(mascot, open);
+  };
+
+  it.each(holders)("%s flushes red and grits its teeth, furious at the desk", (_id, c) => {
+    const mascot = mascotOf(render(<TamaScene activity="code" mood="furious" working={2} critter={c} />));
+    expect(mascot).toContain('class="tama-flush"');
+    expect(mascot).toContain('stroke="#f3f5f8"');
+  });
+
+  it.each(holders)("%s shows neither, grumpy or calm", (_id, c) => {
+    for (const mood of ["grumpy", "calm"]) {
+      const mascot = mascotOf(render(<TamaScene activity="code" mood={mood} working={2} critter={c} />));
+      expect(mascot, mood).not.toContain("tama-flush");
+      expect(mascot, mood).not.toContain('stroke="#f3f5f8"');
+    }
+  });
+
+  it("keeps Nox's resting tail out of the flush: typing makes it reach instead", () => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById("nox")} />);
+    const flush = flushGroupAt(html);
+    expect(flush).not.toContain('x="15" y="16"');
+    expect(flush).not.toContain('x="17" y="12"');
+  });
+
+  it("keeps Scope's feet out of the flush, seated at the desk", () => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById("scope")} />);
+    expect(flushGroupAt(html)).not.toContain('x="5" y="16"');
+  });
+
+  it.each(["nox", "octocat"])("recolours %s's outline to the flush, at its own stroke width", (id) => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={critterById(id)} />);
+    expect(flushGroupAt(html)).toContain('stroke="#ff3b2f" stroke-width="1"');
+  });
+
+  it.each(holders)("%s's typing limb is washed red in the flush too", (_id, c) => {
+    const html = render(<TamaScene activity="code" mood="furious" working={2} critter={c} />);
+    const [x, y, w, h] = limbGlyphs(c.sprite, null, sceneToSprite(drawnPlace(html), KEYS_REACH)).at(-1).g.at(-1).r;
+    expect(flushGroupAt(html)).toContain(`<rect x="${x}" y="${y}" width="${r4(w + 0.02)}" height="${r4(h + 0.02)}">`);
   });
 });
 
@@ -982,6 +1481,8 @@ describe("Clawd's drawing, pinned", () => {
       }
     }
     expect(n).toBe(3264);
-    expect(hash.digest("hex")).toBe("355da01dc9d061fcadcececf89882f0b92f8aa96e78944ec91680969f22be094");
+    // 2026-10-24: game scenes changed on purpose — Clawd holds the controller
+    // in both hands, side arms on it.
+    expect(hash.digest("hex")).toBe("c72dc4e395d40aa31c659155dd0be43d5552f196cf46d30bb1db76678857bb06");
   });
 });

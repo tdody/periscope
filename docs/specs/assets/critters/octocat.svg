@@ -1,9 +1,9 @@
-<svg data-hat="10 4 12" data-neck="11.6 4 16" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" width="200" height="200" shape-rendering="crispEdges" role="img" aria-label="Octocat">
+<svg data-limb="tentacle 16.6 12.4" data-limb-color="#24292f" data-hat="10 4 12" data-neck="11.6 4 16" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" width="200" height="200" shape-rendering="crispEdges" role="img" aria-label="Octocat">
   <style>.mood-grumpy,.mood-furious{display:none}</style>
   <!-- Mood layers: show .mood-<current>; hide the others. Default shown: calm. An original pixel take on the octocat: cat head, octopus legs. -->
       <g>
         <animateTransform attributeName="transform" type="translate" values="0 0;0 -0.6;0 0" dur="1.2s" data-bob="calm 1.2s · grumpy 0.6s · furious 0.2s" repeatCount="indefinite" calcMode="discrete"></animateTransform>
-        <g>
+        <g class="legs">
           <animateTransform attributeName="transform" type="translate" values="0 0;0.4 0;0 0;-0.4 0" dur="1.6s" repeatCount="indefinite" calcMode="discrete"></animateTransform>
           <g fill="#24292f" stroke="#6e7781" stroke-width="1">
             <rect x="4" y="14" width="1" height="2"></rect><rect x="3" y="16" width="2" height="1"></rect>

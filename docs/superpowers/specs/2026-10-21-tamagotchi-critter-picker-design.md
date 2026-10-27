@@ -95,6 +95,11 @@ come out a device pixel wider than others. A fixed 0.5 scale would keep them
 uniform on Retina, at the cost of smaller critters (7.5–8.5 units); matching
 Clawd's height was chosen instead.
 
+**Superseded 2026-10-23:** critters now stand `CRITTER_HEIGHT` = 12 (scales
+0.71–0.80), Clawd's height only under a Halloween sheet; see the Size section of
+`2026-10-23-critter-held-props-batch1-design.md`. The uneven-columns trade-off
+above still applies at those scales, and is still accepted.
+
 ### `static/src/chrome/Critter.jsx`
 
 `<Critter sprite mood="calm" asleep={false} />` draws the layers, in sprite
@@ -259,7 +264,7 @@ SVG's name.
 
 ### Critters as expressive as Clawd
 
-**Status:** duty poses are done as THI-415 part 1 (`docs/superpowers/specs/2026-10-22-critter-duty-faces-design.md`): faces generated from each critter's eye boxes, with optional per-critter face layers, and the bell's "!" on the critter's own head. Held props (part 2b) and hands and strides (part 3) remain, both building on the `anchors` those sprites now carry. The beer friend and the kids now match the mascot too (`docs/superpowers/specs/2026-10-22-critter-friend-and-kids-design.md`). Hats now fit each critter's head, and the goggles and scarf are back (part 2a, `docs/superpowers/specs/2026-10-23-critter-hats-and-worn-props-design.md`); held props are part 2b.
+**Status:** duty poses are done as THI-415 part 1 (`docs/superpowers/specs/2026-10-22-critter-duty-faces-design.md`): faces generated from each critter's eye boxes, with optional per-critter face layers, and the bell's "!" on the critter's own head. The beer friend and the kids now match the mascot too (`docs/superpowers/specs/2026-10-22-critter-friend-and-kids-design.md`). Hats now fit each critter's head, and the goggles and scarf are back (part 2a, `docs/superpowers/specs/2026-10-23-critter-hats-and-worn-props-design.md`). Critters now hold the pint, the mug, the spoon, the watering can and the leash with their own arm, tentacle or tail, and stand 12 tall instead of Clawd's 10 (part 2b batch 1, `docs/superpowers/specs/2026-10-23-critter-held-props-batch1-design.md`). Critters also play the bass (their limb frets the neck, a paw strums) and hold the game controller in two paws, with Clawd's, Ember's, Volt's and Moss's side arms on the controller (part 2b batch 2, `docs/superpowers/specs/2026-10-24-critter-held-props-batch2-design.md`). At the desk they also type when grumpy or furious, put their arms up for a done or merged PR and slap the service bell, with their own appendages (part 3 hands, `docs/superpowers/specs/2026-10-24-critter-hands-design.md`). They also stride on the run, the bike and the dog walk, and sit without the legs they hide (part 3 motion, `docs/superpowers/specs/2026-10-25-critter-strides-and-seats-design.md`). THI-415 is done: critters are as expressive as Clawd. Furious, they also flush red like Clawd, with gritted teeth in their shouting mouth (THI-421, `docs/superpowers/specs/2026-10-25-critter-furious-flush-design.md`).
 
 Today a critter stands in Clawd's spot with its own three mood layers and shut
 eyes, and every *scene* prop stays. But everything drawn on Clawd's *body* is

@@ -52,7 +52,7 @@ const branchQuery = signal("");
 // Which Claude subscription the new pane runs on (a registered account id).
 const account = signal("default");
 
-// Which `claude` wrapper profile the new pane runs under ("default" | "lab").
+// Which `claude` wrapper profile the new pane runs under ("default" | "full").
 // Seeded from prefs on open and written back on pick — see prefs.getLaunchProfile
 // for why this one is sticky while the account is re-derived.
 const profile = signal("default");
@@ -418,9 +418,9 @@ export function LauncherModal() {
               <button
                 key={p.id}
                 class={`launcher-branch${profile.value === p.id ? " is-active" : ""}`}
-                title={p.id === "lab"
-                  ? "lab plugin set — no workflow direction, mattpocock-skills on"
-                  : "the standard plugin set and workflow direction"}
+                title={p.id === "full"
+                  ? "the pipeline: superpowers, tom-workflow, codebase-health-check, plus the pipeline direction prompt"
+                  : "tom-core alone, on the plugin set settings.json enables"}
                 onClick={() => { profile.value = p.id; prefs.setLaunchProfile(p.id); }}
               >
                 {p.label}

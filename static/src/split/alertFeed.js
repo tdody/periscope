@@ -40,8 +40,13 @@ export function openNeedsPane(w) {
   selectPane(w);
 }
 
-export function openReadyPane(w) {
+// Dismiss a READY row without opening its pane: a done banner's Mark seen.
+export function markReadySeen(w) {
   if (w?.pid) dismissedReadyPids.value = new Set([...dismissedReadyPids.value, w.pid]);
+}
+
+export function openReadyPane(w) {
+  markReadySeen(w);
   selectPane(w);
 }
 
@@ -51,4 +56,18 @@ export function startAlertFeed() {
   // An older shell's banner click carries only the pane target (a newer one
   // sends kinds to notify/feed.js instead).
   onNotificationClick((target) => revealPane(target));
+}
+
+// Select a branch's review row / the Reviews queue, as clicking them does.
+// The persisted pref carries repo + branch (the rail key's slug can't be
+// inverted: `--` is ambiguous).
+export function selectReview(repo, branch) {
+  if (!repo || !branch) return;
+  railSelection.value = `review:${repo}/${branch.replace(/\//g, "--")}`;
+  prefs.setLastSelected({ kind: "review", repo, branch });
+}
+
+export function selectReviewsQueue() {
+  railSelection.value = "reviews";
+  prefs.setLastSelected({ kind: "reviews" });
 }

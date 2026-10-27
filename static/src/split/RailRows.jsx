@@ -1,9 +1,9 @@
 // Row components for the split-view rail, ported from rail.js's row-builder
-// functions (paneRow / reviewRow / newTabRow / worktreeRow / repoRow +
+// functions (paneRow / newTabRow / worktreeRow / repoRow +
 // worktreeMetaLine). One component per row kind; all CSS class names and glyphs
 // are preserved verbatim (rail-row, child-row, wt-row, repo-row, rail-chev,
 // rail-icon, rail-label, rail-count, rail-close, rail-dim, newtab-row,
-// last-in-worktree, review-empty, dot/dot-*, wt-meta*, drop-target).
+// last-in-worktree, dot/dot-*, wt-meta*, drop-target).
 //
 // Two cross-cutting conventions:
 //   - PR/Linear anchors call e.stopPropagation() in a real onClick (#4) so
@@ -21,6 +21,7 @@ import { profileLabel } from "../profiles.js";
 import { AGENT_META, memHint, paneLabel, prStateMeta, prUrl, relTime } from "../util.js";
 import { waitTier } from "./attention.js";
 import { ctxClass } from "./ctxBand.js";
+import { linearTicket } from "./linearTicket.js";
 import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 
 // Narrator status dims after 15 min: the work moved on (or the pane went
@@ -182,8 +183,9 @@ export function PaneRow({
       ? <a class={`pane-pill pane-pill-pr ${prMeta.cls}`} href={prHref} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={prTitle}>{prInner}</a>
       : <span class={`pane-pill pane-pill-pr ${prMeta.cls}`} title={prTitle}>{prInner}</span>
   );
-  const linChip = w.linked_linear && (
-    <a class="pane-pill pane-pill-linear" href={`https://linear.app/issue/${w.linked_linear}`} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={`Linear ${w.linked_linear}${w.linked_linear_status ? ` [${w.linked_linear_status}]` : ""}`}>{w.linked_linear}</a>
+  const lin = linearTicket(w);
+  const linChip = lin && (
+    <a class="pane-pill pane-pill-linear" href={lin.href} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={lin.tip}>{lin.id}</a>
   );
   // Account + wrapper-profile chips ride the bottom line (compact meta strip /
   // expanded footer), not the name line — they're orientation, not attention.
@@ -253,7 +255,7 @@ export function PaneRow({
           )}
         </div>
       )}
-      {expanded && (w.pr || w.linked_linear || ctxChipText(w) != null || acctChip || profChip) && (
+      {expanded && (w.pr || lin || ctxChipText(w) != null || acctChip || profChip) && (
         <div class="pane-foot">
           {prChip}
           {linChip}
@@ -319,27 +321,6 @@ export function PaneRow({
   );
 }
 
-export function ReviewRow({ worktreeKey, lgtmLive, selectedKey, onSelect, dragProps, dropPos }) {
-  const k = `review:${worktreeKey}`;
-  const sel = k === selectedKey ? " selected" : "";
-  const empty = lgtmLive ? "" : " review-empty";
-  const drop = dropPos ? " drop-target" : "";
-  return (
-    <div
-      class={`rail-row child-row${sel}${empty}${drop}`}
-      data-drop-pos={dropPos || undefined}
-      draggable
-      onClick={() => onSelect(k)}
-      {...dragProps}
-    >
-      {lgtmLive
-        ? <span class="rail-icon icon-review">◉</span>
-        : <span class="rail-icon icon-review-empty">○</span>}
-      <span class="rail-label">review{lgtmLive ? "" : <> <em>start →</em></>}</span>
-    </div>
-  );
-}
-
 export function NewTabRow({ worktreeKey, onOpen }) {
   return (
     <div
@@ -374,12 +355,10 @@ export function WorktreeMeta({ wtWindows }) {
     );
   }
 
-  if (w.linked_linear) {
-    const lid = w.linked_linear;
-    const ltitle = w.linked_linear_title ? `: ${w.linked_linear_title}` : "";
-    const lstatus = w.linked_linear_status ? ` [${w.linked_linear_status}]` : "";
+  const lin = linearTicket(w);
+  if (lin) {
     parts.push(
-      <a class="wt-meta-chip wt-meta-linear" href={`https://linear.app/issue/${lid}`} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={`Linear ${lid}${ltitle}${lstatus}`}>{lid}</a>
+      <a class="wt-meta-chip wt-meta-linear" href={lin.href} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={lin.tip}>{lin.id}</a>
     );
   }
 
@@ -416,6 +395,19 @@ export function BranchRow({
       <span class="rail-label"><b>{label}</b></span>
       {collapsed && childCount > 0 ? <span class="rail-count">{childCount}</span> : null}
       <span class={statusDotClass(rolledUp)}></span>
+    </div>
+  );
+}
+
+export function ReviewRow({ row, selectedKey, onSelect }) {
+  const k = `review:${row.repo}/${row.slug}`;
+  const sel = k === selectedKey ? " selected" : "";
+  const stale = row.walkthrough?.stale_by > 0;
+  return (
+    <div class={`rail-row child-row rail-review${sel}`} onClick={() => onSelect(k)}>
+      <span class="rail-icon icon-review">◉</span>
+      <span class="rail-label">review · {row.walkthrough.stops} stop{row.walkthrough.stops === 1 ? "" : "s"}{stale ? " · stale" : ""}</span>
+      {row.unresolved ? <span class="rail-review-badge">{row.unresolved}</span> : null}
     </div>
   );
 }

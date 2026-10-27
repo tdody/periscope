@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeLiveAndPrefs, paneChip, trackKind, trackLabel } from "../railTree.js";
+import { mergeLiveAndPrefs, paneChip, reviewRowsByTrack, trackKind, trackLabel } from "../railTree.js";
 
 // Window factory. `track_id` is the backend-resolved grouping authority
 // (always present — repo-default fallback guarantees a value). `branch` is
@@ -222,5 +222,26 @@ describe("paneChip", () => {
       repo_label: "fdy", branch: "master", repo_key: "/dev/fdy",
     });
     expect(paneChip(w)).toBe("fdy/master");
+  });
+});
+
+describe("reviewRowsByTrack", () => {
+  const rows = [
+    { repo: "myproj", branch: "feat/a", slug: "feat--a", walkthrough: { stops: 2 } },
+    { repo: "myproj", branch: "feat/b", slug: "feat--b", walkthrough: null },
+    { repo: "other", branch: "feat/a", slug: "feat--a", walkthrough: { stops: 1 } },
+  ];
+  const windowsByPid = {
+    p1: win({ pid: "p1", track_id: "tk_a", branch: "feat/a" }),
+    p2: win({ pid: "p2", track_id: "tk_b", branch: "feat/a" }),
+    p3: win({ pid: "p3", track_id: "tk_a", branch: "feat/b" }),
+  };
+  it("places a row in the first track holding a window on that (repo, branch)", () => {
+    const out = reviewRowsByTrack(["tk_a", "tk_b"], { tk_a: ["p1", "p3"], tk_b: ["p2"] }, windowsByPid, rows);
+    expect(out).toEqual({ tk_a: { "feat/a": [rows[0]] } });
+  });
+  it("skips rows without a walkthrough and repos with no window", () => {
+    const out = reviewRowsByTrack(["tk_b"], { tk_b: ["p2"] }, windowsByPid, rows);
+    expect(out).toEqual({ tk_b: { "feat/a": [rows[0]] } });
   });
 });

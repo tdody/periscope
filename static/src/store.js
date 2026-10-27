@@ -12,6 +12,10 @@ export const windows = signal([]);            // /api/state windows (poll-fed)
 export const projects = signal([]);
 export const workspaces = signal([]);  // /api/state workspaces (poll-fed)
 export const tracks = signal([]);      // /api/state track registry rows (poll-fed) — includes EMPTY goal tracks
+// /api/reviews rows, refreshed every 10 s by poll.js (its own cadence — not
+// part of the state push: each refresh may fork git per worktree). `null`
+// until the first fetch lands.
+export const reviews = signal(null);
 // Cross-pane alert feed, fed by /api/state. `null` means "not loaded yet" and
 // is distinct from `[]` ("loaded, no alerts"): alertFeed's native-notify
 // sentinel must not treat the pre-load value as a real empty feed, or every
@@ -19,7 +23,7 @@ export const tracks = signal([]);      // /api/state track registry rows (poll-f
 export const alerts = signal(null);
 export const currentFilter = signal("all");
 export const activeTarget = signal(null);     // detail-pane focused pane "session:index" (split); shared paste/poll target
-export const railSelection = signal(null);    // string highlight-key: "pane:<pid>" | "review:<worktree>" | null
+export const railSelection = signal(null);    // string highlight-key: "pane:<pid>" | "review:<repo>/<slug>" | "reviews" | null
 export const dragState = signal(null);
 export const usage = signal(null);
 export const updateInfo = signal(null);       // /api/state update summary: { behind, ahead, checked_at, running }

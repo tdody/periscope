@@ -13,7 +13,9 @@ import { accountLabel, multiAccount } from "../accounts.js";
 import { accounts, launchDefault, spawnAccount } from "../store.js";
 import { apiCall } from "../util.js";
 
-async function pick(id) {
+// Exported for a usage banner's "Spawn on {B}" (notify/actions.js), which pins
+// every new spawn to B exactly as clicking B here does.
+export async function pickSpawnAccount(id) {
   const prev = spawnAccount.value;
   spawnAccount.value = id; // optimistic; the poll carries the persisted value
   const res = await apiCall("spawn account", "/api/settings", {
@@ -22,6 +24,7 @@ async function pick(id) {
     body: JSON.stringify({ spawn_account: id }),
   });
   if (!res) spawnAccount.value = prev;
+  return !!res;
 }
 
 export function SpawnAccountPicker() {
@@ -45,7 +48,7 @@ export function SpawnAccountPicker() {
           key={c.id ?? "auto"}
           class={`spawn-acct-btn${cur === c.id ? " is-active" : ""}`}
           title={c.id === null ? auto?.reason : undefined}
-          onClick={() => pick(c.id)}
+          onClick={() => pickSpawnAccount(c.id)}
         >
           {c.id === null && cur === null && auto ? `auto → ${accountLabel(auto.account)}` : c.label}
         </button>

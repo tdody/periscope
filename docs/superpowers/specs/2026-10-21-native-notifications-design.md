@@ -12,6 +12,9 @@ handout). Lands after the critter picker
   worktree, Spawn on {B}, plus the server pieces they need: the permission hook
   and the guarded endpoints.
 
+**2b is designed in `2026-10-26-native-notifications-2b-design.md` (THI-422),
+which supersedes this spec's 2b sections wherever they disagree.**
+
 Out of scope here: the critter image in notifications (handout phase 2; its
 `notify.critter` toggle arrives with it) and the menu bar extra (phase 3).
 
@@ -468,4 +471,4 @@ Manual, on macOS, with notifications allowed for the dev build:
   recycle. The badge counts panes.
 - 2b: every button does what its row says. Allow and Deny can only ever answer
   the request they were shown for. No action that makes an agent act works from a locked screen. No
-  reply lands in a dialog.
+  reply is submitted into a dialog.

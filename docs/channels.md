@@ -10,9 +10,12 @@ Tools exposed to Claude:
   the pane card and in the dashboard's alert feed without opening the modal.
 - `link_pr(number)` — bind a GitHub PR to the pane, even if Claude's
   status-line URL isn't visible.
-- `link_linear(id, title?, status?)` — same for Linear tickets (no
-  auto-detection path). Optional `title`/`status` metadata renders on
-  the card and in the modal; each call fully describes the link.
+- `link_linear(id, title?, status?)` — same for Linear tickets. Without
+  a link, periscope shows the ticket a `KEY-123:` PR title or a
+  Linear-shaped branch names, as the id alone (`git_pr.linear_ticket_for`;
+  `settings.linear_team_keys` narrows it to known keys); a link replaces
+  that. Optional `title`/`status` metadata renders on the card and in the
+  modal; each call fully describes the link.
 - `set_name(name)` — rename the caller's own window and pin the name
   against the narrator (see the narrator section's pin invariant). The
   only self-naming path: `spawn_claude(name=…)` could name a CHILD, so a
@@ -104,8 +107,9 @@ the only authoritative, current source.
   transcript at once instead of cwd-falling-back to whatever was most recently
   active.
 - **UserPromptSubmit** (every prompt) migrates panes that predate the hook —
-  they self-correct on their next message (Claude loads new hooks live; no
-  plugin reload needed).
+  they self-correct on their next message, once their session has loaded the
+  hook. Assume only sessions started after `install-hook` have; PR 2's hand
+  check (2b plan, Task 9) settles whether Claude loads new hooks live.
 
 `install-hook` also invokes the provider-specific Codex installer. It merges
 dedicated Periscope groups for `SessionStart`, `UserPromptSubmit`, `Stop`, and
@@ -123,3 +127,53 @@ reports installation/observation without claiming trust.
 Resolution falls back to newest-mtime-in-cwd when a pane has no recorded session
 yet. The earlier `channel_shim.py` recorder was removed — the hook's payload is
 strictly better (current vs spawn-frozen).
+
+## Permission requests (a banner's Allow / Deny)
+
+**`pane_permission_hook.py`** is `pane_session_hook.py`'s sibling:
+- **Registration.** The same `bin/periscope install-hook` registers it on Claude's `PermissionRequest` event, with no matcher, so it runs for every tool. `uninstall-hook` removes it.
+- **When it runs.** Claude runs it just before a permission dialog renders.
+- **How it reads and writes.** Like `pane_session_hook.py`, it reads `TMUX_PANE` and the hook payload, never an inherited env, and opens its own short-lived connection to prod's `periscope.db`.
+
+**What it records.** One `pane_permissions` row per dialog, and it prunes rows older than a day:
+- the pane id;
+- the session and agent ids. A subagent's call asks in its parent's pane;
+- the tool;
+- a display summary of at most 80 characters, in clear text and published on `/api/state`: Bash's command (a long one clipped to its head … tail), a file tool's path, WebFetch's URL, or else the first string argument;
+- a `match_key`;
+- the time.
+
+The payload carries no `tool_use_id`, so `request_id` is a hash of the session, tool, input and time.
+
+**The match key** is what Allow must find on screen before it sends `1` (`panes.dialog_matches`):
+
+| Request | Key |
+|---|---|
+| Bash | `sha256:` of the command + description with all whitespace and hidden controls removed |
+| Edit / Write | the absolute path. The dialog's question path must be a `/`-boundary suffix of it |
+| anything else, or Bash with `dangerouslyDisableSandbox` | NULL, so the banner offers Open only |
+
+- **Bash's key is a digest, so the WHOLE command never sits in the key.** Commands carry tokens, and `periscope.db` is 0644. The summary still shows the command's head and tail in clear text, by design: it's what the banner displays. The screen side hashes its own squashed block and compares the two.
+- **Two definitions, pinned together.** The hook runs on bare `python3` and can't import `periscope`, so it and `panes.py` each define `VERIFIABLE_TOOLS` and the hidden-control class, and tests pin the copies together.
+- **The column heals itself.** A table created before `match_key` gets it by `ALTER`, from whichever side opens the DB first (the hook, or `activity._conn`). Otherwise every INSERT would fail, silently.
+
+**Why it prints nothing and fails open.** A `PermissionRequest` hook's JSON stdout is read as its decision on the dialog. So this observer never prints, swallows every failure and exits 0: a broken recorder must never answer, or block, a prompt. Every failure costs the banner its Allow / Deny, never the dialog. Two layers back this up:
+- **The registration**, `python3 -I -S <path> || true`:
+  - `python3` can be the Mac's 3.9 with no venv, so the file stays 3.9-safe;
+  - `-I -S` keeps a site or venv out;
+  - `|| true` makes even a missing file exit 0.
+- **The busy wait.** SQLite's is 0.5 s, well inside Claude's 5 s hook timeout, since a busy wait overruns its budget about 3×.
+
+**What `install-hook` does to existing entries:**
+- **It joins only a matcher-less group** (`matcher` absent, `""` or `"*"`), so a user's matcher-scoped group can't narrow ours.
+- **It repoints an existing entry only when that entry's target is gone, or when it already points at this checkout.** Never another live checkout's: an install from a worktree would otherwise take over prod's entry, and removing the worktree would leave a dangling path.
+- **`pane_session_hook.py`'s entry ends in `|| true` too.** A nonzero `UserPromptSubmit` blocks the prompt.
+
+**Who reads it.**
+- **`window_view.pending_permission_for`** publishes `w.pending_permission = {request_id, tool, summary}` when exactly one row was stamped no earlier than 5 s before the wait's `needs_since` (no upper bound) and that row has a key.
+- **`POST /api/pane/permission`** (`routes/pane_actions.py`) recomputes the row, key included, and checks it against a fresh capture before sending `1` or Escape (`docs/invariants.md`, invariant 20).
+
+**Gaps:**
+- **Prod's DB only.** The hook can't know which instance is looking, so a dev server never publishes `pending_permission`.
+- **Auto mode.** A pane in auto mode (2.1.280's default) asks only when auto mode defers to you.
+- **Old sessions.** Only sessions started after `install-hook` are assumed to have loaded the hook; one that hasn't gets Open-only banners.

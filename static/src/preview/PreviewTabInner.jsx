@@ -12,7 +12,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { activeTarget, docRefreshNonce } from "../store.js";
+import { activeTarget, docRefreshNonce, openFileTab } from "../store.js";
 
 // Encode "session:index" as base64url for the /api/fs/render path token.
 // btoa() is bytes-from-string, so the input must be ASCII-safe; tmux
@@ -231,7 +231,7 @@ export function PreviewTabInner({ entry, active = true }) {
         setDirty(false);          // the buffer now matches disk by definition
         setConflict(false);
         setSaveError(null);
-        setState({ loading: false, error: null, content: data.content, lang: data.language, resolved: data.path });
+        setState({ loading: false, error: null, content: data.content, lang: data.language, resolved: data.path, repo: data.repo });
       } catch (e) {
         if (alive) setState({ loading: false, error: String(e), content: null, lang: null, resolved: null });
       }
@@ -600,6 +600,19 @@ export function PreviewTabInner({ entry, active = true }) {
                 softBreaks: "space",
                 highlight: highlightCode,
                 resolveUrl: state.resolved ? makeResolveUrl(target, state.resolved) : null,
+                meta: true,
+                mermaid: true,
+                // Cites are repo-relative to the DOC's checkout (fs_read's
+                // `repo`), not the pane's cwd — a spec previewed from another
+                // repo, or a pane that cd'd, would otherwise open the wrong file.
+                cite: (c) => (
+                  <button
+                    type="button"
+                    class="md-cite"
+                    title={`open ${c.path}${c.start ? `:${c.start}` : ""}`}
+                    onClick={() => openFileTab({ path: state.repo ? `${state.repo}/${c.path}` : c.path, line: c.start })}
+                  >{c.raw}</button>
+                ),
               })}
             </div>
           </div>

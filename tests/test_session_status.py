@@ -282,7 +282,7 @@ def test_env_tail_strips_the_command():
 
 def test_pane_profiles_reads_the_wrapper_profile_from_env(mocker):
     """The profile is observable ONLY in env: the wrapper consumes the typed
-    `claude lab` word and execs `command claude --settings ...`, so it never
+    `claude full` word and execs `command claude --settings ...`, so it never
     reaches argv."""
     ss._config_dirs_cache = None
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111, "%2": 222})
@@ -291,12 +291,12 @@ def test_pane_profiles_reads_the_wrapper_profile_from_env(mocker):
         ss,
         "_env_by_pid",
         return_value={
-            111: "claude PATH=/x CLAUDE_WRAPPER_PROFILE=lab TERM=xterm",
+            111: "claude PATH=/x CLAUDE_WRAPPER_PROFILE=full TERM=xterm",
             222: "claude PATH=/x TERM=xterm",
         },
     )
-    # Only the lab pane gets an entry; a default-profile pane has none.
-    assert ss.pane_profiles() == {"%1": "lab"}
+    # Only the full pane gets an entry; a default-profile pane has none.
+    assert ss.pane_profiles() == {"%1": "full"}
 
 
 def test_pane_models_reads_the_spawn_model_from_env(mocker):
@@ -322,17 +322,17 @@ def test_pane_profiles_and_config_dirs_share_one_ps_fork(mocker):
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: "claude"}))
     envs = mocker.patch.object(
-        ss, "_env_by_pid", return_value={111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b CLAUDE_WRAPPER_PROFILE=lab"}
+        ss, "_env_by_pid", return_value={111: "claude CLAUDE_CONFIG_DIR=/Users/t/.claude-b CLAUDE_WRAPPER_PROFILE=full"}
     )
     assert ss.pane_config_dirs() == {"%1": "/Users/t/.claude-b"}
-    assert ss.pane_profiles() == {"%1": "lab"}
+    assert ss.pane_profiles() == {"%1": "full"}
     assert envs.call_count == 1
 
 
 def test_pane_profiles_ignores_a_command_that_merely_mentions_the_var(mocker):
     """The `ps eww` no-delimiter trap, for the profile variable specifically."""
     ss._config_dirs_cache = None
-    cmd = "rg CLAUDE_WRAPPER_PROFILE=lab"
+    cmd = "rg CLAUDE_WRAPPER_PROFILE=full"
     mocker.patch.object(ss, "pane_claude_pids", return_value={"%1": 111})
     mocker.patch.object(ss, "proc_table", return_value=({}, {111: cmd}))
     mocker.patch.object(ss, "_env_by_pid", return_value={111: f"{cmd} PATH=/x"})

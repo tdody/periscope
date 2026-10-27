@@ -202,3 +202,25 @@ export function paneChip(w) {
   }
   return null;
 }
+
+// Where each review row renders in the rail: the FIRST track (in trackOrder)
+// holding a live window on the row's (repo, branch). Keyed on repo+branch,
+// not track — a repo-default track holds every branch of the repo. Rows with
+// no walkthrough yet are not rail rows (the queue lists them).
+// Returns { [trackId]: { [branch]: row[] } }.
+export function reviewRowsByTrack(trackOrder, tabsByTrack, windowsByPid, rows) {
+  const out = {};
+  for (const row of rows || []) {
+    if (!row.walkthrough) continue;
+    for (const t of trackOrder) {
+      const hit = (tabsByTrack[t] || []).map((pid) => windowsByPid[pid])
+        .find((w) => w && w.repo_label === row.repo && (w.branch || NO_BRANCH) === row.branch);
+      if (!hit) continue;
+      if (!out[t]) out[t] = {};
+      if (!out[t][row.branch]) out[t][row.branch] = [];
+      out[t][row.branch].push(row);
+      break;
+    }
+  }
+  return out;
+}

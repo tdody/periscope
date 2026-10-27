@@ -31,11 +31,21 @@ import {
   dismissedReadyPids,
   dragState,
   editingTarget,
+  moveTargets,
   stateSeq,
   usage,
   windows,
 } from "../store.js";
-import { inTauri, notify, onNotificationOpened, openExternal, setBadgeCount } from "../tauri.js";
+import {
+  inTauri,
+  notify,
+  onNotificationAction,
+  onNotificationOpened,
+  openExternal,
+  setBadgeCount,
+  setNotifyCategories,
+} from "../tauri.js";
+import { categories, runAction } from "./actions.js";
 import { BURST_MS, flushPayload, planBurst } from "./burst.js";
 import { payloadFor } from "./copy.js";
 import { detect } from "./detect.js";
@@ -67,32 +77,55 @@ export function openFromBanner({ target, data } = {}) {
 
 const NO_NEWS = { sends: [], flush: [], badge: null };
 
-// One pass -> what to do: { state, recent, held, heldSince, lastBadge } to
-// carry to the next pass, `sends` and `flush` (a summary) to notify, `badge`
-// to set (null: unchanged). ctx: { state, recent, held, heldSince, lastBadge,
-// editing }, where `editing` is a rename or drag in flight. `build` is
-// injectable so a test can make one banner throw.
+// One pass -> what to do: { state, recent, held, heldSince, lastBadge,
+// lastCategories } to carry to the next pass, `sends` and `flush` (a
+// summary) to notify, `badge` to set (null: unchanged), `categories` the set
+// to register (null: unchanged). ctx: { state, recent, held, heldSince,
+// lastBadge, lastCategories, editing }, where `editing` is a rename or drag
+// in flight. `build` is injectable so a test can make one banner throw.
 export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
-  let { state, recent, held, heldSince, lastBadge } = ctx;
+  let { state, recent, held, heldSince, lastBadge, lastCategories } = ctx;
   const quiet = { quiet_when_focused: prefs.quiet_when_focused };
   // WKWebView throttles setTimeout in a hidden window, so the burst timer can
   // fire long late; the next pass flushes an overdue summary instead. Clearing
   // `held` here is what keeps the timer from sending it again.
   const flush = [];
-  const bctx = { accounts: snap.accounts, windows: snap.windows };
+  const bctx = { accounts: snap.accounts, windows: snap.windows, moveTargets: snap.moveTargets };
   if (held.length && nowMs - heldSince >= BURST_MS) {
     flush.push({ ...flushPayload(held, build, bctx), ...quiet });
     held = [];
     heldSince = null;
   }
+  // Stays null unless the set below actually changes; `out` always carries
+  // it (default, not opt-in) so a future early return can't silently drop a
+  // pending registration the way this one used to.
+  let cats = null;
   const out = (extra) => ({
-    state, recent, held, heldSince, lastBadge, ...NO_NEWS, flush,
+    state, recent, held, heldSince, lastBadge, lastCategories, ...NO_NEWS, flush, categories: cats,
     timerAt: held.length ? heldSince + BURST_MS : null,
     ...extra,
   });
   // null until the first /api/state: unknown, not empty. Seeding from it would
   // announce every waiting pane as new on the first real poll.
   if (snap.alerts === null) return out();
+  // The buttons each banner category carries, sent whole when the set
+  // changes (accounts or move targets moved) and on a JS context's first pass
+  // (lastCategories starts undefined), which covers a reload and a recycle.
+  // Ordering (makeDelivery) narrows, not closes, the window: macOS registers
+  // categories asynchronously too (tauri.js), so a banner needing a
+  // brand-new category can still show no buttons once. A thrown builder (a
+  // malformed accounts/moveTargets shape) must not cost the pass — keep the
+  // last-registered set and retry next pass, same as a bad banner below.
+  try {
+    const set = categories({ accounts: snap.accounts, moveTargets: snap.moveTargets });
+    const setKey = JSON.stringify(set);
+    if (setKey !== lastCategories) {
+      cats = set;
+      lastCategories = setKey;
+    }
+  } catch (e) {
+    console.error("[notify] category set failed", e);
+  }
   // Panes waiting on you, as the rail counts them, not alert rows. Computed
   // before the seeding/editing skip below, so a fresh context that can't seed
   // yet still sets the dock badge.
@@ -137,6 +170,44 @@ export function runPass(ctx, snap, prefs, nowMs, build = payloadFor) {
   return out({ sends, badge });
 }
 
+// A hung registration (dead IPC, say) must not stall every later banner
+// forever — race it so the chain always drains. WKWebView throttles timers
+// in a hidden window, so this is a backstop for a dead call, not a promise
+// that `invoke` resolves within it — in practice it doesn't hang.
+export const REGISTRATION_TIMEOUT_MS = 2000;
+
+// Serialises registration ahead of delivery through one promise chain: two
+// IPC emits aren't ordered (each an async call on a multi-threaded runtime),
+// so a later pass's banners (or flushHeld's timer, running off the same
+// chain) could otherwise overtake a pending registration, and two
+// registrations could land out of order. Ordering narrows, not closes, the
+// window: macOS itself registers categories asynchronously (tauri.js), so a
+// banner needing a brand-new category can still show no buttons once. Each
+// step catches its own failure, so a failed (or merely slow) registration
+// still posts that same call's banners, and one bad payload doesn't cost the
+// rest of its batch. `io` is injectable for testing.
+export function makeDelivery(io = { setNotifyCategories, notify }) {
+  let ready = Promise.resolve();
+  return (cats, payloads) => {
+    if (cats) {
+      ready = ready
+        .then(() => Promise.race([io.setNotifyCategories(cats), new Promise((r) => setTimeout(r, REGISTRATION_TIMEOUT_MS))]))
+        .catch((e) => console.error("[notify] registration failed", e));
+    }
+    if (payloads.length) {
+      ready = ready.then(() => {
+        for (const p of payloads) {
+          try {
+            io.notify(p);
+          } catch (e) {
+            console.error("[notify] post failed", e);
+          }
+        }
+      });
+    }
+  };
+}
+
 let started = false;
 
 export function startNotifyFeed() {
@@ -144,8 +215,11 @@ export function startNotifyFeed() {
   started = true;
   const storage = typeof localStorage === "undefined" ? null : localStorage;
   const resumed = resumeState(storage, Date.now());
-  let ctx = { state: null, held: [], heldSince: null, ...resumed, recent: [], lastBadge: undefined };
+  let ctx = { state: null, held: [], heldSince: null, ...resumed, recent: [], lastBadge: undefined, lastCategories: undefined };
   const save = (nowMs) => saveState(storage, ctx.state, nowMs, ctx.held, ctx.heldSince);
+  // Shared by the effect and flushHeld, so a registration queued by either
+  // one stays ahead of every banner from both.
+  const deliver = makeDelivery();
   let timer = null;
   // The heldSince + BURST_MS the live `timer` targets, so a pass that flushes
   // the old batch and holds a new one in the same tick reschedules instead of
@@ -162,11 +236,12 @@ export function startNotifyFeed() {
     ctx = { ...ctx, held: [], heldSince: null };
     if (!batch.length) return;
     if (ctx.state) save(Date.now());
-    const bctx = { accounts: accounts.peek(), windows: windows.peek() || [] };
-    notify({ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused });
+    const bctx = { accounts: accounts.peek(), windows: windows.peek() || [], moveTargets: moveTargets.peek() };
+    deliver(null, [{ ...flushPayload(batch, payloadFor, bctx), quiet_when_focused: getNotifyPrefs().quiet_when_focused }]);
   };
 
   onNotificationOpened(openFromBanner);
+  onNotificationAction((p) => runAction(p));
   effect(() => {
     // The only tracked read: one pass per applied /api/state (see the header
     // comment). Everything else is peeked below so it can't trigger its own pass.
@@ -176,15 +251,17 @@ export function startNotifyFeed() {
         const snap = {
           windows: windows.peek() || [], alerts: alerts.peek(), dismissedAlertIds: dismissedAlertIds.peek(),
           dismissedNeedsPids: dismissedNeedsPids.peek(), dismissedReadyPids: dismissedReadyPids.peek(),
-          plan: usage.peek()?.plan || {}, accounts: accounts.peek(),
+          plan: usage.peek()?.plan || {}, accounts: accounts.peek(), moveTargets: moveTargets.peek(),
         };
         const editing = !!(editingTarget.peek() || dragState.peek());
         const nowMs = Date.now();
         const prev = ctx;
-        const { sends, flush, badge, timerAt, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
+        const { sends, flush, badge, categories: cats, timerAt, ...next } = runPass({ ...ctx, editing }, snap, getNotifyPrefs(), nowMs);
         ctx = next;
         if (ctx.state && (ctx.state !== prev.state || ctx.held !== prev.held)) save(nowMs);
-        for (const p of [...flush, ...sends]) notify(p);
+        // deliver() queues this pass's registration (if any) ahead of its
+        // banners on the shared chain (see makeDelivery).
+        deliver(cats, [...flush, ...sends]);
         // Reschedule whenever the target deadline moves, not just when a
         // timer is/isn't running — a pass that flushes the old batch and
         // holds a new one in the same tick must drop the stale timer, or it

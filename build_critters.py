@@ -29,6 +29,12 @@ else, so a new SVG fails loudly instead of drawing wrong):
   - a critter's own art for a duty face is a <g class="face-happy|face-x|face-worried|face-down">
     directly under the outer <g>; it's drawn instead of the generated face, never as the critter.
     Static art: rects and groups only, no animation, no mood layers.
+  - every critter declares the appendage it holds things with: data-limb="arm|tentacle|tail x y [width]"
+    and data-limb-color (optionally data-limb-outline, data-limb-tip="spade"); a <g class="hold-rest">
+    is what a holding pose hides (a resting tail curled up instead); a `<g class="hold-arms">` is the
+    side arms a two-handed hold (the controller) puts on the prop.
+  - a critter's legs are a `<g class="legs">` (legs that stride and hide when seated) or
+    `<g class="legs-kept">` (legs that stride but stay when seated — Nox's toes, Jelly's tentacles).
 """
 
 from __future__ import annotations
@@ -52,6 +58,12 @@ CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}
 FACES = {"face-happy": "happy", "face-x": "x", "face-worried": "worried", "face-down": "down"}
+HOLD_REST = "hold-rest"  # what a holding pose hides: the resting tail it curls up instead
+HOLD_ARMS = "hold-arms"  # the side arms a two-handed hold (the controller) puts on the prop
+LEGS = "legs"  # legs that stride, and a seated critter hides (critters.js strideRoot, placement)
+LEGS_KEPT = "legs-kept"  # legs that stride but stay when it sits: Nox's toes, Jelly's tentacles
+LIMB_STYLES = ("arm", "tentacle", "tail")
+LIMB_ATTRS = ("data-limb", "data-limb-color", "data-limb-outline", "data-limb-tip")
 
 
 def tag(el: ET.Element) -> str:
@@ -74,10 +86,13 @@ def paint(el: ET.Element) -> dict:
 
 def mood_of(el: ET.Element) -> str | None:
     cls = el.get("class")
-    if cls is None or cls in FACES:  # face layers are kept out of the tree by _convert, not drawn by mood
+    # these layers aren't drawn by mood
+    if cls is None or cls in FACES or cls in (HOLD_REST, HOLD_ARMS, LEGS, LEGS_KEPT):
         return None
     if cls not in MOODS:
-        raise ValueError(f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES})!r})")
+        raise ValueError(
+            f"unknown class {cls!r} (expected one of {sorted({*MOODS, *FACES, HOLD_REST, HOLD_ARMS, LEGS, LEGS_KEPT})!r})"
+        )
     return MOODS[cls]
 
 
@@ -331,6 +346,54 @@ def ink_of(svg_name: str, doc: ET.Element, root: list[dict]) -> str:
     return fill
 
 
+def limb_of(svg_name: str, doc: ET.Element) -> dict | None:
+    """The appendage a critter holds things with (critters.js limbGlyphs): data-limb="style x y [width]"
+    (arm, tentacle or tail, from its root point), data-limb-color, and optionally data-limb-outline (an
+    outline copy, as Nox's body has) and data-limb-tip="spade" (Ember's tail). None when undeclared."""
+    strays = sorted(a for a in doc.attrib if a.startswith("data-limb") and a not in LIMB_ATTRS)
+    if strays:
+        raise ValueError(
+            f"{svg_name}: unknown data-limb-* attribute(s), expected one of {list(LIMB_ATTRS)}, got {strays!r}"
+        )
+    raw = doc.get("data-limb")
+    if raw is None:
+        orphans = sorted(a for a in LIMB_ATTRS[1:] if doc.get(a) is not None)
+        if orphans:
+            raise ValueError(f"{svg_name}: {orphans} set without data-limb")
+        return None
+    style, *nums = raw.split() or [""]
+    if style not in LIMB_STYLES:
+        raise ValueError(f"{svg_name}: data-limb style must be one of {list(LIMB_STYLES)}, got {style!r}")
+    try:
+        vals = [num(v) for v in nums]
+    except ValueError:
+        vals = []
+    if len(vals) not in (2, 3) or not all(math.isfinite(v) for v in vals):
+        raise ValueError(f"{svg_name}: data-limb must be a style then 2 or 3 numbers (root x y, width), got {raw!r}")
+    width = vals[2] if len(vals) == 3 else 1
+    if width <= 0:
+        raise ValueError(f"{svg_name}: data-limb width must be > 0, got {width}")
+    color = doc.get("data-limb-color")
+    if color is None or not INK_RE.fullmatch(color):
+        raise ValueError(f"{svg_name}: data-limb-color must be #rrggbb, got {color!r}")
+    out = {"style": style, "root": vals[:2], "width": width, "color": color}
+    extras = [a for a in ("data-limb-outline", "data-limb-tip") if doc.get(a) is not None]
+    if extras and style != "tail":
+        # limbGlyphs draws the outline copy and the spade on a tail only; on an arm or tentacle they'd vanish.
+        raise ValueError(f"{svg_name}: {' and '.join(extras)} only draw on a tail, got {style!r}")
+    outline = doc.get("data-limb-outline")
+    if outline is not None:
+        if not INK_RE.fullmatch(outline):
+            raise ValueError(f"{svg_name}: data-limb-outline must be #rrggbb, got {outline!r}")
+        out["outline"] = outline
+    tip = doc.get("data-limb-tip")
+    if tip is not None:
+        if tip != "spade":
+            raise ValueError(f"{svg_name}: data-limb-tip must be 'spade', got {tip!r}")
+        out["spade"] = True
+    return out
+
+
 def convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     """convert, with svg.name prefixed onto any ValueError that doesn't already carry it."""
     try:
@@ -363,13 +426,21 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
         raise ValueError(f"{svg.name}: the outer <g> must open with the data-bob idle bob")
     eyes = eye_rects(outer[0])
 
-    def node(el: ET.Element, in_mood: bool) -> dict:
+    def node(el: ET.Element, in_mood: bool, top: bool = False) -> dict:
         t = tag(el)
         mood = mood_of(el)
         if t == "rect":
             check_attrs(el, {"x", "y", "width", "height"})
             if el.get("class") in FACES:
                 raise ValueError(f"{svg.name}: {el.get('class')} must be a <g>, not a <rect>")
+            if el.get("class") == HOLD_REST:
+                raise ValueError(f"{svg.name}: {HOLD_REST} must be a <g>, not a <rect>")
+            if el.get("class") == HOLD_ARMS:
+                raise ValueError(f"{svg.name}: {HOLD_ARMS} must be a <g>, not a <rect>")
+            if el.get("class") == LEGS:
+                raise ValueError(f"{svg.name}: {LEGS} must be a <g>, not a <rect>")
+            if el.get("class") == LEGS_KEPT:
+                raise ValueError(f"{svg.name}: {LEGS_KEPT} must be a <g>, not a <rect>")
             for c in el:
                 if tag(c) != "animate":
                     raise ValueError(f"{svg.name}: <rect> may only contain <animate>, found <{tag(c)}>")
@@ -410,6 +481,10 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             check_attrs(el, set())
             if el.get("class") in FACES:
                 raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
+            if not top and el.get("class") in (LEGS, LEGS_KEPT):
+                # strideRoot (critters.js) only steps root-level `legs` nodes; a nested one would
+                # hide seated (spriteBox) but never stride.
+                raise ValueError(f"{svg.name}: {el.get('class')} must sit directly under the outer <g>")
             anims = []
             kids2 = []
             for c in el:
@@ -424,6 +499,15 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                     raise ValueError(f"{svg.name}: unsupported element <{ct}> inside <g>")
             children = [node(c, in_mood or mood is not None) for c in kids2]
             out = {"g": children}
+            if el.get("class") == HOLD_REST:
+                out["rest"] = True
+            if el.get("class") == HOLD_ARMS:
+                out["arms"] = True
+            if el.get("class") == LEGS:
+                out["legs"] = True
+            if el.get("class") == LEGS_KEPT:
+                out["legs"] = True
+                out["keepSeated"] = True
             if paint(el):
                 out["a"] = paint(el)
             if mood:
@@ -449,6 +533,18 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
             if el.get("class") in MOODS:
                 raise ValueError(
                     f"{svg.name}: {face_cls} can't hold a mood layer — a face always shows over the calm mood"
+                )
+            if el.get("class") == HOLD_REST:
+                raise ValueError(f"{svg.name}: {face_cls} can't hold a {HOLD_REST} — a holding pose never hides a face")
+            if el.get("class") == HOLD_ARMS:
+                raise ValueError(f"{svg.name}: {face_cls} can't hold a {HOLD_ARMS} — a holding pose never hides a face")
+            if el.get("class") == LEGS:
+                raise ValueError(
+                    f"{svg.name}: {face_cls} can't hold a {LEGS} — a duty face never hides a critter's legs"
+                )
+            if el.get("class") == LEGS_KEPT:
+                raise ValueError(
+                    f"{svg.name}: {face_cls} can't hold a {LEGS_KEPT} — a duty face never hides a critter's legs"
                 )
             for sub in el:
                 check(sub)
@@ -477,7 +573,7 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
                 raise ValueError(f"{svg.name}: {face_cls} appears twice")
             faces[name] = [face_layer(c)]
             continue
-        root.append(node(c, False))
+        root.append(node(c, False, top=True))
     if not any(drawn(n) for n in root):
         # Every layer conditioned on a mood, however deeply nested: nothing renders by default,
         # so spriteBox is Infinity downstream. Also catches an empty root.
@@ -490,6 +586,9 @@ def _convert(cid: str, svg: Path, sheet: Sheet) -> dict:
     }
     if faces:
         out["faces"] = faces
+    limb = limb_of(svg.name, doc)
+    if limb:
+        out["limb"] = limb
     return out
 
 
@@ -498,11 +597,13 @@ def render() -> tuple[str, str]:
     sheet = Sheet()
     sprites = {cid: convert(cid, SRC / f"{cid}.svg", sheet) for cid in CRITTERS}
     for cid, s in sprites.items():
-        # Required for the shipped critters (a hat and a scarf need them), not by convert(),
+        # Required for the shipped critters (a hat, a scarf and a held prop need them), not by convert(),
         # so the synthetic test SVGs stay minimal.
-        missing = [a for a in ("hat", "neck") if a not in s["anchors"]]
+        missing = [a for a in ("hat", "neck") if a not in s["anchors"]] + ([] if "limb" in s else ["limb"])
         if missing:
-            raise ValueError(f"{cid}.svg: declare data-hat and data-neck on the <svg> (missing: {', '.join(missing)})")
+            raise ValueError(
+                f"{cid}.svg: declare data-hat, data-neck and data-limb on the <svg> (missing: {', '.join(missing)})"
+            )
     header = "Generated by build_critters.py from docs/specs/assets/critters/*.svg — edit the SVGs and re-run."
     js = [f"// {header}", "", "export const SPRITES = {"]
     js += [f"  {cid}: {json.dumps(s, separators=(',', ':'))}," for cid, s in sprites.items()]

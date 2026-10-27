@@ -1,10 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { waitKind } from "../../util.js";
 import { firstSentence, payloadFor } from "../copy.js";
 
+// actions.js (imported below for the category cross-check) pulls in UI
+// modules that reach tauri.js; feed.test.js's mock, unused here otherwise.
+vi.mock("../../tauri.js", () => ({
+  inTauri: () => false, notify: vi.fn(), onNotificationClick: vi.fn(), onNotificationOpened: vi.fn(),
+  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(async () => {}),
+}));
+const { categories } = await import("../actions.js");
+const { summaryPayload } = await import("../burst.js");
+
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])/;
 
-const w = (over = {}) => ({ pid: "p1", target: "s:1", session: "periscope", name: "dual-moas", branch: "main", ...over });
+const w = (over = {}) => ({ pid: "p1", target: "s:1", session: "periscope", name: "dual-moas", branch: "main", agent: "claude", ...over });
 
 describe("payloadFor", () => {
   it("words a needs-input banner by what the pane waits on", () => {
@@ -103,6 +112,145 @@ describe("payloadFor", () => {
     const ev = { kind: "usage", account: "ghost", meter: "week_all", m: { percent: 50 } };
     const two = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
     expect(payloadFor(ev, { accounts: two, windows: [] }).title).toBe("Account ghost is running hot");
+  });
+
+  it("gives a done banner done_seen regardless of branch — Review diff waits on THI-433", () => {
+    expect(payloadFor({ kind: "done", w: w() })).toMatchObject({ category: "done_seen", data: { pid: "p1", session: "periscope" } });
+    expect(payloadFor({ kind: "done", w: w({ branch: "" }) }).category).toBe("done_seen");
+  });
+
+  it("gives each other banner the category whose buttons all apply", () => {
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", cwd: "/wt/a" }) })).toMatchObject({
+      category: "pr_merged", data: { cwd: "/wt/a" },
+    });
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) }).category).toBe("pr_merged_pr");
+    expect(payloadFor({ kind: "needs_input", w: w() }).category).toBe("needs_dialog");
+  });
+
+  it("offers no PR buttons on pr_merged without a URL", () => {
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7, cwd: "/wt/a" }) }).category).toBe("pr_merged_cleanup");
+    expect(payloadFor({ kind: "pr_merged", w: w({ pr: 7 }) }).category).toBeUndefined();
+  });
+
+  it("asks to allow the request the server named, and only then", () => {
+    const perm = { request_id: "a1b2c3d4e5f60718", tool: "Bash", summary: "touch probe.txt" };
+    const p = payloadFor({ kind: "needs_input", w: w({ waiting_for: "permission prompt", pending_permission: perm }) });
+    expect(p).toMatchObject({
+      title: "dual-moas needs you", subtitle: "periscope · main", body: "Allow Bash: touch probe.txt?",
+      category: "needs_permission", data: { open: "pane", pid: "p1", request_id: "a1b2c3d4e5f60718" },
+    });
+    expect(payloadFor({ kind: "needs_input", w: w({ pending_permission: { ...perm, summary: "" } }) }).body).toBe("Allow Bash?");
+    // Not named (two requests, or an older pane without the hook): Open only, 2a's words.
+    const unnamed = payloadFor({ kind: "needs_input", w: w({ waiting_for: "permission prompt", pending_permission: null }) });
+    expect(unnamed).toMatchObject({ body: "Waiting for your approval.", category: "needs_dialog", data: { pid: "p1" } });
+    expect(unnamed.data.request_id).toBeUndefined();
+    expect(payloadFor({ kind: "needs_input", w: w({ waiting_for: "approve AskUserQuestion" }) }).category).toBe("needs_dialog");
+    // An unstamped pane ("" pid) can't be named even with a request_id on hand.
+    const noPid = payloadFor({ kind: "needs_input", w: w({ pid: "", waiting_for: "permission prompt", pending_permission: perm }) });
+    expect(noPid).toMatchObject({ category: "needs_dialog", body: "Waiting for your approval." });
+    expect(noPid.data.request_id).toBeUndefined();
+  });
+
+  it("names an MCP tool as name (server), and falls back without one", () => {
+    const mcp = payloadFor({
+      kind: "needs_input",
+      w: w({ pending_permission: { request_id: "r", tool: "mcp__linear-personal__save_issue", summary: "x" } }),
+    });
+    expect(mcp.body).toBe("Allow save_issue (linear-personal): x?");
+    expect(payloadFor({ kind: "needs_input", w: w({ pending_permission: { request_id: "r", tool: "", summary: "" } }) }).body).toBe(
+      "Allow this?",
+    );
+  });
+
+  it("offers Reply on a question only while its pane is a live CLAUDE pane", () => {
+    const alert = { target: "gone:2", name: "old", session: "s", message: "Which database?" };
+    expect(payloadFor({ kind: "question", w: w(), alert }).category).toBe("question");
+    expect(payloadFor({ kind: "question", w: null, alert }).category).toBeUndefined();
+    // Not an agent (e.g. the worktree's shell window) and not stamped: no Reply.
+    expect(payloadFor({ kind: "question", w: w({ agent: null }), alert }).category).toBeUndefined();
+    expect(payloadFor({ kind: "question", w: w({ pid: "" }), alert }).category).toBeUndefined();
+    // Codex: the server's /api/pane/reply refuses it (dialog_open can't see
+    // a Codex approval prompt), so no Reply even though the pane is live.
+    expect(payloadFor({ kind: "question", w: w({ agent: "codex" }), alert }).category).toBeUndefined();
+  });
+
+  it("offers Ask agent to fix with a live agent pane, Open PR with a URL", () => {
+    const checks = [{ name: "test", state: "failure" }, { name: "lint", state: "success" }, { name: "e2e", state: "failure" }];
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", ci_checks: checks }) })).toMatchObject({
+      category: "ci_failed", data: { pid: "p1", pr: 7, checks: ["test", "e2e"] },
+    });
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7 }) })).toMatchObject({ category: "ci_failed_fix", data: { checks: [] } });
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", pid: "" }) }).category).toBe("ci_failed_pr");
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, pid: "" }) }).category).toBeUndefined();
+  });
+
+  it("finds a CLAUDE pane on the same PR when the notified window is a shell", () => {
+    // window_view merges **pr into every window on the PR, so byPr can hand
+    // copy.js the worktree's zsh window; Ask agent to fix must still land on
+    // the agent's pane, found by prKey among the live windows.
+    const shell = w({ pr: 7, repo_slug: "o/r", agent: null });
+    const agentPane = w({ pid: "p2", agent: "claude", pr: 7, repo_slug: "o/r" });
+    expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [agentPane] })).toMatchObject({
+      category: "ci_failed", data: { pid: "p2" },
+    });
+    // No agent pane anywhere: Open PR only when there's a URL, else nothing —
+    // but a plain click still finds the notified (shell) pane by pid.
+    expect(payloadFor({ kind: "ci_failed", w: shell }, { windows: [] }).category).toBe("ci_failed_pr");
+    const noSibling = payloadFor({ kind: "ci_failed", w: w({ pr: 7, agent: null }) }, { windows: [] });
+    expect(noSibling.category).toBeUndefined();
+    expect(noSibling.data).toMatchObject({ pid: "p1" });
+  });
+
+  it("skips a Codex sibling on the same PR: the server can't see its approval prompt", () => {
+    const shell = w({ pr: 7, repo_slug: "o/r", agent: null });
+    const codexPane = w({ pid: "p2", agent: "codex", pr: 7, repo_slug: "o/r" });
+    const p = payloadFor({ kind: "ci_failed", w: shell }, { windows: [codexPane] });
+    // Falls back to Open PR, not Ask agent to fix, and the notified shell's
+    // own pid — never the Codex pane's.
+    expect(p.category).toBe("ci_failed_pr");
+    expect(p.data).toMatchObject({ pid: "p1" });
+    // A Codex pane is itself never a fixer, even for its own PR.
+    expect(payloadFor({ kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", agent: "codex" }) }, { windows: [] }).category).toBe(
+      "ci_failed_pr",
+    );
+  });
+
+  it("offers Spawn on the account a pane on A would move to, and only then", () => {
+    const ev = { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } };
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    expect(payloadFor(ev, { accounts, moveTargets: { default: "b" } })).toMatchObject({
+      category: "usage_to_b", data: { open: "usage", spawn_to: "b" },
+    });
+    expect(payloadFor(ev, { accounts, moveTargets: {} })).toMatchObject({ category: "usage", data: { open: "usage" } });
+    expect(payloadFor(ev, { accounts }).data.spawn_to).toBeUndefined();
+    expect(payloadFor(ev, { accounts, moveTargets: { default: "default" } }).category).toBe("usage");
+  });
+
+  it("only names categories that actions.js registers, or none", () => {
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    const moveTargets = { default: "b", b: "default" };
+    const ctx = { accounts, windows: [], moveTargets };
+    const ids = new Set(categories({ accounts, moveTargets }).map((c) => c.id));
+    const alert = { name: "old", session: "s", message: "m" };
+    const evs = [
+      { kind: "done", w: w() }, { kind: "done", w: w({ branch: "" }) },
+      { kind: "ci_failed", w: w({ pr: 7 }) }, { kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r" }) },
+      { kind: "pr_merged", w: w({ pr: 7, cwd: "/wt" }) }, { kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r", cwd: "/wt" }) },
+      { kind: "pr_merged", w: w({ pr: 7 }) }, { kind: "pr_merged", w: w({ pr: 7, repo_slug: "o/r" }) },
+      { kind: "usage", account: "default", meter: "week_all", m: { percent: 90 } },
+      { kind: "usage", account: "c", meter: "week_all", m: { percent: 90 } },
+      { kind: "needs_input", w: w() },
+      { kind: "needs_input", w: w({ pending_permission: { request_id: "r", tool: "Bash", summary: "ls" } }) },
+      { kind: "question", w: w(), alert }, { kind: "question", w: null, alert },
+      { kind: "ci_failed", w: w({ pr: 7, pid: "" }) }, { kind: "ci_failed", w: w({ pr: 7, repo_slug: "o/r", pid: "" }) },
+    ];
+    for (const ev of evs) {
+      const p = payloadFor(ev, ctx);
+      expect(p.category === undefined || ids.has(p.category)).toBe(true);
+    }
+    // A burst summary carries no category either.
+    const summary = summaryPayload([{ kind: "needs_input", w: w() }]);
+    expect(summary.category === undefined || ids.has(summary.category)).toBe(true);
   });
 });
 

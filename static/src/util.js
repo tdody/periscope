@@ -131,19 +131,6 @@ export function prStateMeta(state) {
   return { cls: "", suffix: "" };
 }
 
-// Rewrite an LGTM-server URL's hostname to match the parent page's host.
-// The server hands out 127.0.0.1; the parent may be on localhost or LAN
-// IP, and same-host iframes avoid mixed-host browser headaches.
-export function rewriteLgtmHost(url) {
-  try {
-    const u = new URL(url);
-    u.hostname = window.location.hostname;
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-
 // Shared error-surfacing wrapper. FastAPI returns `{detail: ...}` on 404/422,
 // not our `{ok, error}` shape, so naive `data.error` reads as "undefined" when
 // e.g. the wrong server version is running. Normalize both shapes.
@@ -172,4 +159,36 @@ export async function apiCall(label, path, opts = {}) {
   }
   track(`api:${label}`, { path, method, ok: true });
   return data;
+}
+
+// A JSON POST that reports how it went instead of toasting: { ok, status,
+// detail }. For callers that treat a status as an answer — a 409 from
+// /api/pane/permission means "the banner is stale", not an error — which
+// apiCall hides behind null after toasting. Never throws: a network failure,
+// or a route that hangs past 10s, is status 0. A JSON body is also what the
+// agent-acting routes require (routes/pane_actions.py), so this always sends
+// one. AbortSignal.timeout isn't in every embedded webview; feature-detect
+// rather than let a missing one throw before the request ever goes out.
+export async function postJson(path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      ...(typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? { signal: AbortSignal.timeout(10000) }
+        : {}),
+    });
+  } catch (err) {
+    return { ok: false, status: 0, detail: err?.message || String(err) };
+  }
+  let data = {};
+  try { data = (await res.json()) || {}; } catch (_) {}
+  // FastAPI's 422 detail is a list of pydantic errors; the first's `msg` beats
+  // the bare status when it's there.
+  const detail = typeof data.detail === "string"
+    ? data.detail
+    : typeof data.error === "string"
+      ? data.error
+      : data.detail?.[0]?.msg || `HTTP ${res.status}`;
+  return { ok: res.ok, status: res.status, detail };
 }

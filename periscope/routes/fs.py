@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from periscope import fs
+from periscope import fs, gitdiff
 
 router = APIRouter()
 
@@ -103,7 +103,16 @@ def fs_read(session: str, index: int, path: str):
     resolved = fs.safe_resolve_for_pane(target, path)
     mtime = resolved.stat().st_mtime
     content = fs.read_text(resolved)
-    return {"path": str(resolved), "content": content, "language": _language_for(str(resolved)), "mtime": mtime}
+    return {
+        "path": str(resolved),
+        "content": content,
+        "language": _language_for(str(resolved)),
+        "mtime": mtime,
+        # The doc's own checkout, or None outside git: a repo-relative cite in
+        # the text opens there, not against the pane's cwd (which may be another
+        # repo entirely); with no checkout the cite falls back to the pane's cwd.
+        "repo": gitdiff.repo_root(str(resolved.parent)),
+    }
 
 
 class WriteBody(BaseModel):

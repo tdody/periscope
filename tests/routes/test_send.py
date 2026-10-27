@@ -70,3 +70,23 @@ def test_send_bulk_rejects_empty(client, mocker):
     r = client.post("/api/send-bulk", json={"targets": [], "keys": ["Enter"]})
     assert r.status_code == 400
     assert "no targets" in r.json()["detail"]
+
+
+def test_send_to_target_sends_to_the_address_and_notes_the_target(mocker):
+    # pane_actions checks a pane by %id and must send to that pane, not to
+    # whatever `session:index` resolves to by then; focus stays keyed by target.
+    from periscope.routes import send
+
+    tmux_mock = mocker.patch.object(send, "tmux", return_value="")
+    mocker.patch.object(send.time, "sleep")
+    focus = mocker.patch.object(send, "note_focus")
+    action = mocker.patch.object(send, "note_action")
+    send._send_to_target("s:4", "hi", ["Enter"], address="%9")
+    calls = [c.args for c in tmux_mock.call_args_list]
+    assert calls[1][:4] == ("paste-buffer", "-d", "-p", "-b") and calls[1][-2:] == ("-t", "%9")
+    assert calls[2] == ("send-keys", "-t", "%9", "Enter")
+    focus.assert_called_once_with("s:4")
+    action.assert_called_once_with("s:4")
+    tmux_mock.reset_mock()
+    send._send_to_target("s:4", None, ["Escape"])
+    assert tmux_mock.call_args_list[0].args == ("send-keys", "-t", "s:4", "Escape")

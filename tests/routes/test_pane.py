@@ -29,7 +29,6 @@ def test_pane_returns_parsed_payload(client, mocker):
         "list_windows",
         return_value=[{"session": "main", "index": 0, "name": "x", "pane_id": "%7", "cwd": "/tmp"}],
     )
-    _patch(mocker, "cached_lgtm_state", return_value=None)
 
     r = client.get("/api/pane?session=main&index=0")
     assert r.status_code == 200
@@ -76,7 +75,6 @@ def test_pane_drops_branch_prs_checks_and_base_under_a_linked_pr(client, mocker,
         "list_windows",
         return_value=[{"session": "main", "index": 0, "name": "x", "pane_id": "%7", "cwd": "/tmp"}],
     )
-    _patch(mocker, "cached_lgtm_state", return_value=None)
     clean_state["windows"]["p9"] = {"linked_pr": 1234}
 
     r = client.get("/api/pane?session=main&index=0")
@@ -87,6 +85,24 @@ def test_pane_drops_branch_prs_checks_and_base_under_a_linked_pr(client, mocker,
     assert "ci" not in body
     assert "ci_checks" not in body
     assert "pr_base" not in body
+
+
+def test_pane_derives_the_linear_ticket_its_pr_title_names(client, mocker, clean_state):
+    # Same derivation as /api/state (THI-441), for the Inspector's card.
+    _patch(mocker, "tmux", return_value="")
+    _patch(mocker, "pane_meta", return_value=("win-name", "/tmp/proj"))
+    _patch(mocker, "parse_pane", return_value={"agent": "claude", "spinner": None})
+    _patch(mocker, "smooth_parsed", side_effect=lambda *, pane_id, parsed: parsed)
+    _patch(mocker, "cached_git_state", return_value={"branch": "feature/linear-ticket-from-branch"})
+    _patch(mocker, "cached_pr_state", return_value={"pr": 45, "pr_title": "THI-441: show the ticket"})
+    _patch(mocker, "cached_pane_activity", return_value=[])
+    _patch(mocker, "_attach_git_then_resolve_pids")
+    _patch(mocker, "list_windows", return_value=[])
+
+    body = client.get("/api/pane?session=main&index=0").json()
+    assert body["linked_linear"] is None
+    assert body["linear_ticket"] == "THI-441"
+    assert body["linear_ticket_source"] == "pr_title"
 
 
 def test_rename_sets_name(client, mocker):

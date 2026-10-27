@@ -11,8 +11,10 @@
 //   - `railSelection`   → STRING highlight-key the rows compare against
 //
 // Two deliberately-different selection shapes (do NOT cross them):
-//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid} / {kind:"review",worktree})
-//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>" / "review:<worktree>")
+//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid} |
+//                {kind:"review",repo,branch} | {kind:"reviews"})
+//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>" |
+//                "review:<repo>/<slug>" | "reviews")
 // railSelection mirrors the string; setLastSelected stores the object.
 //
 // Drag identity travels on the drag descriptor captured at dragStart (kind +
@@ -28,15 +30,15 @@ import { confirmDialog } from "../overlays/Dialog.jsx";
 import { modalRequest } from "../overlays/modalRequest.js";
 import { showToast } from "../overlays/Toast.jsx";
 import * as prefs from "../prefs.js";
-import { currentFilter, dismissedAlertIds, dragState, editor as editorSignal, projects, railSelection, tracks, windows, workspaces } from "../store.js";
+import { currentFilter, dismissedAlertIds, dragState, editor as editorSignal, projects, railSelection, reviews, tracks, windows, workspaces } from "../store.js";
 import { track } from "../track.js";
 import { apiCall, paneLabel, targetQuery } from "../util.js";
 import { ActivitySection, AttentionTop } from "./AttentionSections.jsx";
-import { alertItems } from "./alertFeed.js";
+import { alertItems, selectReview, selectReviewsQueue } from "./alertFeed.js";
 import { awaitingReplyByPid } from "./attention.js";
 import { railHovered } from "./layoutFreeze.js";
 import { BranchRow, NewTabRow, PaneRow, ReviewRow, TrackRow } from "./RailRows.jsx";
-import { maxSeverity, mergeLiveAndPrefs, paneChip, trackKind, trackLabel } from "./railTree.js";
+import { maxSeverity, mergeLiveAndPrefs, paneChip, reviewRowsByTrack, trackKind, trackLabel } from "./railTree.js";
 import { SectionHeader } from "./SectionHeader.jsx";
 
 // The branch label used in railTree's flat-fallback bucket for a window with no
@@ -189,7 +191,7 @@ function isValidDropTarget(drag, target) {
     if (target.kind === "track") return true;      // move onto a track header
     return false;
   }
-  return false;   // review rows aren't draggable
+  return false;   // no other row kind is draggable
 }
 
 export function Rail() {
@@ -239,14 +241,22 @@ export function Rail() {
     }, scopedTracks
   );
 
+  // Review rows by track → branch (placement rules in railTree).
+  const reviewRows = reviewRowsByTrack(trackOrder, tabsByTrack, windowsByPid, reviews.value || []);
+
   // --- Selection -----------------------------------------------------------
   function selectKey(key) {
+    if (key === "reviews") { selectReviewsQueue(); return; }
+    if (key.startsWith("review:")) {
+      const k = key.slice("review:".length); const i = k.indexOf("/");
+      const row = (reviews.value || []).find((r) => r.repo === k.slice(0, i) && r.slug === k.slice(i + 1));
+      if (row) selectReview(row.repo, row.branch);
+      return;
+    }
     railSelection.value = key;       // STRING highlight-key (signal)
     track("pane.focus", { key });
     if (key.startsWith("pane:")) {
       prefs.setLastSelected({ kind: "pane", pid: key.slice("pane:".length) });
-    } else if (key.startsWith("review:")) {
-      prefs.setLastSelected({ kind: "review", worktree: key.slice("review:".length) });
     }
   }
 
@@ -487,27 +497,6 @@ export function Rail() {
       ));
   }
 
-  // The LGTM review row is re-homed under its TRACK (Task 12 dropped the
-  // "review" tree sentinel). A track with any live LGTM session gets one review
-  // row at the top of its body (its worktree key = the first such window's
-  // session, which keys the iframe in <Detail>). Approach noted in the report.
-  function reviewRowFor(trackId) {
-    const w = live.find((x) => x.track_id === trackId && x.lgtm?.slug);
-    if (!w) return null;
-    const wtKey = w.session;
-    return (
-      <ReviewRow
-        key={`review:${wtKey}`}
-        worktreeKey={wtKey}
-        lgtmLive={true}
-        selectedKey={selectedKey}
-        onSelect={selectKey}
-        dragProps={{}}
-        dropPos={dropPosFor(`review:${wtKey}`)}
-      />
-    );
-  }
-
   // --- Empty state ---------------------------------------------------------
   if (trackOrder.length === 0) {
     return (
@@ -557,7 +546,6 @@ export function Rail() {
         // `all`, and read as disabled. Emptiness is not a filter miss.
         const trackDim = trackWindows.length === 0
           || trackWindows.some((w) => passesFilter(w, filter));
-        const review = reviewRowFor(trackId);
 
         return (
           <RailFragment key={trackKeyStr}>
@@ -583,9 +571,6 @@ export function Rail() {
                 class={`rail-group rail-track-card${dropPosFor(`card:${trackId}`) ? " drop-into" : ""}`}
                 {...makeCardDropProps(trackId)}
               >
-                {/* Review row (if any LGTM session is live) sits at the top of
-                    the card body, above the branches / panes. */}
-                {review && <div class="rail-group-body rail-review-head">{review}</div>}
                 {multiBranch ? (
                   // Multi-branch: branch sub-clusters INSIDE the card (purple
                   // left-rail subgroups), not separate top-level cards.
@@ -610,16 +595,28 @@ export function Rail() {
                           dropPos={undefined}
                         />
                         {!branchCollapsed && (
-                          <div class="rail-group-body">{childRows}</div>
+                          <div class="rail-group-body">
+                            {(reviewRows[trackId]?.[branch] || []).map((row) => (
+                              <ReviewRow key={`review:${row.repo}/${row.slug}`} row={row} selectedKey={selectedKey} onSelect={selectKey} />
+                            ))}
+                            {childRows}
+                          </div>
                         )}
                       </div>
                     );
                   })
                 ) : (
                   // Single-branch: flat tab list straight inside the card.
-                  <div class="rail-group-body">
-                    {paneRowsFor(trackPids, trackId)}
-                  </div>
+                  <>
+                    {Object.values(reviewRows[trackId] || {}).flat().map((row) => (
+                      <div class="rail-group-body rail-review-head" key={`review:${row.repo}/${row.slug}`}>
+                        <ReviewRow row={row} selectedKey={selectedKey} onSelect={selectKey} />
+                      </div>
+                    ))}
+                    <div class="rail-group-body">
+                      {paneRowsFor(trackPids, trackId)}
+                    </div>
+                  </>
                 )}
                 {/* ONE "+ New tab" per track, at the bottom of the card. The
                     launcher's branch picker chooses which branch (existing or

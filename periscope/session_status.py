@@ -407,7 +407,7 @@ def pane_profiles() -> dict[str, str]:
     Panes on the default profile have no entry.
 
     The profile is only ever observable here. The wrapper also accepts a typed
-    `claude lab`, but it consumes that word and execs `command claude
+    `claude full`, but it consumes that word and execs `command claude
     --settings '{...}'`, so the profile is absent from argv — fingerprinting
     the settings JSON would couple periscope to the wrapper's exact plugin
     list. The env var both periscope and the wrapper agree on is the contract.

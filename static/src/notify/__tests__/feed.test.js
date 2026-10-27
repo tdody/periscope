@@ -6,12 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../tauri.js", () => ({
   inTauri: () => false, notify: vi.fn(), onNotificationClick: vi.fn(), onNotificationOpened: vi.fn(),
-  openExternal: vi.fn(), setBadgeCount: vi.fn(),
+  onNotificationAction: vi.fn(), openExternal: vi.fn(), setBadgeCount: vi.fn(), setNotifyCategories: vi.fn(async () => {}),
 }));
 const tauri = await import("../../tauri.js");
 const { railSelection, windows } = await import("../../store.js");
 const { usageExpanded } = await import("../../chrome/UsagePill.jsx");
-const { enabled, openFromBanner, runPass, startNotifyFeed } = await import("../feed.js");
+const { enabled, makeDelivery, openFromBanner, REGISTRATION_TIMEOUT_MS, runPass, startNotifyFeed } = await import("../feed.js");
 const { payloadFor } = await import("../copy.js");
 const { BURST_MS } = await import("../burst.js");
 
@@ -69,6 +69,7 @@ describe("startNotifyFeed", () => {
   it("does nothing in a plain browser tab", () => {
     startNotifyFeed();
     expect(tauri.onNotificationOpened).not.toHaveBeenCalled();
+    expect(tauri.onNotificationAction).not.toHaveBeenCalled();
     expect(tauri.setBadgeCount).not.toHaveBeenCalled();
   });
 });
@@ -192,5 +193,134 @@ describe("runPass", () => {
     expect(r.held).toHaveLength(2);
     expect(r.heldSince).toBe(1000 + BURST_MS);
     expect(r.timerAt).toBe(1000 + 2 * BURST_MS);
+  });
+
+  it("sends the category set on the first pass, then only when it changes", () => {
+    const accounts = [{ id: "default", label: "A" }, { id: "b", label: "B" }];
+    const first = runPass(fresh(), snapOf([win()], { accounts, moveTargets: { default: "b" } }), PREFS, 0);
+    expect(first.categories.map((c) => c.id)).toContain("usage_to_b");
+    const ctx = fresh({ state: first.state, lastBadge: first.lastBadge, lastCategories: first.lastCategories });
+    expect(runPass(ctx, snapOf([win()], { accounts, moveTargets: { default: "b" } }), PREFS, 1000).categories).toBeNull();
+    const moved = runPass(ctx, snapOf([win()], { accounts, moveTargets: { default: "b", b: "default" } }), PREFS, 1000);
+    expect(moved.categories.map((c) => c.id)).toContain("usage_to_default");
+  });
+
+  it("a thrown category-set build can't cost the pass", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctx = seeded([win()], { lastCategories: "prev" });
+    // accounts as a non-array reaches accountLabel's registry.find and
+    // throws — the category build must not take the badge, the sends, or the
+    // last-registered set with it.
+    const r = runPass(ctx, snapOf([asks("p1")], { accounts: {}, moveTargets: { default: "b" } }), PREFS, 1000);
+    expect(r.sends).toHaveLength(1);
+    expect(r.badge).toBe(1);
+    expect(r.categories).toBeNull();
+    expect(r.lastCategories).toBe("prev");
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("sends no categories before the first /api/state, but registers them on the first real pass", () => {
+    const r = runPass(fresh(), snapOf([], { alerts: null }), PREFS, 0);
+    expect(r.categories).toBeNull();
+    expect(r.lastCategories).toBeUndefined();
+    expect(runPass(fresh({ lastCategories: r.lastCategories }), snapOf([win()]), PREFS, 0).categories).not.toBeNull();
+  });
+
+  it("registers the category set even on a seeding-skipped first pass (empty windows, or mid-edit)", () => {
+    expect(runPass(fresh(), snapOf([]), PREFS, 0).categories).not.toBeNull();
+    expect(runPass(fresh({ editing: true }), snapOf([asks("p1")]), PREFS, 0).categories).not.toBeNull();
+  });
+});
+
+describe("makeDelivery", () => {
+  const io = () => ({ setNotifyCategories: vi.fn(async () => {}), notify: vi.fn() });
+
+  it("doesn't notify before a queued registration resolves", async () => {
+    let resolveReg;
+    const d = io();
+    d.setNotifyCategories.mockImplementation(() => new Promise((res) => { resolveReg = res; }));
+    const deliver = makeDelivery(d);
+    deliver([{ id: "done" }], [{ kind: "done" }]);
+    await Promise.resolve();
+    expect(d.notify).not.toHaveBeenCalled();
+    resolveReg();
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify).toHaveBeenCalledWith({ kind: "done" });
+  });
+
+  it("a second call's posts wait behind the first's registration", async () => {
+    let resolveReg;
+    const d = io();
+    d.setNotifyCategories.mockImplementation(() => new Promise((res) => { resolveReg = res; }));
+    const deliver = makeDelivery(d);
+    deliver([{ id: "done" }], []);
+    deliver(null, [{ kind: "later" }]);
+    await Promise.resolve();
+    expect(d.notify).not.toHaveBeenCalled();
+    resolveReg();
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify).toHaveBeenCalledWith({ kind: "later" });
+  });
+
+  it("posts go out, in order, when there's no set to register", async () => {
+    const d = io();
+    const deliver = makeDelivery(d);
+    deliver(null, [{ kind: "a" }, { kind: "b" }]);
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify.mock.calls.map((c) => c[0])).toEqual([{ kind: "a" }, { kind: "b" }]);
+  });
+
+  it("a rejecting registration doesn't stop later posts", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = io();
+    d.setNotifyCategories.mockRejectedValueOnce(new Error("boom"));
+    const deliver = makeDelivery(d);
+    deliver([{ id: "done" }], []);
+    deliver(null, [{ kind: "after" }]);
+    await new Promise((r) => setTimeout(r));
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify).toHaveBeenCalledWith({ kind: "after" });
+    err.mockRestore();
+  });
+
+  it("a rejecting registration still posts that same call's banners", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = io();
+    d.setNotifyCategories.mockRejectedValueOnce(new Error("boom"));
+    const deliver = makeDelivery(d);
+    deliver([{ id: "done" }], [{ kind: "same-call" }]);
+    await new Promise((r) => setTimeout(r));
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify).toHaveBeenCalledWith({ kind: "same-call" });
+    err.mockRestore();
+  });
+
+  it("a throwing notify on the first payload still posts the second", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = io();
+    d.notify.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    const deliver = makeDelivery(d);
+    deliver(null, [{ kind: "a" }, { kind: "b" }]);
+    await new Promise((r) => setTimeout(r));
+    expect(d.notify).toHaveBeenCalledWith({ kind: "b" });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("a never-resolving registration doesn't stall posts forever", async () => {
+    vi.useFakeTimers();
+    try {
+      const d = io();
+      d.setNotifyCategories.mockImplementation(() => new Promise(() => {}));
+      const deliver = makeDelivery(d);
+      deliver([{ id: "done" }], [{ kind: "late" }]);
+      await vi.advanceTimersByTimeAsync(REGISTRATION_TIMEOUT_MS);
+      expect(d.notify).toHaveBeenCalledWith({ kind: "late" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

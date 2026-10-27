@@ -117,7 +117,7 @@ describe("<Rail> render smoke", () => {
       pane_id: "%1", ...over,
     });
     windows.value = [
-      pane({ pid: "lab", profile: "lab" }),
+      pane({ pid: "full", profile: "full" }),
       pane({ pid: "normal", index: 1, target: "managed:1", profile: "default", pane_id: "%2" }),
       // A pre-profiles server stamps no field at all — must read as normal,
       // not as an unlabeled chip.
@@ -126,7 +126,7 @@ describe("<Rail> render smoke", () => {
 
     const html = render(<Rail />);
     expect(html.split('class="rail-profile"').length - 1).toBe(1);
-    expect(html).toContain(">lab</span>");
+    expect(html).toContain(">full</span>");
   });
 
   it("offers the move-account action on Claude panes only, labeled with its destination", () => {
@@ -317,6 +317,24 @@ describe("delegation lineage placement", () => {
     windows.value = [];
     const w = paneWin({ pid: "solo1", index: 0, target: "managed:0", name: "claude", pane_id: "%1" });
     expect(render(<PaneHeader w={w} />)).not.toContain("lineage");
+  });
+});
+
+describe("<Rail> Linear chip", () => {
+  it("shows the ticket the branch names when none is linked (THI-441)", () => {
+    projects.value = [];
+    tracks.value = [];
+    windows.value = [{
+      pid: "p1", session: "managed", index: 0, target: "managed:0", name: "worker",
+      agent: "claude", state: "idle", track_id: "t1", track_name: "fdy",
+      repo_key: "/dev/fdy", repo_label: "fdy", branch: "tdody/fdy-8562-restack",
+      cwd: "/dev/fdy", worktree_affiliation: aff("at-pin"), pane_id: "%1",
+      pr: 8818, linked_linear: null, linear_ticket: "FDY-8562", linear_ticket_source: "branch",
+    }];
+    const html = render(<Rail />);
+    expect(html).toContain("#8818");
+    expect(html).toContain(">FDY-8562</a>");
+    expect(html).toContain("Linear FDY-8562 (from the branch name)");
   });
 });
 

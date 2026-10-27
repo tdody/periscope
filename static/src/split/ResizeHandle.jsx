@@ -34,7 +34,7 @@ export function ResizeHandle({ which }) {
     const containerW = container.getBoundingClientRect().width;
     let width = startW;
     // Capture keeps the moves coming while the pointer crosses an iframe
-    // (LGTM review, HTML previews), which would otherwise swallow them.
+    // (HTML previews), which would otherwise swallow them.
     handle.setPointerCapture(e.pointerId);
     handle.classList.add("dragging");
     document.body.classList.add("col-resizing");

@@ -29,6 +29,24 @@ def repo(tmp_path):
     return tmp_path
 
 
+@pytest.mark.parametrize(
+    ("path", "generated"),
+    [
+        ("static/dist/app.js", True),
+        ("dist/x.js", True),
+        ("package-lock.json", True),
+        ("a/uv.lock", True),
+        ("src/app.min.js", True),
+        ("src/app.js.map", True),
+        ("redistribute/x.js", False),  # a segment match, not a substring one
+        ("periscope/reviews.py", False),
+        ("static/src/review/Walkthrough.jsx", False),
+    ],
+)
+def test_is_generated_by_path_pattern(path, generated):
+    assert gitdiff.is_generated(path) is generated
+
+
 # --- session baseline -------------------------------------------------
 
 

@@ -15,7 +15,9 @@ asyncio.Lock only blocks coroutines.
 State.json writes go through `periscope.store.set_window_fields`; this
 module never touches `_STATE` directly. `list_windows`/`note_focus`/
 `note_action` come from `periscope.panes`, `_attach_git_then_resolve_pids`
-from `periscope.pids` — no bridges to server.py remain in this module.
+from `periscope.pids` — no bridges to server.py remain in this module. So does
+`_resolve_window_by_pid`: it is `pids.window_by_pid` under its old name, so
+the tools, and the tests that patch it here, keep working.
 
 Socket lifecycle: this module never `os.unlink`s `MCP_SOCKET_PATH` on
 shutdown. The FastAPI `lifespan` in `server.py` owns shutdown cleanup; the
@@ -39,6 +41,7 @@ from periscope.config import MCP_SOCKET_PATH
 from periscope.log import log
 from periscope.panes import list_windows, note_action, note_focus
 from periscope.pids import _attach_git_then_resolve_pids, stamp_new_window
+from periscope.pids import window_by_pid as _resolve_window_by_pid
 from periscope.store import get_window, set_window_fields
 from periscope.tabs import open_tab
 from periscope.tmux import _run, _tmux_mutate, tmux
@@ -290,38 +293,6 @@ def _stale_handle_error(handle: str) -> str:
     )
 
 
-def _resolve_window_by_pid(handle: str) -> tuple[str, str, dict]:
-    """Resolve an @periscope_id handle to (pid, pane_id, window).
-
-    Matches on `pid_raw` — the stamped @periscope_id on the raw list_windows
-    row — BEFORE resolution, because resolution attaches `pid` only after a
-    match (raw rows carry pid_raw, not pid). peek/terminate read
-    session/index off the returned window dict. Returns ("", "", {}) when no
-    live window matches.
-
-    Also accepts a tmux pane id (`%N`) as the handle. A pid can change under a
-    pane — re-mint, or a rebind that misses after a tmux server restart — and
-    the observed failure was always the same shape: `spawn_claude` returned a
-    pid, minutes later `send_to` said "no live window" while the pane was alive
-    at the SAME pane_id under a new pid. Callers already hold that pane_id
-    (spawn_claude and list_claudes both return it), so accepting it turns a
-    dead end into a working address. One session read the dead handle as death
-    and spawned a duplicate agent onto the same task."""
-    if not handle:
-        return "", "", {}
-    wins = list_windows()
-    match = next((w for w in wins if w.get("pid_raw") == handle), None)
-    if match is None and handle.startswith("%"):
-        match = next((w for w in wins if w.get("pane_id") == handle), None)
-    if match is None:
-        return "", "", {}
-    # Resolve against the FULL window list, never just the match: a
-    # single-window pass has an incomplete `carried` set, so an unstamped
-    # window could rebind onto an id another live window is still wearing.
-    _attach_git_then_resolve_pids(wins, full_roster=True)
-    return match.get("pid") or "", match.get("pane_id") or "", match
-
-
 def _do_link_pr_tool(pane: str, arguments: dict):
     """Persist a linked PR number on the window's state.json entry.
     Overrides the auto-detected `pr` field when present."""
@@ -530,6 +501,152 @@ def _spawner_label(parent_pid: str) -> str:
     return parent_pid
 
 
+class SpawnFailed(Exception):
+    """tmux refused to create the window, or returned an unparseable index."""
+
+
+class Spawned(TypedDict):
+    target: str
+    session: str
+    index: int
+    pid: str
+    pane_id: str
+
+
+async def spawn_claude_with_prompt(
+    cwd: str,
+    track_id: str | None,
+    prompt: str,
+    *,
+    session: str,
+    name: str | None = None,
+    account: str | None = None,
+    model: str | None = None,
+) -> Spawned:
+    """Create a tmux window in `session` running `claude` in `cwd`, wait for
+    its TUI, paste `prompt`, stamp a fresh @periscope_id, and (when given)
+    tag the pane into `track_id`. Shared by the spawn_claude MCP tool and
+    the reviews prepare route; everything caller-specific (provenance,
+    rail placement, track precedence) stays with the caller.
+
+    Async because Claude's TUI needs ~1.5s to mount before it can absorb a
+    paste — time.sleep here would block the event loop for every other
+    pane's MCP connection sharing it."""
+    # Create the session if missing, otherwise add a window to it. Both
+    # paths use `-P -F #{window_index}` so we know the spawned slot — with
+    # base-index 1 in tmux.conf, hardcoding :0 would silently target the
+    # wrong window (see /api/window/new resume notes).
+    # An omitted account means "wherever there is room", not "the default": a
+    # spawning Claude cannot see either subscription's limits, and the second
+    # one exists precisely so work lands where the first has none left.
+    # choose_launch degrades to "default" when usage is unknown, so a spawn is
+    # never blocked or delayed on it.
+    launch = usage.choose_launch(account, model)
+    config_dir = store.account_config_dir(launch.account)
+    model_env = config.model_env(launch.model)
+    code, _ = _run(["tmux", "has-session", "-t", session])
+    if code != 0:
+        ok, msg = _tmux_mutate(
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            cwd,
+            *tmux_mod.env_args(config_dir, None, model_env),
+            "-P",
+            "-F",
+            "#{window_index}",
+            *(["-n", name] if name else []),
+        )
+        # `new-session -e` sets the SESSION env, so without this every later
+        # window spawned into this session inherits this account — silently
+        # billing them to the wrong subscription. This window's shell already
+        # forked with the value; `new-window -e` has no such spillover.
+        if ok and (config_dir or model_env):
+            tmux_mod.scrub_session_env(session)
+    else:
+        ok, msg = _tmux_mutate(
+            "new-window",
+            "-t",
+            f"{session}:",
+            "-c",
+            cwd,
+            *tmux_mod.env_args(config_dir, None, model_env),
+            "-P",
+            "-F",
+            "#{window_index}",
+            *(["-n", name] if name else []),
+        )
+    if not ok:
+        raise SpawnFailed(msg)
+    try:
+        index = int(msg)
+    except ValueError:
+        raise SpawnFailed(f"tmux returned unexpected index: {msg!r}") from None
+    target = f"{session}:{index}"
+
+    # Let the shell rc finish before the `claude` command line arrives, so
+    # it runs as a real prompt entry rather than mid-rc echoed text. The
+    # dev-channels flag is what makes the spawned Claude connect back to
+    # periscope's MCP socket.
+    await asyncio.sleep(0.1)
+    claude_cmd = shlex.join(config.build_agent_command("claude", cwd=cwd, effort=launch.effort))
+    tmux("send-keys", "-t", target, claude_cmd, "Enter")
+
+    # Dismiss the consent dialog (see _dev_channels_consent_*).
+    for _ in range(50):  # up to 5s
+        await asyncio.sleep(0.1)
+        if _dev_channels_consent_visible(target):
+            tmux("send-keys", "-t", target, "Enter")
+            break
+
+    # Even after dismissal the React TUI takes another beat to mount its
+    # keyboard handler — `❯` (the input glyph) and `auto mode on` (status
+    # line) both render before paste-buffer is reliably accepted. Wait
+    # for the post-dialog state, then a small settle window.
+    for _ in range(50):  # up to 5s
+        await asyncio.sleep(0.1)
+        snap = _plain_pane_snapshot(target)
+        if "auto mode on" in snap and "Loading development channels" not in snap:
+            await asyncio.sleep(0.5)
+            break
+
+    # Deliver the prompt via paste-buffer because send-keys strips embedded
+    # newlines (see CLAUDE.md key invariant 5). Same buffer-name uuid trick
+    # as `_send_to_target` so concurrent spawns don't trample each other.
+    buf = f"spawn-{uuid.uuid4().hex[:8]}"
+    tmux("set-buffer", "-b", buf, prompt)
+    tmux("paste-buffer", "-d", "-p", "-b", buf, "-t", target)
+    # Same 100ms bracketed-paste delay as /api/send — without it the Enter
+    # can land before the paste applies, submitting empty input.
+    await asyncio.sleep(0.1)
+    tmux("send-keys", "-t", target, "Enter")
+
+    note_focus(target)
+    note_action(target)
+
+    # Mint + stamp a fresh unique @periscope_id for the brand-new window.
+    # Do NOT resolve via rebind here: a just-created window has no stamp yet,
+    # and resolving a single window (empty taken-set) lets _rebind_pid match it
+    # to a LIVE window's entry on (branch, cwd) — stealing that pid, so every
+    # later write (e.g. the spawn_claude tool's provenance write) would corrupt
+    # that window's row. stamp_new_window mints a guaranteed-unique id,
+    # sidestepping rebind entirely.
+    pid = stamp_new_window(target)
+    pane_id = tmux("display-message", "-t", target, "-p", "#{pane_id}").strip()
+
+    # An explicit spawn name is a deliberate label — pin it so the narrator
+    # never renames it (narrator.is_name_pinned). Only when `name` was passed:
+    # without it tmux auto-names off the command/dir, which carries no intent
+    # to protect.
+    if name and pid:
+        set_window_fields(pid, name_pinned=True)
+    if pid and track_id:
+        tracks.move_pane(pid, track_id)
+    return {"target": target, "session": session, "index": index, "pid": pid, "pane_id": pane_id}
+
+
 async def _do_spawn_claude_tool(pane: str, arguments: dict):
     """Spawn a new tmux window running `claude`, deliver an initial prompt.
 
@@ -615,119 +732,19 @@ async def _do_spawn_claude_tool(pane: str, arguments: dict):
         else:
             session = str(arguments.get("session") or caller_session or "spawned").strip()
 
-    # Create the session if missing, otherwise add a window to it. Both
-    # paths use `-P -F #{window_index}` so we know the spawned slot — with
-    # base-index 1 in tmux.conf, hardcoding :0 would silently target the
-    # wrong window (see /api/window/new resume notes).
-    # An omitted account means "wherever there is room", not "the default": a
-    # spawning Claude cannot see either subscription's limits, and the second
-    # one exists precisely so work lands where the first has none left.
-    # choose_launch degrades to "default" when usage is unknown, so a spawn is
-    # never blocked or delayed on it.
-    launch = usage.choose_launch(arguments.get("account"), arguments.get("model"))
-    config_dir = store.account_config_dir(launch.account)
-    model_env = config.model_env(launch.model)
-    code, _ = _run(["tmux", "has-session", "-t", session])
-    if code != 0:
-        ok, msg = _tmux_mutate(
-            "new-session",
-            "-d",
-            "-s",
-            session,
-            "-c",
-            cwd,
-            *tmux_mod.env_args(config_dir, None, model_env),
-            "-P",
-            "-F",
-            "#{window_index}",
-            *(["-n", name] if name else []),
-        )
-        # `new-session -e` sets the SESSION env, so without this every later
-        # window spawned into this session inherits this account — silently
-        # billing them to the wrong subscription. This window's shell already
-        # forked with the value; `new-window -e` has no such spillover.
-        if ok and (config_dir or model_env):
-            tmux_mod.scrub_session_env(session)
-    else:
-        ok, msg = _tmux_mutate(
-            "new-window",
-            "-t",
-            f"{session}:",
-            "-c",
-            cwd,
-            *tmux_mod.env_args(config_dir, None, model_env),
-            "-P",
-            "-F",
-            "#{window_index}",
-            *(["-n", name] if name else []),
-        )
-    if not ok:
-        body = {"ok": False, "error": msg}
-        return _tool_result(body)
     try:
-        index = int(msg)
-    except ValueError:
-        body = {"ok": False, "error": f"tmux returned unexpected index: {msg!r}"}
-        return _tool_result(body)
-    target = f"{session}:{index}"
-
-    # Let the shell rc finish before the `claude` command line arrives, so
-    # it runs as a real prompt entry rather than mid-rc echoed text. The
-    # dev-channels flag is what makes the spawned Claude connect back to
-    # periscope's MCP socket.
-    await asyncio.sleep(0.1)
-    claude_cmd = shlex.join(config.build_agent_command("claude", cwd=cwd, effort=launch.effort))
-    tmux("send-keys", "-t", target, claude_cmd, "Enter")
-
-    # Dismiss the consent dialog (see _dev_channels_consent_*).
-    for _ in range(50):  # up to 5s
-        await asyncio.sleep(0.1)
-        if _dev_channels_consent_visible(target):
-            tmux("send-keys", "-t", target, "Enter")
-            break
-
-    # Even after dismissal the React TUI takes another beat to mount its
-    # keyboard handler — `❯` (the input glyph) and `auto mode on` (status
-    # line) both render before paste-buffer is reliably accepted. Wait
-    # for the post-dialog state, then a small settle window.
-    for _ in range(50):  # up to 5s
-        await asyncio.sleep(0.1)
-        snap = _plain_pane_snapshot(target)
-        if "auto mode on" in snap and "Loading development channels" not in snap:
-            await asyncio.sleep(0.5)
-            break
-
-    # Deliver the prompt via paste-buffer because send-keys strips embedded
-    # newlines (see CLAUDE.md key invariant 5). Same buffer-name uuid trick
-    # as `_send_to_target` so concurrent spawns don't trample each other.
-    buf = f"spawn-{uuid.uuid4().hex[:8]}"
-    tmux("set-buffer", "-b", buf, prompt)
-    tmux("paste-buffer", "-d", "-p", "-b", buf, "-t", target)
-    # Same 100ms bracketed-paste delay as /api/send — without it the Enter
-    # can land before the paste applies, submitting empty input.
-    await asyncio.sleep(0.1)
-    tmux("send-keys", "-t", target, "Enter")
-
-    note_focus(target)
-    note_action(target)
-
-    # Mint + stamp a fresh unique @periscope_id for the brand-new window.
-    # Do NOT resolve via rebind here: a just-created window has no stamp yet,
-    # and resolving a single window (empty taken-set) lets _rebind_pid match it
-    # to a LIVE window's entry on (branch, cwd) — stealing that pid. Since the
-    # child inherits the caller's cwd by default, that collision is the common
-    # case, and the provenance write below would then corrupt the caller's own
-    # row (spawned_by pointing at itself). stamp_new_window mints a
-    # guaranteed-unique id, sidestepping rebind entirely.
-    pid = stamp_new_window(target)
-    pane_id = tmux("display-message", "-t", target, "-p", "#{pane_id}").strip()
-
-    # An explicit spawn name is the lead's deliberate label for the task it
-    # delegated — pinned so the narrator never drifts it
-    # (narrator.is_name_pinned). Only when `name` was passed: without it tmux
-    # auto-names off the command/dir, which carries no intent to protect.
-    if name and pid:
-        set_window_fields(pid, name_pinned=True)
+        spawned = await spawn_claude_with_prompt(
+            cwd,
+            None,
+            prompt,
+            session=session,
+            name=name or None,
+            account=arguments.get("account"),
+            model=arguments.get("model"),
+        )
+    except SpawnFailed as e:
+        return _tool_result({"ok": False, "error": str(e)})
+    target, index, pid, pane_id = spawned["target"], spawned["index"], spawned["pid"], spawned["pane_id"]
 
     # Provenance breadcrumb: record who spawned this child so report() knows
     # where "back" is. Pure metadata, no ownership — a severed child simply
@@ -1564,9 +1581,10 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "name": "link_linear",
         "description": (
             "Link this pane to a Linear ticket. Use when the user is "
-            "working on a Linear ticket. Periscope doesn't auto-detect "
-            "Linear tickets, so this is the only way to surface one on "
-            "the pane card. Pass `title` and `status` when you know "
+            "working on a Linear ticket. Periscope shows one on its own "
+            "only when the PR title opens with it (`KEY-123: …`) or the "
+            "branch is Linear-shaped (`<user>/<key>-<num>-…`), and then "
+            "as the id alone; a linked ticket replaces that. Pass `title` and `status` when you know "
             "them (e.g. you fetched the ticket via the Linear MCP) so "
             "the card shows what the ticket is, not just its id. Each "
             "call fully describes the link — omitting title/status "

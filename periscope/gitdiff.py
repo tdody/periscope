@@ -31,6 +31,34 @@ MAX_LINES_PER_FILE = 2000
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
+# Mirrors static/src/diff/noise.js: generated artifacts by PATH pattern only —
+# folding by size would hide the large genuine refactor you most need to read.
+_GENERATED_DIRS = ("dist/", "build/", "vendor/", ".next/", "target/debug/", "target/release/")
+_GENERATED_FILES = frozenset(
+    {
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "uv.lock",
+        "poetry.lock",
+        "Cargo.lock",
+        "Gemfile.lock",
+        "composer.lock",
+        "go.sum",
+    }
+)
+_GENERATED_SUFFIXES = (".min.js", ".min.css", ".map", ".snap")
+
+
+def is_generated(path: str) -> bool:
+    """A generated artifact (bundle, lockfile, minified/source-map) rather than work someone wrote."""
+    leaf = path.rsplit("/", 1)[-1]
+    if leaf in _GENERATED_FILES or leaf.endswith(_GENERATED_SUFFIXES):
+        return True
+    # Match on a path SEGMENT so "redistribute/x.js" isn't mistaken for "dist/".
+    segs = f"{path}/"
+    return any(f"/{d}" in segs or segs.startswith(d) for d in _GENERATED_DIRS)
+
 
 def repo_root(cwd: str) -> str | None:
     """git toplevel for `cwd`, or None when it isn't a git worktree."""

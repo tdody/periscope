@@ -107,6 +107,24 @@ CREATE TABLE IF NOT EXISTS pane_status (
                                    -- [{"t":<unix>,"s":"..."}], divergence
                                    -- evidence the narrator reasons against
 );
+-- One row per Claude permission dialog, written by pane_permission_hook.py
+-- (PermissionRequest) just before the dialog renders and pruned by it after a
+-- day; window_view.pending_permission_row reads it. Same DDL as the hook's:
+-- whichever opens the DB first creates it (test_pane_permission_hook checks).
+-- Always name columns: a healed table (_conn) puts match_key last.
+CREATE TABLE IF NOT EXISTS pane_permissions (
+  pane_id     TEXT NOT NULL,       -- tmux pane id, e.g. '%56'
+  session_id  TEXT,                -- Claude session id
+  agent_id    TEXT,                -- set for a subagent's call (it asks in this pane)
+  request_id  TEXT PRIMARY KEY,    -- sha1(session, tool, input, created_at)[:16]
+  tool        TEXT NOT NULL,       -- tool_name, e.g. 'Bash'
+  summary     TEXT NOT NULL,       -- what it asks, <= 80 chars (display only)
+  match_key   TEXT,                -- what panes.dialog_matches needs on screen
+                                   -- before Allow fires: Bash 'sha256:<hex>',
+                                   -- Edit/Write the absolute path, else NULL
+  created_at  REAL NOT NULL        -- unix seconds, when the hook ran
+);
+CREATE INDEX IF NOT EXISTS idx_pane_permissions_pane ON pane_permissions (pane_id, created_at);
 DROP TABLE IF EXISTS first_mate;
 """
 
@@ -120,42 +138,61 @@ def _conn() -> sqlite3.Connection:
     if _CONN is None:
         config.ACTIVITY_DB.parent.mkdir(parents=True, exist_ok=True)
         c = sqlite3.connect(str(config.ACTIVITY_DB), check_same_thread=False)
-        c.execute("PRAGMA journal_mode=WAL")
-        c.executescript(_SCHEMA)
-        session_binding_db.ensure_schema(c)
-        # pane_status predates the rail/goal/history columns in live DBs, and
-        # CREATE TABLE IF NOT EXISTS won't add them. Guarded ALTER (history/db.py
-        # pattern) is provably idempotent, so dev/prod schema skew is harmless.
-        have = {r[1] for r in c.execute("PRAGMA table_info(pane_status)")}
-        for col in ("rail", "goal", "history"):
-            if col not in have:
-                c.execute(f"ALTER TABLE pane_status ADD COLUMN {col} TEXT")
-        # pane_tracks was keyed on tmux %N, which rotates on every restart —
-        # renamed so any raw-SQL regression against pane_id fails loudly.
-        pt_cols = {r[1] for r in c.execute("PRAGMA table_info(pane_tracks)")}
-        if "pane_id" in pt_cols:
-            c.execute("ALTER TABLE pane_tracks RENAME COLUMN pane_id TO pid")
-        # usage_samples predates multi-account and was keyed (meter, at), which
-        # would interleave two subscriptions into one unseparable series. SQLite
-        # can't widen a PK in place, so rebuild — existing rows are all from the
-        # single account that existed then, i.e. the default one.
-        have = {r[1] for r in c.execute("PRAGMA table_info(usage_samples)")}
-        if "account" not in have:
-            c.executescript("""
-              CREATE TABLE usage_samples_new (
-                at        INTEGER NOT NULL,
-                account   TEXT NOT NULL,
-                meter     TEXT NOT NULL,
-                percent   REAL NOT NULL,
-                resets_at INTEGER,
-                PRIMARY KEY (account, meter, at)
-              );
-              INSERT INTO usage_samples_new (at, account, meter, percent, resets_at)
-                SELECT at, 'default', meter, percent, resets_at FROM usage_samples;
-              DROP TABLE usage_samples;
-              ALTER TABLE usage_samples_new RENAME TO usage_samples;
-            """)
-        c.commit()
+        try:
+            c.execute("PRAGMA journal_mode=WAL")
+            c.executescript(_SCHEMA)
+            session_binding_db.ensure_schema(c)
+            # pane_status predates the rail/goal/history columns in live DBs, and
+            # CREATE TABLE IF NOT EXISTS won't add them. Guarded ALTER (history/db.py
+            # pattern) is provably idempotent, so dev/prod schema skew is harmless.
+            have = {r[1] for r in c.execute("PRAGMA table_info(pane_status)")}
+            for col in ("rail", "goal", "history"):
+                if col not in have:
+                    c.execute(f"ALTER TABLE pane_status ADD COLUMN {col} TEXT")
+            # pane_tracks was keyed on tmux %N, which rotates on every restart —
+            # renamed so any raw-SQL regression against pane_id fails loudly.
+            pt_cols = {r[1] for r in c.execute("PRAGMA table_info(pane_tracks)")}
+            if "pane_id" in pt_cols:
+                c.execute("ALTER TABLE pane_tracks RENAME COLUMN pane_id TO pid")
+            # A pane_permissions without match_key can only come from this
+            # branch's early commits (no release shipped one). The same ALTER the
+            # hook runs, so whichever side opens the DB first leaves the shape the
+            # other expects; retire both heals once every DB is past it. The hook
+            # can win the race between the PRAGMA and the ALTER — its column is
+            # this one, so that's success.
+            pp_cols = {r[1] for r in c.execute("PRAGMA table_info(pane_permissions)")}
+            if "match_key" not in pp_cols:
+                try:
+                    c.execute("ALTER TABLE pane_permissions ADD COLUMN match_key TEXT")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e):
+                        raise
+            # usage_samples predates multi-account and was keyed (meter, at), which
+            # would interleave two subscriptions into one unseparable series. SQLite
+            # can't widen a PK in place, so rebuild — existing rows are all from the
+            # single account that existed then, i.e. the default one.
+            have = {r[1] for r in c.execute("PRAGMA table_info(usage_samples)")}
+            if "account" not in have:
+                c.executescript("""
+                  CREATE TABLE usage_samples_new (
+                    at        INTEGER NOT NULL,
+                    account   TEXT NOT NULL,
+                    meter     TEXT NOT NULL,
+                    percent   REAL NOT NULL,
+                    resets_at INTEGER,
+                    PRIMARY KEY (account, meter, at)
+                  );
+                  INSERT INTO usage_samples_new (at, account, meter, percent, resets_at)
+                    SELECT at, 'default', meter, percent, resets_at FROM usage_samples;
+                  DROP TABLE usage_samples;
+                  ALTER TABLE usage_samples_new RENAME TO usage_samples;
+                """)
+            c.commit()
+        except BaseException:
+            # Never cached half-migrated — and never leaked: the next call retries
+            # on a fresh connection.
+            c.close()
+            raise
         _CONN = c
     return _CONN
 
@@ -338,6 +375,40 @@ def prune_pane_sessions(alive_pane_ids: set[str]) -> int:
         c.executemany("DELETE FROM pane_sessions WHERE pane_id=?", [(p,) for p in dead])
         c.commit()
         return len(dead)
+
+
+# --- pane_permissions: the permission dialog a pane is showing -----------
+#
+# Writer is pane_permission_hook.py (out-of-process, Claude's PermissionRequest
+# hook; it also prunes). The reader is window_view.pending_permission_row.
+
+
+def pane_permissions_since(pane_id: str, since: float) -> list[tuple[str, str, str, str | None]]:
+    """(request_id, tool, summary, match_key) of this pane's permission
+    requests stamped at or after `since`, oldest first — at most two: the
+    caller only needs to know whether exactly one fits."""
+    if not pane_id:
+        return []
+    with _LOCK:
+        c = _conn()
+        return c.execute(
+            "SELECT request_id, tool, summary, match_key FROM pane_permissions "
+            "WHERE pane_id=? AND created_at>=? ORDER BY created_at LIMIT 2",
+            (pane_id, since),
+        ).fetchall()
+
+
+def pane_permissions_between(pane_id: str, start: float, end: float) -> int:
+    """How many of this pane's permission requests were stamped in [start,
+    end): the rows a too-narrow window would have missed (calibration)."""
+    if not pane_id:
+        return 0
+    with _LOCK:
+        c = _conn()
+        return c.execute(
+            "SELECT COUNT(*) FROM pane_permissions WHERE pane_id=? AND created_at>=? AND created_at<?",
+            (pane_id, start, end),
+        ).fetchone()[0]
 
 
 # --- pane_workspaces: tmux pane id -> workspace id tag -----------------

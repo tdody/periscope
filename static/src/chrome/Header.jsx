@@ -15,7 +15,9 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { multiAccount } from "../accounts.js";
 import { useEscape } from "../hooks/useEscape.js";
-import { windows } from "../store.js";
+import { unresolvedTotal } from "../review/walkthrough.js";
+import { selectReviewsQueue } from "../split/alertFeed.js";
+import { reviews, windows } from "../store.js";
 import { track } from "../track.js";
 import { FilterBar } from "./FilterBar.jsx";
 import { PanelToggles } from "./PanelToggles.jsx";
@@ -166,6 +168,13 @@ export function Header() {
                 title="open a repo, worktree, or PR"
                 onClick={() => window.__periscopeOpenOmnibox?.()}>
           + new
+        </button>
+
+        {/* Reviews queue — every branch waiting on review, across tracks. */}
+        <button type="button" class="filter-btn is-action" id="reviews-btn"
+                title="open branches, walkthroughs, review comments"
+                onClick={selectReviewsQueue}>
+          ◉ reviews{unresolvedTotal(reviews.value) ? <span class="rail-review-badge">{unresolvedTotal(reviews.value)}</span> : null}
         </button>
 
         {/* ⋯ overflow: low-frequency actions. */}

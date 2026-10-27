@@ -594,46 +594,6 @@ import json
 from unittest.mock import AsyncMock
 
 
-def test_resolve_window_by_pid_matches_stamped_handle(mocker):
-    from periscope import channels
-
-    rows = [
-        {"session": "s", "index": 2, "name": "w", "cwd": "/x", "pane_id": "%7", "pid_raw": "abcd1234"},
-    ]
-    mocker.patch("periscope.channels.list_windows", return_value=rows)
-
-    def _attach(ws, **kw):
-        for w in ws:
-            w["pid"] = w.pop("pid_raw")
-
-    mocker.patch("periscope.channels._attach_git_then_resolve_pids", side_effect=_attach)
-
-    pid, pane_id, window = channels._resolve_window_by_pid("abcd1234")
-    assert pid == "abcd1234"
-    assert pane_id == "%7"
-    assert window["session"] == "s" and window["index"] == 2
-
-
-def test_resolve_window_by_pid_miss_returns_empty(mocker):
-    from periscope import channels
-
-    mocker.patch(
-        "periscope.channels.list_windows",
-        return_value=[
-            {"session": "s", "index": 2, "pane_id": "%7", "pid_raw": "other"},
-        ],
-    )
-    mocker.patch("periscope.channels._attach_git_then_resolve_pids")
-    assert channels._resolve_window_by_pid("abcd1234") == ("", "", {})
-
-
-def test_resolve_window_by_pid_empty_handle_returns_empty(mocker):
-    from periscope import channels
-
-    mocker.patch("periscope.channels.list_windows")
-    assert channels._resolve_window_by_pid("") == ("", "", {})
-
-
 def test_spawn_claude_writes_spawned_by(mocker):
     from periscope import channels
 
@@ -1913,28 +1873,6 @@ def test_deliver_still_sends_when_readiness_is_unknown(mocker):
     emit.assert_awaited_once()
 
 
-def test_resolve_window_by_pid_falls_back_to_pane_id(mocker):
-    """A pid can change under a live pane (re-mint, or a rebind that misses
-    after a tmux restart). The observed shape was always the same: spawn
-    returned a pid, minutes later send_to said "no live window" while the pane
-    was alive at the SAME pane_id. Callers hold that pane_id, so it must work
-    as a handle — one session read the dead handle as death and respawned a
-    duplicate worker onto the live task."""
-    from periscope import channels
-
-    rows = [{"session": "s", "index": 1, "name": "w", "cwd": "/a", "pane_id": "%106", "pid_raw": "e42b3b40"}]
-    mocker.patch.object(channels, "list_windows", return_value=rows)
-    mocker.patch.object(
-        channels, "_attach_git_then_resolve_pids", side_effect=lambda ws, **kw: [w.update(pid=w["pid_raw"]) for w in ws]
-    )
-
-    # The stale spawn-time pid no longer resolves...
-    assert channels._resolve_window_by_pid("3dc7686a") == ("", "", {})
-    # ...but the pane id the caller still holds does.
-    pid, pane_id, _w = channels._resolve_window_by_pid("%106")
-    assert (pid, pane_id) == ("e42b3b40", "%106")
-
-
 def test_stale_handle_error_names_the_recovery():
     """The bare 'no live window' was read as 'the agent is dead'."""
     from periscope import channels
@@ -2056,3 +1994,63 @@ def test_spawn_claude_sets_the_model_the_chooser_picked(mocker):
 
     args = _created_call(cap)
     assert "ANTHROPIC_MODEL=opus[1m]" in args
+
+
+def test_spawn_claude_with_prompt_pastes_and_tags(mocker):
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
+
+    tmux_mock = mocker.patch("periscope.channels.tmux", return_value="%9")
+    mocker.patch("periscope.channels._run", return_value=(0, ""))  # has-session ok
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "4"))
+    mocker.patch("periscope.channels.asyncio.sleep", new=AsyncMock())
+    mocker.patch("periscope.channels._plain_pane_snapshot", return_value="auto mode on")
+    mocker.patch("periscope.channels.note_focus")
+    mocker.patch("periscope.channels.note_action")
+    mocker.patch("periscope.channels.stamp_new_window", return_value="kid42")
+    mocker.patch("periscope.channels.set_window_fields")
+    move = mocker.patch("periscope.channels.tracks.move_pane")
+
+    out = asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", "/dev/repo", "do the thing", session="sess"))
+
+    assert out == {"target": "sess:4", "session": "sess", "index": 4, "pid": "kid42", "pane_id": "%9"}
+    set_buffer = [c for c in tmux_mock.call_args_list if c.args[:1] == ("set-buffer",)]
+    assert set_buffer and set_buffer[0].args[-1] == "do the thing"
+    paste = [c for c in tmux_mock.call_args_list if c.args[:1] == ("paste-buffer",)]
+    assert paste and paste[0].args[-1] == "sess:4"
+    move.assert_called_once_with("kid42", "/dev/repo")
+
+
+def test_spawn_claude_with_prompt_skips_track_when_none(mocker):
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
+
+    mocker.patch("periscope.channels.tmux", return_value="%9")
+    mocker.patch("periscope.channels._run", return_value=(0, ""))
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(True, "4"))
+    mocker.patch("periscope.channels.asyncio.sleep", new=AsyncMock())
+    mocker.patch("periscope.channels._plain_pane_snapshot", return_value="auto mode on")
+    mocker.patch("periscope.channels.note_focus")
+    mocker.patch("periscope.channels.note_action")
+    mocker.patch("periscope.channels.stamp_new_window", return_value="kid42")
+    mocker.patch("periscope.channels.set_window_fields")
+    move = mocker.patch("periscope.channels.tracks.move_pane")
+
+    asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", None, "go", session="sess"))
+    move.assert_not_called()
+
+
+def test_spawn_claude_with_prompt_raises_on_tmux_failure(mocker):
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
+
+    mocker.patch("periscope.channels._run", return_value=(0, ""))
+    mocker.patch("periscope.channels._tmux_mutate", return_value=(False, "boom"))
+    with pytest.raises(channels.SpawnFailed, match="boom"):
+        asyncio.run(channels.spawn_claude_with_prompt("/tmp/wt", None, "go", session="sess"))

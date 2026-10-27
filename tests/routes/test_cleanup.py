@@ -35,6 +35,28 @@ def test_candidates_repo_filter(client, mocker):
     assert args and "foo" in args[0]
 
 
+def test_candidates_paths_filter(client, mocker):
+    spy = mocker.patch("periscope.routes.cleanup.compute_candidates", return_value=[])
+    r = client.get("/api/cleanup/candidates?paths=/wt/a&paths=/wt/b")
+    assert r.status_code == 200
+    assert spy.call_args.kwargs["paths"] == ["/wt/a", "/wt/b"]
+
+
+def test_candidates_without_paths_passes_none(client, mocker):
+    spy = mocker.patch("periscope.routes.cleanup.compute_candidates", return_value=[])
+    client.get("/api/cleanup/candidates")
+    assert spy.call_args.kwargs["paths"] is None
+
+
+def test_candidates_blank_path_passes_through(client, mocker):
+    # `?paths=` with no value is `[""]`, not None — compute_candidates (not
+    # the route) is what must treat it as "evaluate nothing".
+    spy = mocker.patch("periscope.routes.cleanup.compute_candidates", return_value=[])
+    r = client.get("/api/cleanup/candidates?paths=")
+    assert r.status_code == 200
+    assert spy.call_args.kwargs["paths"] == [""]
+
+
 def test_archive_happy_path(client, mocker):
     mocker.patch(
         "periscope.routes.cleanup.all_projects",

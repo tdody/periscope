@@ -12,7 +12,7 @@ describe("profileQuery", () => {
     expect(profileQuery("")).toBe(null);
   });
   it("passes a non-default profile through", () => {
-    expect(profileQuery("lab")).toBe("lab");
+    expect(profileQuery("full")).toBe("full");
   });
 });
 
@@ -23,7 +23,7 @@ describe("sendsProfile", () => {
   });
   it("never binds it for a shell", () => {
     // The env var is set on the WINDOW, so every process in it inherits it. A
-    // shell window carrying it would put a hand-typed `claude` on the lab
+    // shell window carrying it would put a hand-typed `claude` on the full
     // plugin set invisibly — no profile chip renders without a live claude
     // process to read the env off.
     expect(sendsProfile({ mode: "shell", exec: "" })).toBe(false);
@@ -39,8 +39,8 @@ describe("sendsProfile", () => {
 
 describe("profileLabel", () => {
   it("names the known profiles", () => {
-    expect(profileLabel("lab")).toBe("lab");
-    expect(profileLabel("default")).toBe("normal");
+    expect(profileLabel("full")).toBe("full");
+    expect(profileLabel("default")).toBe("default");
   });
   it("falls back to the raw id rather than dropping an unknown one", () => {
     // A pane whose CLAUDE_WRAPPER_PROFILE we don't recognize is demonstrably

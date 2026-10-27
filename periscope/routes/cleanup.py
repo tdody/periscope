@@ -1,8 +1,9 @@
 """Cleanup verb (Verb 5): GET candidates + POST bulk archive."""
 
 import os
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from periscope import worktrees
@@ -20,12 +21,14 @@ router = APIRouter()
 
 
 @router.get("/api/cleanup/candidates")
-def cleanup_candidates(repo: str | None = None):
+def cleanup_candidates(repo: str | None = None, paths: Annotated[list[str] | None, Query()] = None):
     """List cleanup candidates. Optional `repo` query param scopes to one
     repo's worktrees (for a future per-project view; phase 6 ships the
-    global view as the primary UI)."""
+    global view as the primary UI). Repeated `paths` scope to the worktrees
+    containing those directories: a notification's "Clean up worktree"
+    asks about one, and walking every worktree takes minutes."""
     repo_filter = os.path.realpath(repo) if repo else None
-    cands = compute_candidates(repo_filter)
+    cands = compute_candidates(repo_filter, paths=paths or None)
     return {"candidates": cands}
 
 

@@ -6,6 +6,8 @@ function mutates panes._completed_at and _prev_state as a side effect;
 tests assert against those mutations directly when relevant.
 """
 
+import hashlib
+
 import pytest
 
 
@@ -42,6 +44,7 @@ def reset_panes_and_channels(monkeypatch):
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
+    window_view._permission_miss_checked.clear()
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
         _CHANNEL_UNREAD.clear()
@@ -61,6 +64,7 @@ def reset_panes_and_channels(monkeypatch):
     window_view._view_cache.clear()
     window_view._codex_last_valid.clear()
     window_view._codex_pid_panes.clear()
+    window_view._permission_miss_checked.clear()
     with _CHANNELS_LOCK:
         _CHANNEL_ALERTS.clear()
         _CHANNEL_UNREAD.clear()
@@ -82,14 +86,13 @@ def _window(**overrides) -> dict:
     return base
 
 
-def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, lgtm=None, linked_pr=None):
+def _stub_subsystems(mocker, *, pane_content="", git=None, pr=None, linked_pr=None):
     """Mock the read-only caches the view consumes. `linked_pr` defaults to None
     (a cold SWR miss) — patched unconditionally so no real `gh pr view` thread
     ever fires from a test (leaked-thread + live-network hazard)."""
     mocker.patch("periscope.window_view.capture", return_value=pane_content)
     mocker.patch("periscope.window_view.cached_git_state", return_value=git or {})
     mocker.patch("periscope.window_view.cached_pr_state", return_value=pr or {})
-    mocker.patch("periscope.window_view.cached_lgtm_state", return_value=lgtm)
     mocker.patch("periscope.window_view.cached_linked_pr_state", return_value=linked_pr)
 
 
@@ -567,6 +570,59 @@ def test_view_surfaces_linked_linear(mocker, clean_state):
     assert view["linked_linear_status"] == "In Progress"
 
 
+def test_view_derives_a_linear_ticket_when_none_is_linked(mocker, clean_state):
+    # THI-441: link_linear was the only way to a ticket chip, so a pane on
+    # `tdody/fdy-8562-…` with its PR open showed the PR and no ticket.
+    from periscope.window_view import build_window_view
+
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(
+        mocker,
+        pane_content="x",
+        git={"branch": "tdody/fdy-8562-checkpoint-tooling"},
+        pr={"pr": 8818, "pr_title": "feat(outcomes): restack"},
+    )
+
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["linked_linear"] is None
+    assert view["linear_ticket"] == "FDY-8562"
+    assert view["linear_ticket_source"] == "branch"
+
+
+def test_view_derives_only_the_team_keys_set(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    clean_state["settings"] = {"linear_team_keys": ["THI"]}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(mocker, pane_content="x", git={"branch": "tdody/fdy-8562-checkpoint-tooling"})
+
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["linear_ticket"] is None
+
+
+def test_view_derives_no_linear_ticket_over_a_linked_one(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    clean_state["windows"][pid] = {"linked_linear": "FAR-456"}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(mocker, pane_content="x", git={"branch": "tdody/fdy-8562-checkpoint-tooling"})
+
+    view, _ = build_window_view(_window(pid=pid), now_ts=1000)
+    assert view["linked_linear"] == "FAR-456"
+    assert view["linear_ticket"] is None
+    assert view["linear_ticket_source"] is None
+
+
 def test_view_channel_attached_reflects_mcp_session_presence(mocker, clean_state):
     from periscope.channels import _CHANNEL_UNREAD, _CHANNELS_LOCK, _MCP_SESSIONS
     from periscope.window_view import build_window_view
@@ -595,7 +651,6 @@ def test_view_handles_capture_exception(mocker, clean_state):
     mocker.patch("periscope.window_view.capture", side_effect=Exception("tmux died"))
     mocker.patch("periscope.window_view.cached_git_state", return_value={})
     mocker.patch("periscope.window_view.cached_pr_state", return_value={})
-    mocker.patch("periscope.window_view.cached_lgtm_state", return_value=None)
 
     view, _ = build_window_view(_window(), now_ts=1000)
     assert view["state"] == "shell"  # error → agent=None → shell
@@ -854,3 +909,219 @@ def test_view_shows_a_set_effort_only_while_the_same_claude_runs(
     monkeypatch.setattr(session_status, "pane_claude_pids", lambda: {"%5": 9999})
     view, _ = window_view.build_window_view(_window(), now_ts=1000)
     assert (view["session_effort"], view["session_model"]) == (None, None)
+
+
+# --- pending_permission: the request a banner's Allow / Deny answers ----------
+
+# What the hook stores for `touch probe.txt` (pane_permission_hook.match_key):
+# a digest the server never reads, only hands to panes.dialog_matches.
+_BASH_KEY = "sha256:" + hashlib.sha256(b"touchprobe.txt").hexdigest()
+
+
+def _permission_row(
+    act,
+    pane_id: str,
+    request_id: str,
+    created_at: float,
+    summary: str = "touch probe.txt",
+    tool: str = "Bash",
+    match_key: str | None = _BASH_KEY,
+) -> None:
+    """A row as pane_permission_hook.py writes it."""
+    with act._LOCK:
+        c = act._conn()
+        c.execute(
+            "INSERT INTO pane_permissions "
+            "(pane_id, session_id, agent_id, request_id, tool, summary, match_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (pane_id, "sid-1", None, request_id, tool, summary, match_key, created_at),
+        )
+        c.commit()
+
+
+def _waiting_on(mocker, waiting_for: str | None, state: str = "needs-input"):
+    _stub_subsystems(mocker, pane_content="x")
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": state, "spinner": None, "waiting_for": waiting_for},
+    )
+
+
+def test_view_publishes_the_one_permission_request_of_this_wait(mocker, clean_state, fresh_activity_db):
+    from periscope.window_view import build_window_view
+
+    _waiting_on(mocker, "permission prompt")
+    # Answered before this wait began: not the dialog on screen.
+    _permission_row(fresh_activity_db, "%5", "0ld0000000000000", 990.0, summary="ls")
+    # Stamped by the hook just before the dialog rendered, a poll before needs_since.
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    # Another pane's prompt is its own.
+    _permission_row(fresh_activity_db, "%6", "ffff000000000000", 1000.0)
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["needs_since"] == 1000
+    # match_key stays server-side: only the endpoint's screen check reads it.
+    assert view["pending_permission"] == {
+        "request_id": "a1b2c3d4e5f60718",
+        "tool": "Bash",
+        "summary": "touch probe.txt",
+    }
+
+
+def test_view_has_no_pending_permission_without_a_row(mocker, clean_state, fresh_activity_db):
+    from periscope.window_view import build_window_view
+
+    _waiting_on(mocker, "permission prompt")
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["pending_permission"] is None
+
+
+def test_view_has_no_pending_permission_when_two_requests_fit(mocker, clean_state, fresh_activity_db):
+    # Parallel tool calls each asking (or two prompts inside one poll): which
+    # one the dialog shows can't be told, so the banner offers Open only.
+    from periscope.window_view import build_window_view
+
+    _waiting_on(mocker, "Permission Prompt")
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    _permission_row(fresh_activity_db, "%5", "b1b2c3d4e5f60718", 999.8)
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["pending_permission"] is None
+
+
+def test_view_has_no_pending_permission_outside_a_permission_wait(mocker, clean_state, fresh_activity_db):
+    from periscope.window_view import build_window_view
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    _waiting_on(mocker, "approve AskUserQuestion")
+    assert build_window_view(_window(), now_ts=1000)[0]["pending_permission"] is None
+    _waiting_on(mocker, None, state="working")
+    assert build_window_view(_window(), now_ts=1000)[0]["pending_permission"] is None
+
+
+def test_pending_permission_matches_waiting_for_case_insensitively(fresh_activity_db):
+    from periscope.window_view import pending_permission_for
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    assert pending_permission_for("%5", "needs-input", "Permission Prompt", 1000)["request_id"] == "a1b2c3d4e5f60718"
+    # needs_since 0 means "not waiting": no episode to scope the rows to.
+    assert pending_permission_for("%5", "needs-input", "permission prompt", 0) is None
+
+
+def test_pending_permission_row_carries_the_match_key_the_published_one_drops(fresh_activity_db):
+    from periscope.window_view import pending_permission_for, pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) == {
+        "request_id": "a1b2c3d4e5f60718",
+        "tool": "Bash",
+        "summary": "touch probe.txt",
+        "match_key": _BASH_KEY,
+    }
+    assert "match_key" not in pending_permission_for("%5", "needs-input", "permission prompt", 1000)
+
+
+@pytest.mark.parametrize("match_key", [None, ""])
+def test_a_request_without_a_match_key_gets_no_allow(fresh_activity_db, match_key):
+    # A tool whose dialog can't be checked for an exact match (WebFetch, an
+    # MCP tool, NotebookEdit — the hook stores no key): the banner is Open-only.
+    from periscope.window_view import pending_permission_for, pending_permission_row
+
+    _permission_row(
+        fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4, tool="WebFetch", summary="https://x", match_key=match_key
+    )
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    assert pending_permission_for("%5", "needs-input", "permission prompt", 1000) is None
+
+
+def test_an_unkeyed_row_still_counts_against_the_one_row_rule(fresh_activity_db):
+    # Two requests in one wait, only one of them verifiable: the dialog on
+    # screen may be the other one, so neither is named.
+    from periscope.window_view import pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 999.4)
+    _permission_row(fresh_activity_db, "%5", "b1b2c3d4e5f60718", 999.8, tool="WebFetch", match_key=None)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+
+
+def test_the_window_reaches_exactly_five_seconds_before_needs_since(fresh_activity_db):
+    from periscope.window_view import pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 995.0)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000)["request_id"] == "a1b2c3d4e5f60718"
+    _permission_row(fresh_activity_db, "%6", "b1b2c3d4e5f60718", 994.99)
+    assert pending_permission_row("%6", "needs-input", "permission prompt", 1000) is None
+
+
+def test_a_row_stamped_after_needs_since_still_counts(fresh_activity_db):
+    # needs_since is the build's floored now_ts, taken before its fan-out reads
+    # the session file: the hook can stamp mid-build, after it.
+    from periscope.window_view import pending_permission_row
+
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 1000.6)
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000)["request_id"] == "a1b2c3d4e5f60718"
+
+
+def test_view_publishes_a_permission_request_from_the_session_file(mocker, clean_state, fresh_activity_db):
+    # The real path: a mapped pane's state and waiting_for come from Claude's
+    # session file, not the scrape (a permission dialog's footer is outside
+    # parse_pane's family).
+    from periscope.window_view import build_window_view
+
+    _stub_subsystems(mocker, pane_content="x")
+    mocker.patch(
+        "periscope.window_view.session_state_for",
+        return_value={"state": "needs-input", "status": "waiting", "waiting_for": "permission prompt"},
+    )
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 997.0)
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert (view["state"], view["needs_since"]) == ("needs-input", 1000)
+    assert view["pending_permission"] == {
+        "request_id": "a1b2c3d4e5f60718",
+        "tool": "Bash",
+        "summary": "touch probe.txt",
+    }
+
+
+def test_a_request_just_outside_the_window_is_logged_once_per_wait(fresh_activity_db, caplog):
+    import logging
+
+    from periscope.window_view import pending_permission_row
+
+    caplog.set_level(logging.INFO, logger="periscope")  # prod's level
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 990.0)
+    for _ in range(3):  # every tick of the same wait
+        assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    misses = [r for r in caplog.records if "too narrow" in r.getMessage()]
+    assert len(misses) == 1
+    assert misses[0].levelno == logging.INFO and "%5" in misses[0].getMessage()
+
+
+def test_a_wait_with_no_request_anywhere_logs_nothing(fresh_activity_db, caplog):
+    # A pane whose Claude hasn't loaded the hook: Open only, and not a miss.
+    import logging
+
+    from periscope.window_view import pending_permission_row
+
+    caplog.set_level(logging.INFO, logger="periscope")  # prod's level
+    _permission_row(fresh_activity_db, "%5", "a1b2c3d4e5f60718", 980.0)  # an older wait's
+    assert pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    assert not [r for r in caplog.records if "too narrow" in r.getMessage()]
+
+
+def test_a_db_error_leaves_the_banner_open_only_not_the_card_an_error(
+    mocker, clean_state, fresh_activity_db, monkeypatch, caplog
+):
+    import sqlite3
+
+    from periscope import window_view
+
+    monkeypatch.setattr(window_view, "_permission_error_logged_at", 0.0)
+    mocker.patch.object(
+        window_view.activity, "pane_permissions_since", side_effect=sqlite3.OperationalError("database is locked")
+    )
+    _waiting_on(mocker, "permission prompt")
+    view, _ = window_view.build_window_view(_window(), now_ts=1000)
+    assert view["state"] == "needs-input"
+    assert view["pending_permission"] is None
+    # Logged, but not again on the next tick.
+    assert window_view.pending_permission_row("%5", "needs-input", "permission prompt", 1000) is None
+    assert len([r for r in caplog.records if "Open only" in r.getMessage()]) == 1

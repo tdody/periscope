@@ -3,9 +3,13 @@
 // the one record per pastime TamaScene draws from. The dishes are
 // TamaDishes.jsx's. Behind-the-mascot pieces take fixed positions, set against
 // the pose's x0 in the same record; the pieces Clawd holds take x0 and sit
-// inside its group, so they bob with it. Motion is CSS (styles.css, `.tama`).
+// inside its group, so they bob with it. A critter's held pieces sit at its
+// own tip instead, inside its wrapper (CritterHeld); the bass is there too, as
+// Critter's child, reached by its limb (Tamagotchi.jsx's `fret`); the
+// controller's paws (Paw, below) sit in a critter's own limb colour or
+// Clawd's skin. Motion is CSS (styles.css, `.tama`).
 import { Critter } from "./Critter.jsx";
-import { CLAWD_HEIGHT, placement } from "./critters.js";
+import { CLAWD_HEIGHT, CRITTER_HEIGHT, HOLDS, holdTip, placement } from "./critters.js";
 import { Steam } from "./TamaDishes.jsx";
 import { BODY, EYE, gridCells, LEGS, SKIN, Y0 } from "./tamagotchi.js";
 
@@ -102,10 +106,26 @@ export function Helmet({ x0 }) {
   );
 }
 
+// Where Clawd's fretting hand holds the bass neck (x0 + 17.5, 11.1, 1×0.9),
+// centred on the neck line: a critter's limb reaches here (TamaScene).
+export const BASS_FRET = { dx: 18, y: 11.7 };
+
+// One of a critter's hands on a prop it holds the way Clawd does, or at the
+// desk (TamaDuty's TypingPaws / SlapPaw), in scene units: a small rect in its
+// limb's colour, round for a tentacle, outlined where its limb is (Nox's
+// black paws on the dark controller).
+export function Paw({ limb, x, y, w, h, cls }) {
+  const round = limb.style === "tentacle";
+  return (
+    <rect class={cls} x={x} y={y} width={w} height={h} rx={round ? h / 2 : 0.25} fill={limb.color}
+          stroke={limb.outline || undefined} stroke-width={limb.outline ? 0.25 : undefined} />
+  );
+}
+
 // ---- bass practice: a bass across the body, plugged into a combo amp -------
 // Lake Placid blue, so it doesn't melt into Clawd's orange. The neck rises
 // gently: steeper, it crosses the eye. The headstock clears the amp's top.
-export function Bass({ x0 }) {
+export function Bass({ x0, limb }) {
   return (
     <g class="tama-bass" shape-rendering={GEO}>
       <path d={`M${x0 + 9.6} 13.7 L${x0 + 23} 9.6 L${x0 + 23.3} 10.5 L${x0 + 9.9} 14.6 Z`} fill="#4a2c1a" />
@@ -126,8 +146,13 @@ export function Bass({ x0 }) {
         <line x1={x0 + 3.4} y1="15.1" x2={x0 + 23.1} y2="9.9" />
         <line x1={x0 + 3.4} y1="15.4" x2={x0 + 23.2} y2="10.2" />
       </g>
-      <rect x={x0 + 17.5} y="11.1" width="1" height="0.9" fill={SKIN} />
-      <rect class="tama-strum" x={x0 + 7.4} y="14.6" width="1.1" height="0.8" fill={SKIN} />
+      {/* `limb`: a critter's (TamaScene): its paw strums, its limb frets (Critter), in place of Clawd's hands. */}
+      {limb ? <Paw limb={limb} x={x0 + 7.3} y={14.5} w={1.3} h={1} cls="tama-strum" /> : (
+        <>
+          <rect x={x0 + 17.5} y="11.1" width="1" height="0.9" fill={SKIN} />
+          <rect class="tama-strum" x={x0 + 7.4} y="14.6" width="1.1" height="0.8" fill={SKIN} />
+        </>
+      )}
     </g>
   );
 }
@@ -185,9 +210,35 @@ function CritterFriend({ sprite }) {
   return (
     <g class="tama-critter" style="transform-box: view-box"
        transform={`translate(${r4(2 * cx - tx)} ${r4(ty)}) scale(${r4(-scale)} ${r4(scale)})`}>
-      <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} />
+      <Critter sprite={sprite} face="happy" tint={FRIEND_HUE} holding="pint" />
+      <CritterHeld sprite={sprite} kind="pint" scale={scale} />
     </g>
   );
+}
+
+// What a critter holds at its appendage's tip (critters.js holdTip): Clawd's
+// own prop at Clawd's size (`scale`, its wrapper's, undone), drawn inside the
+// critter's wrapper so it bobs with it. The view-box pivot for the same reason
+// as the wrapper's: `.tama g` pivots on its fill-box. The pint's clink is
+// Clawd's (toward the friend); the friend's mirror turns its own toward the
+// mascot, so it needs no tama-clink2. The bass and the controller aren't in
+// HOLDS (TamaScene draws them itself, at the fret and in scene units), so
+// they draw nothing here.
+export function CritterHeld({ sprite, kind, scale }) {
+  if (!HOLDS[kind]) return null;
+  const [x, y] = holdTip(sprite, kind);
+  const k = r4(1 / scale);
+  const at = (fit, inner) => (
+    <g style="transform-box: view-box" transform={`translate(${x} ${y}) scale(${k}) ${fit}`}>{inner}</g>
+  );
+  // Each fit puts the prop's grip on the tip: the pint's left side at its mid-height (11.5).
+  if (kind === "pint") return at("translate(0 -11.5)", <Pint x={0} cls="tama-pint tama-clink" />);
+  // Mirrored so the handle (on the mug's far side from Clawd) faces the
+  // critter; its grip is the handle's outer edge (30.1, 14.2).
+  if (kind === "mug") return at("scale(-1 1) translate(-30.1 -14.2)", <CoffeeMug />);
+  // The can's grip is the apex of its own handle (17.8, 11.7).
+  if (kind === "can") return at("translate(-17.8 -11.7)", <WateringCan x0={0} />);
+  return null;
 }
 
 function Pint({ x, cls }) {
@@ -224,9 +275,9 @@ export function Friend({ critter }) {
               <path d={`M${FRIEND_X0 + 3.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
               <path d={`M${FRIEND_X0 + 10.8} ${Y0 + 3.5} l0.7 -0.9 l0.7 0.9`} />
             </g>
+            <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />
           </>
         )}
-        <Pint x={FRIEND_X0 + 1.2} cls="tama-pint tama-clink tama-clink2" />
       </g>
       <g class="tama-cheers" fill="#ffd166">
         <rect x="18.1" y="7.6" width="0.4" height="1.2" />
@@ -254,10 +305,12 @@ function KidSheet({ x }) {
   );
 }
 
-// A critter's kid: the critter at half height on a kid's spot (8.5 wide, so
-// centred at x + 4.25), feet on the floor.
-function CritterKid({ x, sprite }) {
-  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: CLAWD_HEIGHT / 2 });
+// A critter's kid: the critter at half its height on a kid's spot (8.5 wide,
+// so centred at x + 4.25), feet on the floor. In a sheet it's half Clawd's
+// instead: the sheet is cut for Clawd, and at CRITTER_HEIGHT ears, horns and
+// antennas poke through it.
+function CritterKid({ x, sprite, costume }) {
+  const { scale, tx, ty } = placement(sprite, { x0: x - 4.25, sitting: false, height: (costume ? CLAWD_HEIGHT : CRITTER_HEIGHT) / 2 });
   return (
     <g class="tama-critter" style="transform-box: view-box" transform={`translate(${r4(tx)} ${r4(ty)}) scale(${r4(scale)})`}>
       <Critter sprite={sprite} />
@@ -268,7 +321,7 @@ function CritterKid({ x, sprite }) {
 function Kid({ x, cls, costume, sprite }) {
   return (
     <g class={cls}>
-      {sprite ? <CritterKid x={x} sprite={sprite} /> : (
+      {sprite ? <CritterKid x={x} sprite={sprite} costume={costume} /> : (
         <>
           <Sprite cells={KID_CELLS.body} x0={x} y0={14} w={0.5} h={1} />
           <Sprite cells={KID_CELLS.legs} x0={x} y0={18} w={0.5} h={1} />
@@ -321,7 +374,13 @@ export function Couch() {
   );
 }
 
-export function Controller({ x0 }) {
+// Clawd's own hands, two on the grips like a critter's: his side arms are on
+// the controller (TamaScene), so a bare `arm` style draws a plain SKIN paw.
+const CLAWD_HANDS = { style: "arm", color: SKIN };
+
+// `limb`: a critter's two paws on the grips, the right one tapping. Defaults
+// to Clawd's own two hands.
+export function Controller({ x0, limb = CLAWD_HANDS }) {
   return (
     <g class="tama-controller" shape-rendering={GEO}>
       <rect x={x0 + 6.6} y="14.2" width="4.8" height="1.4" rx="0.6" fill="#3b404a" />
@@ -330,7 +389,8 @@ export function Controller({ x0 }) {
       <path d={`M${x0 + 7.4} 14.9 h0.9 M${x0 + 7.85} 14.45 v0.9`} stroke="#c9ced6" stroke-width="0.25" />
       <circle cx={x0 + 10.2} cy="14.7" r="0.22" fill="#e05252" />
       <circle cx={x0 + 10.7} cy="15.1" r="0.22" fill="#5aa9e6" />
-      <rect class="tama-thumb" x={x0 + 9.7} y="13.6" width="0.9" height="0.7" fill={SKIN} />
+      <Paw limb={limb} x={x0 + 6.2} y={14.3} w={1.6} h={1.3} />
+      <Paw limb={limb} x={x0 + 10} y={14.3} w={1.6} h={1.3} cls="tama-thumb" />
     </g>
   );
 }
@@ -361,6 +421,25 @@ export function GardenBed() {
         ))}
       </g>
     </g>
+  );
+}
+
+// The coffee break's mug (`coffee`, not the desk mug): standing by Clawd's arm at x 25.5 (Tamagotchi.jsx Behind),
+// or held by its handle in a critter's appendage (CritterHeld). Here, not in
+// Tamagotchi.jsx: CritterHeld draws it, and Tamagotchi.jsx imports this file.
+export function CoffeeMug() {
+  return (
+    <>
+      <g fill="#efe6d8">
+        <rect x="25.5" y="12" width="3.4" height="4.6" rx="0.4" />
+        <rect x="28.9" y="12.9" width="1.2" height="0.6" />
+        <rect x="29.5" y="12.9" width="0.6" height="2.6" />
+        <rect x="28.9" y="14.9" width="1.2" height="0.6" />
+      </g>
+      <rect x="25.5" y="12" width="3.4" height="0.9" fill="#7a4e2d" />
+      <rect class="tama-steam" x="26.4" y="8.6" width="0.6" height="2" fill="var(--fg-3)" />
+      <rect class="tama-steam tama-steam2" x="27.7" y="7.8" width="0.6" height="2" fill="var(--fg-3)" />
+    </>
   );
 }
 
@@ -402,8 +481,12 @@ export function Stove() {
   );
 }
 
-export function Spoon({ x0 }) {
-  return <line class="tama-spoon" x1={x0 + 16.8} y1="13.6" x2={x0 + 21.6} y2="9.6" stroke="#b07a4f" stroke-width="0.45" />;
+// `from`: a critter's tip (TamaScene), in place of Clawd's hand.
+export function Spoon({ x0, from }) {
+  return (
+    <line class="tama-spoon" x1={from ? from[0] : x0 + 16.8} y1={from ? from[1] : "13.6"} x2={x0 + 21.6} y2="9.6"
+          stroke="#b07a4f" stroke-width="0.45" />
+  );
 }
 
 // The pleated band sits on the head's top row; any hat takes its place.
@@ -426,10 +509,12 @@ export function Toque({ x0 }) {
 }
 
 // ---- walking the dog: outdoors, a leash from Clawd's arm (x0 1) -----------
-export function Dog() {
+export function Dog({ from }) {
+  // The leash runs from the holder to the collar: Clawd's arm, or a critter's tip.
+  const [lx, ly] = from ?? [18.2, 14.2];
   return (
     <g shape-rendering={GEO}>
-      <path class="tama-leash" d="M18.2 14.2 Q23 12.4 28.1 15" fill="none" stroke="#e05252" stroke-width="0.25" />
+      <path class="tama-leash" d={`M${lx} ${ly} Q23 12.4 28.1 15`} fill="none" stroke="#e05252" stroke-width="0.25" />
       <g class="tama-dog">
         <path class="tama-tail" d="M23 15.4 L21.8 13.4" stroke="#b07a4f" stroke-width="0.55" stroke-linecap="round" />
         <g fill="#b07a4f">
@@ -548,8 +633,11 @@ export function Scarf({ x0 }) {
 //   outdoors  set in the season's Scenery (at night on a Halloween round)
 //   snowcap   snow on Clawd's head in winter, under no hat
 //   jack      the Halloween week's jack-o'-lantern spot; none if no floor for one
-//   Behind    behind Clawd, given { season, trick }
+//   Behind    behind Clawd, given { season, trick, critter, from }
 //   Held      held or worn, in Clawd's group so it bobs along, given { x0 }
+//             (the bass and the controller also take a critter's `limb`)
+//   paws      held in both hands: the side arms are on the prop (Clawd's body
+//             drawn armless, a critter's `hold-arms` hidden)
 //   Headwear  on Clawd's head unless any hat outranks it, given { x0 }
 //   Front     drawn over Clawd
 //   trick     what changes on a Halloween round (tamagotchi.activityAt's
@@ -563,7 +651,7 @@ export const PASTIME_SCENES = {
   music: { pose: { x0: 6 }, tempo: 0.5, jack: { x: 1.5, y: 16.4 }, Behind: BassAmp, Held: Bass },
   beer: { pose: { x0: 1 }, tempo: 0.9, smile: true, Behind: Friend, Held: ClawdPint },
   kids: { pose: { x0: 1 }, tempo: 0.7, smile: true, Behind: Kids, trick: { outdoors: true } },
-  game: { pose: { x0: 3, sitting: true }, tempo: 1.2, Behind: Couch, Held: Controller },
+  game: { pose: { x0: 3, sitting: true }, tempo: 1.2, Behind: Couch, Held: Controller, paws: true },
   garden: { pose: { x0: 2 }, tempo: 0.8, outdoors: true, Behind: GardenBed, Held: WateringCan },
   cook: { pose: { x0: 2 }, tempo: 0.6, Behind: Stove, Held: Spoon, Headwear: Toque },
   dog: { pose: { x0: 1 }, tempo: 0.5, stride: true, smile: true, outdoors: true, Behind: Dog },

@@ -44,11 +44,10 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
     """TestClient triggers lifespan startup on enter, shutdown on exit.
 
     Mock the heavyweight prewarms + async loops so the test is fast and
-    doesn't bind a real unix socket. _lgtm_periodic_refresh and
-    _mcp_listener are async functions wrapped via _task(name, coro) — they
-    must return a coroutine, so we patch with a coroutine factory rather
-    than return_value=None (which would make _task crash on
-    asyncio.create_task(None)).
+    doesn't bind a real unix socket. _mcp_listener is an async function
+    wrapped via _task(name, coro) — it must return a coroutine, so we patch
+    with a coroutine factory rather than return_value=None (which would make
+    _task crash on asyncio.create_task(None)).
     """
     mocker.patch("periscope.app.prewarm_pr_cache")
     mocker.patch("periscope.app.cached_plan_usage")
@@ -67,7 +66,6 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
     async def _noop():
         return None
 
-    mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
     mocker.patch("periscope.app._mcp_listener", side_effect=_noop)
     # The activity worker's FIRST tick runs immediately on startup — with
     # the real one, every pytest run on this machine executed a live tick
@@ -129,8 +127,6 @@ def test_lifespan_skips_mcp_on_dev_port(mocker, monkeypatch, caplog):
     async def _noop():
         return None
 
-    mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
-
     from periscope.app import app
 
     with caplog.at_level("INFO", logger="periscope"), TestClient(app):
@@ -167,7 +163,6 @@ def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
     async def _noop():
         return None
 
-    mocker.patch("periscope.app._lgtm_periodic_refresh", side_effect=_noop)
     # See test_lifespan_starts_and_shuts_down_cleanly: the real worker
     # fires a live tick against the developer's tmux on every test run.
     mocker.patch("periscope.activity.run_worker", side_effect=_noop)
@@ -188,3 +183,11 @@ def test_lifespan_binds_mcp_on_prod_port(mocker, monkeypatch):
         pass
 
     assert called["count"] == 1
+
+
+def test_app_includes_pane_actions_router():
+    from periscope.app import app
+
+    paths = [r.path for r in app.routes if hasattr(r, "path")]
+    assert "/api/pane/permission" in paths
+    assert "/api/pane/reply" in paths

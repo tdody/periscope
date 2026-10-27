@@ -35,7 +35,9 @@ async function boot() {
   // railSelection is a STRING highlight-key — deliberately different shapes.
   const sel = getLastSelected();
   if (sel?.kind === "pane") railSelection.value = `pane:${sel.pid}`;
-  else if (sel?.kind === "review") railSelection.value = `review:${sel.worktree}`;
+  else if (sel?.kind === "review" && sel.repo && sel.branch)
+    railSelection.value = `review:${sel.repo}/${sel.branch.replace(/\//g, "--")}`;
+  else if (sel?.kind === "reviews") railSelection.value = "reviews";
 
   render(<App />, document.getElementById("app"));
 
