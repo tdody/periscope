@@ -3870,3 +3870,14 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
   text-decoration: underline dotted var(--fg-3);
   text-underline-offset: 2px;
 }
+
+/* --- markdown metadata chips + citation chips (spec D3/D4) --- */
+.md-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 10px; }
+.md-meta-kv { display: inline-flex; gap: 4px; align-items: baseline; padding: 1px 7px; border-radius: 10px;
+  background: var(--bg-1-hi); font-size: 11.5px; }
+.md-meta-k { color: var(--fg-3); text-transform: uppercase; letter-spacing: .03em; font-size: 10px; }
+.md-meta-v { color: var(--fg-1); }
+.md-cite { font: inherit; font-family: var(--mono, ui-monospace, monospace); font-size: .92em; padding: 0 5px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg-1); color: var(--fg-1); cursor: pointer; }
+.md-cite:hover { background: var(--bg-1-hi); }
+.md-cite:disabled, .md-cite.is-inert { cursor: default; opacity: .7; }

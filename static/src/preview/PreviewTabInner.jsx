@@ -12,7 +12,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { activeTarget, docRefreshNonce } from "../store.js";
+import { activeTarget, docRefreshNonce, openFileTab } from "../store.js";
 
 // Encode "session:index" as base64url for the /api/fs/render path token.
 // btoa() is bytes-from-string, so the input must be ASCII-safe; tmux
@@ -600,6 +600,15 @@ export function PreviewTabInner({ entry, active = true }) {
                 softBreaks: "space",
                 highlight: highlightCode,
                 resolveUrl: state.resolved ? makeResolveUrl(target, state.resolved) : null,
+                meta: true,
+                cite: (c) => (
+                  <button
+                    type="button"
+                    class="md-cite"
+                    title={`open ${c.path}${c.start ? `:${c.start}` : ""}`}
+                    onClick={() => openFileTab({ path: c.path, line: c.start })}
+                  >{c.raw}</button>
+                ),
               })}
             </div>
           </div>

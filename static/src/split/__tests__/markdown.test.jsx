@@ -137,3 +137,41 @@ describe("tables", () => {
     expect((out.match(/<td/g) || []).length).toBe(2);
   });
 });
+
+describe("meta blockquote", () => {
+  const doc = "## Stop\n> kind: reuse · refs: a/b.py:1-3\n\nbody";
+  it("renders chips directly under a heading with meta: true", () => {
+    const out = html(doc, { meta: true });
+    expect(out).toContain('class="md-meta"');
+    expect(out).toContain('data-key="kind"');
+    expect(out).toContain("reuse");
+    expect(out).not.toContain("md-quote");
+  });
+  it("stays a blockquote without meta", () => {
+    expect(html(doc)).toContain("md-quote");
+  });
+  it("stays a blockquote when not directly under a heading, or with markup", () => {
+    expect(html("para\n\n> kind: reuse", { meta: true })).toContain("md-quote");
+    expect(html("## H\n> **For agentic workers:** x", { meta: true })).toContain("md-quote");
+  });
+  it("passes refs through cite", () => {
+    const out = html(doc, { meta: true, cite: (c) => <b class="chip">{c.raw}</b> });
+    expect(out).toContain('<b class="chip">a/b.py:1-3</b>');
+  });
+});
+
+describe("cite", () => {
+  const chip = (c) => <b class="chip">{c.raw}</b>;
+  it("chips path tokens in text and inlineCode", () => {
+    const out = html("see a/b.py:3 and `x.md` here", { cite: chip });
+    expect(out).toContain('<b class="chip">a/b.py:3</b>');
+    expect(out).toContain('<b class="chip">x.md</b>');
+  });
+  it("leaves addresses and link text alone", () => {
+    const out = html("at 127.0.0.1:17374 and [a/b.py](http://x)", { cite: chip });
+    expect(out).not.toContain("chip");
+  });
+  it("does nothing without the opt", () => {
+    expect(html("see a/b.py:3")).not.toContain("chip");
+  });
+});

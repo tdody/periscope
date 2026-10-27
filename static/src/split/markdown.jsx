@@ -6,6 +6,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
+import { metaPairs, parseCite, splitCites } from "./mdMeta.js";
 
 // Scheme-qualified, root-absolute, and fragment URLs pass through untouched;
 // everything else is doc-relative and goes through ctx.resolveUrl.
@@ -23,19 +24,26 @@ function inlineAll(children, ctx) {
 function inline(node, ctx, key) {
   switch (node.type) {
     case "text": {
-      // Soft breaks survive in mdast as literal \n inside text values.
-      // Transcript mode renders them as <br> (Claude uses them
-      // intentionally); document mode lets them collapse to whitespace.
-      if (ctx.softBreaks !== "br" || !node.value.includes("\n")) return node.value;
+      const parts = ctx.softBreaks === "br" && node.value.includes("\n")
+        ? node.value.split("\n")
+        : [node.value];
       const out = [];
-      node.value.split("\n").forEach((part, i) => {
+      parts.forEach((part, i) => {
         if (i) out.push(<br key={`${key}b${i}`} />);
-        out.push(part);
+        if (!ctx.cite) { out.push(part); return; }
+        splitCites(part).forEach((seg, j) => {
+          if (typeof seg === "string") { out.push(seg); return; }
+          const v = ctx.cite(seg);
+          out.push(v == null ? seg.raw : <span key={`${key}c${i}-${j}`}>{v}</span>);
+        });
       });
-      return out;
+      return out.length === 1 ? out[0] : out;
     }
-    case "inlineCode":
-      return <code class="md-icode" key={key}>{node.value}</code>;
+    case "inlineCode": {
+      const cite = ctx.cite ? parseCite(node.value) : null;
+      const v = cite ? ctx.cite(cite) : null;
+      return v != null ? <span key={key}>{v}</span> : <code class="md-icode" key={key}>{node.value}</code>;
+    }
     case "strong":
       return <strong key={key}>{inlineAll(node.children, ctx)}</strong>;
     case "emphasis":
@@ -45,7 +53,7 @@ function inline(node, ctx, key) {
     case "link":
       return (
         <a class="md-link" href={url(node.url, ctx)} target="_blank" rel="noopener" key={key}>
-          {inlineAll(node.children, ctx)}
+          {inlineAll(node.children, { ...ctx, cite: null })}
         </a>
       );
     case "image":
@@ -110,7 +118,7 @@ function table(node, ctx, key) {
   );
 }
 
-function block(node, ctx, key) {
+function block(node, ctx, key, prev) {
   switch (node.type) {
     case "paragraph":
       return <p class="md-p" key={key}>{inlineAll(node.children, ctx)}</p>;
@@ -128,12 +136,34 @@ function block(node, ctx, key) {
           </code>
         </pre>
       );
-    case "blockquote":
+    case "blockquote": {
+      const pairs = ctx.meta && prev?.type === "heading" ? metaPairs(node) : null;
+      if (pairs) {
+        return (
+          <div class="md-meta" key={key}>
+            {pairs.map(([k, v], i) => (
+              <span class="md-meta-kv" data-key={k} key={i}>
+                <span class="md-meta-k">{k}</span>
+                <span class="md-meta-v">
+                  {k === "refs" && ctx.cite
+                    ? v.split(",").map((s, j) => {
+                        const c = parseCite(s.trim());
+                        const chip = c ? ctx.cite(c) : null;
+                        return <span key={j}>{j ? ", " : ""}{chip ?? s.trim()}</span>;
+                      })
+                    : v}
+                </span>
+              </span>
+            ))}
+          </div>
+        );
+      }
       return (
         <blockquote class="md-quote" key={key}>
           {(node.children || []).map((c, i) => block(c, ctx, i))}
         </blockquote>
       );
+    }
     case "list": {
       const items = (node.children || []).map((c, i) => listItem(c, ctx, i));
       return node.ordered ? (
@@ -164,10 +194,12 @@ export function renderMarkdown(text, opts = {}) {
     softBreaks: opts.softBreaks ?? "br",
     highlight: opts.highlight ?? null,
     resolveUrl: opts.resolveUrl ?? null,
+    meta: opts.meta ?? false,
+    cite: opts.cite ?? null,
   };
   const tree = fromMarkdown(String(text || ""), {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   });
-  return tree.children.map((node, i) => block(node, ctx, i));
+  return tree.children.map((node, i) => block(node, ctx, i, tree.children[i - 1]));
 }
