@@ -23,6 +23,7 @@ def test_fs_read_happy(tmp_path, monkeypatch):
 def test_fs_read_reports_the_docs_checkout(tmp_path, monkeypatch):
     # A cite in a doc is repo-relative to the DOC's checkout, which the
     # preview can't know from the pane's cwd (another repo, or a subdir).
+    import shutil
     import subprocess
 
     subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
@@ -33,6 +34,14 @@ def test_fs_read_reports_the_docs_checkout(tmp_path, monkeypatch):
     r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "spec.md"})
     assert r.status_code == 200, r.text
     assert r.json()["repo"] == os.path.realpath(tmp_path)
+    # Outside any checkout (a plan under ~/.claude/plans) there is no repo to
+    # anchor on: None, never the doc's own directory.
+    (tmp_path / "plans").mkdir()
+    (tmp_path / "plans" / "p.md").write_text("see periscope/reviews.py:12\n")
+    shutil.rmtree(tmp_path / ".git")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path / "plans") + "\n")
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "p.md"})
+    assert r.status_code == 200 and r.json()["repo"] is None
 
 
 def test_fs_read_image_returns_image_lang_without_bytes(tmp_path, monkeypatch):

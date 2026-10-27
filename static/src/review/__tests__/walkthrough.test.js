@@ -69,6 +69,14 @@ describe("matchRefs", () => {
     expect(out[1].hunks.map((h) => h.new_start)).toEqual([40]);
     expect(out[2].hunks).toEqual([]);
     expect(out[3].file).toBeNull();
+    expect(out.map((m) => m.generated)).toEqual([false, false, false, false]);
+  });
+  it("a generated file keeps its entry with no hunks and says so", () => {
+    const gen = [...files, { path: "static/dist/app.js", hunks: [], generated: true }];
+    const [m] = matchRefs([{ path: "static/dist/app.js", start: null, end: null, raw: "static/dist/app.js" }], gen);
+    expect(m.file).toBe("static/dist/app.js");
+    expect(m.hunks).toEqual([]);
+    expect(m.generated).toBe(true);
   });
 });
 

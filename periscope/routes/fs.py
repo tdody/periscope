@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from periscope import fs, gitutil
+from periscope import fs, gitdiff
 
 router = APIRouter()
 
@@ -108,9 +108,10 @@ def fs_read(session: str, index: int, path: str):
         "content": content,
         "language": _language_for(str(resolved)),
         "mtime": mtime,
-        # The doc's own checkout: a repo-relative cite in the text opens there,
-        # not against the pane's cwd (which may be another repo entirely).
-        "repo": gitutil.worktree_root(str(resolved.parent)),
+        # The doc's own checkout, or None outside git: a repo-relative cite in
+        # the text opens there, not against the pane's cwd (which may be another
+        # repo entirely); with no checkout the cite falls back to the pane's cwd.
+        "repo": gitdiff.repo_root(str(resolved.parent)),
     }
 
 

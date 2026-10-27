@@ -97,7 +97,8 @@ def test_comment_without_owner_still_appends_409(client, monkeypatch):
     monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
     r = client.post("/api/reviews/comment", json={"repo": "fdy", "branch": "feat/x", "stop": "Stop A", "body": "why?"})
     assert r.status_code == 409 and "no owning pane" in r.json()["detail"]
-    assert reviews.unresolved(reviews.comments_path("fdy", "feat/x").read_text()) == 1
+    saved = reviews.parse_comments(reviews.comments_path("fdy", "feat/x").read_text())
+    assert [(c["stop"], c["resolved"]) for c in saved] == [("Stop A", False)]
 
 
 def test_comment_deliver_failure_is_409(client, mocker):
@@ -354,7 +355,6 @@ def test_walkthrough_finds_pr_alias_worktree_for_diff(client, mocker, monkeypatc
 def test_prepare_refuses_until_spawned_pane_attaches(client, mocker, monkeypatch, place):
     from periscope.routes import reviews as route
 
-    monkeypatch.setattr(route, "_recent_spawn", {})
     monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
     mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
     mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
@@ -377,6 +377,31 @@ def test_prepare_refuses_until_spawned_pane_attaches(client, mocker, monkeypatch
     deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
     assert client.post("/api/reviews/prepare", json=body).json()["mode"] == "delivered"
     assert deliver.call_count == 1 and route._recent_spawn == {}
+
+
+def test_prepare_spawns_again_once_the_guard_expires(client, mocker, monkeypatch, place):
+    """A spawned pane that never attaches (it died) must not block the branch forever."""
+    from periscope.routes import reviews as route
+
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+    spawn = mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(
+            return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
+        ),
+    )
+    clock = mocker.patch("periscope.routes.reviews.time.monotonic", return_value=1000.0)
+    body = {"repo": "fdy", "branch": "feat/x"}
+    assert client.post("/api/reviews/prepare", json=body).status_code == 200
+    clock.return_value = 1000.0 + route.RECENT_SPAWN_S - 1
+    assert client.post("/api/reviews/prepare", json=body).status_code == 409
+    clock.return_value = 1000.0 + route.RECENT_SPAWN_S
+    assert client.post("/api/reviews/prepare", json=body).status_code == 200 and spawn.call_count == 2
 
 
 def test_walkthrough_strips_generated_hunks(client, mocker, monkeypatch):

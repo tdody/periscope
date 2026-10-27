@@ -118,8 +118,11 @@ _STOP_RE = re.compile(r"^ {0,3}##(?:\s|$)")
 
 
 def count_stops(text: str) -> int:
-    """ATX `##` headings outside fenced code, by CommonMark's rules — the view
-    counts mdast depth-2 headings, and the queue's "N stops" must agree with it."""
+    """ATX `##` headings outside fenced code, by CommonMark's rules for those two
+    constructs — the view counts mdast depth-2 headings, and the queue's "N stops"
+    must agree with it. Known gaps (the skill never emits them): a setext `---`
+    heading, a `##` nested under a list item, and a `##` inside an HTML block or
+    comment all count differently here."""
     n = 0
     fence: tuple[str, int] | None = None  # (fence char, opener length)
     for line in text.splitlines():
@@ -168,10 +171,6 @@ def parse_comments(text: str) -> list[Comment]:
         )
         i = j
     return out
-
-
-def unresolved(text: str) -> int:
-    return sum(1 for c in parse_comments(text) if not c["resolved"])
 
 
 # --- files -----------------------------------------------------------------

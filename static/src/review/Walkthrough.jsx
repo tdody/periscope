@@ -99,7 +99,7 @@ function Stop({ stop, diffFiles, comments, repo, branch, hl, onPosted }) {
           {open && matched.map((m, i) => (
             <div key={i} class="wt-evidence-file">
               <div class="wt-evidence-path">
-                {m.ref.raw}{m.file ? (m.file.generated ? " — generated, not shown" : "") : " — not in this diff"}
+                {m.ref.raw}{m.file ? (m.generated ? " — generated, not shown" : "") : " — not in this diff"}
               </div>
               {m.hunks.map((h, j) => <Hunk key={j} hunk={h} lang={langFor(m.ref.path)} hl={hl} onOpen={null} />)}
             </div>

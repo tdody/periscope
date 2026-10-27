@@ -88,11 +88,12 @@ export function matchRefs(refs, diffFiles) {
   const byPath = new Map((diffFiles || []).map((f) => [f.path, f]));
   return refs.map((ref) => {
     const file = byPath.get(ref.path) || null;
-    if (!file) return { ref, file: null, hunks: [] };
+    if (!file) return { ref, file: null, hunks: [], generated: false };
     const hunks = ref.start == null
       ? file.hunks
       : file.hunks.filter((h) => h.new_start <= ref.end && newEnd(h) >= ref.start);
-    return { ref, file: file.path, hunks };
+    // `generated`: the server kept the entry but dropped its hunks (bundle, lockfile).
+    return { ref, file: file.path, hunks, generated: !!file.generated };
   });
 }
 

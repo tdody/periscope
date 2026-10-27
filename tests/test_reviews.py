@@ -87,13 +87,12 @@ def test_count_stops_ignores_fenced_headings():
     assert reviews.count_stops(WALKTHROUGH) == 2
 
 
-def test_parse_comments_and_unresolved():
+def test_parse_comments():
     got = reviews.parse_comments(COMMENTS)
     assert [c["stop"] for c in got] == ["Adds a per-pane cost-pressure gauge", "Reuses the PR cache"]
     assert got[0]["resolved"] is False and got[1]["resolved"] is True
     assert got[0]["ts"] == "2026-10-26T09:14"
     assert "## looks like a heading" in got[0]["body"]
-    assert reviews.unresolved(COMMENTS) == 1
     assert reviews.parse_comments("") == []
 
 
