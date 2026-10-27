@@ -55,6 +55,10 @@ _INDEX = "CREATE INDEX IF NOT EXISTS idx_pane_permissions_pane ON pane_permissio
 
 _KEEP_S = 86400  # a dialog left open longer than a day is not a banner's business
 _SUMMARY_MAX = 80
+# A long Bash summary keeps this much of its head, then "…" and its tail: the
+# end of a command (`… && rm -rf build`, `… | sh`) is often what matters on a
+# banner approved with Touch ID.
+_SUMMARY_HEAD = 50
 # The dialog names these by file (relative to the cwd); the banner shows the path.
 _FILE_TOOLS = ("Edit", "Write", "NotebookEdit")
 # Bidi overrides/isolates, zero-width marks and other invisible formatting
@@ -127,17 +131,22 @@ def match_key(tool_name: str, tool_input: object) -> str | None:
     return path or None
 
 
-def _clip(text: str, keep_end: bool = False) -> str:
+def _clip(text: str, keep: str = "head") -> str:
     """Hidden bidi/zero-width characters stripped, whitespace collapsed (so a
     multi-line command still fits in one line), at most _SUMMARY_MAX
     characters. Display only, for the banner's body — whether Allow actually
-    fires is match_key's job (panes.dialog_matches), not this. A path keeps
-    its end so the banner still shows the filename when the directory is
-    long."""
+    fires is match_key's job (panes.dialog_matches), not this. `keep` says
+    which part survives a clip: "head", "tail" (a path, so the banner still
+    shows the filename when the directory is long) or "both" (a command's
+    start and end)."""
     s = re.sub(r"\s+", " ", _HIDDEN_RE.sub("", text)).strip()
     if len(s) <= _SUMMARY_MAX:
         return s
-    return "…" + s[1 - _SUMMARY_MAX :] if keep_end else s[: _SUMMARY_MAX - 1] + "…"
+    if keep == "tail":
+        return "…" + s[1 - _SUMMARY_MAX :]
+    if keep == "both":
+        return s[:_SUMMARY_HEAD] + "…" + s[_SUMMARY_HEAD + 1 - _SUMMARY_MAX :]
+    return s[: _SUMMARY_MAX - 1] + "…"
 
 
 def summarize(tool: str, tool_input: object) -> str:
@@ -149,10 +158,10 @@ def summarize(tool: str, tool_input: object) -> str:
         # The WHOLE command, not just its first line: a banner that only
         # showed "cd /tmp" for "cd /tmp && rm -rf build" would mislead
         # whoever Touch-IDs against it.
-        return _clip(str(tool_input.get("command") or ""))
+        return _clip(str(tool_input.get("command") or ""), keep="both")
     if tool in _FILE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        return _clip(str(path), keep_end=True)
+        return _clip(str(path), keep="tail")
     if tool == "WebFetch":
         return _clip(str(tool_input.get("url") or ""))
     return _clip(next((v for v in tool_input.values() if isinstance(v, str) and v.strip()), ""))

@@ -103,7 +103,9 @@ def test_summary_per_tool():
 
 def test_summary_is_capped_at_80_characters():
     long_cmd = hook.summarize("Bash", {"command": "echo " + "a" * 200})
-    assert len(long_cmd) == 80 and long_cmd.endswith("…")
+    assert len(long_cmd) == 80 and long_cmd.count("…") == 1
+    long_url = hook.summarize("WebFetch", {"url": "https://example.com/" + "a" * 200})
+    assert len(long_url) == 80 and long_url.endswith("…")
     # A path keeps its end, so the banner still shows the filename.
     long_path = hook.summarize("Write", {"file_path": "/very" * 40 + "/notes.md"})
     assert len(long_path) == 80 and long_path.startswith("…") and long_path.endswith("/notes.md")
@@ -114,7 +116,18 @@ def test_bash_summary_is_the_whole_multiline_command():
     # command would mislead whoever Touch-IDs against it.
     assert hook.summarize("Bash", {"command": "cd /tmp\nrm -rf build"}) == "cd /tmp rm -rf build"
     long_cmd = hook.summarize("Bash", {"command": "echo a\n" + "b " * 100})
-    assert len(long_cmd) == 80 and long_cmd.endswith("…")
+    assert len(long_cmd) == 80 and long_cmd.startswith("echo a b") and long_cmd.endswith("b b")
+
+
+def test_a_long_bash_summary_shows_its_head_and_its_tail():
+    # The end is often what matters: a banner showing only `cd <long path> && …`
+    # would hide the `rm -rf build` Touch ID approves.
+    command = "cd /Users/someone/projects/" + "deeply/nested/" * 6 + "repo && make clean && rm -rf build"
+    summary = hook.summarize("Bash", {"command": command})
+    assert len(summary) == 80
+    head, tail = summary.split("…")
+    assert command.startswith(head) and command.endswith(tail)
+    assert len(head) == 50 and tail.endswith("rm -rf build")
 
 
 def test_summary_strips_bidi_and_zero_width_controls():
