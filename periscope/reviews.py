@@ -11,11 +11,19 @@ which is all the skill emits.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
+import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import TypedDict
+
+from periscope import git_pr, gitutil, worktrees
+from periscope.log import _bg
+from periscope.tmux import _run
 
 REVIEWS_DIR = Path(os.path.expanduser("~/.claude/reviews"))
 
@@ -177,3 +185,269 @@ def clear_review(repo: str, branch: str) -> None:
         raise ValueError(f"refusing to remove {d}: outside the reviews dir")
     if d.exists():  # only a missing dir is a no-op; permission errors must surface
         shutil.rmtree(d)
+
+
+# --- queue -----------------------------------------------------------------
+
+
+class ReviewRow(TypedDict):
+    repo: str
+    branch: str
+    slug: str
+    role: str
+    pr: dict | None
+    walkthrough: dict | None
+    unresolved: int
+    owner: dict | None
+    worktree: str | None
+
+
+def owner_for(windows: list[dict], repo: str, branch: str) -> dict | None:
+    """The live window that owns a review: a channel-attached Claude on that
+    (repo, branch); the most recently active when several. Keyed on repo +
+    branch, never track — a repo-default track holds every branch."""
+    cands = [
+        w
+        for w in windows
+        if w.get("repo_label") == repo
+        and w.get("branch") == branch
+        and w.get("agent") == "claude"
+        and w.get("channel_attached")
+    ]
+    if not cands:
+        return None
+    return max(cands, key=lambda w: w.get("activity") or 0)
+
+
+def _repo_root(windows: list[dict], repo: str, roots: dict[str, str] | None = None) -> str | None:
+    """Main-checkout path for a repo label: from the known-repos map when
+    given, else from any live window on that repo."""
+    if roots and repo in roots:
+        return roots[repo]
+    for w in windows:
+        if w.get("repo_label") == repo and w.get("repo_key"):
+            return w["repo_key"]
+    return None
+
+
+def worktree_for(
+    windows: list[dict], repo: str, branch: str, *, fresh: bool = False, roots: dict[str, str] | None = None
+) -> str | None:
+    """Where `branch` is checked out. The queue tolerates the 60 s worktree
+    cache; prepare (a create-or-reuse decision) reads fresh, as
+    worktrees.for_branch's docstring requires."""
+    root = _repo_root(windows, repo, roots)
+    if not root:
+        return None
+    if fresh:
+        return worktrees.for_branch(root, branch)
+    for path, b in worktrees._cached_worktrees(root):
+        if b == branch:
+            return path
+    return None
+
+
+def head_sha(worktree: str) -> str | None:
+    r = subprocess.run(["git", "-C", worktree, "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() or None if r.returncode == 0 else None
+
+
+_STALE_CACHE: dict[tuple[str, str, str], int | None] = {}
+
+
+def stale_by(worktree: str | None, head: str) -> int | None:
+    """Commits on the worktree since the walkthrough's recorded head; None
+    without a worktree or when `head` is unknown there (rebased away)."""
+    if not worktree:
+        return None
+    now = head_sha(worktree)
+    if not now:
+        return None
+    key = (worktree, head, now)
+    if key in _STALE_CACHE:
+        return _STALE_CACHE[key]
+    r = subprocess.run(["git", "-C", worktree, "rev-list", "--count", f"{head}..HEAD"], capture_output=True, text=True)
+    val = int(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip().isdigit() else None
+    _STALE_CACHE[key] = val
+    return val
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _orphan_pairs() -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    if not REVIEWS_DIR.is_dir():
+        return out
+    for repo_dir in sorted(REVIEWS_DIR.iterdir()):
+        if not repo_dir.is_dir():
+            continue
+        for d in sorted(repo_dir.iterdir()):
+            if not d.is_dir():
+                continue
+            header = parse_header(_read(d / "walkthrough.md"))
+            branch = header["branch"] if header else d.name.replace("--", "/")
+            out.append((repo_dir.name, branch))
+    return out
+
+
+# --- GitHub: the queue's primary source --------------------------------------
+
+_GH_AVAILABLE = shutil.which("gh") is not None
+_PR_FIELDS = "number,title,headRefName,isDraft,statusCheckRollup,author"
+
+
+def _gh_list(repo_root: str, *extra: str) -> list[dict] | None:
+    """None on any failure (offline, auth, bad JSON) so the caller can keep
+    the previous cache entry instead of blanking the queue for 60 s."""
+    code, out = _run(
+        ["gh", "pr", "list", "--state", "open", "--json", _PR_FIELDS, "--limit", "50", *extra],
+        cwd=repo_root,
+        timeout=10.0,
+    )
+    if code != 0:
+        return None
+    try:
+        return json.loads(out) if out else []
+    except ValueError:
+        return None
+
+
+def open_prs(repo_root: str) -> list[dict] | None:
+    """Open PRs that are mine plus open PRs where my review is requested, in
+    that order, deduped by number. `[]` without gh or for a repo with no
+    GitHub remote; None when gh failed."""
+    if not _GH_AVAILABLE or not gitutil.github_slug(repo_root):
+        return []
+    out: list[dict] = []
+    seen: set[int] = set()
+    for role, extra in (("mine", ("--author", "@me")), ("review-requested", ("--search", "review-requested:@me"))):
+        listed = _gh_list(repo_root, *extra)
+        if listed is None:
+            return None
+        for p in listed:
+            n = p["number"]
+            if n in seen:
+                continue
+            seen.add(n)
+            out.append(
+                {
+                    "number": n,
+                    "title": p.get("title") or "",
+                    "branch": p.get("headRefName") or "",
+                    "draft": bool(p.get("isDraft")),
+                    "ci": git_pr._ci_glyph(p.get("statusCheckRollup")),
+                    "role": role,
+                    "author": (p.get("author") or {}).get("login"),
+                }
+            )
+    return out
+
+
+_PRS_TTL_S = 60.0
+_prs_lock = threading.Lock()
+_prs_cache: dict[str, tuple[float, list[dict]]] = {}
+_prs_fetching: set[str] = set()
+
+
+def _fetch_prs_into_cache(repo_root: str) -> None:
+    try:
+        rows = open_prs(repo_root)
+    except Exception:
+        rows = None
+    with _prs_lock:
+        if rows is None:
+            # Keep the last good rows; just push the retry out by a TTL.
+            prev = _prs_cache.get(repo_root)
+            _prs_cache[repo_root] = (time.time(), prev[1] if prev else [])
+        else:
+            _prs_cache[repo_root] = (time.time(), rows)
+        _prs_fetching.discard(repo_root)
+
+
+def cached_open_prs(repo_root: str) -> list[dict]:
+    """Stale-while-revalidate over open_prs, the same shape as
+    git_pr.cached_pr_state: serve what we have, refresh in the background."""
+    with _prs_lock:
+        hit = _prs_cache.get(repo_root)
+        fresh = hit is not None and time.time() - hit[0] < _PRS_TTL_S
+        if not fresh and repo_root not in _prs_fetching:
+            _prs_fetching.add(repo_root)
+            _bg(f"reviews-prs:{os.path.basename(repo_root)}", _fetch_prs_into_cache, repo_root)
+    return hit[1] if hit else []
+
+
+# --- queue -----------------------------------------------------------------
+
+
+def _pr_row(p: dict, state: str) -> dict:
+    return {
+        "number": p["number"],
+        "title": p.get("title", ""),
+        "draft": bool(p.get("draft")),
+        "state": state,
+        "ci": p.get("ci"),
+        "author": p.get("author"),
+    }
+
+
+def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
+    """Queue rows: GitHub PRs (mine, review-requested) per known repo, then
+    live (repo, branch) pairs with no PR, then review dirs matching neither."""
+    roots = {os.path.basename(r.rstrip("/")): r for r in repos}
+    entries: list[tuple[str, str, str, dict | None]] = []  # (repo, branch, role, pr)
+    seen: set[tuple[str, str]] = set()
+    for label, root in roots.items():
+        for p in cached_open_prs(root):
+            key = (label, p["branch"])
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append((label, p["branch"], p["role"], _pr_row(p, "open")))
+    for w in windows:
+        label, branch = w.get("repo_label"), w.get("branch")
+        if label and branch and (label, branch) not in seen:
+            seen.add((label, branch))
+            entries.append((label, branch, "local", None))
+    for key in _orphan_pairs():
+        if key not in seen:
+            seen.add(key)
+            entries.append((key[0], key[1], "local", None))
+
+    rows: list[ReviewRow] = []
+    for repo, branch, role, pr in entries:
+        text = _read(walkthrough_path(repo, branch))
+        header = parse_header(text) if text else None
+        owner = owner_for(windows, repo, branch)
+        worktree = worktree_for(windows, repo, branch, roots=roots)
+        walkthrough = None
+        if header:
+            walkthrough = {
+                "stops": count_stops(text),
+                "head": header["head"],
+                "stale_by": stale_by(worktree, header["head"]),
+            }
+        if pr is None and header and header["pr"]:
+            # The header names a PR the open lists don't: it merged or closed.
+            cwd = worktree or roots.get(repo) or ""
+            st = git_pr.cached_linked_pr_state(cwd, header["pr"]) or {}
+            pr = _pr_row({"number": header["pr"], "author": None}, st.get("pr_state") or "unknown")
+            pr["ci"] = st.get("ci")
+        rows.append(
+            {
+                "repo": repo,
+                "branch": branch,
+                "slug": slug_for(branch),
+                "role": role,
+                "pr": pr,
+                "walkthrough": walkthrough,
+                "unresolved": unresolved(_read(comments_path(repo, branch))),
+                "owner": {k: owner[k] for k in ("pid", "pane_id", "session", "index", "name")} if owner else None,
+                "worktree": worktree,
+            }
+        )
+    return rows

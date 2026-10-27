@@ -2,6 +2,9 @@
 queue assembly. Files live outside the repo (~/.claude/reviews); tests point
 REVIEWS_DIR at tmp_path."""
 
+import os
+import subprocess
+
 import pytest
 
 from periscope import reviews
@@ -119,3 +122,167 @@ def test_clear_review_refuses_paths_outside_reviews_dir(tmp_path):
         with pytest.raises(ValueError):
             reviews.clear_review(repo, branch)
     assert (tmp_path / "fdy" / "feat--x" / "comments.md").exists()
+
+
+def _win(**over):
+    base = {
+        "pid": "p1",
+        "pane_id": "%1",
+        "session": "s",
+        "index": 1,
+        "name": "work",
+        "cwd": "/dev/fdy/.claude/worktrees/x",
+        "repo_key": "/dev/fdy",
+        "repo_label": "fdy",
+        "branch": "feat/x",
+        "agent": "claude",
+        "channel_attached": True,
+        "activity": 100,
+        "track_id": "/dev/fdy",
+        "pr": None,
+        "pr_state": None,
+        "ci": None,
+    }
+    return {**base, **over}
+
+
+def test_owner_for_picks_attached_claude_on_the_branch_most_recent():
+    wins = [
+        _win(pid="shell", agent=None),
+        _win(pid="other", branch="feat/y"),  # same track, other branch
+        _win(pid="detached", channel_attached=False),
+        _win(pid="old", activity=50),
+        _win(pid="new", activity=200),
+    ]
+    assert reviews.owner_for(wins, "fdy", "feat/x")["pid"] == "new"
+    assert reviews.owner_for(wins, "fdy", "feat/z") is None
+    assert reviews.owner_for(wins, "other-repo", "feat/x") is None
+
+
+def test_worktree_for_cached_and_fresh(mocker):
+    cached = mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/wt/x", "feat/x")])
+    fresh = mocker.patch("periscope.worktrees.for_branch", return_value="/wt/fresh")
+    wins = [_win()]
+    assert reviews.worktree_for(wins, "fdy", "feat/x") == "/wt/x"
+    cached.assert_called_once_with("/dev/fdy")
+    assert reviews.worktree_for(wins, "fdy", "feat/x", fresh=True) == "/wt/fresh"
+    fresh.assert_called_once_with("/dev/fdy", "feat/x")
+    assert reviews.worktree_for(wins, "nope", "feat/x") is None  # no window knows the repo path
+
+
+def _git_repo(path):
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    for n in ("a", "b", "c"):
+        (path / n).write_text(n)
+        subprocess.run(["git", "-C", str(path), "add", n], check=True)
+        subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", n], check=True, env={**os.environ, **env})
+    return subprocess.run(
+        ["git", "-C", str(path), "rev-list", "--all"], capture_output=True, text=True, check=True
+    ).stdout.split()
+
+
+def test_stale_by_counts_commits_since_head(tmp_path):
+    shas = _git_repo(tmp_path / "r")  # newest first
+    assert reviews.stale_by(str(tmp_path / "r"), shas[0]) == 0
+    assert reviews.stale_by(str(tmp_path / "r"), shas[2]) == 2
+    assert reviews.stale_by(str(tmp_path / "r"), "0000000") is None
+    assert reviews.stale_by(None, shas[0]) is None
+
+
+MINE = '[{"number": 1234, "title": "Gauge", "headRefName": "feat/x", "isDraft": false, "statusCheckRollup": [], "author": {"login": "tom"}}]'
+REQUESTED = (
+    '[{"number": 1234, "title": "Gauge", "headRefName": "feat/x", "isDraft": false, "statusCheckRollup": [], "author": {"login": "tom"}},'
+    ' {"number": 99, "title": "Teammate PR", "headRefName": "feat/theirs", "isDraft": true, "statusCheckRollup": [], "author": {"login": "sam"}}]'
+)
+
+
+def test_open_prs_merges_both_lists_and_assigns_roles(mocker):
+    mocker.patch("periscope.reviews._GH_AVAILABLE", True)
+    mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
+    run = mocker.patch("periscope.reviews._run", side_effect=[(0, MINE), (0, REQUESTED)])
+    got = reviews.open_prs("/dev/fdy")
+    assert [(p["number"], p["role"], p["branch"], p["author"], p["draft"]) for p in got] == [
+        (1234, "mine", "feat/x", "tom", False),
+        (99, "review-requested", "feat/theirs", "sam", True),
+    ]
+    first, second = run.call_args_list
+    assert "--author" in first.args[0] and "@me" in first.args[0] and first.kwargs["cwd"] == "/dev/fdy"
+    assert "--search" in second.args[0] and "review-requested:@me" in second.args[0]
+
+
+def test_open_prs_without_gh_is_empty(mocker):
+    mocker.patch("periscope.reviews._GH_AVAILABLE", False)
+    assert reviews.open_prs("/dev/fdy") == []
+
+
+def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker):
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/.claude/worktrees/x", "feat/x")])
+    mocker.patch(
+        "periscope.reviews.cached_open_prs",
+        return_value=[
+            {
+                "number": 1234,
+                "title": "Gauge",
+                "branch": "feat/x",
+                "draft": False,
+                "ci": "✓",
+                "role": "mine",
+                "author": "tom",
+            },
+            {
+                "number": 99,
+                "title": "Theirs",
+                "branch": "feat/theirs",
+                "draft": True,
+                "ci": None,
+                "role": "review-requested",
+                "author": "sam",
+            },
+        ],
+    )
+    linked = mocker.patch(
+        "periscope.reviews.git_pr.cached_linked_pr_state", return_value={"pr_state": "merged", "ci": "✓"}
+    )
+    mocker.patch("periscope.reviews.stale_by", return_value=None)
+    # my PR's branch has a walkthrough + one unresolved comment
+    wt = reviews.walkthrough_path("fdy", "feat/x")
+    wt.parent.mkdir(parents=True)
+    wt.write_text(WALKTHROUGH)
+    reviews.append_comment("fdy", "feat/x", "Stop", "hm", "2026-10-26T09:14")
+    # orphan dir: no PR, no live window; its header names a closed PR
+    o = reviews.walkthrough_path("fdy", "old/branch")
+    o.parent.mkdir(parents=True)
+    o.write_text("# T\n\n> branch: old/branch · head: abc · pr: 500\n")
+    wins = [_win(), _win(pid="p2", branch="feat/local")]
+
+    rows = reviews.list_reviews(wins, ["/dev/fdy"])
+    assert [(r["repo"], r["branch"], r["role"]) for r in rows] == [
+        ("fdy", "feat/x", "mine"),
+        ("fdy", "feat/theirs", "review-requested"),
+        ("fdy", "feat/local", "local"),
+        ("fdy", "old/branch", "local"),
+    ]
+    x = rows[0]
+    assert x["pr"] == {"number": 1234, "title": "Gauge", "draft": False, "state": "open", "ci": "✓", "author": "tom"}
+    assert x["walkthrough"] == {"stops": 2, "head": "3f2a1c9", "stale_by": None}
+    assert x["unresolved"] == 1
+    assert x["owner"] == {"pid": "p1", "pane_id": "%1", "session": "s", "index": 1, "name": "work"}
+    assert x["worktree"] == "/dev/fdy/.claude/worktrees/x"
+    theirs = rows[1]
+    assert theirs["owner"] is None and theirs["worktree"] is None and theirs["walkthrough"] is None
+    local = rows[2]
+    assert local["pr"] is None and local["owner"]["pid"] == "p2"
+    ob = rows[3]
+    assert ob["pr"] == {"number": 500, "title": "", "draft": False, "state": "merged", "ci": "✓", "author": None}
+    linked.assert_called_with("/dev/fdy", 500)
+    assert ob["owner"] is None and ob["slug"] == "old--branch"
+
+
+def test_open_prs_skips_repos_without_github_and_returns_none_on_failure(mocker):
+    mocker.patch("periscope.reviews._GH_AVAILABLE", True)
+    mocker.patch("periscope.reviews.gitutil.github_slug", return_value=None)
+    assert reviews.open_prs("/dev/local-only") == []
+    mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
+    mocker.patch("periscope.reviews._run", return_value=(1, "auth error"))
+    assert reviews.open_prs("/dev/fdy") is None
