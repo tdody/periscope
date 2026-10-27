@@ -26,6 +26,19 @@ describe("Hunk", () => {
     expect(render(<Hunk hunk={hunk} lang="py" hl={null} onOpen={null} />)).toContain("disabled");
     expect(render(<Hunk hunk={hunk} lang="py" hl={null} onOpen={() => {}} />)).not.toContain("disabled");
   });
+  it("clicking the head opens at the hunk's new_start", () => {
+    const calls = [];
+    const vnode = Hunk({ hunk, lang: "py", hl: null, onOpen: (n) => calls.push(n), title: "t" });
+    const button = vnode.props.children[0];
+    expect(button.type).toBe("button");
+    button.props.onClick();
+    expect(calls).toEqual([10]);
+  });
+  it("inert head has no title, and a headerless hunk has no symbol span", () => {
+    const out = render(<Hunk hunk={{ ...hunk, header: "" }} lang="py" hl={null} onOpen={null} title="t" />);
+    expect(out).not.toMatch(/<button[^>]*title=/);
+    expect(out).not.toContain("dhunk-sym");
+  });
   it("langFor maps extensions", () => {
     expect(langFor("a/b.py")).toBe("py");
     expect(langFor("x.unknown")).toBe("");

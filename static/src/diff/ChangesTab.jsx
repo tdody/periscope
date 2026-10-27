@@ -79,7 +79,7 @@ export function Hunk({ hunk, lang, hl, onOpen, title }) {
         class="dhunk-head"
         disabled={!onOpen}
         title={onOpen ? title : undefined}
-        onClick={() => onOpen && onOpen(hunk.new_start)}
+        onClick={() => onOpen?.(hunk.new_start)}
       >
         <span class="dhunk-range">@@ {hunk.new_start}</span>
         {hunk.header ? <span class="dhunk-sym">{hunk.header}</span> : null}
@@ -134,7 +134,7 @@ function FileBlock({ file, repo, review, hl }) {
           lang={lang}
           hl={hl}
           // Opens the file at this hunk's line — reviewing and reading are the
-          // same loop. Absolute (repo + path) so it resolves no matter where
+          // same loop, and the diff already knows exactly where to land. Absolute (repo + path) so it resolves no matter where
           // the pane has cd'd to. Deleted/binary files have nothing to open.
           onOpen={openable ? (line) => openFileTab({ path: `${repo}/${file.path}`, line }) : null}
           title={`Open ${file.path}:${h.new_start}`}
