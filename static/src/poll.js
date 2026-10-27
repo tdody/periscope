@@ -17,6 +17,7 @@ import {
   launchDefault,
   moveTargets,
   projects,
+  reviews,
   spawnAccount,
   spawnEffort,
   spawnModel,
@@ -139,6 +140,38 @@ function stopFallbackPoll() {
   }
 }
 
+const REVIEWS_MS = 10000;
+let reviewsTimer = null;
+let reviewsReq = 0;
+
+// Refresh the review queue. Out-of-order responses are dropped (monotonic
+// request id) and a failure keeps the last good rows — the queue is a
+// convenience view, never worth a banner.
+export async function refreshReviews() {
+  const id = ++reviewsReq;
+  try {
+    const res = await fetch("/api/reviews");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (id === reviewsReq) reviews.value = data.rows || [];
+  } catch {}
+}
+
+function startReviewsLoop() {
+  if (reviewsTimer) return;
+  const tick = async () => {
+    await refreshReviews();
+    if (reviewsTimer !== null) reviewsTimer = setTimeout(tick, REVIEWS_MS);
+  };
+  reviewsTimer = setTimeout(tick, 0);
+}
+function stopReviewsLoop() {
+  if (reviewsTimer) {
+    clearTimeout(reviewsTimer);
+    reviewsTimer = null;
+  }
+}
+
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const sock = new WebSocket(`${proto}//${location.host}/ws/state`);
@@ -178,8 +211,10 @@ export function startPolling() {
   started = true;
   stopped = false;
   connectWs();
+  startReviewsLoop();
   return () => {
     stopped = true;
+    stopReviewsLoop();
     started = false;
     if (ws) {
       try {
