@@ -6,7 +6,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
-import { metaPairs, parseCite, splitCites } from "./mdMeta.js";
+import { metaPairs, parseCite, refTokens, splitCites } from "./mdMeta.js";
 import { Mermaid } from "./Mermaid.jsx";
 
 // Scheme-qualified, root-absolute, and fragment URLs pass through untouched;
@@ -139,7 +139,7 @@ function block(node, ctx, key, prev) {
         </pre>
       );
     case "blockquote": {
-      const pairs = ctx.meta && prev?.type === "heading" ? metaPairs(node) : null;
+      const pairs = ctx.meta && prev?.type === "heading" ? metaPairs(node, ctx.src) : null;
       if (pairs) {
         return (
           <div class="md-meta" key={key}>
@@ -148,10 +148,10 @@ function block(node, ctx, key, prev) {
                 <span class="md-meta-k">{k}</span>
                 <span class="md-meta-v">
                   {k === "refs" && ctx.cite
-                    ? v.split(",").map((s, j) => {
-                        const c = parseCite(s.trim());
+                    ? refTokens(v).map((s, j) => {
+                        const c = parseCite(s);
                         const chip = c ? ctx.cite(c) : null;
-                        return <span key={j}>{j ? ", " : ""}{chip ?? s.trim()}</span>;
+                        return <span key={j}>{j ? ", " : ""}{chip ?? s}</span>;
                       })
                     : v}
                 </span>
@@ -191,7 +191,9 @@ function block(node, ctx, key, prev) {
 
 // Render a markdown string into an array of block-level vnodes.
 export function renderMarkdown(text, opts = {}) {
+  const src = String(text || "");
   const ctx = {
+    src,
     demote: opts.demote ?? true,
     softBreaks: opts.softBreaks ?? "br",
     highlight: opts.highlight ?? null,
@@ -200,7 +202,7 @@ export function renderMarkdown(text, opts = {}) {
     cite: opts.cite ?? null,
     mermaid: opts.mermaid ?? false,
   };
-  const tree = fromMarkdown(String(text || ""), {
+  const tree = fromMarkdown(src, {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   });

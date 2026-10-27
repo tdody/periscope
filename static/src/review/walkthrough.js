@@ -5,7 +5,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
-import { metaPairs, parseCite } from "../split/mdMeta.js";
+import { metaPairs, parseCite, refTokens } from "../split/mdMeta.js";
 
 const KINDS = new Set(["new-subsystem", "extension", "reuse", "system-touch", "behavior"]);
 
@@ -32,7 +32,7 @@ export function parseWalkthrough(text) {
   if (blocks[i]?.type === "heading" && blocks[i].depth === 1) {
     title = textOf(blocks[i]);
     i++;
-    const pairs = blocks[i]?.type === "blockquote" ? metaPairs(blocks[i]) : null;
+    const pairs = blocks[i]?.type === "blockquote" ? metaPairs(blocks[i], src) : null;
     if (pairs) {
       const o = Object.fromEntries(pairs);
       if (o.branch && o.head) {
@@ -51,11 +51,11 @@ export function parseWalkthrough(text) {
     let refs = [];
     let bodyStart = b.position.end.offset;
     const q = blocks[i + 1];
-    const pairs = q?.type === "blockquote" ? metaPairs(q) : null;
+    const pairs = q?.type === "blockquote" ? metaPairs(q, src) : null;
     if (pairs) {
       const o = Object.fromEntries(pairs);
       kind = o.kind ?? null;
-      refs = (o.refs || "").split(",").map((s) => parseCite(s.trim())).filter(Boolean);
+      refs = refTokens(o.refs || "").map(parseCite).filter(Boolean);
       bodyStart = q.position.end.offset;
       i++;
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchRefs, parseWalkthrough, sortRows } from "../walkthrough.js";
+import { matchRefs, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
 
 const DOC = `# Cost gauge
 
@@ -38,6 +38,12 @@ describe("parseWalkthrough", () => {
     expect(w.stops[2].kind).toBeNull();
     expect(w.stops[2].refs).toEqual([]);
     expect(w.stops[2].bodyMarkdown.trim()).toBe("Prose three.");
+  });
+  it("parses dunder and backticked refs from raw source", () => {
+    const x = parseWalkthrough("# T\n\n## S\n> kind: reuse · refs: periscope/__init__.py:1-5, `a/b.py:3`\n\nbody\n");
+    expect(x.stops[0].kind).toBe("reuse");
+    expect(x.stops[0].refs.map((r) => r.raw)).toEqual(["periscope/__init__.py:1-5", "a/b.py:3"]);
+    expect(x.stops[0].bodyMarkdown.trim()).toBe("body");
   });
   it("tolerates a missing header", () => {
     expect(parseWalkthrough("# T\n\nhi\n\n## S\n\nb").header).toBeNull();
@@ -81,5 +87,21 @@ describe("sortRows", () => {
     expect(sortRows(rows).map((r) => r.branch)).toEqual([
       "unres", "theirs", "prnowalk-hi", "prnowalk", "mine-walk", "local", "merged",
     ]);
+  });
+  it("a merged PR with unresolved comments still sorts last and is not counted", () => {
+    const rows = [
+      row({ branch: "m", pr: { number: 9, state: "merged" }, unresolved: 4 }),
+      row({ branch: "o", pr: { number: 1, state: "open" }, walkthrough: { stops: 1 } }),
+    ];
+    expect(sortRows(rows).map((r) => r.branch)).toEqual(["o", "m"]);
+    expect(unresolvedTotal(rows)).toBe(0);
+  });
+});
+
+describe("unresolvedTotal", () => {
+  it("sums open rows only", () => {
+    const row = (o) => ({ pr: { state: "open" }, unresolved: 0, ...o });
+    expect(unresolvedTotal([row({ unresolved: 2 }), row({ unresolved: 3 }), row({ pr: { state: "merged" }, unresolved: 9 })])).toBe(5);
+    expect(unresolvedTotal(null)).toBe(0);
   });
 });
