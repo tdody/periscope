@@ -201,15 +201,18 @@ class ReviewRow(TypedDict):
     worktree: str | None
 
 
-def owner_for(windows: list[dict], repo: str, branch: str) -> dict | None:
+def owner_for(windows: list[dict], repo: str, branch: str, aliases: set[str] | None = None) -> dict | None:
     """The live window that owns a review: a channel-attached Claude on that
     (repo, branch); the most recently active when several. Keyed on repo +
-    branch, never track — a repo-default track holds every branch."""
+    branch, never track — a repo-default track holds every branch. `aliases`
+    are other local branch names for the same review (a PR checked out as
+    `pr-<N>`)."""
+    names = {branch, *(aliases or ())}
     cands = [
         w
         for w in windows
         if w.get("repo_label") == repo
-        and w.get("branch") == branch
+        and w.get("branch") in names
         and w.get("agent") == "claude"
         and w.get("channel_attached")
     ]
@@ -230,7 +233,13 @@ def _repo_root(windows: list[dict], repo: str, roots: dict[str, str] | None = No
 
 
 def worktree_for(
-    windows: list[dict], repo: str, branch: str, *, fresh: bool = False, roots: dict[str, str] | None = None
+    windows: list[dict],
+    repo: str,
+    branch: str,
+    *,
+    fresh: bool = False,
+    roots: dict[str, str] | None = None,
+    aliases: set[str] | None = None,
 ) -> str | None:
     """Where `branch` is checked out. The queue tolerates the 60 s worktree
     cache; prepare (a create-or-reuse decision) reads fresh, as
@@ -238,10 +247,11 @@ def worktree_for(
     root = _repo_root(windows, repo, roots)
     if not root:
         return None
+    names = [branch, *sorted(aliases or ())]
     if fresh:
-        return worktrees.for_branch(root, branch)
+        return next((wt for n in names if (wt := worktrees.for_branch(root, n))), None)
     for path, b in worktrees._cached_worktrees(root):
-        if b == branch:
+        if b in names:
             return path
     return None
 
@@ -252,13 +262,14 @@ def head_sha(worktree: str) -> str | None:
     return out or None if code == 0 else None
 
 
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _STALE_CACHE: dict[tuple[str, str, str], int] = {}
 
 
 def stale_by(worktree: str | None, head: str) -> int | None:
     """Commits on the worktree since the walkthrough's recorded head; None
     without a worktree or when `head` is unknown there (rebased away)."""
-    if not worktree:
+    if not worktree or not _SHA_RE.match(head):
         return None
     now = head_sha(worktree)
     if not now:
@@ -266,7 +277,7 @@ def stale_by(worktree: str | None, head: str) -> int | None:
     key = (worktree, head, now)
     if key in _STALE_CACHE:
         return _STALE_CACHE[key]
-    code, out = _run(["git", "-C", worktree, "rev-list", "--count", f"{head}..HEAD"], timeout=3.0)
+    code, out = _run(["git", "-C", worktree, "rev-list", "--count", "--end-of-options", f"{head}..HEAD"], timeout=3.0)
     if code != 0 or not out.isdigit():
         # Not cached: a head that isn't fetched yet would stay None forever.
         return None
@@ -414,17 +425,23 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
     roots = {os.path.basename(r.rstrip("/")): r for r in repos}
     entries: list[tuple[str, str, str, dict | None]] = []  # (repo, branch, role, pr)
     seen: set[tuple[str, str]] = set()
+    # `projects.fetch_pr_into_worktree` checks a PR out as local `pr-<N>`, not
+    # its headRefName: the row keeps headRefName, but that branch is its alias.
+    pr_alias: dict[tuple[str, str], set[str]] = {}
     for label, root in roots.items():
         for p in cached_open_prs(root):
             key = (label, p["branch"])
             if key in seen:
                 continue
             seen.add(key)
+            pr_alias[key] = {f"pr-{p['number']}"}
             entries.append((label, p["branch"], p["role"], _pr_row(p, "open")))
     for w in windows:
         label, branch = w.get("repo_label"), w.get("branch")
         if not label or not branch or (label, branch) in seen:
             continue
+        if any(branch in a for k, a in pr_alias.items() if k[0] == label):
+            continue  # the checkout of a PR already in the queue
         # Detached HEAD reports "@<sha>" or "?", never None.
         if branch.startswith("@") or branch == "?":
             continue
@@ -443,8 +460,9 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
     for repo, branch, role, pr in entries:
         text = _read(walkthrough_path(repo, branch))
         header = parse_header(text) if text else None
-        owner = owner_for(windows, repo, branch)
-        worktree = worktree_for(windows, repo, branch, roots=roots)
+        aliases = pr_alias.get((repo, branch))
+        owner = owner_for(windows, repo, branch, aliases)
+        worktree = worktree_for(windows, repo, branch, roots=roots, aliases=aliases)
         walkthrough = None
         if header:
             walkthrough = {

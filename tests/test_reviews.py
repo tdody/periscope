@@ -335,3 +335,34 @@ def test_stale_by_does_not_cache_unknown_head(tmp_path):
     assert reviews.stale_by(str(tmp_path / "r"), "0000000") is None
     assert not any(k[1] == "0000000" for k in reviews._STALE_CACHE)
     assert reviews.stale_by(str(tmp_path / "r"), shas[1]) == 1
+
+
+def test_review_requested_pr_matches_its_pr_n_checkout(mocker):
+    mocker.patch(
+        "periscope.reviews.cached_open_prs",
+        return_value=[
+            {
+                "number": 123,
+                "title": "T",
+                "branch": "feat/theirs",
+                "draft": False,
+                "ci": None,
+                "role": "review-requested",
+                "author": "sam",
+            },
+        ],
+    )
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/wt/pr-123", "pr-123")])
+    mocker.patch("periscope.reviews.stale_by", return_value=None)
+    mocker.patch("periscope.reviews.gitutil.detect_default_branch", return_value="main")
+    wins = [_win(pid="rv", branch="pr-123", cwd="/wt/pr-123")]
+    rows = reviews.list_reviews(wins, ["/dev/fdy"])
+    assert [(r["branch"], r["role"]) for r in rows] == [("feat/theirs", "review-requested")]
+    assert rows[0]["worktree"] == "/wt/pr-123"
+    assert rows[0]["owner"]["pid"] == "rv"
+
+
+def test_stale_by_rejects_option_like_head(mocker):
+    run = mocker.patch("periscope.reviews._run", side_effect=AssertionError("must not run git"))
+    assert reviews.stale_by("/wt", "-x") is None
+    run.assert_not_called()
