@@ -1,5 +1,5 @@
 // Pure: query string (+ catalog) → ranked candidate cards. No DOM, no signals.
-// Each card: { kind: 'open'|'worktree'|'pr', label, descriptor }.
+// Each card: { kind: 'open'|'worktree'|'pr'|'reviews', label, descriptor }.
 
 const PR_URL = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/;
 const PR_HASH = /^#?(\d+)$/;
@@ -38,7 +38,8 @@ export function classify(query, catalog) {
     cards.push({ kind: "reviews", label: "Reviews · open branches and walkthroughs", sub: "the review queue", descriptor: null });
   }
 
-  // An explicit path leads everything — it's the most specific intent a query
+  // An explicit path leads the repo/worktree cards (it never collides with the
+  // reviews card: path queries start with ~ . or /) — it's the most specific intent a query
   // can carry. Reuses kind "open" so pick() routes it through the existing
   // POST /api/open, which registers the project (ensure_project, never 409)
   // when it isn't one yet. Skipped when the catalog already knows this exact
