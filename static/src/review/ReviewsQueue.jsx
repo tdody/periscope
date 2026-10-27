@@ -5,8 +5,10 @@ import { useEffect, useState } from "preact/hooks";
 import { confirmDialog } from "../overlays/Dialog.jsx";
 import { refreshReviews } from "../poll.js";
 import { selectReview } from "../split/alertFeed.js";
-import { reviews } from "../store.js";
-import { sortRows } from "./walkthrough.js";
+import { linearTicket } from "../split/linearTicket.js";
+import { reviews, reviewsQuery } from "../store.js";
+import { prStateMeta } from "../util.js";
+import { filterRows, sortRows } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -25,6 +27,20 @@ async function act(url, row, setNote, setBusy) {
   } finally {
     setBusy(false);
   }
+}
+
+// PR refs read like every other one in periscope (mono, fg-1, violet when merged,
+// struck when closed): unstyled, this link was the UA's default blue. The ticket
+// follows the number; with no PR it fills the cell alone.
+function PrCell({ row }) {
+  const lin = linearTicket(row);
+  const linLink = lin && <a class="rq-linear" href={lin.href} target="_blank" rel="noopener" title={lin.tip}>{lin.id}</a>;
+  if (!row.pr) return linLink || "—";
+  const cls = `rq-pr-link ${prStateMeta(row.pr.state).cls}`;
+  return <>
+    {row.pr.url ? <a class={cls} href={row.pr.url} target="_blank" rel="noopener">#{row.pr.number}</a> : <span class={cls}>#{row.pr.number}</span>}
+    {linLink ? <> · {linLink}</> : null}
+    {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci || ""}<div class="rq-repo">{row.pr.title}</div></>;
 }
 
 function Row({ row }) {
@@ -48,9 +64,7 @@ function Row({ row }) {
         {wt ? <button type="button" class="rq-open" onClick={() => selectReview(row.repo, row.branch)}>{row.branch}</button> : row.branch}
         <div class="rq-repo">{row.repo} · {row.role === "review-requested" ? "review requested" : row.role}</div>
       </td>
-      <td class="rq-pr">{row.pr ? <>
-        {row.pr.url ? <a href={row.pr.url} target="_blank" rel="noopener">#{row.pr.number}</a> : `#${row.pr.number}`}
-        {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci || ""}<div class="rq-repo">{row.pr.title}</div></> : "—"}</td>
+      <td class="rq-pr"><PrCell row={row} /></td>
       <td class="rq-wt">{wt ? <>{wt.stops} stop{wt.stops === 1 ? "" : "s"}{wt.stale_by > 0 ? ` · stale ${wt.stale_by}` : wt.stale_by === null && row.worktree ? " · stale: unknown" : ""}</> : "none"}</td>
       <td class="rq-comments">{row.unresolved ? <b>{row.unresolved} open</b> : "—"}</td>
       <td class="rq-owner">
@@ -80,13 +94,23 @@ export function ReviewsQueue() {
   const rows = reviews.value;
   if (rows === null) return <div class="wt-empty">loading…</div>;
   const sorted = sortRows(rows);
+  const query = reviewsQuery.value;
+  const shown = filterRows(sorted, query);
+  const noun = `branch${sorted.length === 1 ? "" : "es"}`;
   return (
     <div class="reviews-queue">
-      <header class="wt-head"><h2>Reviews</h2><span class="wt-sub">{sorted.length} branch{sorted.length === 1 ? "" : "es"}</span></header>
-      {sorted.length === 0 ? <div class="wt-empty">nothing open</div> : (
+      <header class="wt-head">
+        <h2>Reviews</h2>
+        <span class="wt-sub">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
+        {/* type=search: WebKit and Chromium clear it on Esc and draw the ✕ themselves. */}
+        <input type="search" class="rq-search" placeholder="filter branches, PRs, people, tickets" aria-label="filter reviews"
+          value={query} onInput={(e) => { reviewsQuery.value = e.currentTarget.value; }} />
+      </header>
+      {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
+        : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (
         <table class="rq-table">
           <thead><tr><th>branch</th><th>PR</th><th>walkthrough</th><th>comments</th><th>who</th><th></th></tr></thead>
-          <tbody>{sorted.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
+          <tbody>{shown.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
         </table>
       )}
     </div>

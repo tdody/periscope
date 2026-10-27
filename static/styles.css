@@ -2929,8 +2929,8 @@ body.col-resizing iframe { pointer-events: none; }
 /* Linked-PR lifecycle: a landed PR reads violet (merged), a dropped one dims
    (closed) — so neither masquerades as live open work. Shared by every PR
    badge surface (pill, wt-meta chip, detail header). */
-.pane-pill-pr.is-merged, .wt-meta-pr.is-merged, .header-pr.is-merged { color: var(--worktree); }
-.pane-pill-pr.is-closed, .wt-meta-pr.is-closed, .header-pr.is-closed { color: var(--fg-3); text-decoration: line-through; }
+.pane-pill-pr.is-merged, .wt-meta-pr.is-merged, .header-pr.is-merged, .rq-pr-link.is-merged { color: var(--worktree); }
+.pane-pill-pr.is-closed, .wt-meta-pr.is-closed, .header-pr.is-closed, .rq-pr-link.is-closed { color: var(--fg-3); text-decoration: line-through; }
 .header-pr-state { opacity: 0.7; font-size: 0.9em; }
 .pane-pill-linear { color: oklch(0.7 0.13 280); }
 /* Which subscription a pane bills; absent on the default account. Teal — clear
@@ -3935,3 +3935,17 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
 .rq-row.is-merged { opacity: .55; }
 .rq-open { font: inherit; background: none; border: 0; color: var(--fg-1); cursor: pointer; padding: 0; text-decoration: underline dotted; }
 .rq-actions button { margin-right: 6px; }
+/* Refs in the queue read like the pane pill / wt-meta chip / detail header ones;
+   the PR link was the UA's default blue before (THI-442). */
+.rq-pr-link, .rq-linear { font-family: var(--mono); text-decoration: none; }
+.rq-pr-link { color: var(--fg-1); }
+.rq-linear { color: oklch(0.7 0.13 280); }
+a.rq-pr-link:hover, .rq-linear:hover { text-decoration: underline; }
+.rq-search {
+  margin-left: auto; width: 240px; box-sizing: border-box;
+  font: inherit; font-size: 12px; color: var(--fg-1);
+  background: var(--bg-1); border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+  padding: 3px 8px;
+}
+.rq-search::placeholder { color: var(--fg-4); }
+.rq-search:focus { outline: none; border-color: var(--accent); }
