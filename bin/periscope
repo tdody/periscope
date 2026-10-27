@@ -115,6 +115,7 @@ case "$1" in
     write_plist || exit 1
     launchctl bootstrap "gui/$(id -u)" "$PLIST_DST"
     "$0" install-hook
+    "$0" install-skill
     "$0" install-tmux
     ;;
   update)
@@ -202,6 +203,7 @@ case "$1" in
       sleep 2
     done
     "$0" install-hook
+    "$0" install-skill
     "$0" install-tmux
     # Verify the new code is actually serving rather than claiming success:
     # poll healthz until it reports the SHA we just pulled. Generous, because
@@ -232,6 +234,7 @@ case "$1" in
     launchctl bootout "$LABEL" 2>/dev/null
     rm -f "$PLIST_DST"
     "$0" uninstall-hook
+    "$0" uninstall-skill
     "$0" uninstall-tmux
     ;;
   install-hook)
@@ -394,6 +397,67 @@ PY
     ;;
   uninstall-codex-hook)
     ( cd "$REPO" && exec python3 -m periscope.codex_hook_config uninstall "$REPO" )
+    ;;
+  install-skill)
+    # Symlink each vendored skill (skills/<name>) into <config_dir>/skills for
+    # every account config dir, same set as install-claude-hook. The reviews
+    # prepare action spawns a Claude with "Run the `walkthrough` skill …" — on
+    # a config dir without the skill that Claude has nothing to run and the
+    # button silently does nothing. A symlink, not a copy, so a pull updates
+    # the skill in step with the parser that reads its output (reviews.py).
+    #
+    # Repoint an existing link only when its target is gone or already this
+    # checkout: installing from a worktree must not steal prod's live link,
+    # or removing the worktree leaves it dangling (same rule as the hooks).
+    # A real directory is the user's own copy — left alone, reported.
+    python3 - "$REPO" "$(account_settings_files)" <<'PY'
+import os, sys
+repo = sys.argv[1]
+names = sorted(os.listdir(os.path.join(repo, "skills")))
+for p in sys.argv[2].splitlines():
+    cfg = os.path.dirname(p)
+    if not os.path.isdir(cfg):
+        continue          # that account isn't set up on this machine
+    skills = os.path.join(cfg, "skills")
+    os.makedirs(skills, exist_ok=True)
+    done, kept = [], []
+    for name in names:
+        src = os.path.join(repo, "skills", name)
+        dst = os.path.join(skills, name)
+        if os.path.islink(dst):
+            if os.path.realpath(dst) == os.path.realpath(src):
+                continue
+            if os.path.exists(dst):
+                kept.append(f"{name} -> {os.readlink(dst)}")
+                continue
+            os.unlink(dst)
+        elif os.path.exists(dst):
+            kept.append(f"{name} (a directory, not a link)")
+            continue
+        os.symlink(src, dst)
+        done.append(name)
+    if done:
+        print(f"linked skills into {skills}: {', '.join(done)}")
+    else:
+        print(f"periscope skills already linked in {skills}")
+    for k in kept:
+        print(f"  left alone: {k}", file=sys.stderr)
+PY
+    ;;
+  uninstall-skill)
+    # Remove only links that point into THIS checkout; another checkout's
+    # live link, or the user's own directory, stays.
+    python3 - "$REPO" "$(account_settings_files)" <<'PY'
+import os, sys
+repo = sys.argv[1]
+for p in sys.argv[2].splitlines():
+    skills = os.path.join(os.path.dirname(p), "skills")
+    for name in os.listdir(os.path.join(repo, "skills")):
+        dst = os.path.join(skills, name)
+        if os.path.islink(dst) and os.path.realpath(dst) == os.path.realpath(os.path.join(repo, "skills", name)):
+            os.unlink(dst)
+            print(f"removed {dst}")
+PY
     ;;
   install-tmux)
     # The tmux side of continuation-over-reboot: TPM + tmux-resurrect +

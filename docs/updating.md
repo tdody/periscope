@@ -14,6 +14,10 @@ exists:
   the repo. A pull past the Codex-hook or multi-account-config-dir commits
   leaves those panes unhooked, and the transcript view / narrator / resurrect
   go dark for them with no error anywhere.
+- Skill linking (`install-skill`) symlinks `skills/<name>` into every account's
+  `skills/` dir. The reviews **prepare** button spawns a Claude told to run the
+  `walkthrough` skill; a config dir the link never reached gives that Claude
+  nothing to run, and the button silently does nothing.
 
 **Ordering is the safety property.** The fetch + fast-forward runs before anything
 touches launchd, so the common failures (dirty tree, diverged branch) abort
