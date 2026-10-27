@@ -117,6 +117,21 @@ export function sortRows(rows) {
     || a.branch.localeCompare(b.branch));
 }
 
+// The queue's search box (THI-442): every whitespace-separated term must occur,
+// case-insensitively, in something the row shows — so "fdy thi" narrows to fdy
+// rows tied to a THI ticket. Fields join on a space, so a term never spans two.
+export function filterRows(rows, query) {
+  const terms = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return rows || [];
+  return (rows || []).filter((r) => {
+    const hay = [
+      r.branch, r.repo, r.pr ? `#${r.pr.number}` : null, r.pr?.title, r.pr?.author, r.owner?.name,
+      r.linked_linear || r.linear_ticket, r.linked_linear_title,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
+}
+
 export function unresolvedTotal(rows) {
   return (rows || []).filter((r) => r.pr?.state !== "merged").reduce((n, r) => n + (r.unresolved || 0), 0);
 }
