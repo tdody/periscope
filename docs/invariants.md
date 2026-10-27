@@ -8,9 +8,16 @@ These are the non-obvious behaviors worth preserving:
    active window in its session, or when the user acts on it via the
    dashboard (focus/send). See `update_focus_from_windows`.
 
-2. **Claude detection requires status line in the last 4 non-empty lines.**
-   Old status lines in scrollback should not trigger `is_claude=true` after
-   the user has returned to a shell. See `parse_pane`.
+2. **Claude detection is anchored to the bottom of the pane.** A pane is
+   Claude when its composer (`❯` between two full-width rules) has no more
+   than a footer under it, or the status line is in the last 4 non-empty
+   lines. Old frames in scrollback should not trigger `is_claude=true` after
+   the user has returned to a shell. A Claude that just exited leaves its
+   whole last frame, composer included, with only four rows under it, so a
+   `Resume this session with:` row under the composer means exited. The
+   status line alone isn't enough: it's the user's statusLine script's output,
+   and `STATUS_RE` knew one script's, so every other pane read as a shell
+   (THI-434). See `parse_pane`, `_detect_composer`.
 
 3. **WebSocket paint is self-healing, not perfect.** The initial blob
    still mirrors tmux's size/cursor/alt-screen state (all from
