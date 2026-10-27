@@ -41,6 +41,12 @@ describe("parseCite", () => {
     expect(parseCite("and/or")).toBeNull();
     expect(parseCite("a/b/c")).toMatchObject({ path: "a/b/c", start: null });
   });
+  it("needs a letter in the path: dates and fractions are prose", () => {
+    expect(parseCite("10/26/2026")).toBeNull();
+    expect(parseCite("1/2")).toBeNull();
+    expect(parseCite("a/b/c")).not.toBeNull();
+    expect(parseCite("src/1.py")).toMatchObject({ path: "src/1.py" });
+  });
   it("rejects addresses and abbreviations", () => {
     expect(parseCite("127.0.0.1:17374")).toBeNull();
     expect(parseCite("e.g")).toBeNull();

@@ -38,7 +38,8 @@ export function refTokens(value) {
 // files. A trailing `/` and `./`, `../`, `~/`, absolute paths never chip.
 // A slashed path with an extensionless leaf (`bin/check`) chips only two
 // directories deep (`a/b/c`) or with a line suffix (`bin/check:3`); bare
-// `and/or` is prose.
+// `and/or` is prose. A path needs at least one letter, so dates (`10/26/2026`)
+// and fractions (`1/2`) never chip.
 // Three-segment prose like `read/write/exec` does chip (accepted).
 const TOKEN_RE = /^([\w.-]*[\w-]\/[\w./-]*[\w-]|[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{1,5})(?::(\d+)(?:-(\d+))?)?$/;
 
@@ -46,6 +47,7 @@ export function parseCite(token) {
   const m = TOKEN_RE.exec(token);
   if (!m) return null;
   const path = m[1];
+  if (!/[A-Za-z]/.test(path)) return null;
   if (!path.includes("/") && m[2] == null) return null;
   const leaf = path.split("/").pop();
   if (m[2] == null && path.includes("/") && !/\.[A-Za-z][A-Za-z0-9]{0,5}$/.test(leaf) && !/^[\w.-]+\/[\w.-]+\//.test(path)) return null;
