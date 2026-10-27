@@ -43,6 +43,7 @@ from periscope.routes import (
 from periscope.routes import cleanup as cleanup_routes
 from periscope.routes import open as open_route
 from periscope.routes import projects as projects_routes
+from periscope.routes import reviews as reviews_route
 from periscope.routes import settings as settings_routes
 from periscope.routes import workspaces as workspaces_routes
 from periscope.usage import cached_plan_usage
@@ -218,6 +219,7 @@ for r in (
     paste_image,
     prefs,
     projects_routes,
+    reviews_route,
     workspaces_routes,
     send,
     sessions,
