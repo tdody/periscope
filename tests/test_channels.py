@@ -2059,7 +2059,10 @@ def test_spawn_claude_sets_the_model_the_chooser_picked(mocker):
 
 
 def test_spawn_claude_with_prompt_pastes_and_tags(mocker):
-    from periscope import channels
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
 
     tmux_mock = mocker.patch("periscope.channels.tmux", return_value="%9")
     mocker.patch("periscope.channels._run", return_value=(0, ""))  # has-session ok
@@ -2083,7 +2086,10 @@ def test_spawn_claude_with_prompt_pastes_and_tags(mocker):
 
 
 def test_spawn_claude_with_prompt_skips_track_when_none(mocker):
-    from periscope import channels
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
 
     mocker.patch("periscope.channels.tmux", return_value="%9")
     mocker.patch("periscope.channels._run", return_value=(0, ""))
@@ -2101,7 +2107,10 @@ def test_spawn_claude_with_prompt_skips_track_when_none(mocker):
 
 
 def test_spawn_claude_with_prompt_raises_on_tmux_failure(mocker):
-    from periscope import channels
+    from periscope import channels, usage
+    from periscope.launch_policy import Launch
+
+    mocker.patch.object(usage, "choose_launch", return_value=Launch("default", None, ""))
 
     mocker.patch("periscope.channels._run", return_value=(0, ""))
     mocker.patch("periscope.channels._tmux_mutate", return_value=(False, "boom"))

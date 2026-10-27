@@ -658,18 +658,17 @@ async def spawn_claude_with_prompt(
     # Mint + stamp a fresh unique @periscope_id for the brand-new window.
     # Do NOT resolve via rebind here: a just-created window has no stamp yet,
     # and resolving a single window (empty taken-set) lets _rebind_pid match it
-    # to a LIVE window's entry on (branch, cwd) — stealing that pid. Since the
-    # child inherits the caller's cwd by default, that collision is the common
-    # case, and the provenance write below would then corrupt the caller's own
-    # row (spawned_by pointing at itself). stamp_new_window mints a
-    # guaranteed-unique id, sidestepping rebind entirely.
+    # to a LIVE window's entry on (branch, cwd) — stealing that pid, so every
+    # later write (e.g. the spawn_claude tool's provenance write) would corrupt
+    # that window's row. stamp_new_window mints a guaranteed-unique id,
+    # sidestepping rebind entirely.
     pid = stamp_new_window(target)
     pane_id = tmux("display-message", "-t", target, "-p", "#{pane_id}").strip()
 
-    # An explicit spawn name is the lead's deliberate label for the task it
-    # delegated — pinned so the narrator never drifts it
-    # (narrator.is_name_pinned). Only when `name` was passed: without it tmux
-    # auto-names off the command/dir, which carries no intent to protect.
+    # An explicit spawn name is a deliberate label — pin it so the narrator
+    # never renames it (narrator.is_name_pinned). Only when `name` was passed:
+    # without it tmux auto-names off the command/dir, which carries no intent
+    # to protect.
     if name and pid:
         set_window_fields(pid, name_pinned=True)
     if pid and track_id:
