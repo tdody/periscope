@@ -17,7 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from periscope import channels, gitdiff, open_ops, projects, reviews, state_hub, tracks
+from periscope import channels, git_pr, gitdiff, open_ops, projects, reviews, state_hub, store, tracks
 from periscope.log import log
 from periscope.panes import list_windows
 
@@ -187,20 +187,22 @@ async def _prepare(body: ReviewRef) -> dict:
     worktree = await asyncio.to_thread(
         lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=roots, aliases=aliases)
     )
-    checked_out = False
+    prwt = None
+    number = None
     if not worktree:
-        # A PR nobody has checked out: fetch it the way ⌘K does (local branch
-        # `pr-<N>`, which the queue already treats as this row's alias), then
-        # spawn into it. Creating a worktree is the one git mutation prepare
-        # makes; it still never commits, pushes or merges (spec D1).
+        # A PR nobody has checked out: fetch it with ⌘K's PR helper (local
+        # branch `pr-<N>`, which the queue already treats as this row's alias),
+        # then spawn into it. Creating a worktree is the one git mutation
+        # prepare makes; it still never commits, pushes or merges (spec D1).
         root = roots.get(body.repo)
-        number = await asyncio.to_thread(_open_pr_number, root, body.branch) if root else None
+        number = await asyncio.to_thread(_open_pr_number, root, body.repo, body.branch) if root else None
         if root is None or number is None:
             raise HTTPException(
                 409, "no pane on this branch, no worktree on disk and no open PR — open the branch first"
             )
-        worktree = (await asyncio.to_thread(projects.fetch_pr_into_worktree, root, number)).path
-        checked_out = True
+        prwt = await asyncio.to_thread(projects.fetch_pr_into_worktree, root, number)
+        worktree = prwt.path
+    checked_out = prwt is not None
     anchored = await asyncio.to_thread(open_ops.resolve_worktree_session, worktree)
     if not anchored:
         raise HTTPException(409, f"{worktree} is not inside a git repo")
@@ -216,6 +218,10 @@ async def _prepare(body: ReviewRef) -> dict:
         # The Claude is already running with the prompt pasted; a 500 would invite a retry that spawns a second one.
         log.warning("reviews: spawned but pane id unknown for %s %s", body.repo, body.branch)
         return {"ok": True, "mode": "spawned", "checked_out": checked_out, **spawned, "pane_id": None}
+    if prwt is not None:
+        # What ⌘K's PR open stamps: the card shows the PR, merged/closed cleanup
+        # fires, and a fork's worktree isn't flagged remote-gone on sight.
+        store.set_window_fields(spawned["pid"], linked_pr=number, is_fork=prwt.is_fork)
 
     # Same server-side rail placement as the spawn_claude tool's anchored path.
     def place() -> None:
@@ -230,9 +236,19 @@ async def _prepare(body: ReviewRef) -> dict:
     return {"ok": True, "mode": "spawned", "checked_out": checked_out, **spawned}
 
 
-def _open_pr_number(root: str, branch: str) -> int | None:
-    """The open PR whose head is `branch`, from the same cache the queue row came from."""
-    return next((p["number"] for p in reviews.cached_open_prs(root) if p["branch"] == branch), None)
+def _open_pr_number(root: str, repo: str, branch: str) -> int | None:
+    """The open PR whose head is `branch`, from the same sources the queue row came from."""
+    hit = next((p["number"] for p in reviews.cached_open_prs(root) if p["branch"] == branch), None)
+    if hit is not None:
+        return hit
+    # A submitted review drops the PR from `review-requested:@me`; the queue then
+    # builds the row from the walkthrough header and shows it open when GitHub
+    # says so. Same answer here, or the row enables a prepare the route 409s.
+    text = reviews._read(reviews.walkthrough_path(repo, branch))
+    header = reviews.parse_header(text) if text else None
+    if header and header["pr"] and (git_pr.cached_linked_pr_state(root, header["pr"]) or {}).get("pr_state") == "open":
+        return header["pr"]
+    return None
 
 
 @router.post("/api/reviews/merge")

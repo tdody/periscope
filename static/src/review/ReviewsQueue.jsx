@@ -31,8 +31,9 @@ function Row({ row }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const merged = row.pr?.state === "merged";
-  // An open PR nobody has checked out is still preparable: the server fetches it first.
-  const canPrepare = !!row.owner || !!row.worktree || (!!row.pr && !merged);
+  // An open PR nobody has checked out is still preparable: the server fetches it
+  // first. Open only — a closed or not-yet-known PR has nothing the server will fetch.
+  const canPrepare = !!row.owner || !!row.worktree || row.pr?.state === "open";
   const wt = row.walkthrough;
   const prepareTitle = row.owner ? "ask the owning pane to write the walkthrough"
     : row.worktree ? "spawn a pane in the worktree to write the walkthrough"

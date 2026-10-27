@@ -162,7 +162,7 @@ export function Walkthrough({ repo, branch, pr, sig }) {
         <h2>{w.title || branch}</h2>
         <span class="wt-sub">
           {repo} · {branch}
-          {w.header?.pr ? <> · {pr?.url ? <a href={pr.url} target="_blank" rel="noopener">PR #{w.header.pr}</a> : `PR #${w.header.pr}`}</> : ""}
+          {w.header?.pr ? <> · {pr?.url && pr.number === w.header.pr ? <a href={pr.url} target="_blank" rel="noopener">PR #{w.header.pr}</a> : `PR #${w.header.pr}`}</> : ""}
           {stale_by == null && w.header ? (diff ? "" : " · no worktree — hunks unavailable") : stale_by > 0 ? ` · stale: ${stale_by} commit${stale_by === 1 ? "" : "s"} since` : ""}
         </span>
       </header>

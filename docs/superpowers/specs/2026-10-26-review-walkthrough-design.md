@@ -85,9 +85,12 @@ Prepare, re-prepare, merge, and "address comments" are all messages to the
 pane that owns the branch. The dashboard stays a lens; the pane is the actor.
 
 One carve-out: prepare on an open PR with no pane and no checkout fetches the
-PR into a worktree through unified-open (local branch `pr-<N>`, the row's
-alias) and spawns the pane there. Creating a worktree is the only git
-mutation prepare makes; it still never commits, pushes, or merges.
+PR into a worktree with ⌘K's PR helper (local branch `pr-<N>`, the row's
+alias; the spawned pane is stamped with the PR like a ⌘K open) and spawns the
+pane there. This holds for my own PRs too — the branch helper forks a new
+branch off the default, which is wrong for one that already exists. Creating
+a worktree is the only git mutation prepare makes; it still never commits,
+pushes, or merges.
 
 **A review belongs to a (repo, branch) pair, not a track.** Tracks are not
 branches — a repo-default track holds every worktree of the repo, and the
@@ -205,15 +208,18 @@ yet pushed), and `~/.claude/reviews/<repo>/<slug>` dirs matching neither.
 Each row carries a **role**: `mine` or `review-requested` (with the author).
 Columns: branch + repo + role/author, PR (number, draft, state incl.
 merged, CI glyph), walkthrough (none / N stops / stale by N), comments (M
-unresolved), owner (pane name / "no pane" / "not checked out"). Sort:
-unresolved comments, then review-requested, then PR-without-walkthrough,
-then the rest, then local-no-PR; merged last. Within a group by PR number
-desc, then branch.
+unresolved), who (the owning pane's name, else "opened by <author>", with a
+"no pane" / "not checked out" state line). PR numbers link to GitHub; the
+URL comes from the origin remote, so header-only rows link too. Sort is
+readiness-major: rows with a live pane, then rows with a worktree on disk,
+then neither; merged last. Within a tier: unresolved comments, then
+review-requested, then PR-without-walkthrough, then the rest, then
+local-no-PR; then PR number desc, then branch.
 
 Actions: **prepare** (message the owner to run the `walkthrough` skill; with
-no owner but a worktree on disk, spawn one there — the picked addition;
-with neither — a PR not checked out locally — disabled with "check out the
-PR first (⌘K)", which is the existing unified-open PR path), **merge**
+no owner but a worktree on disk, spawn one there; with neither but an open
+PR, check the PR out first — the D1 carve-out — then spawn; a row with
+neither and no open PR is disabled with "open the branch first (⌘K)"), **merge**
 (message the owner; disabled with the reason when none), **clear** (remove
 the review dir; offered when the PR is merged or the branch has no
 worktree). Row click selects that branch's review row.

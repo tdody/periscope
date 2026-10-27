@@ -48,6 +48,7 @@ Fine.
 def _dir(tmp_path, monkeypatch):
     monkeypatch.setattr(reviews, "REVIEWS_DIR", tmp_path)
     monkeypatch.setattr(reviews, "_DEFAULT_BRANCH", {})
+    monkeypatch.setattr(reviews, "_GH_SLUG", {})
     yield tmp_path
 
 
@@ -224,7 +225,6 @@ def test_open_prs_without_gh_is_empty(mocker):
 
 def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, monkeypatch):
     monkeypatch.setattr(reviews.gitutil, "detect_default_branch", lambda root: "main")
-    monkeypatch.setattr(reviews, "_GH_SLUG", {})
     mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
     mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/.claude/worktrees/x", "feat/x")])
     mocker.patch(
@@ -303,6 +303,15 @@ def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, mo
     }
     linked.assert_called_with("/dev/fdy", 500)
     assert ob["owner"] is None and ob["slug"] == "old--branch"
+
+
+def test_pr_url_caches_a_found_slug_but_retries_after_none(mocker):
+    slug = mocker.patch("periscope.reviews.gitutil.github_slug", side_effect=[None, "tom/fdy"])
+    assert reviews._pr_url("/dev/fdy", 7) is None
+    assert reviews._pr_url("/dev/fdy", 7) == "https://github.com/tom/fdy/pull/7"
+    assert reviews._pr_url("/dev/fdy", 8) == "https://github.com/tom/fdy/pull/8"
+    assert slug.call_count == 2
+    assert reviews._pr_url(None, 7) is None
 
 
 def test_open_prs_skips_repos_without_github_and_returns_none_on_failure(mocker):

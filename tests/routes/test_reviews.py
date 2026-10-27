@@ -440,7 +440,7 @@ def test_prepare_without_worktree_checks_out_the_open_pr_then_spawns(client, moc
     )
     fetch = mocker.patch(
         "periscope.routes.reviews.projects.fetch_pr_into_worktree",
-        return_value=mocker.Mock(path="/dev/fdy/.claude/worktrees/feat-x"),
+        return_value=mocker.Mock(path="/dev/fdy/.claude/worktrees/feat-x", is_fork=True),
     )
     mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
     mocker.patch(
@@ -452,11 +452,45 @@ def test_prepare_without_worktree_checks_out_the_open_pr_then_spawns(client, moc
             return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
         ),
     )
+    stamp = mocker.patch("periscope.routes.reviews.store.set_window_fields")
     r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
     assert r.status_code == 200 and r.json()["mode"] == "spawned" and r.json()["checked_out"] is True
     fetch.assert_called_once_with("/dev/fdy", 42)
     assert spawn.call_args.args[0] == "/dev/fdy/.claude/worktrees/feat-x"
+    # What a ⌘K PR open stamps, so the card shows the PR and cleanup sees merged/closed.
+    stamp.assert_called_once_with("k", linked_pr=42, is_fork=True)
     place.assert_called_once()
+
+
+def test_prepare_checks_out_a_header_pr_the_open_list_dropped(client, mocker, monkeypatch, place):
+    # A submitted review drops the PR from `review-requested:@me`; the queue
+    # still shows the row open from its header, so prepare must find it too.
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    p = reviews.walkthrough_path("fdy", "feat/x")
+    p.parent.mkdir(parents=True)
+    p.write_text(WT.replace("head: abc", "head: abc · pr: 123"))
+    mocker.patch("periscope.worktrees.for_branch", return_value=None)
+    mocker.patch("periscope.routes.reviews._roots", return_value={"fdy": "/dev/fdy"})
+    mocker.patch("periscope.routes.reviews.reviews.cached_open_prs", return_value=[])
+    linked = mocker.patch("periscope.routes.reviews.git_pr.cached_linked_pr_state", return_value={"pr_state": "open"})
+    fetch = mocker.patch(
+        "periscope.routes.reviews.projects.fetch_pr_into_worktree",
+        return_value=mocker.Mock(path="/dev/fdy/pr", is_fork=False),
+    )
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+    mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(return_value={"target": "t", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}),
+    )
+    stamp = mocker.patch("periscope.routes.reviews.store.set_window_fields")
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["checked_out"] is True
+    linked.assert_called_once_with("/dev/fdy", 123)
+    fetch.assert_called_once_with("/dev/fdy", 123)
+    stamp.assert_called_once_with("k", linked_pr=123, is_fork=False)
 
 
 def test_prepare_without_worktree_or_open_pr_409s_before_touching_git(client, mocker, monkeypatch):

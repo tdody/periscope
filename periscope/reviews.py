@@ -430,16 +430,19 @@ def _pr_row(p: dict, state: str, root: str | None) -> dict:
     }
 
 
-_GH_SLUG: dict[str, str | None] = {}  # no TTL: the origin remote effectively never changes
+_GH_SLUG: dict[str, str] = {}  # no TTL: the origin remote effectively never changes
 
 
 def _pr_url(root: str | None, number: int) -> str | None:
     if not root:
         return None
-    if root not in _GH_SLUG:
-        _GH_SLUG[root] = gitutil.github_slug(root)
-    slug = _GH_SLUG[root]
-    return f"https://github.com/{slug}/pull/{number}" if slug else None
+    # Only a found slug is cached: a None can be a 3 s git timeout on a slow
+    # first poll, and would otherwise strip every link from the repo until restart.
+    slug = _GH_SLUG.get(root) or gitutil.github_slug(root)
+    if not slug:
+        return None
+    _GH_SLUG[root] = slug
+    return f"https://github.com/{slug}/pull/{number}"
 
 
 _DEFAULT_BRANCH: dict[str, str] = {}  # no TTL: a repo's default branch effectively never changes
