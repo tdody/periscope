@@ -22,7 +22,10 @@ function Row({ row }) {
   const wt = row.walkthrough;
   const prepareTitle = canPrepare
     ? "ask the owning pane to write the walkthrough"
-    : row.role === "review-requested" ? "check out the PR first (⌘K: review PR #N)" : "open the branch first (⌘K)";
+    : row.role === "review-requested" ? `check out the PR first (⌘K: review PR #${row.pr?.number})` : "open the branch first (⌘K)";
+  const mergeTitle = row.unresolved > 0
+    ? `${row.unresolved} unresolved comment${row.unresolved === 1 ? "" : "s"}`
+    : row.owner ? "ask the owning pane to merge" : "no pane on this branch";
   return (
     <tr class={`rq-row rq-${row.role}${merged ? " is-merged" : ""}`}>
       <td class="rq-branch">
@@ -32,11 +35,11 @@ function Row({ row }) {
       <td class="rq-pr">{row.pr ? <>#{row.pr.number}{row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci || ""}<div class="rq-repo">{row.pr.title}</div></> : "—"}</td>
       <td class="rq-wt">{wt ? <>{wt.stops} stop{wt.stops === 1 ? "" : "s"}{wt.stale_by > 0 ? ` · stale ${wt.stale_by}` : wt.stale_by === null && row.worktree ? " · stale: unknown" : ""}</> : "none"}</td>
       <td class="rq-comments">{row.unresolved ? <b>{row.unresolved} open</b> : "—"}</td>
-      <td class="rq-owner">{row.owner ? row.owner.name : row.worktree ? "no pane" : "no worktree"}</td>
+      <td class="rq-owner">{row.owner ? row.owner.name : row.worktree ? "no pane" : "not checked out"}</td>
       <td class="rq-actions">
         <button type="button" disabled={!canPrepare} title={prepareTitle}
           onClick={() => act("/api/reviews/prepare", row, setNote)}>{wt ? "re-prepare" : "prepare"}</button>
-        <button type="button" disabled={!row.owner || merged} title={row.owner ? "ask the owning pane to merge" : "no pane on this branch"}
+        <button type="button" disabled={!row.owner || merged || row.unresolved > 0} title={mergeTitle}
           onClick={() => act("/api/reviews/merge", row, setNote)}>merge</button>
         {(merged || !row.worktree) && (wt || row.unresolved) ? (
           <button type="button" title="remove this review's files" onClick={() => act("/api/reviews/clear", row, setNote)}>clear</button>

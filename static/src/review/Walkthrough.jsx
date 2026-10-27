@@ -84,7 +84,7 @@ function Stop({ stop, diffFiles, comments, repo, branch, hl, onPosted }) {
         </div>
       ) : null}
       <div class="md-doc wt-stop-body">
-        {renderMarkdown(stop.bodyMarkdown, { demote: false, softBreaks: "space", mermaid: true, cite })}
+        {renderMarkdown(stop.bodyMarkdown, { demote: false, softBreaks: "space", mermaid: true, meta: true, cite })}
       </div>
       {diffFiles && stop.refs.length ? (
         <div class="wt-evidence">
