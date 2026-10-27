@@ -113,20 +113,27 @@ def parse_header(text: str) -> Header | None:
     }
 
 
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_STOP_RE = re.compile(r"^ {0,3}##(?:\s|$)")
+
+
 def count_stops(text: str) -> int:
-    """ATX `## ` lines outside fenced code."""
+    """ATX `##` headings outside fenced code, by CommonMark's rules — the view
+    counts mdast depth-2 headings, and the queue's "N stops" must agree with it."""
     n = 0
-    fence: str | None = None
+    fence: tuple[str, int] | None = None  # (fence char, opener length)
     for line in text.splitlines():
-        s = line.strip()
+        m = _FENCE_RE.match(line)
         if fence:
-            if s.startswith(fence):
+            # A closer is the same char, at least as long, with nothing after it.
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
                 fence = None
             continue
-        if s.startswith(("```", "~~~")):
-            fence = s[:3]
+        # A backtick opener's info string may not contain a backtick: ```foo``` is inline code, not a fence.
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            fence = (m.group(1)[0], len(m.group(1)))
             continue
-        if line.startswith("## "):
+        if _STOP_RE.match(line):
             n += 1
     return n
 
@@ -197,6 +204,7 @@ class ReviewRow(TypedDict):
     pr: dict | None
     walkthrough: dict | None
     unresolved: int
+    comments: int
     owner: dict | None
     worktree: str | None
 
@@ -485,11 +493,16 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
                 "stale_by": stale_by(worktree, header["head"]),
             }
         if pr is None and header and header["pr"]:
-            # The header names a PR the open lists don't: it merged or closed.
+            # The header names a PR the open lists don't: merged, closed — or still open
+            # because a submitted review drops it from `review-requested:@me`.
             cwd = worktree or roots.get(repo) or ""
             st = git_pr.cached_linked_pr_state(cwd, header["pr"]) or {}
-            pr = _pr_row({"number": header["pr"], "author": None}, st.get("pr_state") or "unknown")
+            state = st.get("pr_state") or "unknown"
+            pr = _pr_row({"number": header["pr"], "author": None}, state)
             pr["ci"] = st.get("ci")
+            if state == "open":
+                role = "review-requested"
+        comments = parse_comments(_read(comments_path(repo, branch)))
         rows.append(
             {
                 "repo": repo,
@@ -498,7 +511,9 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
                 "role": role,
                 "pr": pr,
                 "walkthrough": walkthrough,
-                "unresolved": unresolved(_read(comments_path(repo, branch))),
+                "unresolved": sum(1 for c in comments if not c["resolved"]),
+                # The view refetches when this moves: a reply that answers without resolving changes nothing else.
+                "comments": len(comments),
                 "owner": {k: owner[k] for k in ("pid", "pane_id", "session", "index", "name")} if owner else None,
                 "worktree": worktree,
             }

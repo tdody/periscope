@@ -386,3 +386,43 @@ def test_aliases_for_cache_header_or_neither(tmp_path, monkeypatch):
     p.write_text("# T\n\n> branch: feat/y · head: abc1234 · pr: 9\n\nbody\n")
     assert reviews.aliases_for("/dev/other", "fdy", "feat/y") == {"pr-9"}
     assert reviews.aliases_for(None, "fdy", "feat/y") == {"pr-9"}
+
+
+@pytest.mark.parametrize(
+    ("text", "n"),
+    [
+        ("##\n## A\n##\tB\n### not\n#not\n", 3),  # bare and tab-separated count; ### and #not don't
+        ("````\n```\n## inner\n```\n````\n## B\n", 1),  # a 4-backtick fence swallows an inner ```
+        ("```foo```\n## A\n", 1),  # inline code, not a fence opener
+        ("~~~\n## in tilde\n```\n~~~\n## B\n", 1),  # a tilde fence ignores a backtick line
+        ("    ```\n## A\n", 1),  # indented code is not a fence
+        ("```\n## in\n ```  \n## B\n", 1),  # a closer may be indented and trail spaces
+    ],
+)
+def test_count_stops_follows_commonmark(text, n):
+    assert reviews.count_stops(text) == n
+
+
+def test_orphan_with_open_pr_is_review_requested_and_rows_count_comments(tmp_path, mocker, monkeypatch):
+    """A submitted review drops the PR from `review-requested:@me`; its review dir
+    must still surface as that role while the PR is open, and every row carries
+    the total comment count (the view refetches on it)."""
+    monkeypatch.setattr(reviews, "REVIEWS_DIR", tmp_path)
+    monkeypatch.setattr(reviews.gitutil, "detect_default_branch", lambda root: "main")
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[])
+    mocker.patch("periscope.reviews.cached_open_prs", return_value=[])
+    mocker.patch("periscope.reviews.stale_by", return_value=None)
+    states = {77: {"pr_state": "open", "ci": "✓"}, 78: {"pr_state": "merged", "ci": None}}
+    mocker.patch("periscope.reviews.git_pr.cached_linked_pr_state", side_effect=lambda cwd, n: states[n])
+    for branch, pr in (("theirs/open", 77), ("theirs/done", 78)):
+        p = reviews.walkthrough_path("fdy", branch)
+        p.parent.mkdir(parents=True)
+        p.write_text(f"# T\n\n> branch: {branch} · head: abc1234 · pr: {pr}\n\nbody\n\n## S\n")
+    reviews.append_comment("fdy", "theirs/open", "S", "a", "2026-10-26T09:14")
+    reviews.append_comment("fdy", "theirs/open", "S", "b", "2026-10-26T09:15")
+    c = reviews.comments_path("fdy", "theirs/open")
+    c.write_text(c.read_text().replace("> resolved: no", "> resolved: yes", 1))
+    rows = {r["branch"]: r for r in reviews.list_reviews([], ["/dev/fdy"])}
+    assert (rows["theirs/open"]["role"], rows["theirs/open"]["pr"]["number"]) == ("review-requested", 77)
+    assert (rows["theirs/open"]["unresolved"], rows["theirs/open"]["comments"]) == (1, 2)
+    assert (rows["theirs/done"]["role"], rows["theirs/done"]["comments"]) == ("local", 0)
