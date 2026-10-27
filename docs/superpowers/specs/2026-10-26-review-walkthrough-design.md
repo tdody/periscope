@@ -54,7 +54,7 @@ Accepted consequences:
   view says "N commits since" and leaves it to you
 - walkthroughs and comments live outside the repo, so they are not shared
   with the team
-- mermaid is a ~1 MB chunk of its own, loaded on first diagram
+- mermaid is a ~3.4 MB chunk of its own (minified), loaded on first diagram
 - a merged branch's review dir stays until you click **clear** on its row —
   the one file deletion periscope performs, on an explicit click
 
@@ -166,6 +166,12 @@ second artifact. That is what retires the doc-enricher: the author writes
 one markdown file; the look is periscope's job and improves for all docs at
 once. Mermaid is its own vite chunk, loaded by dynamic import on the first
 fence.
+
+Accepted consequences of "every document": any blockquote directly under a
+heading whose lines are all `key: value` (e.g. `> note: keep this`) renders
+as a chip row, not a quote; a slashless file name chips only with a `:line`
+suffix (`reviews.py:12`), so bare `os.path` / `node.js` in prose stay text,
+while slashed repo-relative paths chip bare.
 
 ### D5. The walkthrough view is the renderer plus three things
 
@@ -350,13 +356,14 @@ reviews router added.
 - `cite: (ref) => vnode | null` → text nodes and `inlineCode` nodes matching
   the D3 citation rule are offered; `null` keeps the text.
 
-**`preview/Mermaid.jsx`** (new) — `import("mermaid")` on first mount,
-`mermaid.render` into inline SVG, theme from `prefers-color-scheme`, parse
-error shown as text under the fence. **`vite.config.js`** — `manualChunks`
-returns `"mermaid"` for `node_modules/mermaid` and its dependencies
-(`/mermaid/`, `/dagre/`, `/cytoscape/`, `/khroma/`, `/d3`…: anything the
-mermaid import graph pulls that isn't already in app) so it never lands in
-`app` or `preview`. `package.json` gains `mermaid`.
+**`split/Mermaid.jsx`** (new) — `import("mermaid")` on first mount (memoized),
+`mermaid.render` into inline SVG, always `theme: "dark"` (the dashboard has no
+light theme) with `securityLevel: "strict"`, parse error shown as text under
+the fence. **`vite.config.js`** — `manualChunks` returns `"mermaid"` for any
+module reachable only through the mermaid import graph (`mermaidOnly(id,
+getModuleInfo)` walks importers; a module also imported from app or preview
+stays where it was) so mermaid never lands in `app` or `preview`.
+`package.json` gains `mermaid`.
 
 **`preview/PreviewTabInner.jsx`** — the `.md` branch passes `{mermaid,
 meta, cite}` with a chip that opens the file tab at that line.
