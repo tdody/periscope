@@ -372,3 +372,17 @@ def test_stale_by_rejects_option_like_head(mocker):
     run = mocker.patch("periscope.reviews._run", side_effect=AssertionError("must not run git"))
     assert reviews.stale_by("/wt", "-x") is None
     run.assert_not_called()
+
+
+def test_aliases_for_cache_header_or_neither(tmp_path, monkeypatch):
+    import time
+
+    monkeypatch.setattr(reviews, "REVIEWS_DIR", tmp_path)
+    monkeypatch.setitem(reviews._prs_cache, "/dev/fdy", (time.time(), [{"number": 7, "branch": "feat/x"}]))
+    assert reviews.aliases_for("/dev/fdy", "fdy", "feat/x") == {"pr-7"}
+    assert reviews.aliases_for("/dev/fdy", "fdy", "feat/y") == set()
+    p = reviews.walkthrough_path("fdy", "feat/y")
+    p.parent.mkdir(parents=True)
+    p.write_text("# T\n\n> branch: feat/y · head: abc1234 · pr: 9\n\nbody\n")
+    assert reviews.aliases_for("/dev/other", "fdy", "feat/y") == {"pr-9"}
+    assert reviews.aliases_for(None, "fdy", "feat/y") == {"pr-9"}

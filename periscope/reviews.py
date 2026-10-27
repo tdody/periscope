@@ -256,6 +256,20 @@ def worktree_for(
     return None
 
 
+def aliases_for(root: str | None, repo: str, branch: str) -> set[str]:
+    """`pr-<N>` for a branch whose PR number is known without calling gh: from
+    the last-good cached open-PR rows, else the walkthrough header. A PR is
+    checked out locally as `pr-<N>`, not its headRefName (see list_reviews)."""
+    if root:
+        with _prs_lock:
+            hit = _prs_cache.get(root)
+        for p in hit[1] if hit else ():
+            if p["branch"] == branch:
+                return {f"pr-{p['number']}"}
+    header = parse_header(_read(walkthrough_path(repo, branch)))
+    return {f"pr-{header['pr']}"} if header and header["pr"] else set()
+
+
 def head_sha(worktree: str) -> str | None:
     # Bounded: a hung git must not stall the queue route.
     code, out = _run(["git", "-C", worktree, "rev-parse", "HEAD"], timeout=3.0)

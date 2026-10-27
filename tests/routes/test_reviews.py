@@ -293,3 +293,55 @@ def test_prepare_survives_rail_placement_failure(client, mocker, monkeypatch, pl
     )
     r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
     assert r.status_code == 200 and r.json()["pane_id"] == "%5" and spawn.call_count == 1
+
+
+def _pr123(monkeypatch, windows):
+    """A review-requested PR (headRefName feat/x) checked out locally as pr-123."""
+    import time
+
+    monkeypatch.setitem(reviews._prs_cache, "/dev/fdy", (time.time(), [{"number": 123, "branch": "feat/x"}]))
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": windows}))
+
+
+def test_prepare_delivers_to_owner_on_pr_alias(client, mocker, monkeypatch, place):
+    _pr123(monkeypatch, [_win(branch="pr-123")])
+    deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["mode"] == "delivered" and deliver.call_args.args[0] == "%1"
+
+
+def test_prepare_spawns_in_pr_alias_worktree(client, mocker, monkeypatch, place):
+    _pr123(monkeypatch, [])
+    mocker.patch("periscope.worktrees.for_branch", side_effect=lambda root, b: "/dev/fdy/pr" if b == "pr-123" else None)
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-pr", {"repo": "/dev/fdy"})
+    )
+    spawn = mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(
+            return_value={"target": "fdy-pr:2", "session": "fdy-pr", "index": 2, "pid": "k", "pane_id": "%5"}
+        ),
+    )
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and spawn.call_args.args[0] == "/dev/fdy/pr"
+
+
+def test_comment_and_merge_find_owner_on_pr_alias(client, mocker, monkeypatch):
+    _pr123(monkeypatch, [_win(branch="pr-123")])
+    mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
+    body = {"repo": "fdy", "branch": "feat/x"}
+    assert client.post("/api/reviews/comment", json={**body, "stop": "Stop A", "body": "why?"}).status_code == 200
+    assert client.post("/api/reviews/merge", json=body).status_code == 200
+
+
+def test_walkthrough_finds_pr_alias_worktree_for_diff(client, mocker, monkeypatch):
+    _pr123(monkeypatch, [])
+    _write_wt()
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/pr", "pr-123")])
+    mocker.patch("periscope.routes.reviews.gitdiff.branch_base", return_value="origin/main")
+    mocker.patch("periscope.routes.reviews.gitdiff.diff_for", return_value={"files": []})
+    mocker.patch("periscope.reviews.head_sha", return_value="abc")
+    mocker.patch("periscope.reviews.stale_by", return_value=0)
+    r = client.get("/api/reviews/walkthrough", params={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["diff"] == {"files": []}

@@ -35,6 +35,10 @@ def _roots() -> dict[str, str]:
     return {os.path.basename(r.rstrip("/")): r for r in open_ops.discover_repos()}
 
 
+def _aliases(wins: list[dict], repo: str, branch: str) -> set[str]:
+    return reviews.aliases_for(reviews._repo_root(wins, repo, _roots()), repo, branch)
+
+
 def _check(repo: str, branch: str) -> None:
     """repo and branch become path segments under ~/.claude/reviews — refuse
     anything that could climb out of it."""
@@ -78,7 +82,7 @@ async def reviews_walkthrough(repo: str, branch: str):
         if not text:
             return None
         wins = _windows()
-        worktree = reviews.worktree_for(wins, repo, branch, roots=_roots())
+        worktree = reviews.worktree_for(wins, repo, branch, roots=_roots(), aliases=_aliases(wins, repo, branch))
         header = reviews.parse_header(text)
         diff = None
         if worktree:
@@ -116,7 +120,8 @@ async def reviews_comment(body: CommentBody):
     # Append BEFORE delivery: a comment with no pane to hear it is still kept,
     # and the next pane to prepare the branch is told to read the file.
     await asyncio.to_thread(reviews.append_comment, body.repo, body.branch, body.stop, body.body, ts)
-    owner = reviews.owner_for(_windows(), body.repo, body.branch)
+    wins = _windows()
+    owner = reviews.owner_for(wins, body.repo, body.branch, _aliases(wins, body.repo, body.branch))
     msg = (
         f'Review comment on "{body.stop}" (branch {body.branch}; saved in '
         f"{reviews.comments_path(body.repo, body.branch)}):\n\n{body.body.strip()}"
@@ -154,13 +159,14 @@ async def reviews_prepare(body: ReviewRef):
 
 async def _prepare(body: ReviewRef) -> dict:
     wins = _windows()
-    owner = reviews.owner_for(wins, body.repo, body.branch)
+    aliases = _aliases(wins, body.repo, body.branch)
+    owner = reviews.owner_for(wins, body.repo, body.branch, aliases)
     prompt = _prepare_prompt(body.repo, body.branch)
     if owner:
         await _deliver_or_409(owner, prompt)
         return {"ok": True, "mode": "delivered"}
     worktree = await asyncio.to_thread(
-        lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=_roots())
+        lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=_roots(), aliases=aliases)
     )
     if not worktree:
         raise HTTPException(409, "no pane on this branch and no worktree on disk — open the branch first")
@@ -195,7 +201,8 @@ async def _prepare(body: ReviewRef) -> dict:
 @router.post("/api/reviews/merge")
 async def reviews_merge(body: ReviewRef):
     _check(body.repo, body.branch)
-    owner = reviews.owner_for(_windows(), body.repo, body.branch)
+    wins = _windows()
+    owner = reviews.owner_for(wins, body.repo, body.branch, _aliases(wins, body.repo, body.branch))
     msg = (
         f"This branch (`{body.branch}`) has been reviewed in periscope and the comments in "
         f"`{reviews.comments_path(body.repo, body.branch)}`. Read that file first and proceed only if "
