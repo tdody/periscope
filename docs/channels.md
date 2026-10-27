@@ -15,7 +15,9 @@ Tools exposed to Claude:
   Linear-shaped branch names, as the id alone (`git_pr.linear_ticket_for`;
   `settings.linear_team_keys` narrows it to known keys); a link replaces
   that. Optional `title`/`status` metadata renders on the card and in the
-  modal; each call fully describes the link.
+  modal; each call fully describes the link. The Reviews queue shows the
+  same ticket per row: the owning pane's link, else what the row's PR title
+  or branch names (`reviews._ticket_fields`).
 - `set_name(name)` — rename the caller's own window and pin the name
   against the narrator (see the narrator section's pin invariant). The
   only self-naming path: `spawn_claude(name=…)` could name a CHILD, so a
