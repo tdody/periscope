@@ -35,14 +35,19 @@ function CommentBox({ repo, branch, stop, onPosted }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   async function post() {
-    if (!text.trim()) return;
+    if (busy || !text.trim()) return;
     setBusy(true);
-    const r = await postJson("/api/reviews/comment", { repo, branch, stop, body: text });
-    setBusy(false);
-    if (r.ok) { setText(""); setNote("sent to the owning pane"); }
-    else if (r.status === 409) { setText(""); setNote(`saved, ${r.data.detail || "not delivered"}`); }
-    else setNote(r.data.detail || `HTTP ${r.status}`);
-    onPosted();
+    try {
+      const r = await postJson("/api/reviews/comment", { repo, branch, stop, body: text });
+      if (r.ok) { setText(""); setNote("sent to the owning pane"); }
+      else if (r.status === 409) { setText(""); setNote(`saved, ${r.data.detail || "not delivered"}`); }
+      else setNote(r.data.detail || `HTTP ${r.status}`);
+      onPosted();
+    } catch (e) {
+      setNote(String(e));
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div class="wt-comment-box">
@@ -105,7 +110,10 @@ function Stop({ stop, diffFiles, comments, repo, branch, hl, onPosted }) {
   );
 }
 
-export function Walkthrough({ repo, branch }) {
+// `sig` changes when the row's head / staleness / unresolved count does (from
+// the 10 s reviews poll), so a reply, a resolve or a re-prepare refetches the
+// open view instead of leaving it stale until re-selected.
+export function Walkthrough({ repo, branch, sig }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [hl, setHl] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -123,19 +131,21 @@ export function Walkthrough({ repo, branch }) {
         const res = await fetch(`/api/reviews/walkthrough?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`);
         const body = await res.json().catch(() => ({}));
         if (!alive) return;
-        if (!res.ok) { setState({ loading: false, error: body.detail || `HTTP ${res.status}`, data: null }); return; }
+        // Keep the last good data on a failed refetch: unmounting every Stop
+        // would drop the open hunks and any half-typed comment.
+        if (!res.ok) { setState((s) => ({ loading: false, error: body.detail || `HTTP ${res.status}`, data: s.data })); return; }
         setState({ loading: false, error: null, data: body });
       } catch (e) {
-        if (alive) setState({ loading: false, error: String(e), data: null });
+        if (alive) setState((s) => ({ loading: false, error: String(e), data: s.data }));
       }
     })();
     return () => { alive = false; };
-  }, [repo, branch, nonce]);
+  }, [repo, branch, nonce, sig]);
 
   const onPosted = () => { setNonce((n) => n + 1); refreshReviews(); };
 
   if (state.loading) return <div class="wt-empty">loading…</div>;
-  if (state.error) return <div class="wt-empty">{state.error}</div>;
+  if (!state.data) return <div class="wt-empty">{state.error}</div>;
   const { text, comments, diff, stale_by } = state.data;
   const w = parseWalkthrough(text);
   const byStop = new Map();
@@ -145,6 +155,7 @@ export function Walkthrough({ repo, branch }) {
 
   return (
     <div class="walkthrough">
+      {state.error ? <div class="wt-empty wt-error">refresh failed: {state.error}</div> : null}
       <header class="wt-head">
         <h2>{w.title || branch}</h2>
         <span class="wt-sub">
