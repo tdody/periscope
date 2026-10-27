@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as prefs from "../prefs.js";
 import { fileFilterMatch, filesTouched, partitionFilesByPriority } from "../split/filesTouched.js";
+import { linearTicket } from "../split/linearTicket.js";
 import { openFileTab, paneTranscript, transcriptSeen } from "../store.js";
 import { prUrl, relTime, shortestUniqueSuffix } from "../util.js";
 
@@ -148,21 +149,37 @@ function LinearCard({ data, onLinkAsk }) {
       </div>
     );
   }
-  if (data.agent !== "claude") return null;
+  // A ticket the PR title or branch names (THI-441): shown, but the link
+  // button stays, since only a linked ticket carries its title and status.
+  const derived = linearTicket(data);
+  const derivedCard = derived && (
+    <div class="modal-card-inset">
+      <div class="pr-head">
+        <a class="pr-num" href={derived.href} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={derived.tip}>
+          {derived.id}
+        </a>
+        <span class="pr-title">{derived.note}</span>
+      </div>
+    </div>
+  );
+  if (data.agent !== "claude") return derivedCard || null;
   const attached = !!data.channel_attached;
   const title = attached
     ? "Ask Claude to link a Linear ticket for this pane (via link_linear MCP tool)"
     : "Channel not attached. Respawn Claude via + claude.";
   return (
-    <button
-      class="modal-side-link-btn"
-      type="button"
-      disabled={!attached}
-      title={title}
-      onClick={() => onLinkAsk("linear")}
-    >
-      + link Linear ticket
-    </button>
+    <>
+      {derivedCard}
+      <button
+        class="modal-side-link-btn"
+        type="button"
+        disabled={!attached}
+        title={title}
+        onClick={() => onLinkAsk("linear")}
+      >
+        + link Linear ticket
+      </button>
+    </>
   );
 }
 

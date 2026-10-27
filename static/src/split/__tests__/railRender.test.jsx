@@ -320,6 +320,24 @@ describe("delegation lineage placement", () => {
   });
 });
 
+describe("<Rail> Linear chip", () => {
+  it("shows the ticket the branch names when none is linked (THI-441)", () => {
+    projects.value = [];
+    tracks.value = [];
+    windows.value = [{
+      pid: "p1", session: "managed", index: 0, target: "managed:0", name: "worker",
+      agent: "claude", state: "idle", track_id: "t1", track_name: "fdy",
+      repo_key: "/dev/fdy", repo_label: "fdy", branch: "tdody/fdy-8562-restack",
+      cwd: "/dev/fdy", worktree_affiliation: aff("at-pin"), pane_id: "%1",
+      pr: 8818, linked_linear: null, linear_ticket: "FDY-8562", linear_ticket_source: "branch",
+    }];
+    const html = render(<Rail />);
+    expect(html).toContain("#8818");
+    expect(html).toContain(">FDY-8562</a>");
+    expect(html).toContain("Linear FDY-8562 (from the branch name)");
+  });
+});
+
 describe("<Rail> context chip", () => {
   it("paints the context chip from tokens when the status line did not parse", () => {
     projects.value = [];

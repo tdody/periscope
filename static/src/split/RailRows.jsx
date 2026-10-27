@@ -21,6 +21,7 @@ import { profileLabel } from "../profiles.js";
 import { AGENT_META, memHint, paneLabel, prStateMeta, prUrl, relTime } from "../util.js";
 import { waitTier } from "./attention.js";
 import { ctxClass } from "./ctxBand.js";
+import { linearTicket } from "./linearTicket.js";
 import { canOpenInEditor, openInEditorTitle } from "./openInEditor.js";
 
 // Narrator status dims after 15 min: the work moved on (or the pane went
@@ -182,8 +183,9 @@ export function PaneRow({
       ? <a class={`pane-pill pane-pill-pr ${prMeta.cls}`} href={prHref} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={prTitle}>{prInner}</a>
       : <span class={`pane-pill pane-pill-pr ${prMeta.cls}`} title={prTitle}>{prInner}</span>
   );
-  const linChip = w.linked_linear && (
-    <a class="pane-pill pane-pill-linear" href={`https://linear.app/issue/${w.linked_linear}`} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={`Linear ${w.linked_linear}${w.linked_linear_status ? ` [${w.linked_linear_status}]` : ""}`}>{w.linked_linear}</a>
+  const lin = linearTicket(w);
+  const linChip = lin && (
+    <a class="pane-pill pane-pill-linear" href={lin.href} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={lin.tip}>{lin.id}</a>
   );
   // Account + wrapper-profile chips ride the bottom line (compact meta strip /
   // expanded footer), not the name line — they're orientation, not attention.
@@ -253,7 +255,7 @@ export function PaneRow({
           )}
         </div>
       )}
-      {expanded && (w.pr || w.linked_linear || ctxChipText(w) != null || acctChip || profChip) && (
+      {expanded && (w.pr || lin || ctxChipText(w) != null || acctChip || profChip) && (
         <div class="pane-foot">
           {prChip}
           {linChip}
@@ -353,12 +355,10 @@ export function WorktreeMeta({ wtWindows }) {
     );
   }
 
-  if (w.linked_linear) {
-    const lid = w.linked_linear;
-    const ltitle = w.linked_linear_title ? `: ${w.linked_linear_title}` : "";
-    const lstatus = w.linked_linear_status ? ` [${w.linked_linear_status}]` : "";
+  const lin = linearTicket(w);
+  if (lin) {
     parts.push(
-      <a class="wt-meta-chip wt-meta-linear" href={`https://linear.app/issue/${lid}`} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={`Linear ${lid}${ltitle}${lstatus}`}>{lid}</a>
+      <a class="wt-meta-chip wt-meta-linear" href={lin.href} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={lin.tip}>{lin.id}</a>
     );
   }
 
