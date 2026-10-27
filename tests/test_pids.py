@@ -827,3 +827,73 @@ def test_identity_merge_scenario_end_to_end(clean_state, fresh_activity_db, mock
     assert activity.get_pane_track(hub_pid) == "tk_pit"  # tag keyed on pid
     assert activity.get_pane_track(impl_pid) is None
     assert pids._TRACKS_MAINTAINED is True
+
+
+# --- window_by_pid (moved from channels._resolve_window_by_pid) ---------------
+
+
+def test_window_by_pid_matches_stamped_handle(mocker):
+    from periscope import pids
+
+    rows = [
+        {"session": "s", "index": 2, "name": "w", "cwd": "/x", "pane_id": "%7", "pid_raw": "abcd1234"},
+    ]
+    mocker.patch.object(pids, "list_windows", return_value=rows)
+
+    def _attach(ws, **kw):
+        for w in ws:
+            w["pid"] = w.pop("pid_raw")
+
+    mocker.patch.object(pids, "_attach_git_then_resolve_pids", side_effect=_attach)
+
+    pid, pane_id, window = pids.window_by_pid("abcd1234")
+    assert pid == "abcd1234"
+    assert pane_id == "%7"
+    assert window["session"] == "s" and window["index"] == 2
+
+
+def test_window_by_pid_miss_returns_empty(mocker):
+    from periscope import pids
+
+    mocker.patch.object(
+        pids, "list_windows", return_value=[{"session": "s", "index": 2, "pane_id": "%7", "pid_raw": "other"}]
+    )
+    mocker.patch.object(pids, "_attach_git_then_resolve_pids")
+    assert pids.window_by_pid("abcd1234") == ("", "", {})
+
+
+def test_window_by_pid_empty_handle_returns_empty(mocker):
+    from periscope import pids
+
+    listed = mocker.patch.object(pids, "list_windows")
+    assert pids.window_by_pid("") == ("", "", {})
+    listed.assert_not_called()
+
+
+def test_window_by_pid_falls_back_to_pane_id(mocker):
+    """A pid can change under a live pane (re-mint, or a rebind that misses
+    after a tmux restart). The observed shape was always the same: spawn
+    returned a pid, minutes later send_to said "no live window" while the pane
+    was alive at the SAME pane_id. Callers hold that pane_id, so it must work
+    as a handle — one session read the dead handle as death and respawned a
+    duplicate worker onto the live task."""
+    from periscope import pids
+
+    rows = [{"session": "s", "index": 1, "name": "w", "cwd": "/a", "pane_id": "%106", "pid_raw": "e42b3b40"}]
+    mocker.patch.object(pids, "list_windows", return_value=rows)
+    mocker.patch.object(
+        pids, "_attach_git_then_resolve_pids", side_effect=lambda ws, **kw: [w.update(pid=w["pid_raw"]) for w in ws]
+    )
+
+    # The stale spawn-time pid no longer resolves...
+    assert pids.window_by_pid("3dc7686a") == ("", "", {})
+    # ...but the pane id the caller still holds does.
+    pid, pane_id, _w = pids.window_by_pid("%106")
+    assert (pid, pane_id) == ("e42b3b40", "%106")
+
+
+def test_channels_still_resolves_through_window_by_pid():
+    # The MCP tools (and the tests that patch it there) use the old name.
+    from periscope import channels, pids
+
+    assert channels._resolve_window_by_pid is pids.window_by_pid

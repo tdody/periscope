@@ -590,6 +590,128 @@ def test_heal_tmux_conf_is_prod_only_and_points_at_this_checkout(monkeypatch):
     assert calls == [Path(activity.__file__).resolve().parent.parent]
 
 
+# --- pane_permissions: written by pane_permission_hook.py ----------------
+
+
+def _insert_permission(pane_id, request_id, created_at, match_key="sha256:ab"):
+    with activity._LOCK:
+        c = activity._conn()
+        c.execute(
+            "INSERT INTO pane_permissions "
+            "(pane_id, session_id, agent_id, request_id, tool, summary, match_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (pane_id, "sid", None, request_id, "Bash", "ls", match_key, created_at),
+        )
+        c.commit()
+
+
+def test_pane_permissions_since_reads_this_pane_from_since_oldest_first_at_most_two():
+    _insert_permission("%5", "early", 99.0)
+    _insert_permission("%5", "first", 100.0)
+    _insert_permission("%5", "second", 101.0, match_key=None)
+    _insert_permission("%5", "third", 102.0)
+    _insert_permission("%6", "other", 100.5)
+    assert activity.pane_permissions_since("%5", 100.0) == [
+        ("first", "Bash", "ls", "sha256:ab"),
+        ("second", "Bash", "ls", None),
+    ]
+    assert activity.pane_permissions_since("", 0) == []
+
+
+# pane_permissions as this branch's early commits created it, before match_key.
+_PRE_MATCH_KEY_DDL = (
+    "CREATE TABLE pane_permissions ("
+    "  pane_id TEXT NOT NULL, session_id TEXT, agent_id TEXT, request_id TEXT PRIMARY KEY,"
+    "  tool TEXT NOT NULL, summary TEXT NOT NULL, created_at REAL NOT NULL)"
+)
+
+
+def test_pane_permissions_migration_adds_match_key_to_old_db():
+    # A periscope.db this branch's early hook wrote has no match_key, and
+    # CREATE TABLE IF NOT EXISTS won't add it: without the guarded ALTER every
+    # read of the column fails. Fabricate the old shape before _conn() opens it.
+    import sqlite3
+
+    from periscope import config
+
+    db = sqlite3.connect(str(config.ACTIVITY_DB))
+    db.execute(_PRE_MATCH_KEY_DDL)
+    db.execute("INSERT INTO pane_permissions VALUES ('%5', 'sid', NULL, 'old', 'Bash', 'ls', 100.0)")
+    db.commit()
+    db.close()
+    # First _conn() → migration runs; the row survives, keyless (Open only).
+    assert activity.pane_permissions_since("%5", 0) == [("old", "Bash", "ls", None)]
+    # Idempotent: a reconnect on the now-current shape must not raise.
+    with activity._LOCK:
+        activity._CONN.close()
+        activity._CONN = None
+    assert activity.pane_permissions_since("%5", 0) == [("old", "Bash", "ls", None)]
+
+
+def test_pane_permissions_between_counts_a_half_open_band():
+    _insert_permission("%5", "edge", 985.0)
+    _insert_permission("%5", "mid", 990.0)
+    _insert_permission("%5", "window", 995.0)  # the end is exclusive
+    _insert_permission("%6", "other", 990.0)
+    assert activity.pane_permissions_between("%5", 985.0, 995.0) == 2
+    assert activity.pane_permissions_between("", 0, 2000) == 0
+
+
+def _old_shape_db_with_alter(monkeypatch, on_alter):
+    """An old-shape DB at the fixture's path, opened by _conn() through a
+    connection that runs `on_alter(conn)` when it reaches the match_key ALTER."""
+    import contextlib
+    import sqlite3
+
+    from periscope import config
+
+    with contextlib.closing(sqlite3.connect(str(config.ACTIVITY_DB))) as c, c:
+        c.execute(_PRE_MATCH_KEY_DDL)
+    real_connect = sqlite3.connect
+
+    class _Conn(sqlite3.Connection):
+        def execute(self, sql, *args):
+            if sql.startswith("ALTER TABLE pane_permissions"):
+                on_alter(self, real_connect)
+            return super().execute(sql, *args)
+
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **kw: real_connect(*a, factory=_Conn, **kw))
+
+
+def test_pane_permissions_heal_tolerates_the_hook_adding_the_column_first(monkeypatch):
+    # The hook's identical ALTER lands between _conn()'s PRAGMA and its own.
+    import contextlib
+
+    from periscope import config
+
+    def hook_wins(_conn, real_connect):
+        with contextlib.closing(real_connect(str(config.ACTIVITY_DB))) as other:
+            other.execute("ALTER TABLE pane_permissions ADD COLUMN match_key TEXT")
+
+    _old_shape_db_with_alter(monkeypatch, hook_wins)
+    assert activity.pane_permissions_since("%5", 0) == []  # opened, no "duplicate column" escaped
+    with activity._LOCK:
+        cols = [r[1] for r in activity._conn().execute("PRAGMA table_info(pane_permissions)")]
+    assert cols.count("match_key") == 1
+
+
+def test_a_failed_open_closes_its_connection_and_caches_nothing(monkeypatch):
+    import sqlite3
+
+    opened = []
+
+    def fails(conn, _real_connect):
+        opened.append(conn)
+        raise sqlite3.OperationalError("disk I/O error")
+
+    _old_shape_db_with_alter(monkeypatch, fails)
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
+        activity.pane_permissions_since("%5", 0)
+    assert activity._CONN is None
+    with pytest.raises(sqlite3.ProgrammingError):  # closed, not leaked
+        opened[0].execute("SELECT 1")
+
+
 def test_pane_workspace_set_get(fresh_activity_db):
     activity = fresh_activity_db
     assert activity.get_pane_workspace("%1") is None

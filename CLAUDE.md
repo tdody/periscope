@@ -25,17 +25,17 @@ applies. Read the relevant doc before editing, not after the tests go red.
 
 | Touching | Read first |
 |---|---|
-| `pids.py`, `panes.py`, `tmux_mirror.py`, `routes/ws.py`, `tmux.py`, `store.py`, `channels.py`, `tracks.py`, `routes/send.py` | `docs/invariants.md` — 19 numbered invariants, each citing the incident (cursor-before-body, `-N` on capture-pane, `@periscope_id` by window id, rebind TTLs, session-id-first identity, `report` always lands, …) |
+| `pids.py`, `panes.py`, `tmux_mirror.py`, `routes/ws.py`, `tmux.py`, `store.py`, `channels.py`, `tracks.py`, `routes/send.py`, `routes/pane_actions.py` | `docs/invariants.md` — 20 numbered invariants, each citing the incident (cursor-before-body, `-N` on capture-pane, `@periscope_id` by window id, rebind TTLs, session-id-first identity, `report` always lands, a remote key press re-checked against the screen and sent by `%id`, …) |
 | `app.py`, `server.py`, `periscope/__init__`, anything importing `server` | `docs/architecture-notes.md` — the `server.py`/`periscope/` split invariants (no `from server import`), `_STATE` rebind, frontend migration notes |
 | `open_ops.py`, `routes/open.py`, `OpenOmnibox`, `LauncherModal`, `worktree_spawn.py` | `docs/unified-open.md` — the two open surfaces, cwd-based create-or-focus, server-side rail placement |
 | the `claude` zsh wrapper, `CLAUDE_WRAPPER_PROFILE`, `ANTHROPIC_MODEL`, `--effort`, `session_status.py`, `resurrect.py` | `docs/wrapper-profiles.md` — profile/account/model are env-carried, never argv; effort is the one flag (the env var locks `/effort`) |
 | `resurrect.py`, `tmux_persist.py`, `bin/periscope install-tmux` | `docs/tmux-persistence.md` — save-file rewrite, periscope-driven continuum save, healthz `resurrect` block |
-| `channels.py`, `channel_shim.py`, `turns.py`, `pane_session_hook.py`, `codex_pane_session_hook.py` | `docs/channels.md` — MCP tools, shim reconnect protocol, pane→session mapping (live sid first, `pane_sessions` fallback) |
+| `channels.py`, `channel_shim.py`, `turns.py`, `pane_session_hook.py`, `codex_pane_session_hook.py`, `pane_permission_hook.py` | `docs/channels.md` — MCP tools, shim reconnect protocol, pane→session mapping (live sid first, `pane_sessions` fallback), the `PermissionRequest` recorder behind a banner's Allow / Deny (its match key; prints nothing, fails open) |
 | `narrator.py`, `rename_ai.py`, `/api/rename`, `/api/name-pin` | `docs/narrator.md` — regeneration rules, humans win renames, name pinning |
 | `launch_policy.py`, `usage.py` (`choose_launch`), `poke.py`, the spawn/resume paths in `routes/sessions.py` (incl. move-account), `open_ops.py`, `channels.py`, the `spawn_model` / `spawn_account` settings, header pin pickers, `UsagePill` / `usageSummary.js` | `docs/account-routing.md` — earliest-reset routing, walls vs. session pressure, what `auto`/`default` mean, the session poke, the move-anyway override, the 💤 waste marker |
 | `lgtm.py`, Review tab, LGTM iframes | `docs/lgtm.md` — HTTP/SSE contract, debugging a blank Review tab |
 | `src-tauri/` | `docs/tauri-shell.md` — build via `.app` not `cargo tauri dev`, webview recycling |
-| `static/src/notify/`, `notifications.rs`, `tauri.js` `notify` / `onNotificationOpened` / `onNotificationAction`, `NotifySettings` | `docs/superpowers/specs/2026-10-21-native-notifications-design.md` (its revision sections first) — one pass per applied state (`stateSeq`), grace counted in passes, keys that survive a restart, webview/shell version skew; buttons: `2026-10-26-native-notifications-2b-design.md` — categories are data the webview registers, one per variant whose buttons all apply |
+| `static/src/notify/`, `notifications.rs`, `tauri.js` `notify` / `onNotificationOpened` / `onNotificationAction`, `NotifySettings` | `docs/superpowers/specs/2026-10-21-native-notifications-design.md` (its revision sections first) — one pass per applied state (`stateSeq`), grace counted in passes, keys that survive a restart, webview/shell version skew; buttons: `2026-10-26-native-notifications-2b-design.md` (its "Revised in implementation (PR 2)" section first) — categories are data the webview registers, one per variant whose buttons all apply; Allow / Deny / Reply / Ask agent to fix POST to `routes/pane_actions.py`, which re-checks the pane when pressed |
 | `bin/periscope update`, `updater.py`, the launchd plist | `docs/updating.md` — why pull+restart is not `update`, the bootout guards |
 | `tests/conftest.py`, any test that touches the activity DB or spawns the shim | `docs/testing.md` — the no-leaked-thread invariant (CPython 3.14 sqlite segfault), `.venv` drift, `WORKTREES_DIR` landmine |
 | `pyproject.toml` `[tool.ruff]`/`[tool.ty]`, `biome.json` | `docs/linting.md` — which rules are off and why |
@@ -57,10 +57,10 @@ with no build step at boot.
 ## Tests
 
 ```sh
-uv run pytest -q                          # full suite (~1083 tests)
+uv run pytest -q                          # full suite (~1868 tests)
 uv run pytest tests/test_channel_shim.py  # shim reconnect protocol (spurious failures → `uv sync`, see docs/testing.md)
 uv run pytest tests/test_tmux_mirror.py   # mirror protocol + pyte convergence oracle (real tmux on -L periscope-mirror-test)
-npm test                                  # vitest over the Preact app's pure helpers (~252 tests)
+npm test                                  # vitest over the Preact app's pure helpers (~1177 tests)
 ```
 
 Tests live under `tests/` mirroring the package (`tests/test_<module>.py`,
@@ -145,7 +145,7 @@ commit `static/dist/` whenever `static/src/` changes** — boot has no build ste
 | split view | `split/{Split,Rail,RailRows,Detail,…}.jsx` + `split/railTree.js` — the only view. Rail is TRACK-anchored: Track → (derived Branch) → Pane; branch rows are derived from live `w.branch`, not entities |
 | terminal | `terminal/{Terminal,TerminalSearch}.jsx` + `terminalCore.js` (imperative xterm + `/ws/pane`) |
 | overlays | `overlays/*.jsx` + `hooks/useEscape.js`; `OpenOmnibox` (⌘K) is the command palette, `open/classify.js` its pure classifier |
-| notifications | `notify/{detect,copy,burst,persist}.js` (pure: what's news, its words, grouping, resume) + `notify/feed.js` (the effect, badge, click routing); started from `Split.jsx` |
+| notifications | `notify/{detect,copy,burst,persist}.js` (pure: what's news, its words, grouping, resume) + `notify/actions.js` (each banner category's buttons and what a press does) + `notify/feed.js` (the effect, badge, click routing); started from `Split.jsx` |
 | still vanilla | `history.js` + `util.js` (the `/history` SPA), `sw.js`, `vendor/xterm.*` (replace wholesale, never edit) |
 
 ## Status-line parsing

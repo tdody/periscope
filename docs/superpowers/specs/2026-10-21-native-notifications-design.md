@@ -471,4 +471,4 @@ Manual, on macOS, with notifications allowed for the dev build:
   recycle. The badge counts panes.
 - 2b: every button does what its row says. Allow and Deny can only ever answer
   the request they were shown for. No action that makes an agent act works from a locked screen. No
-  reply lands in a dialog.
+  reply is submitted into a dialog.

@@ -15,7 +15,9 @@ asyncio.Lock only blocks coroutines.
 State.json writes go through `periscope.store.set_window_fields`; this
 module never touches `_STATE` directly. `list_windows`/`note_focus`/
 `note_action` come from `periscope.panes`, `_attach_git_then_resolve_pids`
-from `periscope.pids` — no bridges to server.py remain in this module.
+from `periscope.pids` — no bridges to server.py remain in this module. So does
+`_resolve_window_by_pid`: it is `pids.window_by_pid` under its old name, so
+the tools, and the tests that patch it here, keep working.
 
 Socket lifecycle: this module never `os.unlink`s `MCP_SOCKET_PATH` on
 shutdown. The FastAPI `lifespan` in `server.py` owns shutdown cleanup; the
@@ -39,6 +41,7 @@ from periscope.config import MCP_SOCKET_PATH
 from periscope.log import log
 from periscope.panes import list_windows, note_action, note_focus
 from periscope.pids import _attach_git_then_resolve_pids, stamp_new_window
+from periscope.pids import window_by_pid as _resolve_window_by_pid
 from periscope.store import get_window, set_window_fields
 from periscope.tabs import open_tab
 from periscope.tmux import _run, _tmux_mutate, tmux
@@ -288,38 +291,6 @@ def _stale_handle_error(handle: str) -> str:
         "(match on name/cwd), or pass the pane id (%N) as the handle, which is "
         "stable. Verify with peek before concluding anything died."
     )
-
-
-def _resolve_window_by_pid(handle: str) -> tuple[str, str, dict]:
-    """Resolve an @periscope_id handle to (pid, pane_id, window).
-
-    Matches on `pid_raw` — the stamped @periscope_id on the raw list_windows
-    row — BEFORE resolution, because resolution attaches `pid` only after a
-    match (raw rows carry pid_raw, not pid). peek/terminate read
-    session/index off the returned window dict. Returns ("", "", {}) when no
-    live window matches.
-
-    Also accepts a tmux pane id (`%N`) as the handle. A pid can change under a
-    pane — re-mint, or a rebind that misses after a tmux server restart — and
-    the observed failure was always the same shape: `spawn_claude` returned a
-    pid, minutes later `send_to` said "no live window" while the pane was alive
-    at the SAME pane_id under a new pid. Callers already hold that pane_id
-    (spawn_claude and list_claudes both return it), so accepting it turns a
-    dead end into a working address. One session read the dead handle as death
-    and spawned a duplicate agent onto the same task."""
-    if not handle:
-        return "", "", {}
-    wins = list_windows()
-    match = next((w for w in wins if w.get("pid_raw") == handle), None)
-    if match is None and handle.startswith("%"):
-        match = next((w for w in wins if w.get("pane_id") == handle), None)
-    if match is None:
-        return "", "", {}
-    # Resolve against the FULL window list, never just the match: a
-    # single-window pass has an incomplete `carried` set, so an unstamped
-    # window could rebind onto an id another live window is still wearing.
-    _attach_git_then_resolve_pids(wins, full_roster=True)
-    return match.get("pid") or "", match.get("pane_id") or "", match
 
 
 def _do_link_pr_tool(pane: str, arguments: dict):

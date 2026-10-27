@@ -13,6 +13,7 @@ from periscope import activity, session_status
 from periscope import store as _store
 from periscope.git_pr import cached_git_state
 from periscope.log import log
+from periscope.panes import list_windows
 from periscope.tmux import tmux
 
 _PID_TTL_S = 30 * 86400  # 30 days — GC retention for state.json window entries
@@ -536,3 +537,39 @@ def _attach_git_then_resolve_pids(windows: list[dict], full_roster: bool = False
                 "resume": resumes.get(pane_id),
             }
     resolve_pids(windows, session_hints=hints, full_roster=full_roster)
+
+
+def window_by_pid(handle: str) -> tuple[str, str, dict]:
+    """Resolve an @periscope_id handle to (pid, pane_id, window).
+
+    Matches on `pid_raw` — the stamped @periscope_id on the raw list_windows
+    row — BEFORE resolution, because resolution attaches `pid` only after a
+    match (raw rows carry pid_raw, not pid). peek/terminate read
+    session/index off the returned window dict. Returns ("", "", {}) when no
+    live window matches.
+
+    Also accepts a tmux pane id (`%N`) as the handle. A pid can change under a
+    pane — re-mint, or a rebind that misses after a tmux server restart — and
+    the observed failure was always the same shape: `spawn_claude` returned a
+    pid, minutes later `send_to` said "no live window" while the pane was alive
+    at the SAME pane_id under a new pid. Callers already hold that pane_id
+    (spawn_claude and list_claudes both return it), so accepting it turns a
+    dead end into a working address. One session read the dead handle as death
+    and spawned a duplicate agent onto the same task.
+
+    Lives here rather than in channels.py so a route (pane_actions) finds a
+    pane by pid without importing the MCP module; channels.py imports it
+    under its old name, _resolve_window_by_pid."""
+    if not handle:
+        return "", "", {}
+    wins = list_windows()
+    match = next((w for w in wins if w.get("pid_raw") == handle), None)
+    if match is None and handle.startswith("%"):
+        match = next((w for w in wins if w.get("pane_id") == handle), None)
+    if match is None:
+        return "", "", {}
+    # Resolve against the FULL window list, never just the match: a
+    # single-window pass has an incomplete `carried` set, so an unstamped
+    # window could rebind onto an id another live window is still wearing.
+    _attach_git_then_resolve_pids(wins, full_roster=True)
+    return match.get("pid") or "", match.get("pane_id") or "", match

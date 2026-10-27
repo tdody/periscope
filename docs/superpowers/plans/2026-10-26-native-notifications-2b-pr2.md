@@ -54,11 +54,7 @@ The server re-checks the live pane each time one is pressed, so a stale banner c
   - when auto mode defers to you.
 
   The hand checks need a pane switched out of auto mode.
-- **The hook covers only the sessions that have loaded it.** The two docs disagree on when that happens, and Task 9's hand check settles it:
-  - the spec says Claude reads hooks at session start, so only sessions started after `bin/periscope install-hook`;
-  - `docs/channels.md` says Claude loads new hooks live.
-
-  Either way, a pane without the hook gets the Open-only banner.
+- **The hook covers only the sessions that have loaded it.** The docs assume the safer case, that Claude reads hooks at session start, so only sessions started after `bin/periscope install-hook` are covered; Task 9's hand check settles whether it loads them live. Either way, a pane without the hook gets the Open-only banner.
 - **`parse_pane`'s footer gap is a follow-up, not this PR.**
   - The permission dialog's footer, `Esc to cancel · Tab to amend`, is outside `NEEDS_INPUT_FOOTER_RE`'s family (`Enter to select · … · Esc to cancel`).
   - So `parse_pane` doesn't read an *unmapped* pane (one with no session file) as needs-input while a permission dialog is up. The dialog also covers the status line, so it can read as a shell.
@@ -113,6 +109,17 @@ Expected: the vitest notify suites pass, and pytest reports every test passed.
 ---
 
 ### Task 1: Recognise a permission dialog on screen
+
+**Revised in review:** matching v2 replaced this task's screen token. The spec's "Revised in implementation (PR 2)" has the reasons.
+- `parse_permission_dialog` returns `{text, header, body, question, shown_path}`; `permission_dialog` is a thin wrapper over it.
+- The footer must be the **last** non-empty line, not one of the last two. The rule search stops at scrollback (`⏺`, `✻`, `⎿`) and gives up after 60 rows.
+- `dialog_matches` replaces `dialog_shows`:
+  - Bash: the block's digest equals the hook's key;
+  - Edit / Write: the question's path is a `/`-boundary suffix of the stored one;
+  - only `VERIFIABLE_TOOLS` (Bash, Edit, Write) can match.
+- `dialog_open` fails closed: any `Esc to cancel` in the last three lines also counts.
+- Every reader strips CSI / OSC escapes first (`capture` keeps them).
+- More fixtures: `edit.txt`, `bash_multiline.txt`, `bash_narrow.txt` (a wrapped Tip). The keys test moved to Task 5's route tests.
 
 **Files:**
 - Create: `tests/fixtures/permission_dialogs/bash.txt`, `tests/fixtures/permission_dialogs/write.txt`
@@ -479,6 +486,25 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ---
 
 ### Task 2: The `PermissionRequest` hook and its registration
+
+**Revised in review:**
+- **The hook is py3.9-safe** (`from __future__ import annotations`), since `python3` can be the Mac's 3.9.
+  - It's registered as `python3 -I -S <path> || true`.
+  - `pane_session_hook.py`'s entry also gained `|| true`, and every path is `shlex.quote`d.
+- **It stores a `match_key`** in a new column:
+  - Bash: a sha256 of the squashed command + description;
+  - Edit / Write: the absolute path;
+  - otherwise NULL, as for a Bash call with `dangerouslyDisableSandbox`.
+
+  `VERIFIABLE_TOOLS` and `_HIDDEN_RE` live here and are mirrored in `panes.py`.
+- **Bash's summary is the whole command** (whitespace collapsed, hidden controls stripped), not its first line.
+- **The connection:**
+  - `timeout=0.5`, not 2.0;
+  - wrapped in `contextlib.closing` (`with sqlite3.connect()` only commits);
+  - an older table gets `match_key` by `ALTER`.
+- **`install-claude-hook`:**
+  - "matcher-less" means `matcher` absent, `""` or `"*"`;
+  - an existing entry is repointed only when its target is missing, or when it's this checkout in an older form.
 
 **Files:**
 - Create: `pane_permission_hook.py` (at the repo root, beside `pane_session_hook.py`)
@@ -913,6 +939,8 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 ### Task 3: `pids.window_by_pid`, moved from channels
 
+**Revised in review:** nothing; it shipped as written.
+
 **Files:**
 - Modify: `periscope/pids.py` (the imports; append `window_by_pid`)
 - Modify: `periscope/channels.py`:
@@ -1116,6 +1144,20 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ---
 
 ### Task 4: Publish `w.pending_permission`
+
+**Revised in review:**
+- **The `match_key` column.**
+  - The DDL gains `match_key TEXT`, and `pane_permissions_since` returns it (a 4-tuple).
+  - `activity._conn` heals a table without the column.
+  - `_conn` closes a connection whose migration fails, rather than caching it.
+- **Split in two:**
+  - `pending_permission_row`: the full row, key included, for the route;
+  - `pending_permission_for`: what `/api/state` publishes, without the key.
+
+  The one row must carry a key.
+- **The window** is `_PERMISSION_WINDOW_S = 5`, not `_PERMISSION_SKEW_S = 2`.
+- **A miss logs at info,** once per wait. A miss is no row in the window but one in the 10 s before it, found by the new `pane_permissions_between`.
+- **A `sqlite3.Error`** returns None, with a warning at most once a minute.
 
 **Files:**
 - Modify: `periscope/activity.py`:
@@ -1383,6 +1425,18 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ---
 
 ### Task 5: The endpoints, `routes/pane_actions.py`
+
+**Revised in review:**
+- **Permission** checks with `pending_permission_row` + `parse_permission_dialog` + `dialog_matches`, not `pending_permission_for` + `dialog_shows`.
+- **Check-then-send runs under `_ACT_LOCK`** in both routes. A request id is marked answered (`_ANSWERED`) before its key goes in, and a second press is a 409.
+- **Both capture and send by the checked pane's `%id`.** `_send_to_target` gains `address=` (`routes/send.py`). `_live_pane` 404s without a pane id.
+- **Reply:**
+  - it reads only the live session (`live_session_id_for_pane`), and any `needs-input` refuses;
+  - 409 when a shell is in the foreground, or there's neither a live session nor Claude on screen (Codex);
+  - 409 unless `panes.composer_ready`;
+  - then the paste goes in alone. Enter follows only once `_submit_when_held` sees `panes.composer_holds` and no dialog (up to 4 looks, 100 ms apart).
+- **`panes.py`** gains `composer_ready` / `composer_holds` and a floor on the ghost greys; their fixtures are in `tests/fixtures/composer/`.
+- **Logging.** Both routes log the pane and the outcome; a reply never logs its text.
 
 **Files:**
 - Create: `periscope/routes/pane_actions.py`
@@ -1725,6 +1779,12 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 ### Task 6: Banners name the new categories, and actions.js registers their buttons
 
+**Revised in review:**
+- **Reply (`question`) and Ask agent to fix need a live Claude pane.** That's `agent(w)`: a pid and `w.agent === "claude"`, not just `w.pid`, because the server refuses Codex panes and shells.
+- **`ci_failed` can borrow a fixer.** When its own window isn't a Claude pane, it looks in `ctx.windows` for one on the same PR (`prKey`). `data.pid` is the fixer's, falling back to the window's own.
+- **A banner body names an MCP tool as `tool (server)`** (`toolLabel`).
+- **The `auth` comment says why Deny has none:** it only stops the agent.
+
 **Files:**
 - Modify: `static/src/notify/copy.js` (`payloadFor`: the `needs_input`, `question` and `ci_failed` cases)
 - Modify: `static/src/notify/actions.js` (the header comment, the button constants, `categories()`)
@@ -1957,6 +2017,18 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ---
 
 ### Task 7: What the new buttons do
+
+**Revised in review:**
+- **`agentAct` takes `{ target, show }` first.**
+- **Every failure posts one follow-up `notice` banner** before revealing the pane:
+  - the failures: no pid, Allow / Deny without a request id, an answer that isn't ok, and a throw;
+  - the banner: `o.notify`, titled from `NOTICE_TITLE`, with the route's reason from `noticeBody`.
+
+  These presses run with the app in the background, where a toast goes unseen. Failures other than a 409 still toast.
+- **`OPENERS` gains `notify`.**
+- **`postJson`:**
+  - times out after 10 s (`AbortSignal.timeout`, feature-detected);
+  - takes a 422's first `msg` as its detail.
 
 **Files:**
 - Modify: `static/src/util.js` (append `postJson`)
