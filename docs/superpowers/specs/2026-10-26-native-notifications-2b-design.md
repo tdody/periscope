@@ -132,6 +132,32 @@ These come from the installed CLI bundle, because the hooks docs don't publish t
 
 ## PR 2: the buttons that make an agent act
 
+### Revised after deploy: one button per banner
+
+This supersedes every button list in this spec, in PR 1's sections and PR 2's alike.
+
+**Why.** macOS, from Big Sur on, folds a notification's actions into an **Options** menu as soon as there are two or more. The first hand check found Allow hidden there. With a single action, the button shows directly.
+
+**So each category carries exactly one action** (`categories()` in `notify/actions.js`):
+
+| Category | Its one button |
+|---|---|
+| `needs_permission` | Allow |
+| `question` | Reply |
+| `ci_failed` and `ci_failed_fix` | Ask agent to fix |
+| `pr_merged` and `pr_merged_cleanup` | Clean up worktree |
+| `pr_merged_pr` and `ci_failed_pr` | Open PR |
+| `usage_to_{B}` | Spawn on {B} |
+| `usage` | Details |
+| `done_seen` | Mark seen |
+| `needs_dialog` | Open |
+
+**What moved to the click.** The banner's click (`openFromBanner`) already opens the pane, the PR or the usage details, so the dropped Open / Open PR / Details buttons were duplicates.
+
+**Deny has no button now.** Clicking the banner opens the pane, where the dialog's own No is one key away. `runAction` still handles `deny` and `open`, so a banner posted before the change still works.
+
+A test pins one action per category.
+
 ### Revised in implementation (PR 2)
 
 What shipped, checked against real Claude Code 2.1.280 captures (`tests/fixtures/permission_dialogs/`, `tests/fixtures/composer/`). **This supersedes the PR 2 sections below wherever they differ.** The plan's per-task notes say where the code moved from its blocks: `docs/superpowers/plans/2026-10-26-native-notifications-2b-pr2.md`.

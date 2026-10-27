@@ -36,30 +36,33 @@ const FIX = act("fix", "Ask agent to fix", { auth: true });
 // The whole set: macOS replaces it on each registration. Move targets are
 // deduped and sorted so the feed's change check doesn't resend an identical
 // set because move_targets came back in another order.
+//
+// ONE button per category: macOS (Big Sur on) folds two or more actions into
+// an "Options" menu, so the main action only shows directly when it's alone.
+// The banner's click (openFromBanner) already opens the pane, the PR or the
+// usage details, so Open / Open PR / Details buttons beside a main action were
+// redundant anyway. Deny lost its button for the same reason: the click opens
+// the pane, where the dialog's own No is one key away. runAction still handles
+// deny / open, so a banner posted before this change still works.
 export function categories({ accounts = [], moveTargets = {} } = {}) {
   const set = [
     // No "done" category: every done banner gets done_seen only.
     { id: "done_seen", actions: [MARK_SEEN] },
     { id: "ci_failed_pr", actions: [OPEN_PR] },
-    { id: "pr_merged", actions: [CLEANUP, OPEN_PR] },
+    { id: "pr_merged", actions: [CLEANUP] },
     { id: "pr_merged_cleanup", actions: [CLEANUP] },
     { id: "pr_merged_pr", actions: [OPEN_PR] },
     { id: "usage", actions: [DETAILS] },
-    // Deny is Escape ("No, and tell Claude what to do differently"), so it
-    // needs no auth; macOS draws it red.
-    {
-      id: "needs_permission",
-      actions: [act("allow", "Allow", { auth: true }), act("deny", "Deny", { destructive: true }), OPEN],
-    },
+    { id: "needs_permission", actions: [act("allow", "Allow", { auth: true })] },
     { id: "needs_dialog", actions: [OPEN] },
     // A category's buttons are static, so the placeholder can't name the pane.
-    { id: "question", actions: [act("send", "Reply", { auth: true, reply: { button: "Send", placeholder: "Reply…" } }), OPEN] },
-    { id: "ci_failed", actions: [FIX, OPEN_PR] },
+    { id: "question", actions: [act("send", "Reply", { auth: true, reply: { button: "Send", placeholder: "Reply…" } })] },
+    { id: "ci_failed", actions: [FIX] },
     { id: "ci_failed_fix", actions: [FIX] },
   ];
   for (const to of [...new Set(Object.values(moveTargets || {}))].sort()) {
     // accounts may come back null from a caller that hasn't loaded the registry yet.
-    set.push({ id: usageCategory(to), actions: [act("spawn_on", `Spawn on ${accountLabel(to, accounts || [])}`), DETAILS] });
+    set.push({ id: usageCategory(to), actions: [act("spawn_on", `Spawn on ${accountLabel(to, accounts || [])}`)] });
   }
   return set;
 }
