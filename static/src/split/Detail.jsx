@@ -571,7 +571,7 @@ export function Detail() {
       {isPane && (paneW ? <PaneDetail w={paneW} /> : <EmptyDetail />)}
       {isQueue && <ReviewsQueue />}
       {isReview && (reviews.value === null ? <div class="wt-empty">loading…</div>
-        : reviewRow ? <Walkthrough key={`${reviewRow.repo}/${reviewRow.branch}`} repo={reviewRow.repo} branch={reviewRow.branch}
+        : reviewRow ? <Walkthrough key={`${reviewRow.repo}/${reviewRow.branch}`} repo={reviewRow.repo} branch={reviewRow.branch} pr={reviewRow.pr}
             sig={`${reviewRow.walkthrough?.head}|${reviewRow.walkthrough?.stale_by}|${reviewRow.unresolved}|${reviewRow.comments}`} />
         : <EmptyDetail />)}
       {trPids.map((pid) => {

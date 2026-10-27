@@ -115,7 +115,7 @@ function Stop({ stop, diffFiles, comments, repo, branch, hl, onPosted }) {
 // `sig` changes when the row's head / staleness / unresolved count does (from
 // the 10 s reviews poll), so a reply, a resolve or a re-prepare refetches the
 // open view instead of leaving it stale until re-selected.
-export function Walkthrough({ repo, branch, sig }) {
+export function Walkthrough({ repo, branch, pr, sig }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [hl, setHl] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -162,7 +162,7 @@ export function Walkthrough({ repo, branch, sig }) {
         <h2>{w.title || branch}</h2>
         <span class="wt-sub">
           {repo} · {branch}
-          {w.header?.pr ? ` · PR #${w.header.pr}` : ""}
+          {w.header?.pr ? <> · {pr?.url ? <a href={pr.url} target="_blank" rel="noopener">PR #{w.header.pr}</a> : `PR #${w.header.pr}`}</> : ""}
           {stale_by == null && w.header ? (diff ? "" : " · no worktree — hunks unavailable") : stale_by > 0 ? ` · stale: ${stale_by} commit${stale_by === 1 ? "" : "s"} since` : ""}
         </span>
       </header>

@@ -96,6 +96,19 @@ describe("sortRows", () => {
       "unres", "theirs", "prnowalk-hi", "prnowalk", "mine-walk", "local", "merged",
     ]);
   });
+  it("a live pane outranks a checkout outranks nothing local, whatever the D6 order says", () => {
+    const rows = [
+      row({ branch: "theirs-nowhere", role: "review-requested", pr: { number: 7, state: "open" } }),
+      row({ branch: "unres-nowhere", unresolved: 2, walkthrough: { stops: 1 } }),
+      row({ branch: "mine-wt", pr: { number: 3, state: "open" }, walkthrough: { stops: 1 }, worktree: "/wt" }),
+      row({ branch: "local-pane", role: "local", owner: { name: "p" }, worktree: "/wt2" }),
+      row({ branch: "merged-pane", pr: { number: 9, state: "merged" }, owner: { name: "p" } }),
+      row({ branch: "unres-wt", unresolved: 1, walkthrough: { stops: 1 }, worktree: "/wt3" }),
+    ];
+    expect(sortRows(rows).map((r) => r.branch)).toEqual([
+      "local-pane", "unres-wt", "mine-wt", "unres-nowhere", "theirs-nowhere", "merged-pane",
+    ]);
+  });
   it("a merged PR with unresolved comments still sorts last and is not counted", () => {
     const rows = [
       row({ branch: "m", pr: { number: 9, state: "merged" }, unresolved: 4 }),

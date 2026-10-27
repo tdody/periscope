@@ -97,15 +97,17 @@ export function matchRefs(refs, diffFiles) {
   });
 }
 
-// D6 order: unresolved comments, review-requested, a PR with no walkthrough
-// yet, the rest, local work with no PR, merged.
+// Readiness first — a live pane, then a checkout on disk, then nothing local —
+// and within a tier the D6 order: unresolved comments, review-requested, a PR
+// with no walkthrough yet, the rest, local work with no PR. Merged last.
 function group(r) {
-  if (r.pr?.state === "merged") return 5;
-  if (r.unresolved > 0) return 0;
-  if (r.role === "review-requested") return 1;
-  if (r.pr && !r.walkthrough) return 2;
-  if (r.role === "local") return 4;
-  return 3;
+  if (r.pr?.state === "merged") return 99;
+  const tier = r.owner ? 0 : r.worktree ? 10 : 20;
+  if (r.unresolved > 0) return tier;
+  if (r.role === "review-requested") return tier + 1;
+  if (r.pr && !r.walkthrough) return tier + 2;
+  if (r.role === "local") return tier + 4;
+  return tier + 3;
 }
 
 export function sortRows(rows) {
