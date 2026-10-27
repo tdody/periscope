@@ -4,7 +4,7 @@
 //   - empty         — nothing selected
 //
 // The selection is driven by the `railSelection` signal (string highlight-key:
-// "pane:<pid>" | null) — the same value <Rail> writes and
+// "pane:<pid>" | "review:<repo>/<slug>" | "reviews" | null) — the same value <Rail> writes and
 // compares rows against. The live window data comes from the `windows` signal,
 // so the header + side panel refresh on every poll without remounting the
 // terminal (single-xterm reuse: <Terminal> is keyed on pid, so re-selecting the

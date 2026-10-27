@@ -11,8 +11,10 @@
 //   - `railSelection`   → STRING highlight-key the rows compare against
 //
 // Two deliberately-different selection shapes (do NOT cross them):
-//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid})
-//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>")
+//   - PERSISTED  prefs.last_selected is an OBJECT  ({kind:"pane",pid} |
+//                {kind:"review",repo,branch} | {kind:"reviews"})
+//   - HIGHLIGHT  the rows compare against a STRING ("pane:<pid>" |
+//                "review:<repo>/<slug>" | "reviews")
 // railSelection mirrors the string; setLastSelected stores the object.
 //
 // Drag identity travels on the drag descriptor captured at dragStart (kind +
