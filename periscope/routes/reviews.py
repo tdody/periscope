@@ -175,8 +175,9 @@ async def _prepare(body: ReviewRef) -> dict:
     except channels.SpawnFailed as e:
         raise HTTPException(502, f"spawn failed: {e}") from e
     if not spawned["pid"]:
-        # Stamping failed: the window exists but has no identity to return.
-        raise HTTPException(500, "spawned a window but could not stamp its pane id")
+        # The Claude is already running with the prompt pasted; a 500 would invite a retry that spawns a second one.
+        log.warning("reviews: spawned but pane id unknown for %s %s", body.repo, body.branch)
+        return {"ok": True, "mode": "spawned", **spawned, "pane_id": None}
 
     # Same server-side rail placement as the spawn_claude tool's anchored path.
     def place() -> None:

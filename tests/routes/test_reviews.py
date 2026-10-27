@@ -211,18 +211,20 @@ def test_comment_timestamp_is_minute_precision(client, mocker):
     assert len(got) == 1 and len(got[0]["ts"]) == 16
 
 
-def test_prepare_spawn_without_pid_is_500(client, mocker, monkeypatch):
+def test_prepare_spawn_without_pid_still_succeeds(client, mocker, monkeypatch, place):
     monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
     mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
     mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
     mocker.patch(
         "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
     )
-    mocker.patch(
+    spawn = mocker.patch(
         "periscope.channels.spawn_claude_with_prompt",
         new=AsyncMock(return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "", "pane_id": "%5"}),
     )
-    assert client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"}).status_code == 500
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["pane_id"] is None and spawn.call_count == 1
+    place.assert_not_called()
 
 
 @pytest.mark.parametrize("stop", ["", "  ", "a\nb", "a\rb"])
