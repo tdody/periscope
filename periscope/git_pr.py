@@ -384,11 +384,20 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
 
 # A Linear ticket named by its PR's title ("THI-435: …", "[FDY-8600] …") or by
 # a branch in Linear's own shape, <user>/<key>-<num>-<slug> (THI-441): until
-# then link_linear was the only way to a ticket chip. Only the title's start
-# and the last segment's start count, and a branch needs 2+ digits: `utf-8`,
-# `vue-3` and a title quoting ISO-8601 aren't tickets.
-_TITLE_TICKET_RE = re.compile(r"^\[?([A-Z][A-Z0-9]{1,9}-\d+)\]?(?=[:\s])")
-_BRANCH_TICKET_RE = re.compile(r"^([a-z]{2,5}-\d{2,})(?:-|$)", re.IGNORECASE)
+# then link_linear was the only way to a ticket chip. A title counts only in
+# those two forms, so one opening with SHA-256 or UTF-8 can't hide the branch's
+# ticket; a branch only at its last segment's start, with 2+ digits (`utf-8`,
+# `vue-3` aren't tickets).
+_TITLE_TICKET_RE = re.compile(r"^(?:\[([A-Z][A-Z0-9]{1,9}-\d+)\]|([A-Z][A-Z0-9]{1,9}-\d+):)")
+_BRANCH_TICKET_RE = re.compile(r"^(([a-z]{2,5})-\d{2,})(?:-|$)", re.IGNORECASE)
+# Words that take the key's place without being a team key: GitHub-style
+# branches (`fix-123-…`, `pr-18`, live in local refs) and numbered standards
+# (`pep-723`, `node-20`). A team keyed like one loses only the derived chip;
+# link_linear still names its tickets.
+_NOT_TEAM_KEYS = frozenset(
+    {"fix", "bug", "gh", "pr", "mr", "issue", "feat", "chore", "wip"}
+    | {"pep", "rfc", "cve", "iso", "sha", "utf", "node", "py", "http", "es"}
+)
 
 
 def linear_ticket_for(branch: str | None, pr_title: str | None) -> tuple[str, str] | None:
@@ -396,9 +405,11 @@ def linear_ticket_for(branch: str | None, pr_title: str | None) -> tuple[str, st
     branch, the title first, or None."""
     m = _TITLE_TICKET_RE.match(pr_title or "")
     if m:
-        return m.group(1), "pr_title"
+        ticket = m.group(1) or m.group(2)
+        if ticket.split("-")[0].lower() not in _NOT_TEAM_KEYS:
+            return ticket, "pr_title"
     m = _BRANCH_TICKET_RE.match((branch or "").rsplit("/", 1)[-1])
-    if m:
+    if m and m.group(2).lower() not in _NOT_TEAM_KEYS:
         return m.group(1).upper(), "branch"
     return None
 

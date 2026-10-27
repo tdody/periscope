@@ -214,6 +214,25 @@ def test_ci_checks_names_each_check_failing_first():
         ("worktree-thi-435-permission-dialog", None, None),
         ("main", "feat(outcome-report): parse ISO-8601 dates", None),
         (None, None, None),
+        # GitHub-style branches and standards share the shape; their words are
+        # never team keys. pr-18 and pr-20-review are live refs (PR #45 review).
+        ("fix-123-login-crash", None, None),
+        ("tdody/fix-123-login-crash", None, None),
+        ("gh-1234-fix-crash", None, None),
+        ("issue-42-null", None, None),
+        ("feature/bug-12", None, None),
+        ("pr-18", None, None),
+        ("pr-20-review", None, None),
+        ("pep-723-header", None, None),
+        ("node-20-upgrade", None, None),
+        ("cve-2024-1234-patch", None, None),
+        # A title counts only in the ticket's own form, `KEY-123:` or
+        # `[KEY-123]`: a title opening with SHA-256 or UTF-8 names no ticket,
+        # and mustn't hide the branch's real one.
+        ("tdody/fdy-8562-checksums", "SHA-256 checksums for uploads", ("FDY-8562", "branch")),
+        ("main", "UTF-8 everywhere", None),
+        ("main", "THI-441 show the ticket", None),
+        ("main", "PEP-723: inline script metadata", None),
     ],
 )
 def test_linear_ticket_for(branch, pr_title, want):
