@@ -570,6 +570,59 @@ def test_view_surfaces_linked_linear(mocker, clean_state):
     assert view["linked_linear_status"] == "In Progress"
 
 
+def test_view_derives_a_linear_ticket_when_none_is_linked(mocker, clean_state):
+    # THI-441: link_linear was the only way to a ticket chip, so a pane on
+    # `tdody/fdy-8562-…` with its PR open showed the PR and no ticket.
+    from periscope.window_view import build_window_view
+
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(
+        mocker,
+        pane_content="x",
+        git={"branch": "tdody/fdy-8562-checkpoint-tooling"},
+        pr={"pr": 8818, "pr_title": "feat(outcomes): restack"},
+    )
+
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["linked_linear"] is None
+    assert view["linear_ticket"] == "FDY-8562"
+    assert view["linear_ticket_source"] == "branch"
+
+
+def test_view_derives_only_the_team_keys_set(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    clean_state["settings"] = {"linear_team_keys": ["THI"]}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(mocker, pane_content="x", git={"branch": "tdody/fdy-8562-checkpoint-tooling"})
+
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["linear_ticket"] is None
+
+
+def test_view_derives_no_linear_ticket_over_a_linked_one(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    pid = "abc12345"
+    clean_state["windows"][pid] = {"linked_linear": "FAR-456"}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(mocker, pane_content="x", git={"branch": "tdody/fdy-8562-checkpoint-tooling"})
+
+    view, _ = build_window_view(_window(pid=pid), now_ts=1000)
+    assert view["linked_linear"] == "FAR-456"
+    assert view["linear_ticket"] is None
+    assert view["linear_ticket_source"] is None
+
+
 def test_view_channel_attached_reflects_mcp_session_presence(mocker, clean_state):
     from periscope.channels import _CHANNEL_UNREAD, _CHANNELS_LOCK, _MCP_SESSIONS
     from periscope.window_view import build_window_view

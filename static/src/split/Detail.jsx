@@ -32,6 +32,7 @@ import { TerminalSearch } from "../terminal/TerminalSearch.jsx";
 import { isTerminalAtBottom, scrollTerminalToBottom, setTerminalFileCallback, writeTerminalLine } from "../terminal/terminalCore.js";
 import { track } from "../track.js";
 import { memHint, paneLabel, prStateMeta, prUrl, relTime, targetQuery } from "../util.js";
+import { linearTicket } from "./linearTicket.js";
 import { sideHidden } from "./panels.js";
 import { ResizeHandle } from "./ResizeHandle.jsx";
 import { SessionPickers } from "./SessionPickers.jsx";
@@ -235,14 +236,12 @@ export function PaneHeader({ w }) {
       : <span class={`header-pr ${prMeta.cls}`}>{inner}</span>;
     parts.push(<><span class="hsep">·</span>{prLink}</>);
   }
-  if (w.linked_linear) {
-    const lid = w.linked_linear;
-    const ltitle = w.linked_linear_title ? `: ${w.linked_linear_title}` : "";
-    const lstatus = w.linked_linear_status ? ` [${w.linked_linear_status}]` : "";
+  const lin = linearTicket(w);
+  if (lin) {
     parts.push(
       <>
         <span class="hsep">·</span>
-        <a class="header-linear" href={`https://linear.app/issue/${lid}`} target="_blank" rel="noopener" title={`Linear ${lid}${ltitle}${lstatus}`}>{lid}</a>
+        <a class="header-linear" href={lin.href} target="_blank" rel="noopener" title={lin.tip}>{lin.id}</a>
       </>
     );
   }

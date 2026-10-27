@@ -243,3 +243,28 @@ def test_patch_repo_roots_null_clears(client, mocker):
     r = client.patch("/api/settings", json={"repo_roots": None})
     assert r.status_code == 200
     update_spy.assert_called_once_with({"repo_roots": None})
+
+
+def test_patch_linear_team_keys_uppercases_and_dedupes(client, mocker):
+    # THI-441: only these keys are read as tickets off a branch or PR title.
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    mocker.patch("periscope.routes.settings.get_settings", return_value={})
+    r = client.patch("/api/settings", json={"linear_team_keys": ["fdy", " THI ", "", "FDY"]})
+    assert r.status_code == 200, r.text
+    update_spy.assert_called_once_with({"linear_team_keys": ["FDY", "THI"]})
+
+
+def test_patch_linear_team_keys_rejects_a_non_key(client, mocker):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    r = client.patch("/api/settings", json={"linear_team_keys": ["FDY-1"]})
+    assert r.status_code == 400
+    assert "team key" in r.json()["detail"]
+    update_spy.assert_not_called()
+
+
+def test_patch_linear_team_keys_null_clears(client, mocker):
+    update_spy = mocker.patch("periscope.routes.settings.update_settings")
+    mocker.patch("periscope.routes.settings.get_settings", return_value={})
+    r = client.patch("/api/settings", json={"linear_team_keys": None})
+    assert r.status_code == 200
+    update_spy.assert_called_once_with({"linear_team_keys": None})

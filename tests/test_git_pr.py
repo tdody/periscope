@@ -16,6 +16,7 @@ from periscope.git_pr import (
     cached_git_state,
     git_signal_for,
     git_state_for,
+    linear_ticket_for,
     linked_pr_state_for,
     pr_state_for,
 )
@@ -191,6 +192,74 @@ def test_ci_checks_names_each_check_failing_first():
         {"name": "ci/legacy", "state": "pending"},
         {"name": "lint", "state": "success"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("branch", "pr_title", "want"),
+    [
+        # A PR title opening with the ticket wins: "THI-435: …" is how these PRs
+        # are titled, and it names the ticket even when the branch doesn't.
+        ("feature/permission-dialog-needs-input", "THI-435: parse_pane reads …", ("THI-435", "pr_title")),
+        ("tdody/fdy-8562-restack", "[FDY-8600] restack the runbook", ("FDY-8600", "pr_title")),
+        # Linear's branch shape, <user>/<key>-<num>-<slug>. fdy's PR titles are
+        # conventional commits that never name the ticket (THI-441).
+        ("tdody/fdy-8562-checkpoint-tooling", "feat(outcomes): restack", ("FDY-8562", "branch")),
+        ("thibaultdody/thi-435-parse-pane", None, ("THI-435", "branch")),
+        ("fdy-8562", "", ("FDY-8562", "branch")),
+        # Shapes that aren't tickets: a one-digit number (utf-8, vue-3), a date,
+        # a slug with no number, a ticket mid-segment, a ticket mid-title.
+        ("feat/utf-8-handling", None, None),
+        ("ds/2024-06-11_lift_pt_1", None, None),
+        ("tdody/fix-rollup-blocklist-by-name", None, None),
+        ("worktree-thi-435-permission-dialog", None, None),
+        ("main", "feat(outcome-report): parse ISO-8601 dates", None),
+        (None, None, None),
+        # GitHub-style branches and standards share the shape; their words are
+        # never team keys. pr-18 and pr-20-review are live refs (PR #45 review).
+        ("fix-123-login-crash", None, None),
+        ("tdody/fix-123-login-crash", None, None),
+        ("gh-1234-fix-crash", None, None),
+        ("issue-42-null", None, None),
+        ("feature/bug-12", None, None),
+        ("pr-18", None, None),
+        ("pr-20-review", None, None),
+        ("pep-723-header", None, None),
+        ("node-20-upgrade", None, None),
+        ("cve-2024-1234-patch", None, None),
+        # A title counts only in the ticket's own form, `KEY-123:` or
+        # `[KEY-123]`: a title opening with SHA-256 or UTF-8 names no ticket,
+        # and mustn't hide the branch's real one.
+        ("tdody/fdy-8562-checksums", "SHA-256 checksums for uploads", ("FDY-8562", "branch")),
+        ("main", "UTF-8 everywhere", None),
+        ("main", "THI-441 show the ticket", None),
+        ("main", "PEP-723: inline script metadata", None),
+    ],
+)
+def test_linear_ticket_for(branch, pr_title, want):
+    assert linear_ticket_for(branch, pr_title) == want
+
+
+@pytest.mark.parametrize(
+    ("branch", "pr_title", "want"),
+    [
+        # With team keys set, only they count: ordinary words a word list can't
+        # all name (fdy refs: split-7868, magic-404, norm-2025) stop counting.
+        ("zf/split-7868-catalog-coverage", None, None),
+        ("pd/magic-404-testing", None, None),
+        ("norm-2025-06-a", None, None),
+        ("tdody/fdy-8562-restack", None, ("FDY-8562", "branch")),
+        # A known key needs no guard against one-digit numbers.
+        ("tdody/fdy-7-tiny", None, ("FDY-7", "branch")),
+        ("main", "THI-441: show the ticket", ("THI-441", "pr_title")),
+        ("tdody/fdy-8562-restack", "ABC-12: someone else's key", ("FDY-8562", "branch")),
+    ],
+)
+def test_linear_ticket_for_with_team_keys(branch, pr_title, want):
+    assert linear_ticket_for(branch, pr_title, frozenset({"FDY", "THI"})) == want
+
+
+def test_a_listed_team_key_wins_over_the_word_list():
+    assert linear_ticket_for("pr-18", None, frozenset({"PR"})) == ("PR-18", "branch")
 
 
 def test_ci_checks_caps_the_list():

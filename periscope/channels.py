@@ -1581,9 +1581,10 @@ _CHANNEL_TOOLS: list[_ChannelTool] = [
         "name": "link_linear",
         "description": (
             "Link this pane to a Linear ticket. Use when the user is "
-            "working on a Linear ticket. Periscope doesn't auto-detect "
-            "Linear tickets, so this is the only way to surface one on "
-            "the pane card. Pass `title` and `status` when you know "
+            "working on a Linear ticket. Periscope shows one on its own "
+            "only when the PR title opens with it (`KEY-123: …`) or the "
+            "branch is Linear-shaped (`<user>/<key>-<num>-…`), and then "
+            "as the id alone; a linked ticket replaces that. Pass `title` and `status` when you know "
             "them (e.g. you fetched the ticket via the Linear MCP) so "
             "the card shows what the ticket is, not just its id. Each "
             "call fully describes the link — omitting title/status "

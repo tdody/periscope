@@ -31,6 +31,7 @@ from periscope.store import get_window, set_window_fields
 from periscope.tabs import activate_tab, close_tab, open_tab
 from periscope.tmux import _ANSI_SGR_RE, capture, pane_meta, tmux, window_identity
 from periscope.turns import get_turns_for_pane, session_id_for_pane
+from periscope.window_view import linear_ticket_fields
 
 router = APIRouter()
 
@@ -140,6 +141,7 @@ def pane(session: str, index: int, lines: int = 200):
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
+        **linear_ticket_fields(persisted, git.get("branch"), pr.get("pr_title")),
         **parsed,
         **git,
         **pr,

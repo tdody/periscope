@@ -10,9 +10,12 @@ Tools exposed to Claude:
   the pane card and in the dashboard's alert feed without opening the modal.
 - `link_pr(number)` — bind a GitHub PR to the pane, even if Claude's
   status-line URL isn't visible.
-- `link_linear(id, title?, status?)` — same for Linear tickets (no
-  auto-detection path). Optional `title`/`status` metadata renders on
-  the card and in the modal; each call fully describes the link.
+- `link_linear(id, title?, status?)` — same for Linear tickets. Without
+  a link, periscope shows the ticket a `KEY-123:` PR title or a
+  Linear-shaped branch names, as the id alone (`git_pr.linear_ticket_for`;
+  `settings.linear_team_keys` narrows it to known keys); a link replaces
+  that. Optional `title`/`status` metadata renders on the card and in the
+  modal; each call fully describes the link.
 - `set_name(name)` — rename the caller's own window and pin the name
   against the narrator (see the narrator section's pin invariant). The
   only self-naming path: `spawn_claude(name=…)` could name a CHILD, so a
