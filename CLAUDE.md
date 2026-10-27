@@ -33,6 +33,7 @@ applies. Read the relevant doc before editing, not after the tests go red.
 | `channels.py`, `channel_shim.py`, `turns.py`, `pane_session_hook.py`, `codex_pane_session_hook.py` | `docs/channels.md` — MCP tools, shim reconnect protocol, pane→session mapping (live sid first, `pane_sessions` fallback) |
 | `narrator.py`, `rename_ai.py`, `/api/rename`, `/api/name-pin` | `docs/narrator.md` — regeneration rules, humans win renames, name pinning |
 | `launch_policy.py`, `usage.py` (`choose_launch`), `poke.py`, the spawn/resume paths in `routes/sessions.py` (incl. move-account), `open_ops.py`, `channels.py`, the `spawn_model` / `spawn_account` settings, header pin pickers, `UsagePill` / `usageSummary.js` | `docs/account-routing.md` — earliest-reset routing, walls vs. session pressure, what `auto`/`default` mean, the session poke, the move-anyway override, the 💤 waste marker |
+| `reviews.py`, `routes/reviews.py`, `static/src/review/*`, the `walkthrough` skill | `docs/superpowers/specs/2026-10-26-review-walkthrough-design.md` — D1 periscope never mutates git/GitHub, D2 files under `~/.claude/reviews` with one writer per file, D6 queue sourced from `gh` with panes joined on |
 | `src-tauri/` | `docs/tauri-shell.md` — build via `.app` not `cargo tauri dev`, webview recycling |
 | `static/src/notify/`, `notifications.rs`, `tauri.js` `notify` / `onNotificationOpened` / `onNotificationAction`, `NotifySettings` | `docs/superpowers/specs/2026-10-21-native-notifications-design.md` (its revision sections first) — one pass per applied state (`stateSeq`), grace counted in passes, keys that survive a restart, webview/shell version skew; buttons: `2026-10-26-native-notifications-2b-design.md` — categories are data the webview registers, one per variant whose buttons all apply |
 | `bin/periscope update`, `updater.py`, the launchd plist | `docs/updating.md` — why pull+restart is not `update`, the bootout guards |
@@ -92,6 +93,7 @@ hand-written UI style. Rule rationale: `docs/linting.md`.
 browser
  ├── /            → static/index.html → Preact app (static/dist/app.js)
  │       split view (rail + detail); polls /api/state every 3s into a signals store
+ │       polls /api/reviews every 10s into the `reviews` signal (header badge, queue)
  │       terminals open WS /ws/pane → xterm.js mirror of the live tmux pane
  └── /history     → static/history.html + history.js (search UI)
 
