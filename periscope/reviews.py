@@ -108,7 +108,7 @@ def parse_header(text: str) -> Header | None:
     return {
         "branch": pairs["branch"],
         "head": pairs["head"],
-        "pr": int(pr) if pr and pr.isdigit() else None,
+        "pr": int(pr) if pr and re.fullmatch(r"\d+", pr, re.ASCII) else None,
         "repo": pairs.get("repo"),
     }
 

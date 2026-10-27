@@ -77,6 +77,12 @@ def test_parse_header():
     assert reviews.parse_header("# T\n\n> **bold**: x\n") is None
 
 
+def test_parse_header_non_ascii_digit_pr_is_none():
+    # str.isdigit() accepts "²" but int("²") raises, which 500'd /api/reviews.
+    h = reviews.parse_header("# T\n\n> branch: feat/x · head: abc · pr: ²\n")
+    assert h is not None and h["pr"] is None
+
+
 def test_count_stops_ignores_fenced_headings():
     assert reviews.count_stops(WALKTHROUGH) == 2
 
