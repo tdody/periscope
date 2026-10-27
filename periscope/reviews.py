@@ -15,7 +15,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -248,11 +247,12 @@ def worktree_for(
 
 
 def head_sha(worktree: str) -> str | None:
-    r = subprocess.run(["git", "-C", worktree, "rev-parse", "HEAD"], capture_output=True, text=True)
-    return r.stdout.strip() or None if r.returncode == 0 else None
+    # Bounded: a hung git must not stall the queue route.
+    code, out = _run(["git", "-C", worktree, "rev-parse", "HEAD"], timeout=3.0)
+    return out or None if code == 0 else None
 
 
-_STALE_CACHE: dict[tuple[str, str, str], int | None] = {}
+_STALE_CACHE: dict[tuple[str, str, str], int] = {}
 
 
 def stale_by(worktree: str | None, head: str) -> int | None:
@@ -266,10 +266,12 @@ def stale_by(worktree: str | None, head: str) -> int | None:
     key = (worktree, head, now)
     if key in _STALE_CACHE:
         return _STALE_CACHE[key]
-    r = subprocess.run(["git", "-C", worktree, "rev-list", "--count", f"{head}..HEAD"], capture_output=True, text=True)
-    val = int(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip().isdigit() else None
-    _STALE_CACHE[key] = val
-    return val
+    code, out = _run(["git", "-C", worktree, "rev-list", "--count", f"{head}..HEAD"], timeout=3.0)
+    if code != 0 or not out.isdigit():
+        # Not cached: a head that isn't fetched yet would stay None forever.
+        return None
+    _STALE_CACHE[key] = int(out)
+    return _STALE_CACHE[key]
 
 
 def _read(path: Path) -> str:
@@ -395,9 +397,20 @@ def _pr_row(p: dict, state: str) -> dict:
     }
 
 
+_DEFAULT_BRANCH: dict[str, str] = {}  # no TTL: a repo's default branch effectively never changes
+
+
+def _default_branch(root: str) -> str:
+    if root not in _DEFAULT_BRANCH:
+        _DEFAULT_BRANCH[root] = gitutil.detect_default_branch(root)
+    return _DEFAULT_BRANCH[root]
+
+
 def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
     """Queue rows: GitHub PRs (mine, review-requested) per known repo, then
     live (repo, branch) pairs with no PR, then review dirs matching neither."""
+    # Two discovered repos sharing a basename collapse to one: inherent to
+    # label-keyed review dirs (spec D2).
     roots = {os.path.basename(r.rstrip("/")): r for r in repos}
     entries: list[tuple[str, str, str, dict | None]] = []  # (repo, branch, role, pr)
     seen: set[tuple[str, str]] = set()
@@ -410,9 +423,17 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
             entries.append((label, p["branch"], p["role"], _pr_row(p, "open")))
     for w in windows:
         label, branch = w.get("repo_label"), w.get("branch")
-        if label and branch and (label, branch) not in seen:
-            seen.add((label, branch))
-            entries.append((label, branch, "local", None))
+        if not label or not branch or (label, branch) in seen:
+            continue
+        # Detached HEAD reports "@<sha>" or "?", never None.
+        if branch.startswith("@") or branch == "?":
+            continue
+        root = roots.get(label) or w.get("repo_key")
+        # A shell sitting on the default branch is not "sprint work not yet PR'd".
+        if root and branch == _default_branch(root):
+            continue
+        seen.add((label, branch))
+        entries.append((label, branch, "local", None))
     for key in _orphan_pairs():
         if key not in seen:
             seen.add(key)

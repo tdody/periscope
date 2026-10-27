@@ -286,3 +286,50 @@ def test_open_prs_skips_repos_without_github_and_returns_none_on_failure(mocker)
     mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
     mocker.patch("periscope.reviews._run", return_value=(1, "auth error"))
     assert reviews.open_prs("/dev/fdy") is None
+
+
+def test_list_reviews_skips_default_branch_and_detached_windows(mocker):
+    mocker.patch("periscope.reviews.cached_open_prs", return_value=[])
+    mocker.patch("periscope.reviews.gitutil.detect_default_branch", return_value="main")
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[])
+    reviews._DEFAULT_BRANCH.clear()
+    wins = [_win(pid="a", branch="main"), _win(pid="b", branch="@abc1234"), _win(pid="c", branch="?")]
+    assert reviews.list_reviews(wins, ["/dev/fdy"]) == []
+    rows = reviews.list_reviews([_win(branch="feat/x")], ["/dev/fdy"])
+    assert [(r["branch"], r["role"]) for r in rows] == [("feat/x", "local")]
+
+
+def test_cached_open_prs_serves_stale_rows_and_refreshes_once(mocker):
+    root = "/dev/stale-test"
+    rows = [{"number": 1}]
+    reviews._prs_cache[root] = (0, rows)
+    bg = mocker.patch("periscope.reviews._bg")  # no real thread (docs/testing.md)
+    try:
+        assert reviews.cached_open_prs(root) == rows
+        assert reviews.cached_open_prs(root) == rows
+        bg.assert_called_once()
+    finally:
+        reviews._prs_cache.pop(root, None)
+        reviews._prs_fetching.discard(root)
+
+
+def test_fetch_failure_keeps_last_good_rows_and_clears_flag(mocker):
+    root = "/dev/fail-test"
+    rows = [{"number": 1}]
+    reviews._prs_cache[root] = (0, rows)
+    reviews._prs_fetching.add(root)
+    mocker.patch("periscope.reviews.open_prs", return_value=None)
+    try:
+        reviews._fetch_prs_into_cache(root)
+        assert reviews._prs_cache[root][1] == rows
+        assert reviews._prs_cache[root][0] > 0
+        assert root not in reviews._prs_fetching
+    finally:
+        reviews._prs_cache.pop(root, None)
+
+
+def test_stale_by_does_not_cache_unknown_head(tmp_path):
+    shas = _git_repo(tmp_path / "r")
+    assert reviews.stale_by(str(tmp_path / "r"), "0000000") is None
+    assert not any(k[1] == "0000000" for k in reviews._STALE_CACHE)
+    assert reviews.stale_by(str(tmp_path / "r"), shas[1]) == 1
