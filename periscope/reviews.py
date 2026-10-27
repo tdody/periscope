@@ -195,7 +195,18 @@ def clear_review(repo: str, branch: str) -> None:
 # --- queue -----------------------------------------------------------------
 
 
-class ReviewRow(TypedDict):
+class TicketFields(TypedDict):
+    """A row's Linear ticket under the pane payload's field names, so the
+    frontend's linearTicket() renders a queue row as it renders a pane (THI-442)."""
+
+    linked_linear: str | None
+    linked_linear_title: str | None
+    linked_linear_status: str | None
+    linear_ticket: str | None
+    linear_ticket_source: str | None
+
+
+class ReviewRow(TicketFields):
     repo: str
     branch: str
     slug: str
@@ -454,9 +465,33 @@ def _default_branch(root: str) -> str:
     return _DEFAULT_BRANCH[root]
 
 
-def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
+def _ticket_fields(owner: dict | None, branch: str, pr_title: str | None, team_keys: frozenset[str]) -> TicketFields:
+    """The owner pane's linked ticket, else the one the PR title or the row's
+    branch names (git_pr.linear_ticket_for). The row's branch, not the owner's:
+    a PR checked out as `pr-<N>` puts its pane on a branch that names nothing."""
+    if owner and owner.get("linked_linear"):
+        return {
+            "linked_linear": owner["linked_linear"],
+            "linked_linear_title": owner.get("linked_linear_title"),
+            "linked_linear_status": owner.get("linked_linear_status"),
+            "linear_ticket": None,
+            "linear_ticket_source": None,
+        }
+    derived = git_pr.linear_ticket_for(branch, pr_title, team_keys)
+    return {
+        "linked_linear": None,
+        "linked_linear_title": None,
+        "linked_linear_status": None,
+        "linear_ticket": derived[0] if derived else None,
+        "linear_ticket_source": derived[1] if derived else None,
+    }
+
+
+def list_reviews(windows: list[dict], repos: list[str], team_keys: frozenset[str] = frozenset()) -> list[ReviewRow]:
     """Queue rows: GitHub PRs (mine, review-requested) per known repo, then
-    live (repo, branch) pairs with no PR, then review dirs matching neither."""
+    live (repo, branch) pairs with no PR, then review dirs matching neither.
+    `team_keys` is settings.linear_team_keys, passed in so this module reads no
+    settings."""
     # Two discovered repos sharing a basename collapse to one: inherent to
     # label-keyed review dirs (spec D2).
     roots = {os.path.basename(r.rstrip("/")): r for r in repos}
@@ -531,6 +566,7 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
                 "comments": len(comments),
                 "owner": {k: owner[k] for k in ("pid", "pane_id", "session", "index", "name")} if owner else None,
                 "worktree": worktree,
+                **_ticket_fields(owner, branch, pr["title"] if pr else None, team_keys),
             }
         )
     return rows

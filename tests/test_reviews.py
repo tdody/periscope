@@ -453,3 +453,97 @@ def test_orphan_with_open_pr_is_review_requested_and_rows_count_comments(tmp_pat
     assert (rows["theirs/open"]["role"], rows["theirs/open"]["pr"]["number"]) == ("review-requested", 77)
     assert (rows["theirs/open"]["unresolved"], rows["theirs/open"]["comments"]) == (1, 2)
     assert (rows["theirs/done"]["role"], rows["theirs/done"]["comments"]) == ("local", 0)
+
+
+def _pr(number, branch, title="T", role="mine"):
+    return {
+        "number": number,
+        "title": title,
+        "branch": branch,
+        "draft": False,
+        "ci": None,
+        "role": role,
+        "author": "sam",
+    }
+
+
+def _rows_by_branch(mocker, prs, wins, team_keys=frozenset()):
+    # Every gh/git call stubbed; cached_open_prs would otherwise start a _bg thread (docs/testing.md).
+    mocker.patch("periscope.reviews.cached_open_prs", return_value=prs)
+    mocker.patch("periscope.reviews.gitutil.detect_default_branch", return_value="main")
+    mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[])
+    mocker.patch("periscope.reviews.stale_by", return_value=None)
+    return {r["branch"]: r for r in reviews.list_reviews(wins, ["/dev/fdy"], team_keys)}
+
+
+_NO_TICKET = {
+    "linked_linear": None,
+    "linked_linear_title": None,
+    "linked_linear_status": None,
+    "linear_ticket": None,
+    "linear_ticket_source": None,
+}
+
+
+def _ticket(row):
+    return {k: row[k] for k in _NO_TICKET}
+
+
+def test_row_ticket_is_the_owner_panes_link_over_a_derived_one(mocker):
+    wins = [
+        _win(
+            branch="thibaultdody/thi-442-x",
+            linked_linear="THI-9",
+            linked_linear_title="Other",
+            linked_linear_status="In Progress",
+        )
+    ]
+    rows = _rows_by_branch(mocker, [_pr(45, "thibaultdody/thi-442-x", title="THI-442: queue")], wins)
+    assert _ticket(rows["thibaultdody/thi-442-x"]) == {
+        **_NO_TICKET,
+        "linked_linear": "THI-9",
+        "linked_linear_title": "Other",
+        "linked_linear_status": "In Progress",
+    }
+
+
+def test_row_ticket_from_the_pr_title_then_the_branch(mocker):
+    prs = [
+        _pr(45, "feat/queue", title="THI-442: queue search"),
+        _pr(46, "thibaultdody/thi-443-colors", title="colors"),
+        _pr(47, "feat/plain", title="plain"),
+    ]
+    rows = _rows_by_branch(mocker, prs, [])
+    assert _ticket(rows["feat/queue"]) == {**_NO_TICKET, "linear_ticket": "THI-442", "linear_ticket_source": "pr_title"}
+    assert _ticket(rows["thibaultdody/thi-443-colors"]) == {
+        **_NO_TICKET,
+        "linear_ticket": "THI-443",
+        "linear_ticket_source": "branch",
+    }
+    assert _ticket(rows["feat/plain"]) == _NO_TICKET
+
+
+def test_row_ticket_respects_linear_team_keys(mocker):
+    rows = _rows_by_branch(mocker, [_pr(46, "thibaultdody/thi-443-colors", title="colors")], [], frozenset({"FDY"}))
+    assert _ticket(rows["thibaultdody/thi-443-colors"]) == _NO_TICKET
+
+
+def test_row_ticket_reads_the_prs_branch_not_its_pr_n_checkout(mocker):
+    # The owner pane sits on `pr-45`, which names no ticket; the row's headRefName does.
+    wins = [_win(pid="rv", branch="pr-45", cwd="/wt/pr-45")]
+    prs = [_pr(45, "thibaultdody/thi-442-x", title="queue", role="review-requested")]
+    row = _rows_by_branch(mocker, prs, wins)["thibaultdody/thi-442-x"]
+    assert row["owner"]["pid"] == "rv"
+    assert _ticket(row) == {**_NO_TICKET, "linear_ticket": "THI-442", "linear_ticket_source": "branch"}
+
+
+def test_local_and_header_rows_derive_from_the_branch_alone(mocker):
+    mocker.patch("periscope.reviews.git_pr.cached_linked_pr_state", return_value={"pr_state": "merged", "ci": None})
+    p = reviews.walkthrough_path("fdy", "thibaultdody/thi-400-old")
+    p.parent.mkdir(parents=True)
+    p.write_text("# T\n\n> branch: thibaultdody/thi-400-old · head: abc1234 · pr: 500\n")
+    rows = _rows_by_branch(mocker, [], [_win(branch="thibaultdody/thi-441-local")])
+    old, local = rows["thibaultdody/thi-400-old"], rows["thibaultdody/thi-441-local"]
+    assert old["pr"]["title"] == "" and _ticket(old)["linear_ticket"] == "THI-400"
+    assert local["pr"] is None and _ticket(local)["linear_ticket"] == "THI-441"
