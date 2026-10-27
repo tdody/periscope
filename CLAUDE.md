@@ -57,10 +57,10 @@ with no build step at boot.
 ## Tests
 
 ```sh
-uv run pytest -q                          # full suite (~1083 tests)
+uv run pytest -q                          # full suite (~1868 tests)
 uv run pytest tests/test_channel_shim.py  # shim reconnect protocol (spurious failures → `uv sync`, see docs/testing.md)
 uv run pytest tests/test_tmux_mirror.py   # mirror protocol + pyte convergence oracle (real tmux on -L periscope-mirror-test)
-npm test                                  # vitest over the Preact app's pure helpers (~252 tests)
+npm test                                  # vitest over the Preact app's pure helpers (~1177 tests)
 ```
 
 Tests live under `tests/` mirroring the package (`tests/test_<module>.py`,

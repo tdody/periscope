@@ -296,8 +296,11 @@ These are the non-obvious behaviors worth preserving:
       (`_send_to_target(address=)`), never `session:index`, which tmux
       re-resolves when the keys go in;
     - answers each request once, under one lock;
-    - for a reply, pastes alone, then looks again (`composer_holds`, still no
-      dialog) before Enter.
+    - for a reply, strips control characters first (an `ESC[201~` ends
+      tmux's bracketed paste and types the rest as keys), pastes alone, then
+      looks again (`composer_holds`, still no dialog) before Enter. A dialog
+      that renders in the ~10–20 ms before the paste can still receive the
+      paste; nothing is submitted into it.
 
     Each guard answers a failure found in review, against real Claude Code
     2.1.280 captures, before this shipped:

@@ -104,8 +104,9 @@ the only authoritative, current source.
   transcript at once instead of cwd-falling-back to whatever was most recently
   active.
 - **UserPromptSubmit** (every prompt) migrates panes that predate the hook —
-  they self-correct on their next message (Claude loads new hooks live; no
-  plugin reload needed).
+  they self-correct on their next message, once their session has loaded the
+  hook. Assume only sessions started after `install-hook` have; PR 2's hand
+  check (2b plan, Task 9) settles whether Claude loads new hooks live.
 
 `install-hook` also invokes the provider-specific Codex installer. It merges
 dedicated Periscope groups for `SessionStart`, `UserPromptSubmit`, `Stop`, and
@@ -135,7 +136,7 @@ strictly better (current vs spawn-frozen).
 - the pane id;
 - the session and agent ids. A subagent's call asks in its parent's pane;
 - the tool;
-- a display summary of at most 80 characters: Bash's whole command, a file tool's path, WebFetch's URL, or else the first string argument;
+- a display summary of at most 80 characters, in clear text and published on `/api/state`: Bash's command (a long one clipped to its head … tail), a file tool's path, WebFetch's URL, or else the first string argument;
 - a `match_key`;
 - the time.
 
@@ -149,7 +150,7 @@ The payload carries no `tool_use_id`, so `request_id` is a hash of the session, 
 | Edit / Write | the absolute path. The dialog's question path must be a `/`-boundary suffix of it |
 | anything else, or Bash with `dangerouslyDisableSandbox` | NULL, so the banner offers Open only |
 
-- **Bash's key is a digest, not the text.** Commands carry tokens, and `periscope.db` is 0644. The screen side hashes its own squashed block and compares the two.
+- **Bash's key is a digest, so the WHOLE command never sits in the key.** Commands carry tokens, and `periscope.db` is 0644. The summary still shows the command's head and tail in clear text, by design: it's what the banner displays. The screen side hashes its own squashed block and compares the two.
 - **Two definitions, pinned together.** The hook runs on bare `python3` and can't import `periscope`, so it and `panes.py` each define `VERIFIABLE_TOOLS` and the hidden-control class, and tests pin the copies together.
 - **The column heals itself.** A table created before `match_key` gets it by `ALTER`, from whichever side opens the DB first (the hook, or `activity._conn`). Otherwise every INSERT would fail, silently.
 
@@ -166,10 +167,10 @@ The payload carries no `tool_use_id`, so `request_id` is a hash of the session, 
 - **`pane_session_hook.py`'s entry ends in `|| true` too.** A nonzero `UserPromptSubmit` blocks the prompt.
 
 **Who reads it.**
-- **`window_view.pending_permission_for`** publishes `w.pending_permission = {request_id, tool, summary}` when exactly one row falls within 5 s of the wait's `needs_since` and that row has a key.
+- **`window_view.pending_permission_for`** publishes `w.pending_permission = {request_id, tool, summary}` when exactly one row was stamped no earlier than 5 s before the wait's `needs_since` (no upper bound) and that row has a key.
 - **`POST /api/pane/permission`** (`routes/pane_actions.py`) recomputes the row, key included, and checks it against a fresh capture before sending `1` or Escape (`docs/invariants.md`, invariant 20).
 
 **Gaps:**
 - **Prod's DB only.** The hook can't know which instance is looking, so a dev server never publishes `pending_permission`.
 - **Auto mode.** A pane in auto mode (2.1.280's default) asks only when auto mode defers to you.
-- **Old sessions.** A session that hasn't loaded the hook gets Open-only banners.
+- **Old sessions.** Only sessions started after `install-hook` are assumed to have loaded the hook; one that hasn't gets Open-only banners.

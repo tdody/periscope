@@ -54,11 +54,7 @@ The server re-checks the live pane each time one is pressed, so a stale banner c
   - when auto mode defers to you.
 
   The hand checks need a pane switched out of auto mode.
-- **The hook covers only the sessions that have loaded it.** The two docs disagree on when that happens, and Task 9's hand check settles it:
-  - the spec says Claude reads hooks at session start, so only sessions started after `bin/periscope install-hook`;
-  - `docs/channels.md` says Claude loads new hooks live.
-
-  Either way, a pane without the hook gets the Open-only banner.
+- **The hook covers only the sessions that have loaded it.** The docs assume the safer case, that Claude reads hooks at session start, so only sessions started after `bin/periscope install-hook` are covered; Task 9's hand check settles whether it loads them live. Either way, a pane without the hook gets the Open-only banner.
 - **`parse_pane`'s footer gap is a follow-up, not this PR.**
   - The permission dialog's footer, `Esc to cancel · Tab to amend`, is outside `NEEDS_INPUT_FOOTER_RE`'s family (`Enter to select · … · Esc to cancel`).
   - So `parse_pane` doesn't read an *unmapped* pane (one with no session file) as needs-input while a permission dialog is up. The dialog also covers the status line, so it can read as a shell.

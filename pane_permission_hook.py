@@ -94,9 +94,10 @@ def match_key(tool_name: str, tool_input: object) -> str | None:
     (panes.dialog_matches), or None when the tool's dialog can't be verified
     (anything outside VERIFIABLE_TOOLS) or there's nothing to key on.
 
-    Bash: a sha256 digest of the squashed command + description — not the
-    text itself, since a command can carry secrets/tokens and periscope.db is
-    0644. The screen side hashes its own squashed block the same way and
+    Bash: a sha256 digest of the squashed command + description, so the WHOLE
+    command never sits in the key (a command can carry secrets/tokens and
+    periscope.db is 0644); the summary, display text by design, still keeps
+    its head and tail in clear text. The screen side hashes its own squashed block the same way and
     compares digests, so the match is exactly as strict as comparing the text
     would be; a stored key that's merely a PREFIX of the block (Task 1's
     `git push origin main` matching `... --force`) still can't match, because

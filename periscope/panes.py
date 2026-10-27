@@ -542,8 +542,9 @@ def _squash(text: str) -> str:
 
 
 def _bash_key(squashed: str) -> str:
-    # The hook stores a digest, not the command: commands carry tokens, and
-    # periscope.db is 0644 (pane_permission_hook.match_key).
+    # The hook keys a digest, so the WHOLE command never sits in the key:
+    # commands carry tokens, and periscope.db is 0644. Its display summary
+    # still holds the head and tail (pane_permission_hook.match_key).
     return "sha256:" + hashlib.sha256(squashed.encode()).hexdigest()
 
 

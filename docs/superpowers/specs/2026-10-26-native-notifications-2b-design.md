@@ -144,7 +144,7 @@ What shipped, checked against real Claude Code 2.1.280 captures (`tests/fixtures
 
 So:
 - **The hook stores a `match_key`** beside the summary, which is now display only:
-  - **Bash:** `sha256:` + the hex digest of the squashed command + the squashed description. Squashed means all whitespace and the hidden controls removed, since a long command wraps mid-word on screen. It's a digest, not the text: a command can carry a token, and `periscope.db` is 0644.
+  - **Bash:** `sha256:` + the hex digest of the squashed command + the squashed description. Squashed means all whitespace and the hidden controls removed, since a long command wraps mid-word on screen. A digest, so the WHOLE command never sits in the key: a command can carry a token, and `periscope.db` is 0644. The summary is display text by design, and keeps the command's head and tail in clear text (it's on `/api/state`).
   - **Edit / Write:** the absolute `file_path`, in the clear, since the suffix check needs it.
   - **Anything else** (NotebookEdit, WebFetch, MCP tools, …): no key. Their dialogs aren't verified, so their banners offer Open only.
   - **A Bash call with `dangerouslyDisableSandbox` set:** no key. The flag isn't keyed and the dialog may not show it, so an unsandboxed retry would otherwise match a sandboxed row.
@@ -175,7 +175,7 @@ So:
 - **fails open:** both observers (`pane_session_hook.py` and this one) end in `|| true`, because a nonzero `UserPromptSubmit` blocks the prompt.
 
 **Publishing, `window_view.pending_permission_row` / `pending_permission_for`:**
-- **Exactly one row within 5 s of `needs_since`** (`created_at >= needs_since - 5`). `needs_since` is when periscope first saw the wait, and the hook's stamp can precede it by:
+- **Exactly one row stamped no earlier than 5 s before `needs_since`** (`created_at >= needs_since - 5`, no upper bound). `needs_since` is when periscope first saw the wait, and the hook's stamp can precede it by:
   - the session-file write;
   - session_status's 1 s index cache;
   - the build in flight;
@@ -395,7 +395,7 @@ Both take a **JSON body**: a body-less POST with query params is a CORS simple r
 - **Every button does what its row says.**
 - **Allow and Deny can only ever answer the request their banner was shown for, and only once.** The request id is recomputed from the hook's row, the dialog on screen must match that row's key exactly (`dialog_matches`), and the key goes to the checked pane's `%id`. A tool whose dialog can't be verified gets Open only.
 - **No button that lets an agent proceed or types into it works from a locked screen** without authenticating. Deny, which only stops one, needs no auth.
-- **No reply lands in a dialog, a shell, Claude's shell mode, a Codex pane or on a draft.** Its Enter goes in only after a second look shows the paste in the composer and no dialog.
+- **No reply is submitted into a dialog, a shell, Claude's shell mode, a Codex pane or onto a draft.** Its Enter goes in only after a second look shows the paste in the composer and no dialog. The paste itself can still land in a dialog that renders in the ~10–20 ms before it; nothing is submitted then. Control characters are stripped first, so the text can't end tmux's bracketed paste and type the rest as keys.
 - **A failed press always says so**, in a `notice` banner, since the app isn't brought forward for it.
 - **Clean up never deletes without the modal's confirmation.**
 - **Nothing changes in a browser tab, or for an older shell or webview.**
