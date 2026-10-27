@@ -130,6 +130,7 @@ would double-load every global.
 | `narrator.py` / `rename_ai.py` | Per-pane AI status lines + divergence renames / Anthropic SDK plumbing |
 | `open_ops.py` | Unified-open core (path/branch/PR descriptors → create-or-focus → rail placement); no HTTP |
 | `updater.py` | Self-update: commits-behind check + detached spawn of `bin/periscope update` |
+| `reviews.py` | Review walkthroughs: on-disk convention under `~/.claude/reviews/<repo>/<slug>`, GitHub-sourced queue (my PRs + review-requested, panes joined on), staleness, comments |
 | `routes/*.py` | One APIRouter per file |
 
 ### Frontend (`static/src/` → `static/dist/`)
@@ -142,6 +143,7 @@ commit `static/dist/` whenever `static/src/` changes** — boot has no build ste
 | entry / state | `main.jsx`, `store.js` (transient signals), `prefs.js` (server-prefs cache — the persistence boundary), `poll.js` (the single `/api/state` loop) |
 | chrome | `chrome/{Header,FilterBar,UsagePill}.jsx` |
 | split view | `split/{Split,Rail,RailRows,Detail,…}.jsx` + `split/railTree.js` — the only view. Rail is TRACK-anchored: Track → (derived Branch) → Pane; branch rows are derived from live `w.branch`, not entities |
+| review | `review/{Walkthrough,ReviewsQueue}.jsx` + `walkthrough.js` (the PR walkthrough view, the cross-track reviews queue, their pure helpers) |
 | terminal | `terminal/{Terminal,TerminalSearch}.jsx` + `terminalCore.js` (imperative xterm + `/ws/pane`) |
 | overlays | `overlays/*.jsx` + `hooks/useEscape.js`; `OpenOmnibox` (⌘K) is the command palette, `open/classify.js` its pure classifier |
 | notifications | `notify/{detect,copy,burst,persist}.js` (pure: what's news, its words, grouping, resume) + `notify/feed.js` (the effect, badge, click routing); started from `Split.jsx` |

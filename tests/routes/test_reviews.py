@@ -273,3 +273,21 @@ def test_concurrent_prepare_spawns_once(mocker, monkeypatch, place):
 
     assert asyncio.run(run()) == (200, 409, 1)
     assert route._preparing == set()
+
+
+def test_prepare_survives_rail_placement_failure(client, mocker, monkeypatch, place):
+    place.side_effect = RuntimeError("store busy")
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+    spawn = mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(
+            return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
+        ),
+    )
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["pane_id"] == "%5" and spawn.call_count == 1

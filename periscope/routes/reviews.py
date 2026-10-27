@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from periscope import channels, gitdiff, open_ops, reviews, state_hub, tracks
+from periscope.log import log
 from periscope.panes import list_windows
 
 router = APIRouter()
@@ -182,7 +183,11 @@ async def _prepare(body: ReviewRef) -> dict:
         pane_pids = [w["pid_raw"] for w in list_windows() if w["session"] == session and w.get("pid_raw")]
         open_ops.place_in_rail(session, project, pane_pids or [spawned["pid"]])
 
-    await asyncio.to_thread(place)
+    try:
+        await asyncio.to_thread(place)
+    except Exception:
+        # Placement only orders the rail; the Claude exists, and a 500 would invite a retry that spawns a second one.
+        log.warning("reviews: rail placement failed for %s %s", body.repo, body.branch, exc_info=True)
     return {"ok": True, "mode": "spawned", **spawned}
 
 
