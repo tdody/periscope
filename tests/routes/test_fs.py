@@ -20,6 +20,21 @@ def test_fs_read_happy(tmp_path, monkeypatch):
     assert body["path"].endswith("/f.py")
 
 
+def test_fs_read_reports_the_docs_checkout(tmp_path, monkeypatch):
+    # A cite in a doc is repo-relative to the DOC's checkout, which the
+    # preview can't know from the pane's cwd (another repo, or a subdir).
+    import subprocess
+
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "spec.md").write_text("see periscope/reviews.py:12\n")
+    monkeypatch.setattr("periscope.fs.tmux", lambda *a: str(tmp_path / "docs") + "\n")
+    client = TestClient(app)
+    r = client.get("/api/fs/read", params={"session": "s", "index": 1, "path": "spec.md"})
+    assert r.status_code == 200, r.text
+    assert r.json()["repo"] == os.path.realpath(tmp_path)
+
+
 def test_fs_read_image_returns_image_lang_without_bytes(tmp_path, monkeypatch):
     # Images resolve (safe-root gated) but skip the UTF-8 read that would
     # 415 on binary — the client streams them via /api/fs/render instead.
