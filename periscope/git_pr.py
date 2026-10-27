@@ -386,31 +386,41 @@ def shared_activity_for(path: str, branch: str) -> list[dict]:
 # a branch in Linear's own shape, <user>/<key>-<num>-<slug> (THI-441): until
 # then link_linear was the only way to a ticket chip. A title counts only in
 # those two forms, so one opening with SHA-256 or UTF-8 can't hide the branch's
-# ticket; a branch only at its last segment's start, with 2+ digits (`utf-8`,
-# `vue-3` aren't tickets).
+# ticket; a branch only at its last segment's start.
 _TITLE_TICKET_RE = re.compile(r"^(?:\[([A-Z][A-Z0-9]{1,9}-\d+)\]|([A-Z][A-Z0-9]{1,9}-\d+):)")
-_BRANCH_TICKET_RE = re.compile(r"^(([a-z]{2,5})-\d{2,})(?:-|$)", re.IGNORECASE)
-# Words that take the key's place without being a team key: GitHub-style
-# branches (`fix-123-…`, `pr-18`, live in local refs) and numbered standards
-# (`pep-723`, `node-20`). A team keyed like one loses only the derived chip;
-# link_linear still names its tickets.
+_BRANCH_TICKET_RE = re.compile(r"^(([a-z][a-z0-9]{1,9})-(\d+))(?:-|$)", re.IGNORECASE)
+# Without team keys set (settings.linear_team_keys), words that take the key's
+# place without being one: GitHub-style branches (`fix-123-…`, `pr-18`, live in
+# local refs) and numbered standards (`pep-723`, `node-20`). No list names every
+# word (fdy refs hold split-7868, magic-404, norm-2025), which is what the
+# setting is for.
 _NOT_TEAM_KEYS = frozenset(
     {"fix", "bug", "gh", "pr", "mr", "issue", "feat", "chore", "wip"}
     | {"pep", "rfc", "cve", "iso", "sha", "utf", "node", "py", "http", "es"}
 )
 
 
-def linear_ticket_for(branch: str | None, pr_title: str | None) -> tuple[str, str] | None:
+def _is_team_key(key: str, team_keys: frozenset[str]) -> bool:
+    return key.upper() in team_keys if team_keys else key.lower() not in _NOT_TEAM_KEYS
+
+
+def linear_ticket_for(
+    branch: str | None, pr_title: str | None, team_keys: frozenset[str] = frozenset()
+) -> tuple[str, str] | None:
     """(ticket id, "pr_title" | "branch") named by the pane's PR title or its
-    branch, the title first, or None."""
+    branch, the title first, or None. With `team_keys`, only those keys count;
+    without, a branch's key must also look like one: 2-5 letters and a number
+    of 2+ digits, since `utf-8` and `vue-3` share the shape."""
     m = _TITLE_TICKET_RE.match(pr_title or "")
     if m:
         ticket = m.group(1) or m.group(2)
-        if ticket.split("-")[0].lower() not in _NOT_TEAM_KEYS:
+        if _is_team_key(ticket.split("-")[0], team_keys):
             return ticket, "pr_title"
     m = _BRANCH_TICKET_RE.match((branch or "").rsplit("/", 1)[-1])
-    if m and m.group(2).lower() not in _NOT_TEAM_KEYS:
-        return m.group(1).upper(), "branch"
+    if m and _is_team_key(m.group(2), team_keys):
+        key, number = m.group(2), m.group(3)
+        if team_keys or (key.isalpha() and len(key) <= 5 and len(number) >= 2):
+            return m.group(1).upper(), "branch"
     return None
 
 

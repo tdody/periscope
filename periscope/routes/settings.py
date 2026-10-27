@@ -15,6 +15,8 @@ router = APIRouter()
 
 _VALID_LAYOUTS = ("sibling", "inline")
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+# A Linear team key, as git_pr.linear_ticket_for reads one off a PR title.
+_TEAM_KEY = re.compile(r"[A-Z][A-Z0-9]{1,9}")
 
 
 @router.get("/api/settings")
@@ -39,6 +41,7 @@ class SettingsPatch(BaseModel):
     poke_at: str | None = None
     poke_grace_min: int | None = None
     repo_roots: list[str] | None = None
+    linear_team_keys: list[str] | None = None
 
 
 @router.patch("/api/settings")
@@ -159,6 +162,24 @@ def settings_patch(body: SettingsPatch):
                 if r not in roots:
                     roots.append(r)
             patch["repo_roots"] = roots
+
+    if "linear_team_keys" in sent:
+        v = body.linear_team_keys
+        if v is None:
+            patch["linear_team_keys"] = None
+        else:
+            # Rejected here, where it's typed: a key that can't match drops every
+            # derived chip with nothing on screen to say why.
+            keys: list[str] = []
+            for raw in v:
+                k = raw.strip().upper()
+                if not k:
+                    continue
+                if not _TEAM_KEY.fullmatch(k):
+                    raise HTTPException(400, f"not a Linear team key: {raw!r}")
+                if k not in keys:
+                    keys.append(k)
+            patch["linear_team_keys"] = keys
 
     if "editor" in sent:
         v = body.editor

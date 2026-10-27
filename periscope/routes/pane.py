@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from periscope import config
 from periscope.activity import cached_pane_activity, stamp_pane_rename
 from periscope.channels import _resolve_window_by_pid, channel_state_for
-from periscope.git_pr import cached_git_state, cached_pr_state, linear_ticket_for
+from periscope.git_pr import cached_git_state, cached_pr_state
 from periscope.log import log
 from periscope.panes import (
     list_windows,
@@ -31,6 +31,7 @@ from periscope.store import get_window, set_window_fields
 from periscope.tabs import activate_tab, close_tab, open_tab
 from periscope.tmux import _ANSI_SGR_RE, capture, pane_meta, tmux, window_identity
 from periscope.turns import get_turns_for_pane, session_id_for_pane
+from periscope.window_view import linear_ticket_fields
 
 router = APIRouter()
 
@@ -115,7 +116,6 @@ def pane(session: str, index: int, lines: int = 200):
     linked_linear = persisted.get("linked_linear")
     linked_linear_title = persisted.get("linked_linear_title")
     linked_linear_status = persisted.get("linked_linear_status")
-    derived = None if linked_linear else linear_ticket_for(git.get("branch"), pr.get("pr_title"))
     if linked_pr:
         pr = dict(pr)
         pr["pr"] = str(linked_pr)
@@ -141,8 +141,7 @@ def pane(session: str, index: int, lines: int = 200):
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
-        "linear_ticket": derived[0] if derived else None,
-        "linear_ticket_source": derived[1] if derived else None,
+        **linear_ticket_fields(persisted, git.get("branch"), pr.get("pr_title")),
         **parsed,
         **git,
         **pr,

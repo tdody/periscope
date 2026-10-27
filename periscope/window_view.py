@@ -43,7 +43,7 @@ from periscope.panes import (
     smooth_parsed,
 )
 from periscope.session_status import claude_proc_for, session_state_for
-from periscope.store import SessionSetting, get_accounts, get_window
+from periscope.store import SessionSetting, WindowAnnotation, get_accounts, get_settings, get_window
 from periscope.tmux import capture
 from periscope.tracks import resolve_track_for_window, track_kind, track_label
 from periscope.turns import session_id_for_pane
@@ -285,6 +285,21 @@ def _log_permission_miss(pane_id: str, needs_since: int) -> None:
         )
 
 
+def linear_ticket_fields(persisted: WindowAnnotation, branch: str | None, pr_title: str | None) -> dict:
+    """A pane payload's derived-ticket fields (/api/state and /api/pane): the
+    ticket its PR title or branch names, or none while one is linked (THI-441).
+    Its own fields, not linked_linear: the Inspector says "linked by claude" of
+    that one, and offers + link Linear ticket only while it's unset."""
+    derived = None
+    if not persisted.get("linked_linear"):
+        team_keys = frozenset(get_settings().get("linear_team_keys") or ())
+        derived = linear_ticket_for(branch, pr_title, team_keys)
+    return {
+        "linear_ticket": derived[0] if derived else None,
+        "linear_ticket_source": derived[1] if derived else None,
+    }
+
+
 def pending_permission_row(pane_id: str, state: str | None, waiting_for: str | None, needs_since: int) -> dict | None:
     """The permission request a pane's dialog is asking, as the hook's full
     row {request_id, tool, summary, match_key}, or None unless it can be told
@@ -478,10 +493,6 @@ def build_window_view(
     linked_linear = persisted.get("linked_linear")
     linked_linear_title = persisted.get("linked_linear_title")
     linked_linear_status = persisted.get("linked_linear_status")
-    # Without a link, the ticket the PR title or branch names (THI-441). Its
-    # own fields, not linked_linear: the Inspector says "linked by claude" of
-    # that one, and offers + link Linear ticket only while it's unset.
-    derived = None if linked_linear else linear_ticket_for(git.get("branch"), pr.get("pr_title"))
     if linked_pr:
         pr = dict(pr)
         # Keep `pr` an int to match the auto-detected path (pr_state_for
@@ -564,8 +575,7 @@ def build_window_view(
         "linked_linear": linked_linear,
         "linked_linear_title": linked_linear_title,
         "linked_linear_status": linked_linear_status,
-        "linear_ticket": derived[0] if derived else None,
-        "linear_ticket_source": derived[1] if derived else None,
+        **linear_ticket_fields(persisted, git.get("branch"), pr.get("pr_title")),
         # The track this tab belongs to — the sole organizational primitive.
         # (project_pinned_dir / workspace_id / project_name / project_archived
         # are gone; the frontend groups purely by track_id.)

@@ -592,6 +592,20 @@ def test_view_derives_a_linear_ticket_when_none_is_linked(mocker, clean_state):
     assert view["linear_ticket_source"] == "branch"
 
 
+def test_view_derives_only_the_team_keys_set(mocker, clean_state):
+    from periscope.window_view import build_window_view
+
+    clean_state["settings"] = {"linear_team_keys": ["THI"]}
+    mocker.patch(
+        "periscope.window_view.parse_pane",
+        return_value={"agent": "claude", "state": "idle", "spinner": None},
+    )
+    _stub_subsystems(mocker, pane_content="x", git={"branch": "tdody/fdy-8562-checkpoint-tooling"})
+
+    view, _ = build_window_view(_window(), now_ts=1000)
+    assert view["linear_ticket"] is None
+
+
 def test_view_derives_no_linear_ticket_over_a_linked_one(mocker, clean_state):
     from periscope.window_view import build_window_view
 

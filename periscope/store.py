@@ -118,6 +118,7 @@ class Settings(TypedDict, total=False):
     )
     poke_grace_min: int  # minutes past poke_at a missed poke may still fire; unset => 90
     repo_roots: list[str]  # dirs scanned one level deep for repos, "~" allowed; unset => DEFAULT_REPO_ROOTS
+    linear_team_keys: list[str]  # the only keys a branch or PR title names (THI-441); unset => git_pr's shape rule
 
 
 class PokeEntry(TypedDict):

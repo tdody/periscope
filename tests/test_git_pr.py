@@ -239,6 +239,29 @@ def test_linear_ticket_for(branch, pr_title, want):
     assert linear_ticket_for(branch, pr_title) == want
 
 
+@pytest.mark.parametrize(
+    ("branch", "pr_title", "want"),
+    [
+        # With team keys set, only they count: ordinary words a word list can't
+        # all name (fdy refs: split-7868, magic-404, norm-2025) stop counting.
+        ("zf/split-7868-catalog-coverage", None, None),
+        ("pd/magic-404-testing", None, None),
+        ("norm-2025-06-a", None, None),
+        ("tdody/fdy-8562-restack", None, ("FDY-8562", "branch")),
+        # A known key needs no guard against one-digit numbers.
+        ("tdody/fdy-7-tiny", None, ("FDY-7", "branch")),
+        ("main", "THI-441: show the ticket", ("THI-441", "pr_title")),
+        ("tdody/fdy-8562-restack", "ABC-12: someone else's key", ("FDY-8562", "branch")),
+    ],
+)
+def test_linear_ticket_for_with_team_keys(branch, pr_title, want):
+    assert linear_ticket_for(branch, pr_title, frozenset({"FDY", "THI"})) == want
+
+
+def test_a_listed_team_key_wins_over_the_word_list():
+    assert linear_ticket_for("pr-18", None, frozenset({"PR"})) == ("PR-18", "branch")
+
+
 def test_ci_checks_caps_the_list():
     rollup = [{"name": f"c{i}", "conclusion": "SUCCESS"} for i in range(10)]
     assert len(_ci_checks(rollup)) == 6
