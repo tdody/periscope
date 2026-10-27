@@ -17,7 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from periscope import channels, gitdiff, open_ops, reviews, state_hub, tracks
+from periscope import channels, gitdiff, open_ops, projects, reviews, state_hub, tracks
 from periscope.log import log
 from periscope.panes import list_windows
 
@@ -183,11 +183,24 @@ async def _prepare(body: ReviewRef) -> dict:
     age = time.monotonic() - _recent_spawn.get(key, -RECENT_SPAWN_S)
     if age < RECENT_SPAWN_S:
         raise HTTPException(409, f"a pane was spawned {int(age)} s ago and hasn't attached yet")
+    roots = await asyncio.to_thread(_roots)
     worktree = await asyncio.to_thread(
-        lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=_roots(), aliases=aliases)
+        lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=roots, aliases=aliases)
     )
+    checked_out = False
     if not worktree:
-        raise HTTPException(409, "no pane on this branch and no worktree on disk — open the branch first")
+        # A PR nobody has checked out: fetch it the way ⌘K does (local branch
+        # `pr-<N>`, which the queue already treats as this row's alias), then
+        # spawn into it. Creating a worktree is the one git mutation prepare
+        # makes; it still never commits, pushes or merges (spec D1).
+        root = roots.get(body.repo)
+        number = await asyncio.to_thread(_open_pr_number, root, body.branch) if root else None
+        if root is None or number is None:
+            raise HTTPException(
+                409, "no pane on this branch, no worktree on disk and no open PR — open the branch first"
+            )
+        worktree = (await asyncio.to_thread(projects.fetch_pr_into_worktree, root, number)).path
+        checked_out = True
     anchored = await asyncio.to_thread(open_ops.resolve_worktree_session, worktree)
     if not anchored:
         raise HTTPException(409, f"{worktree} is not inside a git repo")
@@ -202,7 +215,7 @@ async def _prepare(body: ReviewRef) -> dict:
     if not spawned["pid"]:
         # The Claude is already running with the prompt pasted; a 500 would invite a retry that spawns a second one.
         log.warning("reviews: spawned but pane id unknown for %s %s", body.repo, body.branch)
-        return {"ok": True, "mode": "spawned", **spawned, "pane_id": None}
+        return {"ok": True, "mode": "spawned", "checked_out": checked_out, **spawned, "pane_id": None}
 
     # Same server-side rail placement as the spawn_claude tool's anchored path.
     def place() -> None:
@@ -214,7 +227,12 @@ async def _prepare(body: ReviewRef) -> dict:
     except Exception:
         # Placement only orders the rail; the Claude exists, and a 500 would invite a retry that spawns a second one.
         log.warning("reviews: rail placement failed for %s %s", body.repo, body.branch, exc_info=True)
-    return {"ok": True, "mode": "spawned", **spawned}
+    return {"ok": True, "mode": "spawned", "checked_out": checked_out, **spawned}
+
+
+def _open_pr_number(root: str, branch: str) -> int | None:
+    """The open PR whose head is `branch`, from the same cache the queue row came from."""
+    return next((p["number"] for p in reviews.cached_open_prs(root) if p["branch"] == branch), None)
 
 
 @router.post("/api/reviews/merge")

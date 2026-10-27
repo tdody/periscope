@@ -84,6 +84,11 @@ File budget: 32. Stop and report at 64. Removals and tests don't count.
 Prepare, re-prepare, merge, and "address comments" are all messages to the
 pane that owns the branch. The dashboard stays a lens; the pane is the actor.
 
+One carve-out: prepare on an open PR with no pane and no checkout fetches the
+PR into a worktree through unified-open (local branch `pr-<N>`, the row's
+alias) and spawns the pane there. Creating a worktree is the only git
+mutation prepare makes; it still never commits, pushes, or merges.
+
 **A review belongs to a (repo, branch) pair, not a track.** Tracks are not
 branches — a repo-default track holds every worktree of the repo, and the
 rail already derives branch sub-clusters inside a track. The **owning pane**

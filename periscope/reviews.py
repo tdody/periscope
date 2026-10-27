@@ -418,7 +418,7 @@ def cached_open_prs(repo_root: str) -> list[dict]:
 # --- queue -----------------------------------------------------------------
 
 
-def _pr_row(p: dict, state: str) -> dict:
+def _pr_row(p: dict, state: str, root: str | None) -> dict:
     return {
         "number": p["number"],
         "title": p.get("title", ""),
@@ -426,7 +426,20 @@ def _pr_row(p: dict, state: str) -> dict:
         "state": state,
         "ci": p.get("ci"),
         "author": p.get("author"),
+        "url": _pr_url(root, p["number"]),
     }
+
+
+_GH_SLUG: dict[str, str | None] = {}  # no TTL: the origin remote effectively never changes
+
+
+def _pr_url(root: str | None, number: int) -> str | None:
+    if not root:
+        return None
+    if root not in _GH_SLUG:
+        _GH_SLUG[root] = gitutil.github_slug(root)
+    slug = _GH_SLUG[root]
+    return f"https://github.com/{slug}/pull/{number}" if slug else None
 
 
 _DEFAULT_BRANCH: dict[str, str] = {}  # no TTL: a repo's default branch effectively never changes
@@ -456,7 +469,7 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
                 continue
             seen.add(key)
             pr_alias[key] = {f"pr-{p['number']}"}
-            entries.append((label, p["branch"], p["role"], _pr_row(p, "open")))
+            entries.append((label, p["branch"], p["role"], _pr_row(p, "open", root)))
     for w in windows:
         label, branch = w.get("repo_label"), w.get("branch")
         if not label or not branch or (label, branch) in seen:
@@ -497,7 +510,7 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
             cwd = worktree or roots.get(repo) or ""
             st = git_pr.cached_linked_pr_state(cwd, header["pr"]) or {}
             state = st.get("pr_state") or "unknown"
-            pr = _pr_row({"number": header["pr"], "author": None}, state)
+            pr = _pr_row({"number": header["pr"], "author": None}, state, roots.get(repo))
             pr["ci"] = st.get("ci")
             if state == "open":
                 role = "review-requested"

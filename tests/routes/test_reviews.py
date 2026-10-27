@@ -428,3 +428,43 @@ def test_walkthrough_strips_generated_hunks(client, mocker, monkeypatch):
         ("package-lock.json", [], True),
         ("periscope/x.py", [hunk], None),
     ]
+
+
+def test_prepare_without_worktree_checks_out_the_open_pr_then_spawns(client, mocker, monkeypatch, place):
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value=None)
+    mocker.patch("periscope.routes.reviews._roots", return_value={"fdy": "/dev/fdy"})
+    mocker.patch(
+        "periscope.routes.reviews.reviews.cached_open_prs",
+        return_value=[{"number": 42, "branch": "feat/x", "title": "T", "role": "review-requested"}],
+    )
+    fetch = mocker.patch(
+        "periscope.routes.reviews.projects.fetch_pr_into_worktree",
+        return_value=mocker.Mock(path="/dev/fdy/.claude/worktrees/feat-x"),
+    )
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+    spawn = mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(
+            return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
+        ),
+    )
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 200 and r.json()["mode"] == "spawned" and r.json()["checked_out"] is True
+    fetch.assert_called_once_with("/dev/fdy", 42)
+    assert spawn.call_args.args[0] == "/dev/fdy/.claude/worktrees/feat-x"
+    place.assert_called_once()
+
+
+def test_prepare_without_worktree_or_open_pr_409s_before_touching_git(client, mocker, monkeypatch):
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value=None)
+    mocker.patch("periscope.routes.reviews._roots", return_value={"fdy": "/dev/fdy"})
+    mocker.patch("periscope.routes.reviews.reviews.cached_open_prs", return_value=[])
+    fetch = mocker.patch("periscope.routes.reviews.projects.fetch_pr_into_worktree")
+    r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
+    assert r.status_code == 409 and "no open PR" in r.json()["detail"]
+    fetch.assert_not_called()

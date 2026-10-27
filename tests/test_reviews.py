@@ -224,6 +224,8 @@ def test_open_prs_without_gh_is_empty(mocker):
 
 def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, monkeypatch):
     monkeypatch.setattr(reviews.gitutil, "detect_default_branch", lambda root: "main")
+    monkeypatch.setattr(reviews, "_GH_SLUG", {})
+    mocker.patch("periscope.reviews.gitutil.github_slug", return_value="tom/fdy")
     mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/.claude/worktrees/x", "feat/x")])
     mocker.patch(
         "periscope.reviews.cached_open_prs",
@@ -271,7 +273,15 @@ def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, mo
         ("fdy", "old/branch", "local"),
     ]
     x = rows[0]
-    assert x["pr"] == {"number": 1234, "title": "Gauge", "draft": False, "state": "open", "ci": "✓", "author": "tom"}
+    assert x["pr"] == {
+        "number": 1234,
+        "title": "Gauge",
+        "draft": False,
+        "state": "open",
+        "ci": "✓",
+        "author": "tom",
+        "url": "https://github.com/tom/fdy/pull/1234",
+    }
     assert x["walkthrough"] == {"stops": 2, "head": "3f2a1c9", "stale_by": None}
     assert x["unresolved"] == 1
     assert x["owner"] == {"pid": "p1", "pane_id": "%1", "session": "s", "index": 1, "name": "work"}
@@ -281,7 +291,16 @@ def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, mo
     local = rows[2]
     assert local["pr"] is None and local["owner"]["pid"] == "p2"
     ob = rows[3]
-    assert ob["pr"] == {"number": 500, "title": "", "draft": False, "state": "merged", "ci": "✓", "author": None}
+    # An orphan row links too: the URL comes from the origin remote, not from gh.
+    assert ob["pr"] == {
+        "number": 500,
+        "title": "",
+        "draft": False,
+        "state": "merged",
+        "ci": "✓",
+        "author": None,
+        "url": "https://github.com/tom/fdy/pull/500",
+    }
     linked.assert_called_with("/dev/fdy", 500)
     assert ob["owner"] is None and ob["slug"] == "old--branch"
 
