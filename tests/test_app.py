@@ -44,10 +44,10 @@ def test_lifespan_starts_and_shuts_down_cleanly(mocker):
     """TestClient triggers lifespan startup on enter, shutdown on exit.
 
     Mock the heavyweight prewarms + async loops so the test is fast and
-    doesn't bind a real unix socket. _mcp_listener is an async function wrapped via _task(name, coro) — it
-    must return a coroutine, so we patch with a coroutine factory rather
-    than return_value=None (which would make _task crash on
-    asyncio.create_task(None)).
+    doesn't bind a real unix socket. _mcp_listener is an async function
+    wrapped via _task(name, coro) — it must return a coroutine, so we patch
+    with a coroutine factory rather than return_value=None (which would make
+    _task crash on asyncio.create_task(None)).
     """
     mocker.patch("periscope.app.prewarm_pr_cache")
     mocker.patch("periscope.app.cached_plan_usage")

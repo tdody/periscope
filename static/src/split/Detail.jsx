@@ -293,8 +293,8 @@ export function PaneHeader({ w }) {
 
 // Rich per-pane Inspector — Linked / Notes / Activity, fed by a 1.5s poll of
 // /api/pane. The poll restarts on
-// `target` change and tears down when the pane is deselected or the user
-// switches to a review row (Detail unmounts <PaneDetail>, killing this).
+// `target` change and tears down when the pane is deselected
+// (Detail unmounts <PaneDetail>, killing this).
 //
 // Pitfall: the inner <Inspector> mounts <NotesEditor> uncontrolled + keyed on
 // pid, and the activity-stream scrollTop is preserved across renders. Both
@@ -534,8 +534,7 @@ export function Detail() {
   const paneW = isPane ? lookupWindow(sel.slice("pane:".length)) : null;
 
   // Keep every opened Claude transcript mounted (CSS-hidden when not active) so
-  // scroll position + expanded segments survive pane switches — 
-  // Pruned to pids still live in /api/state.
+  // scroll position + expanded segments survive pane switches. Pruned to pids still live in /api/state.
   const openedTr = useRef(new Set());
   if (isPane && paneW?.agent === "claude") openedTr.current.add(paneW.pid);
   const livePids = new Set(ws.map((x) => x.pid));

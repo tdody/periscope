@@ -421,8 +421,8 @@ function disposeWebglAddon() {
 //
 // Re-parenting MUST move the element xterm already owns: term.open(newParent)
 // silently no-ops after the first call (xtermjs/xterm.js#4978 — it ignores the
-// argument and returns). Same imperative parked-host trick <Detail> uses to
-// keep iframes from reloading on reconciliation.
+// argument and returns). Hence the imperative parked host: the element
+// is created once and never reconciled by Preact.
 //
 // Nothing disposes this; it intentionally lives for the page's lifetime.
 function ensureTerminal() {

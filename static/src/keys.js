@@ -12,7 +12,7 @@ import { docRefreshNonce, paneActiveTab, railSelection } from "./store.js";
 import { requestTerminalReconcile } from "./terminal/terminalCore.js";
 
 // Which pane the rail has selected, or null. railSelection is a string
-// highlight-key ("pane:<pid>" | "review:<worktree>" | null) — only the pane
+// highlight-key ("pane:<pid>" | null) — only the pane
 // form carries a pid.
 export function selectedPid(selection) {
   if (typeof selection !== "string") return null;

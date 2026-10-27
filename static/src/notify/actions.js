@@ -81,9 +81,7 @@ export function runAction({ target, action, data } = {}, o = OPENERS) {
         return;
       case "cleanup": {
         // The banner names the worktree whose PR merged; the live pane may
-        // since have moved to another one. (review keeps preferring the live
-        // w.session: a tmux session can be renamed, and the rail keys review
-        // rows by its current name.)
+        // since have moved to another one.
         const cwd = data.cwd || w?.cwd;
         if (cwd) o.openCleanupModal({ paths: [cwd] });
         else show();

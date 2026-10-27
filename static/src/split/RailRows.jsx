@@ -1,9 +1,9 @@
 // Row components for the split-view rail, ported from rail.js's row-builder
-// functions (paneRow / reviewRow / newTabRow / worktreeRow / repoRow +
+// functions (paneRow / newTabRow / worktreeRow / repoRow +
 // worktreeMetaLine). One component per row kind; all CSS class names and glyphs
 // are preserved verbatim (rail-row, child-row, wt-row, repo-row, rail-chev,
 // rail-icon, rail-label, rail-count, rail-close, rail-dim, newtab-row,
-// last-in-worktree, review-empty, dot/dot-*, wt-meta*, drop-target).
+// last-in-worktree, dot/dot-*, wt-meta*, drop-target).
 //
 // Two cross-cutting conventions:
 //   - PR/Linear anchors call e.stopPropagation() in a real onClick (#4) so

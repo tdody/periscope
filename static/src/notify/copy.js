@@ -67,9 +67,6 @@ export function payloadFor(ev, ctx = {}) {
         // days old, and would ride every finished turn.
         subtitle: w.pr && w.pr_linked ? `${w.session} · PR #${w.pr}` : where(w),
         body: firstSentence(w.recap || w.last_line) || "Finished.",
-        // Review diff waits on review rows keyed by worktree (THI-433): every
-        // pane shares one tmux session, so a session-keyed review would open
-        // the wrong pane's.
         category: "done_seen", data: { open: "pane", pid: w.pid, session: w.session },
       };
     case "ci_failed": {
