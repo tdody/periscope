@@ -47,6 +47,7 @@ Fine.
 @pytest.fixture(autouse=True)
 def _dir(tmp_path, monkeypatch):
     monkeypatch.setattr(reviews, "REVIEWS_DIR", tmp_path)
+    monkeypatch.setattr(reviews, "_DEFAULT_BRANCH", {})
     yield tmp_path
 
 
@@ -216,7 +217,8 @@ def test_open_prs_without_gh_is_empty(mocker):
     assert reviews.open_prs("/dev/fdy") == []
 
 
-def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker):
+def test_list_reviews_assembles_prs_then_local_then_orphans(tmp_path, mocker, monkeypatch):
+    monkeypatch.setattr(reviews.gitutil, "detect_default_branch", lambda root: "main")
     mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/.claude/worktrees/x", "feat/x")])
     mocker.patch(
         "periscope.reviews.cached_open_prs",
