@@ -28,15 +28,15 @@ import { confirmDialog } from "../overlays/Dialog.jsx";
 import { modalRequest } from "../overlays/modalRequest.js";
 import { showToast } from "../overlays/Toast.jsx";
 import * as prefs from "../prefs.js";
-import { currentFilter, dismissedAlertIds, dragState, editor as editorSignal, projects, railSelection, tracks, windows, workspaces } from "../store.js";
+import { currentFilter, dismissedAlertIds, dragState, editor as editorSignal, projects, railSelection, reviews, tracks, windows, workspaces } from "../store.js";
 import { track } from "../track.js";
 import { apiCall, paneLabel, targetQuery } from "../util.js";
 import { ActivitySection, AttentionTop } from "./AttentionSections.jsx";
-import { alertItems } from "./alertFeed.js";
+import { alertItems, selectReview, selectReviewsQueue } from "./alertFeed.js";
 import { awaitingReplyByPid } from "./attention.js";
 import { railHovered } from "./layoutFreeze.js";
-import { BranchRow, NewTabRow, PaneRow, TrackRow } from "./RailRows.jsx";
-import { maxSeverity, mergeLiveAndPrefs, paneChip, trackKind, trackLabel } from "./railTree.js";
+import { BranchRow, NewTabRow, PaneRow, ReviewRow, TrackRow } from "./RailRows.jsx";
+import { maxSeverity, mergeLiveAndPrefs, paneChip, reviewRowsByTrack, trackKind, trackLabel } from "./railTree.js";
 import { SectionHeader } from "./SectionHeader.jsx";
 
 // The branch label used in railTree's flat-fallback bucket for a window with no
@@ -239,8 +239,18 @@ export function Rail() {
     }, scopedTracks
   );
 
+  // Review rows by track → branch (placement rules in railTree).
+  const reviewRows = reviewRowsByTrack(trackOrder, tabsByTrack, windowsByPid, reviews.value || []);
+
   // --- Selection -----------------------------------------------------------
   function selectKey(key) {
+    if (key === "reviews") { selectReviewsQueue(); return; }
+    if (key.startsWith("review:")) {
+      const k = key.slice("review:".length); const i = k.indexOf("/");
+      const row = (reviews.value || []).find((r) => r.repo === k.slice(0, i) && r.slug === k.slice(i + 1));
+      if (row) selectReview(row.repo, row.branch);
+      return;
+    }
     railSelection.value = key;       // STRING highlight-key (signal)
     track("pane.focus", { key });
     if (key.startsWith("pane:")) {
@@ -583,16 +593,28 @@ export function Rail() {
                           dropPos={undefined}
                         />
                         {!branchCollapsed && (
-                          <div class="rail-group-body">{childRows}</div>
+                          <div class="rail-group-body">
+                            {(reviewRows[trackId]?.[branch] || []).map((row) => (
+                              <ReviewRow key={`review:${row.repo}/${row.slug}`} row={row} selectedKey={selectedKey} onSelect={selectKey} />
+                            ))}
+                            {childRows}
+                          </div>
                         )}
                       </div>
                     );
                   })
                 ) : (
                   // Single-branch: flat tab list straight inside the card.
-                  <div class="rail-group-body">
-                    {paneRowsFor(trackPids, trackId)}
-                  </div>
+                  <>
+                    {Object.values(reviewRows[trackId] || {}).flat().map((row) => (
+                      <div class="rail-group-body rail-review-head" key={`review:${row.repo}/${row.slug}`}>
+                        <ReviewRow row={row} selectedKey={selectedKey} onSelect={selectKey} />
+                      </div>
+                    ))}
+                    <div class="rail-group-body">
+                      {paneRowsFor(trackPids, trackId)}
+                    </div>
+                  </>
                 )}
                 {/* ONE "+ New tab" per track, at the bottom of the card. The
                     launcher's branch picker chooses which branch (existing or

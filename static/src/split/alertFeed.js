@@ -57,3 +57,17 @@ export function startAlertFeed() {
   // sends kinds to notify/feed.js instead).
   onNotificationClick((target) => revealPane(target));
 }
+
+// Select a branch's review row / the Reviews queue, as clicking them does.
+// The persisted pref carries repo + branch (the rail key's slug can't be
+// inverted: `--` is ambiguous).
+export function selectReview(repo, branch) {
+  if (!repo || !branch) return;
+  railSelection.value = `review:${repo}/${branch.replace(/\//g, "--")}`;
+  prefs.setLastSelected({ kind: "review", repo, branch });
+}
+
+export function selectReviewsQueue() {
+  railSelection.value = "reviews";
+  prefs.setLastSelected({ kind: "reviews" });
+}

@@ -21,8 +21,10 @@ import { ChangesTab } from "../diff/ChangesTab.jsx";
 import { Inspector } from "../inspector/Inspector.jsx";
 import { getDetailMode, setDetailMode, setLastSelected } from "../prefs.js";
 import { PreviewTab } from "../preview/PreviewTab.jsx";
+import { ReviewsQueue } from "../review/ReviewsQueue.jsx";
+import { Walkthrough } from "../review/Walkthrough.jsx";
 import {activeTarget, closeFileTab, openFileTab, paneActiveTab, 
-  paneTabs, paneTranscript,railSelection, setActiveTab,
+  paneTabs, paneTranscript,railSelection, reviews, setActiveTab,
   windows, 
 } from "../store.js";
 import { Terminal } from "../terminal/Terminal.jsx";
@@ -530,6 +532,16 @@ export function Detail() {
   const ws = windows.value || [];        // read so Detail re-renders each poll
 
   const isPane = !!sel && sel.startsWith("pane:");
+  const isReview = !!sel && sel.startsWith("review:");
+  const isQueue = sel === "reviews";
+  let reviewRow = null;
+  if (isReview) {
+    const [repo, slug] = (() => { const k = sel.slice("review:".length); const i = k.indexOf("/"); return i < 0 ? [k, ""] : [k.slice(0, i), k.slice(i + 1)]; })();
+    reviewRow = (reviews.value || []).find((r) => r.repo === repo && r.slug === slug) || null;
+  }
+  // A review or queue selection has no pane: paste/poll targets must not
+  // keep pointing at the previously selected one.
+  useEffect(() => { if (isReview || isQueue) activeTarget.value = null; }, [sel]);
 
   const paneW = isPane ? lookupWindow(sel.slice("pane:".length)) : null;
 
@@ -557,6 +569,10 @@ export function Detail() {
     <section id="detail">
       {!sel && <EmptyDetail />}
       {isPane && (paneW ? <PaneDetail w={paneW} /> : <EmptyDetail />)}
+      {isQueue && <ReviewsQueue />}
+      {isReview && (reviews.value === null ? <div class="wt-empty">loading…</div>
+        : reviewRow ? <Walkthrough key={`${reviewRow.repo}/${reviewRow.branch}`} repo={reviewRow.repo} branch={reviewRow.branch} />
+        : <EmptyDetail />)}
       {trPids.map((pid) => {
         const tw = lookupWindow(pid);
         const isSelected = isPane && paneW?.pid === pid;

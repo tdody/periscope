@@ -3885,3 +3885,39 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
 .md-mermaid { margin: 8px 0 14px; overflow-x: auto; }
 .md-mermaid-svg svg { max-width: 100%; height: auto; }
 .md-mermaid-err { color: var(--s-needs); }
+
+/* --- review walkthrough + queue --- */
+.rail-review .rail-label { font-style: italic; }
+.rail-review-badge { margin-left: auto; font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--s-needs); color: #fff; }
+.icon-review { color: var(--s-shell); font-size: 11px; }
+.rail-review-head { padding-top: 0; padding-bottom: 2px; }
+.walkthrough, .reviews-queue { padding: 14px 18px; overflow: auto; height: 100%; box-sizing: border-box; }
+.wt-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.wt-head h2 { margin: 0; font-size: 16px; }
+.wt-sub, .wt-empty, .rq-repo, .rq-note { color: var(--fg-3); font-size: 12px; }
+.wt-problem { max-width: 72ch; margin: 0 0 16px; }
+.wt-stop { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.wt-stop-title { margin: 0 0 6px; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+.wt-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 8px; background: var(--bg-1-hi); color: var(--fg-2); }
+.wt-kind-new-subsystem { background: #2b4a7a; color: #cfe0ff; }
+.wt-kind-extension { background: #2f5a3f; color: #cfe9d6; }
+.wt-kind-reuse { background: #5a4a2f; color: #f2e2c4; }
+.wt-kind-system-touch { background: #6a2f2f; color: #f6d0d0; }
+.wt-kind-behavior { background: #4a2f6a; color: #e2d0f6; }
+.wt-stop-body { max-width: 80ch; }
+.wt-evidence { margin-top: 8px; }
+.wt-evidence-toggle { font: inherit; font-size: 12px; background: none; border: 0; color: var(--fg-2); cursor: pointer; padding: 2px 0; }
+.wt-evidence-path { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; color: var(--fg-3); margin: 6px 0 2px; }
+.wt-comments { list-style: none; padding: 0; margin: 10px 0 0; }
+.wt-comments li { border-left: 2px solid var(--s-needs); padding: 2px 8px; margin: 6px 0; }
+.wt-comments li.is-resolved { border-left-color: var(--fg-4); opacity: .75; }
+.wt-comment-ts, .wt-comment-state { font-size: 11px; color: var(--fg-3); margin-right: 8px; }
+.wt-comment-box { margin-top: 8px; }
+.wt-comment-box textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.wt-comment-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.rq-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.rq-table th { text-align: left; color: var(--fg-3); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.rq-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rq-row.is-merged { opacity: .55; }
+.rq-open { font: inherit; background: none; border: 0; color: var(--fg-1); cursor: pointer; padding: 0; text-decoration: underline dotted; }
+.rq-actions button { margin-right: 6px; }

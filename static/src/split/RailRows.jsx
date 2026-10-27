@@ -399,6 +399,19 @@ export function BranchRow({
   );
 }
 
+export function ReviewRow({ row, selectedKey, onSelect }) {
+  const k = `review:${row.repo}/${row.slug}`;
+  const sel = k === selectedKey ? " selected" : "";
+  const stale = row.walkthrough?.stale_by > 0;
+  return (
+    <div class={`rail-row child-row rail-review${sel}`} onClick={() => onSelect(k)}>
+      <span class="rail-icon icon-review">◉</span>
+      <span class="rail-label">review · {row.walkthrough.stops} stop{row.walkthrough.stops === 1 ? "" : "s"}{stale ? " · stale" : ""}</span>
+      {row.unresolved ? <span class="rail-review-badge">{row.unresolved}</span> : null}
+    </div>
+  );
+}
+
 // Top-level track row (the SOLE grouping primitive — replaces RepoRow). `kind`
 // is "loose" | "repo" | "goal" (server-derived, see tracks.track_kind): a goal
 // track renders ⧉ and carries an action menu (⋯ toggles a small popover) —
