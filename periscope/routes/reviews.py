@@ -67,8 +67,11 @@ class CommentBody(ReviewRef):
 
 @router.get("/api/reviews")
 async def reviews_list():
+    # The keys the pane payload derives with (window_view.linear_ticket_fields).
+    team_keys = frozenset(store.get_settings().get("linear_team_keys") or ())
+
     def load():
-        return reviews.list_reviews(_windows(), sorted(open_ops.discover_repos()))  # a set
+        return reviews.list_reviews(_windows(), sorted(open_ops.discover_repos()), team_keys)  # a set
 
     rows = await asyncio.to_thread(load)
     return {"rows": rows}
