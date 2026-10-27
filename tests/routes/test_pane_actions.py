@@ -707,6 +707,25 @@ def test_reply_pastes_then_enters_at_the_pane_id(client, tmux_calls, mocker):
     ]
 
 
+def test_reply_text_cannot_break_out_of_the_bracketed_paste(client, tmux_calls, mocker):
+    # tmux passes an embedded ESC[201~ through paste-buffer -p: the paste
+    # would end there and the rest be typed as keys, the CR submitting it.
+    # A check name in "Ask agent to fix" can carry one.
+    mocker.patch.object(pane_actions, "session_state_for", return_value={"state": "idle", "waiting_for": None})
+    clean = "Fix it[201~!rm -rf x\tnow\nplease"
+    _screens(mocker, _IDLE, _typed(_IDLE, "Fix it[201~!rm -rf x now please"))
+    r = _reply(client, "Fix it\x1b[201~\r!rm -rf x\tnow\nplease\x7f\x9b")
+    assert r.status_code == 200, r.text
+    pasted = next(c[3] for c in tmux_calls if c[0] == "set-buffer")
+    assert pasted == clean
+    assert "\x1b" not in pasted and "\r" not in pasted
+
+
+def test_reply_of_nothing_but_control_characters_is_empty(client, pane, idle):
+    assert _reply(client, "\x1b\r\x03\x07\x9b\x00").status_code == 400
+    pane.assert_not_called()
+
+
 def test_reply_logs_the_pane_and_length_never_the_text(client, pane, idle, mocker, caplog):
     secret = "my token is hunter2"
     _screens(mocker, _IDLE, _typed(_IDLE, secret))

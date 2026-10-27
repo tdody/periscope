@@ -105,10 +105,21 @@ function noticeBody(path, r) {
   return r?.detail || "No answer";
 }
 
+// A check name is written by whatever has checks write access, and an
+// ESC[201~ in it would end the reply's bracketed paste early, the rest typed
+// as keys. The same set routes/pane_actions.py strips (all C0 and C1 controls
+// but \t and \n), so the message built here is the one typed.
+const isControl = (c) => {
+  const n = c.codePointAt(0);
+  return n !== 9 && n !== 10 && (n < 32 || (n >= 127 && n <= 159));
+};
+const withoutControls = (s) => [...String(s)].filter((c) => !isControl(c)).join("").trim();
+
 // The message Ask agent to fix types into the pane: the PR and the names of
 // its failing checks (copy.js puts them in data.checks).
 export function fixMessage(pr, checks) {
-  const what = checks?.length ? `${checks.join(" · ")}.` : "Checks are failing.";
+  const names = (checks || []).map(withoutControls).filter(Boolean);
+  const what = names.length ? `${names.join(" · ")}.` : "Checks are failing.";
   return `CI failed on #${pr}: ${what} Please investigate and fix.`;
 }
 

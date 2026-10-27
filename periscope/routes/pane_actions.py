@@ -16,6 +16,7 @@ dependency is unpinned (older releases parsed it), so the type is checked
 here too: defence in depth, and a plain 415 rather than a 422.
 """
 
+import re
 import threading
 import time
 from collections import deque
@@ -69,6 +70,13 @@ _ANSWERED: deque[str] = deque(maxlen=256)
 # process (session_state_for answers) while the prompt is zsh's, which would
 # run a reply as a command.
 _SHELLS = frozenset({"bash", "csh", "dash", "fish", "ksh", "nu", "sh", "tcsh", "zsh"})
+
+# An ESC[201~ in the text ends tmux's bracketed paste early and the rest is
+# typed as keys (a CR submits before _submit_when_held looks; in shell mode a
+# Ctrl-U, `!cmd` and CR runs a command). "Ask agent to fix" builds its text
+# from CI check names, which anything with checks write access controls.
+# Every C0/C1 control goes but \t and \n.
+_CONTROLS_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 # A reply goes in as two steps with a look in between: the paste, then the
 # Enter only once a fresh capture shows the paste in the composer and no
@@ -143,6 +151,9 @@ def pane_permission(body: PermissionBody):
         pid, pane_id, target, _window = _live_pane(body.pid)
         if body.request_id in _ANSWERED:
             raise HTTPException(409, "that request was already answered")
+        # The pane_sessions fallback too, as window_view looks it up, so the
+        # request id recomputed here agrees with the one /api/state published
+        # (the screen match keeps it safe); a reply wants a live agent instead.
         sess = session_state_for(session_id_for_pane(pane_id)) or {}
         row = pending_permission_row(pane_id, sess.get("state"), sess.get("waiting_for"), needs_since_for(pid))
         if row is None:
@@ -188,7 +199,7 @@ def pane_reply(body: ReplyBody):
     shows no dialog and the paste in the composer (panes.composer_holds);
     otherwise 409 with nothing submitted (the paste may sit in the composer,
     or in a dialog that took focus)."""
-    text = body.text.strip()
+    text = _CONTROLS_RE.sub("", body.text).strip()
     if not text:
         raise HTTPException(400, "nothing to send")
     with _ACT_LOCK:

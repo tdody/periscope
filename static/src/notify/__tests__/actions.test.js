@@ -277,6 +277,13 @@ describe("runAction: the buttons that make an agent act", () => {
     expect(fixMessage(7, [])).toBe("CI failed on #7: Checks are failing. Please investigate and fix.");
   });
 
+  it("Ask agent to fix drops control characters from check names", () => {
+    // An ESC[201~ would end the reply's bracketed paste and type the rest as keys.
+    const msg = fixMessage(7, ["te\x1b[201~\r!rm -rf x", "\x1b\x07\x9b", "lint\x00"]);
+    expect(msg).toBe("CI failed on #7: te[201~!rm -rf x · lint. Please investigate and fix.");
+    expect(msg.includes("\x1b") || msg.includes("\r")).toBe(false);
+  });
+
   it("Open shows the live pane, else reveals the banner's target", () => {
     const o = openers();
     windows.value = [{ pid: "p1", target: "s:4" }];
