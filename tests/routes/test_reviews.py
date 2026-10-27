@@ -35,8 +35,15 @@ def _win(**over):
     return {**base, **over}
 
 
+@pytest.fixture
+def place(mocker):
+    # Never the real rail write or a live tmux listing.
+    mocker.patch("periscope.routes.reviews.list_windows", return_value=[])
+    return mocker.patch("periscope.routes.reviews.open_ops.place_in_rail")
+
+
 @pytest.fixture(autouse=True)
-def _env(tmp_path, monkeypatch, mocker):
+def _env(tmp_path, monkeypatch, mocker, place):
     monkeypatch.setattr(reviews, "REVIEWS_DIR", tmp_path)
     monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": [_win()]}))
     mocker.patch("periscope.worktrees._cached_worktrees", return_value=[])
@@ -74,7 +81,7 @@ def test_walkthrough_404_without_file_and_no_diff_without_worktree(client):
 def test_comment_appends_and_delivers(client, mocker):
     deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
     r = client.post("/api/reviews/comment", json={"repo": "fdy", "branch": "feat/x", "stop": "Stop A", "body": "why?"})
-    assert r.status_code == 200 and r.json() == {"ok": True, "delivered": True}
+    assert r.status_code == 200 and r.json() == {"ok": True}
     pane_id, msg, sender = deliver.call_args.args
     assert pane_id == "%1" and sender == "periscope"
     assert 'Review comment on "Stop A"' in msg and msg.endswith("why?")
@@ -97,15 +104,16 @@ def test_comment_deliver_failure_is_409(client, mocker):
     assert r.status_code == 409 and "not attached" in r.json()["detail"]
 
 
-def test_prepare_with_owner_delivers(client, mocker):
+def test_prepare_with_owner_delivers(client, mocker, place):
     deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
     r = client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"})
     assert r.status_code == 200 and r.json() == {"ok": True, "mode": "delivered"}
     msg = deliver.call_args.args[1]
     assert "walkthrough" in msg and str(reviews.walkthrough_path("fdy", "feat/x")) in msg
+    place.assert_not_called()
 
 
-def test_prepare_without_owner_spawns_in_worktree(client, mocker, monkeypatch):
+def test_prepare_without_owner_spawns_in_worktree(client, mocker, monkeypatch, place):
     monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": [_win(agent=None)]}))
     mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
     mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
@@ -122,6 +130,8 @@ def test_prepare_without_owner_spawns_in_worktree(client, mocker, monkeypatch):
     assert r.status_code == 200 and r.json()["mode"] == "spawned"
     args, kwargs = spawn.call_args
     assert args[0] == "/dev/fdy/wt" and args[1] == "/dev/fdy" and kwargs["session"] == "fdy-wt"
+    assert "walkthrough" in args[2] and str(reviews.walkthrough_path("fdy", "feat/x")) in args[2]
+    place.assert_called_once_with("fdy-wt", {"repo": "/dev/fdy"}, ["k"])
 
 
 def test_prepare_with_no_windows_at_all_still_finds_the_worktree(client, mocker, monkeypatch):
@@ -185,11 +195,7 @@ def test_clear_removes_dir(client):
 )
 def test_check_rejects_traversal(client, repo, branch):
     assert client.post("/api/reviews/clear", json={"repo": repo, "branch": branch}).status_code == 400
-    assert client.get("/api/reviews/walkthrough", params={"repo": repo, "branch": branch}).status_code in (
-        400,
-        404,
-        422,
-    )
+    assert client.get("/api/reviews/walkthrough", params={"repo": repo, "branch": branch}).status_code == 400
 
 
 def test_clear_dot_branch_never_touches_repo_dir(client):
@@ -217,3 +223,53 @@ def test_prepare_spawn_without_pid_is_500(client, mocker, monkeypatch):
         new=AsyncMock(return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "", "pane_id": "%5"}),
     )
     assert client.post("/api/reviews/prepare", json={"repo": "fdy", "branch": "feat/x"}).status_code == 500
+
+
+@pytest.mark.parametrize("stop", ["", "  ", "a\nb", "a\rb"])
+def test_comment_bad_stop_is_400(client, stop):
+    r = client.post("/api/reviews/comment", json={"repo": "fdy", "branch": "feat/x", "stop": stop, "body": "t"})
+    assert r.status_code == 400
+    assert not reviews.comments_path("fdy", "feat/x").exists()
+
+
+def test_merge_prompt_gates_on_resolved(client, mocker):
+    deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
+    assert client.post("/api/reviews/merge", json={"repo": "fdy", "branch": "feat/x"}).status_code == 200
+    msg = deliver.call_args.args[1]
+    assert "resolved: yes" in msg and "do not merge" in msg
+
+
+def test_concurrent_prepare_spawns_once(mocker, monkeypatch, place):
+    import asyncio
+
+    import httpx
+
+    from periscope import app as app_mod
+    from periscope.routes import reviews as route
+
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+
+    async def run():
+        gate = asyncio.Event()
+
+        async def slow_spawn(*a, **k):
+            await gate.wait()
+            return {"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
+
+        spawn = mocker.patch("periscope.channels.spawn_claude_with_prompt", new=AsyncMock(side_effect=slow_spawn))
+        body = {"repo": "fdy", "branch": "feat/x"}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_mod.app), base_url="http://t") as c:
+            first = asyncio.create_task(c.post("/api/reviews/prepare", json=body))
+            while not spawn.await_count and not spawn.call_count:
+                await asyncio.sleep(0.01)
+            second = await c.post("/api/reviews/prepare", json=body)
+            gate.set()
+            return (await first).status_code, second.status_code, spawn.call_count
+
+    assert asyncio.run(run()) == (200, 409, 1)
+    assert route._preparing == set()

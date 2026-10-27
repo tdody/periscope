@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from periscope import channels, gitdiff, open_ops, reviews, state_hub, tracks
+from periscope.panes import list_windows
 
 router = APIRouter()
 
@@ -107,6 +108,9 @@ async def _deliver_or_409(owner: dict | None, message: str) -> None:
 @router.post("/api/reviews/comment")
 async def reviews_comment(body: CommentBody):
     _check(body.repo, body.branch)
+    # A newline would split the heading line and parse_comments would drop the entry.
+    if not body.stop.strip() or "\n" in body.stop or "\r" in body.stop:
+        raise HTTPException(400, "bad stop")
     ts = datetime.now().strftime("%Y-%m-%dT%H:%M")
     # Append BEFORE delivery: a comment with no pane to hear it is still kept,
     # and the next pane to prepare the branch is told to read the file.
@@ -117,7 +121,7 @@ async def reviews_comment(body: CommentBody):
         f"{reviews.comments_path(body.repo, body.branch)}):\n\n{body.body.strip()}"
     )
     await _deliver_or_409(owner, msg)
-    return {"ok": True, "delivered": True}
+    return {"ok": True}
 
 
 def _prepare_prompt(repo: str, branch: str) -> str:
@@ -128,9 +132,26 @@ def _prepare_prompt(repo: str, branch: str) -> str:
     )
 
 
+# state_hub._last_blob refreshes on the next tick, but a spawn awaits ~10 s: a
+# second prepare in that window would see no owner and spawn a second Claude
+# writing the same walkthrough.md.
+_preparing: set[tuple[str, str]] = set()
+
+
 @router.post("/api/reviews/prepare")
 async def reviews_prepare(body: ReviewRef):
     _check(body.repo, body.branch)
+    key = (body.repo, body.branch)
+    if key in _preparing:
+        raise HTTPException(409, "prepare already running")
+    _preparing.add(key)
+    try:
+        return await _prepare(body)
+    finally:
+        _preparing.discard(key)
+
+
+async def _prepare(body: ReviewRef) -> dict:
     wins = _windows()
     owner = reviews.owner_for(wins, body.repo, body.branch)
     prompt = _prepare_prompt(body.repo, body.branch)
@@ -155,6 +176,13 @@ async def reviews_prepare(body: ReviewRef):
     if not spawned["pid"]:
         # Stamping failed: the window exists but has no identity to return.
         raise HTTPException(500, "spawned a window but could not stamp its pane id")
+
+    # Same server-side rail placement as the spawn_claude tool's anchored path.
+    def place() -> None:
+        pane_pids = [w["pid_raw"] for w in list_windows() if w["session"] == session and w.get("pid_raw")]
+        open_ops.place_in_rail(session, project, pane_pids or [spawned["pid"]])
+
+    await asyncio.to_thread(place)
     return {"ok": True, "mode": "spawned", **spawned}
 
 
@@ -164,8 +192,9 @@ async def reviews_merge(body: ReviewRef):
     owner = reviews.owner_for(_windows(), body.repo, body.branch)
     msg = (
         f"This branch (`{body.branch}`) has been reviewed in periscope and the comments in "
-        f"`{reviews.comments_path(body.repo, body.branch)}` are resolved. Merge it by this "
-        "repo's convention, then report."
+        f"`{reviews.comments_path(body.repo, body.branch)}`. Read that file first and proceed only if "
+        "every entry is `resolved: yes`: merge by this repo's convention, then report. Otherwise "
+        "reply with what is still open and do not merge."
     )
     await _deliver_or_409(owner, msg)
     return {"ok": True}
