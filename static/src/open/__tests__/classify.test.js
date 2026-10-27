@@ -104,3 +104,13 @@ describe("classify", () => {
     expect(tk).toBeLessThan(firstOpen);
   });
 });
+
+describe("reviews queue card", () => {
+  it("offers the reviews queue for 'rev' queries", () => {
+    const cards = classify("rev", { repos: [], worktrees: [] });
+    expect(cards[0]).toMatchObject({ kind: "reviews", label: "Reviews · open branches and walkthroughs" });
+  });
+  it("does not offer the reviews queue for unrelated queries", () => {
+    expect(classify("zzz", { repos: [], worktrees: [] }).some((c) => c.kind === "reviews")).toBe(false);
+  });
+});

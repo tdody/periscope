@@ -34,6 +34,10 @@ export function classify(query, catalog) {
   const cards = [];
   if (!q) return cards;
 
+  if ("reviews".startsWith(q.toLowerCase()) && q.length >= 2) {
+    cards.push({ kind: "reviews", label: "Reviews · open branches and walkthroughs", sub: "the review queue", descriptor: null });
+  }
+
   // An explicit path leads everything — it's the most specific intent a query
   // can carry. Reuses kind "open" so pick() routes it through the existing
   // POST /api/open, which registers the project (ensure_project, never 409)

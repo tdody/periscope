@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { classify } from "../open/classify.js";
 import { setLastSelected, setUI } from "../prefs.js";
+import { selectReviewsQueue } from "../split/alertFeed.js";
 import { railSelection } from "../store.js";
 import { track } from "../track.js";
 import { apiCall, relTime } from "../util.js";
@@ -27,6 +28,7 @@ const KIND_META = {
   repo:     { group: "Repositories", icon: "◳" },
   track:    { group: "New track",    icon: "▧" },
   command:  { group: "Command",       icon: "⚡" },
+  reviews:  { group: "Reviews",       icon: "◉" },
 };
 
 const JOBS_POLL_MS = 3000;
@@ -185,6 +187,7 @@ export function OpenOmnibox() {
   }
 
   function pick(card) {
+    if (card.kind === "reviews") { selectReviewsQueue(); close(); return; }
     if (card.kind === "open") return post(card.descriptor);
     if (card.kind === "command") return runCommand(card.text);
     if (card.kind === "pr" && !card.needsRepo) return post({ repo: card.pr.repo, pr: card.pr.pr });
