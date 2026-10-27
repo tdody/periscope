@@ -7,6 +7,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import { metaPairs, parseCite, splitCites } from "./mdMeta.js";
+import { Mermaid } from "./Mermaid.jsx";
 
 // Scheme-qualified, root-absolute, and fragment URLs pass through untouched;
 // everything else is doc-relative and goes through ctx.resolveUrl.
@@ -129,6 +130,7 @@ function block(node, ctx, key, prev) {
       return <Tag class={`md-h md-h${node.depth}`} key={key}>{inlineAll(node.children, ctx)}</Tag>;
     }
     case "code":
+      if (ctx.mermaid && node.lang === "mermaid") return <Mermaid code={node.value} key={key} />;
       return (
         <pre class="md-code" key={key}>
           <code>
@@ -196,6 +198,7 @@ export function renderMarkdown(text, opts = {}) {
     resolveUrl: opts.resolveUrl ?? null,
     meta: opts.meta ?? false,
     cite: opts.cite ?? null,
+    mermaid: opts.mermaid ?? false,
   };
   const tree = fromMarkdown(String(text || ""), {
     extensions: [gfm()],

@@ -2,6 +2,23 @@ import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
 import { fileURLToPath } from "node:url";
 
+const mermaidMemo = new Map();
+function mermaidOnly(id, getModuleInfo, seen = new Set()) {
+  if (id.includes("/node_modules/mermaid/")) return true;
+  if (!id.includes("/node_modules/")) return false;
+  if (mermaidMemo.has(id)) return mermaidMemo.get(id);
+  if (seen.has(id)) return true; // cycle: decided by the other edges
+  seen.add(id);
+  const info = getModuleInfo(id);
+  const imps = [...(info?.importers || []), ...(info?.dynamicImporters || [])];
+  const r = imps.length > 0 && imps.every((i) => mermaidOnly(i, getModuleInfo, seen));
+  // Only memoize a verdict reached from a fresh walk: one computed while a
+  // cycle was open may have taken the `seen` shortcut above.
+  if (seen.size === 1) mermaidMemo.set(id, r);
+  seen.delete(id);
+  return r;
+}
+
 // Dev: serves static/ with HMR and proxies API/WS to FastAPI on :17375 —
 // the dev backend port (dev.sh sets PERISCOPE_PORT=17375), kept off the
 // :17374 prod instance so HMR development never reclaims prod or spends Haiku.
@@ -36,7 +53,12 @@ export default defineConfig({
         // preview/PreviewTab.jsx is the EAGER wrapper that dynamic-imports
         // the rest; routing it here would make app.js import the chunk
         // statically and defeat the lazy split.
-        manualChunks(id) {
+        // node_modules reached ONLY through mermaid → the "mermaid" chunk; a
+        // dep app also imports (mdast-util-from-markdown is one) stays in
+        // app. Without this, the default branch below folds mermaid's ~3 MB
+        // into the eager app.js.
+        manualChunks(id, { getModuleInfo }) {
+          if (mermaidOnly(id, getModuleInfo)) return "mermaid";
           if (
             id.includes("/@codemirror/") ||
             id.includes("/@lezer/") ||

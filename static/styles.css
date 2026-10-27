@@ -3881,3 +3881,7 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
   border: 1px solid var(--line); border-radius: 4px; background: var(--bg-1); color: var(--fg-1); cursor: pointer; }
 .md-cite:hover { background: var(--bg-1-hi); }
 .md-cite:disabled, .md-cite.is-inert { cursor: default; opacity: .7; }
+
+.md-mermaid { margin: 8px 0 14px; overflow-x: auto; }
+.md-mermaid-svg svg { max-width: 100%; height: auto; }
+.md-mermaid-err { color: var(--s-needs); }

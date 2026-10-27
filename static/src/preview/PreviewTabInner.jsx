@@ -601,6 +601,7 @@ export function PreviewTabInner({ entry, active = true }) {
                 highlight: highlightCode,
                 resolveUrl: state.resolved ? makeResolveUrl(target, state.resolved) : null,
                 meta: true,
+                mermaid: true,
                 cite: (c) => (
                   <button
                     type="button"

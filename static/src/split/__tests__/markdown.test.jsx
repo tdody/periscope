@@ -175,3 +175,13 @@ describe("cite", () => {
     expect(html("see a/b.py:3")).not.toContain("chip");
   });
 });
+
+describe("mermaid fence", () => {
+  const doc = "```mermaid\nflowchart LR\n  a --> b\n```";
+  it("is a plain fence without the opt", () => {
+    expect(html(doc)).toContain('<pre class="md-code">');
+  });
+  it("renders the Mermaid host with mermaid: true", () => {
+    expect(html(doc, { mermaid: true })).toContain('class="md-mermaid"');
+  });
+});
