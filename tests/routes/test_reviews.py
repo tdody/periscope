@@ -52,6 +52,10 @@ def _env(tmp_path, monkeypatch, mocker, place):
     # Never the real thing in tests: it starts a _bg thread (docs/testing.md).
     mocker.patch("periscope.reviews.cached_open_prs", return_value=[])
     mocker.patch("periscope.routes.reviews.open_ops.discover_repos", return_value=["/dev/fdy"])
+    # A spawn in one test must not make the next test's prepare refuse to spawn.
+    from periscope.routes import reviews as route
+
+    monkeypatch.setattr(route, "_recent_spawn", {})
     yield
 
 
@@ -345,3 +349,57 @@ def test_walkthrough_finds_pr_alias_worktree_for_diff(client, mocker, monkeypatc
     mocker.patch("periscope.reviews.stale_by", return_value=0)
     r = client.get("/api/reviews/walkthrough", params={"repo": "fdy", "branch": "feat/x"})
     assert r.status_code == 200 and r.json()["diff"] == {"files": []}
+
+
+def test_prepare_refuses_until_spawned_pane_attaches(client, mocker, monkeypatch, place):
+    from periscope.routes import reviews as route
+
+    monkeypatch.setattr(route, "_recent_spawn", {})
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": []}))
+    mocker.patch("periscope.worktrees.for_branch", return_value="/dev/fdy/wt")
+    mocker.patch("periscope.routes.reviews.tracks.repo_default_track", return_value="/dev/fdy")
+    mocker.patch(
+        "periscope.routes.reviews.open_ops.resolve_worktree_session", return_value=("fdy-wt", {"repo": "/dev/fdy"})
+    )
+    spawn = mocker.patch(
+        "periscope.channels.spawn_claude_with_prompt",
+        new=AsyncMock(
+            return_value={"target": "fdy-wt:2", "session": "fdy-wt", "index": 2, "pid": "k", "pane_id": "%5"}
+        ),
+    )
+    body = {"repo": "fdy", "branch": "feat/x"}
+    assert client.post("/api/reviews/prepare", json=body).json()["mode"] == "spawned"
+    # The pane has not attached (still no owner window): a second click must not spawn a twin.
+    r = client.post("/api/reviews/prepare", json=body)
+    assert r.status_code == 409 and "attached" in r.json()["detail"] and spawn.call_count == 1
+    # Once it attaches, prepare delivers and forgets the spawn.
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": [_win(branch="feat/x")]}))
+    deliver = mocker.patch("periscope.channels._deliver", new=AsyncMock(return_value={"ok": True}))
+    assert client.post("/api/reviews/prepare", json=body).json()["mode"] == "delivered"
+    assert deliver.call_count == 1 and route._recent_spawn == {}
+
+
+def test_walkthrough_strips_generated_hunks(client, mocker, monkeypatch):
+    _pr123(monkeypatch, [])
+    _write_wt()
+    mocker.patch("periscope.worktrees._cached_worktrees", return_value=[("/dev/fdy/pr", "pr-123")])
+    mocker.patch("periscope.routes.reviews.gitdiff.branch_base", return_value="origin/main")
+    hunk = {"header": "", "new_start": 1, "lines": [{"kind": "add", "text": "x"}]}
+    mocker.patch(
+        "periscope.routes.reviews.gitdiff.diff_for",
+        return_value={
+            "files": [
+                {"path": "static/dist/app.js", "hunks": [hunk]},
+                {"path": "package-lock.json", "hunks": [hunk]},
+                {"path": "periscope/x.py", "hunks": [hunk]},
+            ]
+        },
+    )
+    mocker.patch("periscope.reviews.head_sha", return_value="abc")
+    mocker.patch("periscope.reviews.stale_by", return_value=0)
+    files = client.get("/api/reviews/walkthrough", params={"repo": "fdy", "branch": "feat/x"}).json()["diff"]["files"]
+    assert [(f["path"], f["hunks"], f.get("generated")) for f in files] == [
+        ("static/dist/app.js", [], True),
+        ("package-lock.json", [], True),
+        ("periscope/x.py", [hunk], None),
+    ]

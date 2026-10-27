@@ -11,6 +11,7 @@ mirror, every MCP connection) never stalls.
 import asyncio
 import json
 import os
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
@@ -88,6 +89,13 @@ async def reviews_walkthrough(repo: str, branch: str):
         if worktree:
             base = gitdiff.branch_base(worktree)
             diff = gitdiff.diff_for(worktree, base) if base else None
+        if diff:
+            # Generated files (the bundle, lockfiles) are megabytes of hunks no
+            # stop cites; the entry stays so a ref to one reads "generated".
+            for f in diff["files"]:
+                if gitdiff.is_generated(f["path"]):
+                    f["hunks"] = []
+                    f["generated"] = True
         return {
             "text": text,
             "comments": reviews.parse_comments(reviews._read(reviews.comments_path(repo, branch))),
@@ -142,6 +150,11 @@ def _prepare_prompt(repo: str, branch: str) -> str:
 # second prepare in that window would see no owner and spawn a second Claude
 # writing the same walkthrough.md.
 _preparing: set[tuple[str, str]] = set()
+# A spawned pane shows no owner until its channel attaches and the next poll
+# lands (~10-20 s after the request returns); a prepare in that window is
+# refused rather than spawning a twin. An attached owner clears the entry.
+_recent_spawn: dict[tuple[str, str], float] = {}
+RECENT_SPAWN_S = 60.0
 
 
 @router.post("/api/reviews/prepare")
@@ -162,9 +175,14 @@ async def _prepare(body: ReviewRef) -> dict:
     aliases = _aliases(wins, body.repo, body.branch)
     owner = reviews.owner_for(wins, body.repo, body.branch, aliases)
     prompt = _prepare_prompt(body.repo, body.branch)
+    key = (body.repo, body.branch)
     if owner:
+        _recent_spawn.pop(key, None)
         await _deliver_or_409(owner, prompt)
         return {"ok": True, "mode": "delivered"}
+    age = time.monotonic() - _recent_spawn.get(key, -RECENT_SPAWN_S)
+    if age < RECENT_SPAWN_S:
+        raise HTTPException(409, f"a pane was spawned {int(age)} s ago and hasn't attached yet")
     worktree = await asyncio.to_thread(
         lambda: reviews.worktree_for(wins, body.repo, body.branch, fresh=True, roots=_roots(), aliases=aliases)
     )
@@ -180,6 +198,7 @@ async def _prepare(body: ReviewRef) -> dict:
         )
     except channels.SpawnFailed as e:
         raise HTTPException(502, f"spawn failed: {e}") from e
+    _recent_spawn[key] = time.monotonic()
     if not spawned["pid"]:
         # The Claude is already running with the prompt pasted; a 500 would invite a retry that spawns a second one.
         log.warning("reviews: spawned but pane id unknown for %s %s", body.repo, body.branch)
