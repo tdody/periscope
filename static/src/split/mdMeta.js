@@ -23,16 +23,18 @@ export function metaPairs(node) {
   return pairs.length ? pairs : null;
 }
 
-// A path is either slashed (`a/b.py`, `periscope/routes/`-style dirs need
-// a leaf extension or ≥2 segments, so `and/or` and `client/server` don't
-// chip) or a bare file with a letter-led extension (`x.md`, `README.md`;
-// rejects `127.0.0.1`, `1.2.3`, `e.g`, `i.e`), optionally `:line` / `:a-b`.
+// Slashed repo-relative paths (`a/b.py`, `docs/x.md`) chip bare or with
+// `:line` / `:a-b`. Slashless file names chip only WITH a line suffix
+// (`reviews.py:12`): bare, `os.path` / `node.js` / `self.foo` are code, not
+// files. A trailing `/` and `./`, `../`, `~/`, absolute paths never chip.
+// Three-segment prose like `read/write/exec` does chip (accepted).
 const TOKEN_RE = /^([\w.-]*[\w-]\/[\w./-]*[\w-]|[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{1,5})(?::(\d+)(?:-(\d+))?)?$/;
 
 export function parseCite(token) {
   const m = TOKEN_RE.exec(token);
   if (!m) return null;
   const path = m[1];
+  if (!path.includes("/") && m[2] == null) return null;
   const leaf = path.split("/").pop();
   if (path.includes("/") && !/\.[A-Za-z][A-Za-z0-9]{0,5}$/.test(leaf) && !/^[\w.-]+\/[\w.-]+\//.test(path)) return null;
   const start = m[2] != null ? Number(m[2]) : null;

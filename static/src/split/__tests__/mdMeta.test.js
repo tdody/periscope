@@ -20,7 +20,10 @@ describe("metaPairs", () => {
 describe("parseCite", () => {
   it("accepts paths with a slash or a letter extension", () => {
     expect(parseCite("a/b.py:3-9")).toEqual({ path: "a/b.py", start: 3, end: 9, raw: "a/b.py:3-9" });
-    expect(parseCite("x.md")).toEqual({ path: "x.md", start: null, end: null, raw: "x.md" });
+    expect(parseCite("docs/x.md")).toEqual({ path: "docs/x.md", start: null, end: null, raw: "docs/x.md" });
+    expect(parseCite("reviews.py:12")).toEqual({ path: "reviews.py", start: 12, end: 12, raw: "reviews.py:12" });
+    expect(parseCite("reviews.py:12-40")).toEqual({ path: "reviews.py", start: 12, end: 40, raw: "reviews.py:12-40" });
+    expect(parseCite("periscope/reviews.py")).toMatchObject({ path: "periscope/reviews.py", start: null });
     expect(parseCite("periscope/reviews.py:12")).toMatchObject({ path: "periscope/reviews.py", start: 12, end: 12 });
   });
   it("rejects addresses and abbreviations", () => {
@@ -28,14 +31,15 @@ describe("parseCite", () => {
     expect(parseCite("e.g")).toBeNull();
     expect(parseCite("i.e")).toBeNull();
     expect(parseCite("hello")).toBeNull();
+    for (const t of ["os.path", "self.foo", "node.js", "Next.js", "reviews.py"]) expect(parseCite(t)).toBeNull();
   });
 });
 
 describe("splitCites", () => {
   it("interleaves text and cites", () => {
-    expect(splitCites("see a/b.py:3-9 and x.md.")).toEqual([
+    expect(splitCites("see a/b.py:3-9 and docs/x.md.")).toEqual([
       "see ", { path: "a/b.py", start: 3, end: 9, raw: "a/b.py:3-9" }, " and ",
-      { path: "x.md", start: null, end: null, raw: "x.md" }, ".",
+      { path: "docs/x.md", start: null, end: null, raw: "docs/x.md" }, ".",
     ]);
   });
   it("returns the text alone when nothing matches", () => {

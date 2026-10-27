@@ -163,9 +163,9 @@ describe("meta blockquote", () => {
 describe("cite", () => {
   const chip = (c) => <b class="chip">{c.raw}</b>;
   it("chips path tokens in text and inlineCode", () => {
-    const out = html("see a/b.py:3 and `x.md` here", { cite: chip });
+    const out = html("see a/b.py:3 and `x.md:2` here", { cite: chip });
     expect(out).toContain('<b class="chip">a/b.py:3</b>');
-    expect(out).toContain('<b class="chip">x.md</b>');
+    expect(out).toContain('<b class="chip">x.md:2</b>');
   });
   it("leaves addresses and link text alone", () => {
     const out = html("at 127.0.0.1:17374 and [a/b.py](http://x)", { cite: chip });
