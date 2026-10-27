@@ -107,6 +107,12 @@ The banners come from `static/src/notify/` and go through `src-tauri/src/notific
 
 **A new shell with old JS** shows no buttons either: old JS's banners never name a category, and the shell never falls back to a banner's kind (2b's category ids reuse 2a kind names), so even a set a newer webview left registered shows no buttons. The shell treats buttons as data, so a new button needs new JS only, never a new `.app`.
 
+**2b's PR 2 needs no shell rebuild.** It adds:
+- five categories (`needs_permission`, `needs_dialog`, `question`, `ci_failed`, `ci_failed_fix`), whose buttons are Allow, Deny, Open, Reply and Ask agent to fix;
+- the `notice` banner a failed press posts.
+
+All of that is data the webview sends, so PR 1's `.app` covers it. The presses that make an agent act POST to `routes/pane_actions.py`, which re-checks the pane, so a stale banner's press can only reveal it.
+
 So **install a rebuilt `.app` before deploying JS** that relies on new shell fields.
 
 The design and the dedupe rules are in `docs/superpowers/specs/2026-10-21-native-notifications-design.md`; the categories and buttons are in `docs/superpowers/specs/2026-10-26-native-notifications-2b-design.md`.

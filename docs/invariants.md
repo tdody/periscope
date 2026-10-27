@@ -276,3 +276,57 @@ These are the non-obvious behaviors worth preserving:
     `taken` set because a boot-time prune fires before rebind can reattach,
     and a partial (single-window) pass's one-pid taken set would mass-delete
     every other pane's rows.
+
+20. **A remote key press into a Claude pane re-derives its request
+    server-side, re-reads the screen, addresses the pane by `%id`, and (for a
+    reply) re-checks before Enter.** A banner's Allow / Deny / Reply / Ask
+    agent to fix (`routes/pane_actions.py`) can be minutes stale, and the key
+    it sends acts: `1` approves, Enter submits. So each press:
+
+    - takes only the pid from the caller. The request is recomputed from the
+      hook's row (`window_view.pending_permission_row`), never the tool,
+      request or key the banner carried;
+    - re-reads a fresh capture. Allow needs the dialog on screen to match
+      that row exactly (`panes.dialog_matches`: the Bash block's digest
+      equals the key, or a file tool's question path is a `/`-boundary
+      suffix of it). A reply needs no dialog (`dialog_open`, which fails
+      closed), no shell in the foreground, and a plain idle `❯` composer
+      (`composer_ready`);
+    - captures and sends by the checked pane's `%id`
+      (`_send_to_target(address=)`), never `session:index`, which tmux
+      re-resolves when the keys go in;
+    - answers each request once, under one lock;
+    - for a reply, strips control characters first (an `ESC[201~` ends
+      tmux's bracketed paste and types the rest as keys), pastes alone, then
+      looks again (`composer_holds`, still no dialog) before Enter. A dialog
+      that renders in the ~10–20 ms before the paste can still receive the
+      paste; nothing is submitted into it.
+
+    Each guard answers a failure found in review, against real Claude Code
+    2.1.280 captures, before this shipped:
+
+    - **A 40-character screen token matched the wrong dialog:**
+      - two `cd …/periscope && …` commands;
+      - every `python3 - <<'EOF'`;
+      - `git push origin main` inside `… --force`;
+      - a Write to `notes.md` inside `rm notes.md`;
+      - AskUserQuestion's "Do you want to …?" read as a permission dialog.
+    - **A capture by `session:index` and a send by `session:index` are two
+      resolutions.** A renumber (invariant 11) or a split window's focus
+      moving between them lands the key on a pane nobody checked.
+    - **Two presses of one banner both passed before Claude redrew.** The
+      banner and the rail card, or a double click: the second `1` landed in
+      the composer, or on the next dialog.
+    - **One look before the paste wasn't enough.** It left ~150 ms for a
+      permission dialog to render and take focus, and Enter on that dialog
+      confirms `1. Yes`. Ask agent to fix goes to working agents, the very
+      panes that raise dialogs.
+    - **The composer wasn't always a composer:**
+      - shell mode (`!` in place of `❯`) runs the reply as a command;
+      - a half-typed draft is submitted with the reply;
+      - a draft in a near-black text colour read as Claude's grey
+        suggestion;
+      - a ctrl+z'd Claude keeps a live session file under zsh's prompt.
+
+    Every check fails closed. A false refusal costs a 409 that reveals the
+    pane; a false pass approves, or types into, the wrong thing.

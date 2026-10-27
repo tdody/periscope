@@ -12,6 +12,7 @@ the resume-in-flight check and by routes/sessions / routes/history for
 the resume orchestration).
 """
 
+import hashlib
 import re
 import time
 
@@ -303,6 +304,52 @@ NEEDS_INPUT_FOOTER_RE = re.compile(
     r"(?:Enter\s+to\s+\w+|↑/↓|Submit\b).*Esc\s+to\s+cancel",
 )
 
+# A permission dialog (Bash, Write, Edit, …), which a native banner's Allow
+# answers by sending `1` (routes/pane_actions.py): a wrong match approves the
+# wrong request, so every rule below fails closed. Its footer, "Esc to cancel ·
+# Tab to amend" in 2.1.280, is outside NEEDS_INPUT_FOOTER_RE's family, so it's
+# known by its own shape (parse_permission_dialog).
+PERMISSION_QUESTION_RE = re.compile(r"^\s*Do you want to .+\?\s*$")
+# ❯ is the cursor; the user may have moved it off option 1.
+PERMISSION_YES_RE = re.compile(r"^\s*(?:❯\s*)?1\.\s+Yes\b")
+DIALOG_CANCEL_RE = re.compile(r"\bEsc\s+to\s+cancel\b")
+# The full-width rule Claude draws above the dialog, at column 0: a reply's hr
+# is indented under its ⏺, a command's line under its gutter.
+DIALOG_RULE_RE = re.compile(r"^─{20,}\s*$")
+# A file tool's question names its path, relative to the cwd.
+_SHOWN_PATH_RE = re.compile(r"^\s*Do you want to (?:create|overwrite|make this edit to) (.+?)\?\s*$")
+# A turn, a finished spinner, a tool result: scrollback, never dialog. The
+# search for the rule stops at one, so a rule-less screen can't pull the
+# `⏺ Bash(…)` above it into the "dialog".
+_SCROLLBACK_RE = re.compile(r"^\s*[⏺✻⎿]")
+# Non-empty rows the question can sit above the footer: the options wrap
+# (Bash's "always allow access to <dir>" does), but not past this.
+_QUESTION_REACH = 16
+# Rows the rule can sit above the question. A taller dialog (a long heredoc,
+# a big preview) gets no Allow: a 409 that reveals the pane.
+_RULE_REACH = 60
+# Tools whose dialog Allow can verify (dialog_matches). Mirrors
+# pane_permission_hook.VERIFIABLE_TOOLS: the hook runs on bare python3 and
+# can't import this.
+VERIFIABLE_TOOLS = ("Bash", "Edit", "Write")
+_FILE_HEADERS = {"Write": ("Create file", "Overwrite file"), "Edit": ("Edit file",)}
+# A Bash dialog's command and description sit at this indent or deeper. A
+# leading Tip row sits at less, and a pane under ~84 columns wraps it onto a
+# second shallow row that no `Tip:` test would catch. Without a leading Tip,
+# a shallow row above the command is unknown chrome and stays in the block.
+_COMMAND_INDENT = 3
+# A multi-line command's `│ ` gutter; a blank command line leaves a bare `│`.
+_GUTTER_RE = re.compile(r"^│(?=\s|$)")
+# Mirrors pane_permission_hook._HIDDEN_RE (a test pins the two): the hook
+# strips bidi, zero-width and other invisible controls from its key, so the
+# screen side strips the same set. Escapes, never raw characters (trojan source).
+_HIDDEN_RE = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+_WS_RE = re.compile(r"\s+")
+# Every CSI (colon-form SGR included) and OSC (OSC 8 hyperlinks included).
+# capture() keeps escapes (-e), and _ANSI_SGR_RE's `[\d;]*m` leaves a
+# `\x1b[4:3m` on ❯ or a linkified path in place, breaking the line's shape.
+_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
 RECAP_RE = re.compile(r"※ recap:\s*(?P<text>.+?)(?=\n\s*[─❯]|\Z)", re.DOTALL)
 PROMPT_LINE_RE = re.compile(r"^❯\s*(?P<input>.*)$")
 
@@ -483,10 +530,147 @@ def _detect_needs_input(lines: list[str]) -> bool:
     return any(NEEDS_INPUT_FOOTER_RE.search(line) for line in lines[-5:])
 
 
+def _strip_escapes(text: str) -> str:
+    return _ESCAPE_RE.sub("", text)
+
+
+def _squash(text: str) -> str:
+    """All whitespace and hidden controls removed, as for the hook's match
+    key: a long command wraps mid-word onto an indented row, so only a
+    whitespace-free compare survives the wrap."""
+    return _WS_RE.sub("", _HIDDEN_RE.sub("", text))
+
+
+def _bash_key(squashed: str) -> str:
+    # The hook keys a digest, so the WHOLE command never sits in the key:
+    # commands carry tokens, and periscope.db is 0644. Its display summary
+    # still holds the head and tail (pane_permission_hook.match_key).
+    return "sha256:" + hashlib.sha256(squashed.encode()).hexdigest()
+
+
+def parse_permission_dialog(content: str) -> dict | None:
+    """The permission dialog ending a capture, or None. Returns its `text`
+    (header row to footer row), `header` ("Bash command", "Create file", …),
+    `body` (the non-empty rows between header and question),
+    `question`, and `shown_path` (a file tool's question path, else None).
+
+    Read bottom up, each step failing closed:
+    - the footer is the LAST line and matches `Esc to cancel`, but not
+      AskUserQuestion's "Enter to select · … · Esc to cancel", whose
+      "Do you want to …?" + `❯ 1. Yes` otherwise pass for a permission dialog;
+    - the nearest question above it has `1. Yes` right under it;
+    - the full-width rule is above that, with no scrollback in between. The
+      rule bounds the body: the scrollback's `⏺ Bash(touch probe.txt)` quotes
+      a command too, and must never vouch for a different dialog."""
+    rows = [row.rstrip() for row in _strip_escapes(content).split("\n")]
+    filled = [i for i, row in enumerate(rows) if row.strip()]
+    if not filled:
+        return None
+    footer = filled[-1]
+    if not DIALOG_CANCEL_RE.search(rows[footer]) or NEEDS_INPUT_FOOTER_RE.search(rows[footer]):
+        return None
+    question = None
+    for i in reversed(filled[-1 - _QUESTION_REACH : -1]):
+        if PERMISSION_QUESTION_RE.match(rows[i]):
+            question = i
+            break
+        if DIALOG_RULE_RE.match(rows[i]) or _SCROLLBACK_RE.match(rows[i]):
+            return None
+    if question is None or not PERMISSION_YES_RE.match(rows[question + 1]):
+        return None
+    rule = None
+    for i in range(question - 1, max(question - 1 - _RULE_REACH, -1), -1):
+        if DIALOG_RULE_RE.match(rows[i]):
+            rule = i
+            break
+        if _SCROLLBACK_RE.match(rows[i]):
+            return None
+    if rule is None:
+        return None
+    inner = [i for i in filled if rule < i < question]
+    if not inner:
+        return None
+    shown = _SHOWN_PATH_RE.match(rows[question])
+    return {
+        "text": "\n".join(rows[i] for i in filled if rule < i <= footer),
+        "header": rows[inner[0]].strip(),
+        "body": [rows[i] for i in inner[1:]],
+        "question": rows[question].strip(),
+        "shown_path": shown.group(1) if shown else None,
+    }
+
+
+def permission_dialog(content: str) -> str | None:
+    """The permission dialog ending a capture, as its text from header to
+    footer, or None (parse_permission_dialog)."""
+    parsed = parse_permission_dialog(content)
+    return parsed["text"] if parsed else None
+
+
+def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> bool:
+    """Whether a parsed permission dialog asks exactly what the hook recorded
+    (pane_permission_hook.match_key), so Allow's `1` approves that request
+    and no other. No key, or a tool whose dialog isn't verified (NotebookEdit,
+    WebFetch, MCP tools, …), never matches.
+
+    Bash: the digest of the whole command + description block (after a
+    leading Tip and its wrap, up to the first row indented 3+), gutter and
+    whitespace squashed, EQUALS the key. Never a prefix or a substring: `git
+    push origin main` vouched for `… --force`, two `cd <repo> && …` share
+    their first 40 characters, and every `python3 - <<'EOF'` its first line.
+    Accepted limit: squashing loses whitespace-only differences and the
+    command/description boundary (`rm -rf / tmp/x` squashes as `rm -rf
+    /tmp/x`), which the wrapped screen can't recover; the single-row rule and
+    the request id narrow it.
+    Write / Edit: the header names the tool, and the question's path is a
+    `/`-boundary suffix of the absolute key (the dialog shows it relative to
+    the cwd); the boundary stops `notes.md` vouching for `old-notes.md`. The
+    body (a preview, a diff) is never consulted: it can mention any file.
+    Accepted limits: a file tool matches by FILE, not by change, so two
+    pending edits to one file are interchangeable (the banner's consent is
+    file-level); and a relative path is suffix-matched, so a cwd change
+    within one wait could pair a stale row with a same-named file elsewhere
+    (that takes a hook miss, a cd and a same name in one needs-input
+    episode)."""
+    if not (parsed and isinstance(match_key, str) and match_key and tool in VERIFIABLE_TOOLS):
+        return False
+    if tool == "Bash":
+        if parsed["header"] != "Bash command":
+            return False
+        body = parsed["body"]
+        start = 0
+        if body and body[0].lstrip().startswith("Tip:"):
+            start = next((i for i, r in enumerate(body) if len(r) - len(r.lstrip()) >= _COMMAND_INDENT), len(body))
+        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in body[start:])
+        return _bash_key(_squash(block)) == match_key
+    shown = parsed["shown_path"]
+    return parsed["header"] in _FILE_HEADERS[tool] and bool(shown) and ("/" + match_key).endswith("/" + shown)
+
+
+def dialog_open(content: str) -> bool:
+    """Whether a Claude dialog may be up in a capture. Text typed into one
+    picks an option — `1 sounds good` + Enter answers "Yes" — so POST
+    /api/pane/reply refuses while one is open. Fails closed: an `Esc to
+    cancel` anywhere in the last three lines counts, so a dialog
+    parse_permission_dialog can't read (its question wrapped in a narrow
+    pane, a new footer) still blocks a reply. A false positive only costs a
+    409 that reveals the pane."""
+    lines = [row for row in _strip_escapes(content).split("\n") if row.strip()]
+    return (
+        _detect_needs_input(lines)
+        or parse_permission_dialog(content) is not None
+        or any(DIALOG_CANCEL_RE.search(line) for line in lines[-3:])
+    )
+
+
 _SGR_SPLIT_RE = re.compile(r"(\x1b\[[0-9;]*m)")
-# Ghost suggestions are drawn dim, bright-black, or in the dark half of the
-# 256-color grey ramp. Anything else after the prompt is treated as typed.
-_GHOST_256 = frozenset({8, *range(232, 248)})
+# Ghost suggestions are drawn dim, bright-black, or a mid grey: 256-color
+# ramp entries 238-247 (levels 68-158), or an RGB grey of 64-160. Anything
+# else after the prompt is treated as typed, a near-black grey included: that
+# is a draft in a dark theme's text colour, and reading a draft as a
+# suggestion lets a send be appended to it and submitted with it.
+_GHOST_FLOOR = 64
+_GHOST_256 = frozenset({8, *range(238, 248)})
 
 
 def _sgr_fg(params: list[str], fg: tuple | None, dim: bool) -> tuple[tuple | None, bool]:
@@ -522,7 +706,7 @@ def _ghost_colored(fg: tuple | None, dim: bool) -> bool:
     if fg and fg[0] == "256":
         return fg[1] in _GHOST_256
     if fg and fg[0] == "rgb":
-        return max(fg[1:]) - min(fg[1:]) <= 24 and max(fg[1:]) <= 160
+        return max(fg[1:]) - min(fg[1:]) <= 24 and min(fg[1:]) >= _GHOST_FLOOR and max(fg[1:]) <= 160
     return False
 
 
@@ -586,6 +770,105 @@ def _detect_pending_input(raw_rows: list[str], plain_rows: list[str]) -> str | N
             return None
         return None if _input_is_ghost(raw) else input_text
     return None
+
+
+# Non-empty rows the footer under the composer's lower rule may take: the
+# mode hint, warnings, a status line (live 2.1.280 panes show 2-4). A Claude
+# that exited leaves its last frame above the shell's output and prompt,
+# which push the count past this, so that frame never reads as a composer.
+_FOOTER_REACH = 6
+# How much of a reply's start the composer must show back before its Enter:
+# enough to tell it from anything else, short enough for the first row.
+_HOLDS_PREFIX = 24
+# Non-empty rows above the composer's top rule searched for a dialog drawn
+# over the screen mid-redraw: Claude rewrites only the rows that change, so a
+# capture can catch a dialog's top half above a composer still intact below.
+_DIALOG_TOP_REACH = 16
+
+
+def _dialog_above(rows: list[str]) -> bool:
+    """Whether the rows above a composer show part of a dialog: its own
+    full-width rule (a reply's hr is indented, never at column 0), an `Esc to
+    cancel`, or a `1. Yes` option under its cursor or right under a "Do you
+    want to …?". A bare "Do you want to …?" doesn't count: that's how Claude
+    asks in prose, which is what a reply answers."""
+    above = [row for row in rows if row.strip()][-_DIALOG_TOP_REACH:]
+    for i, row in enumerate(above):
+        if DIALOG_RULE_RE.match(row) or DIALOG_CANCEL_RE.search(row):
+            return True
+        if PERMISSION_YES_RE.match(row) and (
+            row.lstrip().startswith("❯") or (i and PERMISSION_QUESTION_RE.match(above[i - 1]))
+        ):
+            return True
+    return False
+
+
+def _composer_rows(content: str) -> list[tuple[str, str]] | None:
+    """(raw, plain) of the non-empty rows between the LAST two full-width
+    rules, where Claude draws its composer, or None when there is no such
+    pair, more than _FOOTER_REACH rows follow it, or part of a dialog shows
+    above it (_dialog_above)."""
+    raw_rows = content.rstrip("\n").split("\n")
+    plain_rows = [_strip_escapes(row).rstrip() for row in raw_rows]
+    rules = [i for i, row in enumerate(plain_rows) if DIALOG_RULE_RE.match(row)]
+    if len(rules) < 2:
+        return None
+    if sum(1 for row in plain_rows[rules[-1] + 1 :] if row.strip()) > _FOOTER_REACH:
+        return None
+    if _dialog_above(plain_rows[: rules[-2]]):
+        return None
+    return [(raw_rows[i], plain_rows[i]) for i in range(rules[-2] + 1, rules[-1]) if plain_rows[i].strip()]
+
+
+def composer_ready(content: str) -> bool:
+    """Whether Claude's composer sits at a plain, empty `❯` prompt, so a
+    paste + Enter (POST /api/pane/reply) is a new message and nothing else.
+
+    Decided positively, so anything unrecognised is "not ready": the composer
+    is the one non-empty row between the LAST two full-width rules, with no
+    more than a footer's worth of rows (mode hint, warnings, a status line)
+    below them; it opens with `❯`, and after it there's nothing or only
+    Claude's dim/grey suggestion (_input_is_ghost, on the -e capture). Shell
+    mode swaps the `❯` for `!` (2.1.280), and Enter then RUNS the text as a
+    shell command; a fresh session has no scrollback `❯` row for
+    _detect_pending_input to fall through to, so that scan can't be the
+    gate. A draft, a pasted block, a multi-row composer, a dialog (one rule,
+    no composer) or any other leading glyph all read as not ready: a false
+    "not ready" costs a 409 that reveals the pane."""
+    rows = _composer_rows(content)
+    if not rows or len(rows) != 1:
+        return False
+    raw, plain = rows[0]
+    row = plain.lstrip()
+    if not row.startswith("❯"):
+        return False
+    return not row[1:].strip() or _input_is_ghost(raw)
+
+
+def composer_holds(content: str, text: str) -> bool:
+    """Whether the composer now holds `text`, pasted a moment ago into the
+    empty composer composer_ready saw: the second look POST /api/pane/reply
+    takes before its Enter, because a dialog that renders in between takes
+    focus, and Enter on it confirms `1. Yes`.
+
+    The composer rows (as composer_ready finds them) must open with `❯`,
+    drawn as typed rather than as a suggestion, and read, whitespace
+    squashed since a long reply wraps, as the start of `text`; or show the
+    `[Pasted text #N …]` placeholder Claude collapses a long paste into,
+    which can only be this paste in a composer that was empty. A dialog has
+    no composer rows, and a shell-mode `!` row isn't `❯`."""
+    rows = _composer_rows(content)
+    if not rows:
+        return False
+    raw, plain = rows[0]
+    head = plain.lstrip()
+    if not head.startswith("❯") or _input_is_ghost(raw):
+        return False
+    shown = head[1:] + "".join(row for _raw, row in rows[1:])
+    if _PASTE_PLACEHOLDER_RE.match(shown.strip()):
+        return True
+    want = _squash(text)[:_HOLDS_PREFIX]
+    return bool(want) and _squash(shown).startswith(want)
 
 
 def _extract_recap(lines: list[str]) -> str | None:

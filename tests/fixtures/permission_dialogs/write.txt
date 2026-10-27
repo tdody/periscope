@@ -1,0 +1,38 @@
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+  ▝▝ ▝▝    /tmp/probe
+
+
+❯ Use the Bash tool to run exactly this command and nothing else: touch probe.txt
+
+⏺ Bash(touch probe.txt)
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cogitated for 1s · done 3:37 PM
+
+❯ Run it now: touch probe.txt
+
+⏺ Bash(touch probe.txt)
+  ⎿  Done
+
+⏺ I ran touch probe.txt and it finished without errors, so probe.txt now exists in the working directory.
+
+✻ Sautéed for 4s · done 3:38 PM
+
+❯ Use the Write tool to create notes.md containing the single word hello
+
+⏺ Write(notes.md)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Create file
+ notes.md
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  1 hello
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to create notes.md?
+ ❯ 1. Yes
+   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session
+      (shift+tab)
+   3. No
+
+ Esc to cancel · Tab to amend

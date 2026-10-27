@@ -30,20 +30,27 @@ class SendBulkBody(BaseModel):
     paste: str | None = None
 
 
-def _send_to_target(target: str, paste: str | None, keys: list[str]) -> dict:
+def _send_to_target(target: str, paste: str | None, keys: list[str], address: str | None = None) -> dict:
     """Core paste-buffer + send-keys logic. Used by `/api/send` and the bulk
     variant; both bump focus + acted_at on the target. Returns a result dict
     on success; raises HTTPException on bad input or a tmux failure (the bulk
-    variant catches it per-target so one bad pane doesn't fail the batch)."""
+    variant catches it per-target so one bad pane doesn't fail the batch).
+
+    `address`, when given, is where tmux sends instead: a pane id (`%N`) the
+    caller checked. tmux resolves `session:index` when the keys go in, so a
+    renumber (invariant 11) or a split window's focus moving in between lands
+    them on another pane. Focus and acted-at stay keyed by `target`, which is
+    what the dashboard reads them by."""
     if not keys and (paste is None or paste == ""):
         raise HTTPException(400, "no keys or paste")
+    addr = address or target
     try:
         if paste is not None and paste != "":
             # Unique buffer name so concurrent calls (including bulk fan-out)
             # never trample each other.
             buf = f"wd-{uuid.uuid4().hex[:8]}"
             tmux("set-buffer", "-b", buf, paste)
-            tmux("paste-buffer", "-d", "-p", "-b", buf, "-t", target)
+            tmux("paste-buffer", "-d", "-p", "-b", buf, "-t", addr)
             # Give the receiving TUI (especially Claude Code) time to apply
             # state for the paste before the submit key arrives. Without this,
             # Enter can land before React renders and submits empty input,
@@ -51,7 +58,7 @@ def _send_to_target(target: str, paste: str | None, keys: list[str]) -> dict:
             if keys:
                 time.sleep(0.10)
         if keys:
-            tmux("send-keys", "-t", target, *keys)
+            tmux("send-keys", "-t", addr, *keys)
     except Exception as e:
         raise HTTPException(500, str(e)) from e
     note_focus(target)

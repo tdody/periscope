@@ -244,10 +244,14 @@ case "$1" in
     # pane -> session). SessionStart fires at startup AND on /clear (immediate,
     # before the first prompt — a fresh pane shows its OWN transcript at once);
     # UserPromptSubmit catches every prompt (migrates pre-hook panes on next
-    # message). SessionEnd runs the history indexer (`history/`) so the
-    # finished transcript is summarized into ~/.claude/history.db — without
-    # it the /history search UI has nothing behind it. Idempotent merge —
-    # joins existing hook groups, preserves everything else.
+    # message). PermissionRequest runs pane_permission_hook.py on every
+    # permission dialog (no matcher: every tool) so a native banner can offer
+    # Allow / Deny for exactly that request; it prints nothing, since JSON
+    # output would answer the dialog. SessionEnd runs the history indexer
+    # (`history/`) so the finished transcript is summarized into
+    # ~/.claude/history.db — without it the /history search UI has nothing
+    # behind it. Idempotent merge — joins an existing matcher-less hook group,
+    # preserves everything else.
     #
     # Runs for EVERY account config dir, not just ~/.claude. Claude reads hooks
     # from whichever CLAUDE_CONFIG_DIR it was launched under, so a second-account
@@ -257,17 +261,62 @@ case "$1" in
     # error anywhere. The dirs are the account registry in prod's state.json
     # (store.get_accounts); ones that don't exist on this machine are skipped.
     python3 - "$REPO" "$(account_settings_files)" <<'PY'
-import json, os, sys
+import json, os, shlex, sys
 repo = sys.argv[1]
-pane_cmd = f"python3 {repo}/pane_session_hook.py"
+# `|| true`: these two are pure observers (no matcher — every tool), so a
+# missing file must still exit 0. Claude treats a nonzero UserPromptSubmit as
+# BLOCKING the prompt, and this install can repoint pane_session_hook.py's
+# entry too (see _target_missing below) — if that ever leaves a dangling path
+# for a moment, every prompt in every pane must still get through.
+pane_cmd = f"python3 {shlex.quote(os.path.join(repo, 'pane_session_hook.py'))} || true"
+# -I -S: isolated, no site/sitecustomize — stdlib only, so this still runs
+# under a bare /usr/bin/python3 with no venv or PYTHONPATH poisoning it.
+perm_cmd = f"python3 -I -S {shlex.quote(os.path.join(repo, 'pane_permission_hook.py'))} || true"
 # `cd` + `uv run`: Claude fires hooks from the pane's cwd, and `-m history`
 # only resolves from the checkout with its venv.
-hist_cmd = f"cd {repo} && uv run python -m history hook"
+hist_cmd = f"cd {shlex.quote(repo)} && uv run python -m history hook"
 wanted = (
     ("SessionStart", pane_cmd, "pane_session_hook.py", 5),
     ("UserPromptSubmit", pane_cmd, "pane_session_hook.py", 5),
+    ("PermissionRequest", perm_cmd, "pane_permission_hook.py", 5),
     ("SessionEnd", hist_cmd, "-m history hook", 120),
 )
+
+def _target_path(command):
+    # The .py file (or, for the history hook, the `cd` dir) this command
+    # points at, or None if the command doesn't parse or match that shape.
+    try:
+        toks = shlex.split(command)
+    except ValueError:
+        return None
+    for i, t in enumerate(toks):
+        if t.endswith(".py"):
+            return t
+        if t == "cd" and i + 1 < len(toks):
+            return toks[i + 1]
+    return None
+
+def _target_missing(command):
+    # Whether the entry we're about to repoint is actually dead. Without
+    # this, installing from a worktree would rewrite prod's (or another
+    # worktree's) still-live entry to point in here — then removing this
+    # worktree leaves `python3 <gone>.py` behind, which exits 2, which Claude
+    # reads as BLOCKING every prompt until someone reinstalls from main.
+    path = _target_path(command)
+    if path is None:
+        return False
+    return not os.path.exists(path)
+
+def _same_target(old_command, new_command):
+    # Whether an existing entry already points at THIS checkout (just in an
+    # older form — missing -I -S, missing `|| true`). Safe to rewrite in
+    # place: it isn't another live checkout's entry, it's ours, stale only in
+    # its flags.
+    old_path, new_path = _target_path(old_command), _target_path(new_command)
+    if old_path is None or new_path is None:
+        return False
+    return os.path.realpath(old_path) == os.path.realpath(new_path)
+
 for p in sys.argv[2].splitlines():
     if not os.path.isdir(os.path.dirname(p)):
         continue          # that account isn't set up on this machine
@@ -279,12 +328,26 @@ for p in sys.argv[2].splitlines():
     added = []
     for ev, cmd, marker, timeout in wanted:
         groups = hooks.setdefault(ev, [])
-        if any(marker in h.get("command", "")
-               for g in groups for h in g.get("hooks", [])):
+        existing = next((h for g in groups for h in g.get("hooks", [])
+                          if marker in h.get("command", "")), None)
+        if existing is not None:
+            # Repoint when the CURRENT target is gone, OR it's already THIS
+            # checkout in an older form (missing -I -S / `|| true`) — never
+            # just because this install's own path differs from a DIFFERENT
+            # live checkout's (prod's, or another worktree's).
+            old_cmd = existing.get("command", "")
+            if old_cmd != cmd and (_target_missing(old_cmd) or _same_target(old_cmd, cmd)):
+                existing["command"] = cmd
+                existing["timeout"] = timeout
+                added.append(ev)
             continue
         entry = {"type": "command", "command": cmd, "timeout": timeout}
-        if groups:
-            groups[0].setdefault("hooks", []).append(entry)   # join an existing group
+        # Join only a matcher-less group: None, "" and "*" all mean "every
+        # tool" — a scoped one (a user's "Bash" PermissionRequest group, say)
+        # would silently narrow ours.
+        open_group = next((g for g in groups if g.get("matcher") in (None, "", "*")), None)
+        if open_group is not None:
+            open_group.setdefault("hooks", []).append(entry)
         else:
             groups.append({"matcher": "", "hooks": [entry]})
         added.append(ev)
@@ -313,11 +376,12 @@ for p in sys.argv[1].splitlines():
     except FileNotFoundError:
         continue
     h = d.get("hooks", {})
-    for ev in ("SessionStart", "UserPromptSubmit", "SessionEnd"):
+    for ev in ("SessionStart", "UserPromptSubmit", "PermissionRequest", "SessionEnd"):
         groups = h.get(ev, [])
         for g in groups:
             g["hooks"] = [x for x in g.get("hooks", [])
                           if "pane_session_hook.py" not in x.get("command", "")
+                          and "pane_permission_hook.py" not in x.get("command", "")
                           and "-m history hook" not in x.get("command", "")]
         groups = [g for g in groups if g.get("hooks")]
         if groups:
