@@ -653,6 +653,44 @@ API_ERROR_CASES: list[tuple[str, str, bool]] = [
     """),
         True,
     ),
+    # THI-436: a stream cut mid-response renders as an assistant `⏺` line,
+    # not a `⎿` tool result — and a successful tool result sits above it,
+    # which the `⎿`-only scan stopped at and read as "recovered".
+    (
+        "assistant-glyph-stream-cut",
+        textwrap.dedent(f"""\
+        ⏺ Bash(uv run pytest -q tests/test_panes.py)
+          ⎿  412 passed in 3.1s
+
+        ⏺ API Error: The response stopped arriving. The response above may be incomplete.
+
+        ✻ Brewed for 4m 37s · done 9:29 AM
+
+        ❯
+        {STATUS_LINE}
+    """),
+        True,
+    ),
+    # Same error, nudged, and the resumed turn's tool call succeeded → off.
+    (
+        "assistant-glyph-recovered",
+        textwrap.dedent(f"""\
+        ⏺ API Error: The response stopped arriving. The response above may be incomplete.
+
+        ✻ Brewed for 4m 37s · done 9:29 AM
+
+        ❯ keep going
+
+        ⏺ Bash(uv run pytest -q tests/test_panes.py)
+          ⎿  412 passed in 3.1s
+
+        ✻ Brewed for 6s
+
+        ❯
+        {STATUS_LINE}
+    """),
+        False,
+    ),
 ]
 
 
