@@ -1,0 +1,14 @@
+#!/bin/sh
+# Print the body of CHANGELOG.md's section for one version — the notes
+# `bin/release` refuses to cut a release without, and the body the release
+# workflow publishes on the GitHub Release. Prints nothing unless that
+# version's section is the FIRST `## ` heading: the newest release always sits
+# at the top, so a match further down is an old version being re-cut.
+#
+#   bin/release-notes 0.2.0
+set -eu
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+awk -v h="## v$1" '
+  /^## / { if (seen || ($0 != h && index($0, h " ") != 1)) exit; seen = 1; next }
+  seen { print }
+' "$REPO/CHANGELOG.md"
