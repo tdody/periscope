@@ -139,16 +139,22 @@ what the table shows.
   both clear a search field on Esc); no key handler of our own.
 
 `static/styles.css` (next to the `.rq-*` rules, ~3929)
-- `.rq-pr-link { color: var(--fg-1); font-family: var(--mono); text-decoration: none; }`
-  and `.rq-pr-link:hover { text-decoration: underline; }`
+- `.rq-pr-link { color: var(--fg-1); font-family: var(--mono); text-decoration: none; }`,
+  `a.rq-pr-link { color: var(--accent); }` and
+  `a.rq-pr-link:hover { text-decoration: underline; }`. Revised after the
+  first look: in `--fg-1` a linked PR number didn't read as clickable among
+  the table's plain text, so a linked one takes the accent (an unlinked
+  `<span>` stays `--fg-1`)
 - add `.rq-pr-link.is-merged` and `.rq-pr-link.is-closed` to the shared
   merged / closed selector lists (~2929–2930), so the queue follows the same
   lifecycle colors as every other PR badge
 - `.rq-linear { color: oklch(0.7 0.13 280); font-family: var(--mono); text-decoration: none; }`
   with the same hover underline — the violet `.pane-pill-linear` and
   `.header-linear` use
-- `.rq-search` pushed right in the flex `wt-head` (`margin-left: auto`),
-  sized and colored like the app's other inputs
+- `.rq-search` beside the count in the flex `wt-head` (the head's `gap`
+  spaces it), sized and colored like the app's other inputs. Revised after
+  the first look: pushed right, it sat under the header's critter (`.tama`),
+  which overhangs the detail area's top-right corner by ~28px
 
 `static/dist/` rebuilt (`npm run build`) and committed.
 
