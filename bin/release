@@ -1,8 +1,11 @@
 #!/bin/sh
-# Cut a release. Bumps the version in tauri.conf.json, Cargo.toml and
-# pyproject.toml, re-syncs Cargo.lock, commits, tags `vX.Y.Z`, and pushes.
-# The pushed tag triggers .github/workflows/release.yml, which builds the
-# macOS .dmg and publishes the GitHub Release.
+# Cut a release. Refuses unless CHANGELOG.md opens with a non-empty
+# `## vX.Y.Z` section — the prose every install's Update popover shows. Then
+# bumps the version in tauri.conf.json, Cargo.toml and pyproject.toml,
+# re-syncs Cargo.lock, commits the bumps WITH the changelog, tags `vX.Y.Z`, and
+# pushes. Installs update to the newest tag, never main's tip (see
+# docs/updating.md); the pushed tag also triggers
+# .github/workflows/release.yml, which builds the macOS .dmg.
 #
 #   bin/release 0.2.0
 set -eu
@@ -16,8 +19,41 @@ fi
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
-if ! git diff-index --quiet HEAD --; then
+# Installs fast-forward to the tag, so it must sit ON main: a tag beside main
+# is a commit every install's `merge --ff-only` refuses.
+if [ "$(git rev-parse --abbrev-ref HEAD)" != main ]; then
+  echo "releases are cut from main" >&2
+  exit 1
+fi
+git fetch --quiet --tags origin
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "main is behind origin/main — pull first" >&2
+  exit 1
+fi
+
+# CHANGELOG.md is the one file expected to be dirty: it is written fresh for
+# each release and committed with the version bumps.
+if ! git diff-index --quiet HEAD -- . ':(exclude)CHANGELOG.md'; then
   echo "working tree is dirty — commit or stash before releasing" >&2
+  exit 1
+fi
+
+LAST="$(git tag --list 'v*' --sort=-v:refname | head -1)"
+if [ -n "$LAST" ]; then
+  if [ "$(printf '%s\nv%s\n' "$LAST" "$VERSION" | sort -V | tail -1)" != "v$VERSION" ] || [ "$LAST" = "v$VERSION" ]; then
+    echo "v$VERSION is not newer than $LAST" >&2
+    exit 1
+  fi
+  if [ "$(git rev-list --count "$LAST..HEAD")" -eq 0 ]; then
+    echo "nothing to release — no commits since $LAST" >&2
+    exit 1
+  fi
+fi
+
+if [ -z "$("$REPO/bin/release-notes" "$VERSION" | tr -d '[:space:]')" ]; then
+  echo "CHANGELOG.md must open with a non-empty '## v$VERSION' section — what changed, in prose." >&2
+  echo "Commits since ${LAST:-the beginning}, as raw material:" >&2
+  git log --no-merges --format='  - %s' "${LAST:+$LAST..}HEAD" | head -100 >&2
   exit 1
 fi
 
@@ -28,12 +64,12 @@ sed -i '' -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
 # Keep Cargo.lock's own-package version in step with Cargo.toml.
 cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 >/dev/null
 
-git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock pyproject.toml
+git add CHANGELOG.md src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock pyproject.toml
 git commit -m "release: v$VERSION"
 git tag "v$VERSION"
 git push origin HEAD
 git push origin "v$VERSION"
 
 echo
-echo "tagged v$VERSION and pushed — release build:"
+echo "tagged v$VERSION and pushed — installs will offer it within the hour; release build:"
 echo "  https://github.com/tomplex/periscope/actions"

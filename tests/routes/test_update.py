@@ -1,18 +1,20 @@
 """Tests for /api/update + /api/update/status."""
 
 
-def test_status_reports_behind_and_commits(client, mocker, monkeypatch):
+def test_status_reports_target_and_release_notes(client, mocker, monkeypatch):
     """Runs the real status(): it is the popover's only transport for the
-    commit list, and a mocked shape would drift silently."""
+    release notes, and a mocked shape would drift silently."""
     from periscope import updater
 
     monkeypatch.setattr(updater, "_behind", 7)
-    monkeypatch.setattr(updater, "_commits", [{"sha": "abc1234", "subject": "one"}])
+    monkeypatch.setattr(updater, "_target", "v0.3.0")
+    monkeypatch.setattr(updater, "_releases", [{"heading": "v0.3.0 — 2026-11-01", "body": "Adds X."}])
     mocker.patch("periscope.updater.tail", return_value=[])
     r = client.get("/api/update/status")
     assert r.status_code == 200
     assert r.json()["behind"] == 7
-    assert r.json()["commits"] == [{"sha": "abc1234", "subject": "one"}]
+    assert r.json()["target"] == "v0.3.0"
+    assert r.json()["releases"] == [{"heading": "v0.3.0 — 2026-11-01", "body": "Adds X."}]
 
 
 def test_post_starts_update(client, mocker):

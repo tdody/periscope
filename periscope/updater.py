@@ -1,7 +1,8 @@
-"""Self-update: how far behind origin the checkout is, and driving the update.
+"""Self-update: how far behind the newest release the checkout is, and
+driving the update.
 
-See CLAUDE.md > "Updating" for the design and why a plain `git pull` +
-`restart` is not equivalent. The invariants that live in THIS file:
+See docs/updating.md for the design and why a plain `git pull` + `restart` is
+not equivalent. The invariants that live in THIS file:
 
 - `start()` spawns DETACHED (`start_new_session=True`). The script calls
   `launchctl bootout`, which tears down the launchd job — a plain child would
@@ -10,6 +11,7 @@ See CLAUDE.md > "Updating" for the design and why a plain `git pull` +
   feature branch, where a pull would clobber work in progress.
 """
 
+import re
 import subprocess
 import threading
 import time
@@ -29,15 +31,19 @@ CHECK_INTERVAL_S = 3600
 # only ever restarted BY this feature.
 STALE_PROC_S = 15 * 60
 
-# Subjects listed in the dashboard popover. The count is exact regardless;
-# past this the UI says "…and N more".
-COMMITS_LIMIT = 30
+# Releases are `v*` tags on the canonical repo, fetched from it directly
+# rather than from whatever remote `main` tracks: a contributor's checkout may
+# track a fork whose main sat 898 commits stale. Must match RELEASES_URL in
+# bin/periscope — the two sides must agree on the target, or the pill arms a
+# button that installs something else.
+RELEASES_URL = "https://github.com/tomplex/periscope.git"
 
 _LOCK = threading.Lock()
 _checked_at = 0.0
 _behind = 0
 _ahead = 0
-_commits: list[dict] = []
+_target = ""
+_releases: list[dict] = []
 _proc: subprocess.Popen | None = None
 _started_at = 0.0
 
@@ -61,50 +67,63 @@ def _git(*args: str, timeout: float = 10.0) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
+def release_notes(changelog: str, current: str | None) -> list[dict]:
+    """CHANGELOG.md's `## vX.Y.Z …` sections newer than `current`, newest
+    first. `current` absent from the file (or None — no release behind HEAD)
+    means every section is news."""
+    out = []
+    for chunk in re.split(r"^## ", changelog, flags=re.M)[1:]:
+        heading, _, body = chunk.partition("\n")
+        if heading.split()[:1] == [current]:
+            break
+        out.append({"heading": heading.strip(), "body": body.strip()})
+    return out
+
+
 def check(force: bool = False) -> int:
-    """Fetch and recount commits behind AND ahead of upstream. Throttled to
-    CHECK_INTERVAL_S unless `force`. Blocking — call from a worker thread.
+    """Fetch release tags and recount commits behind AND ahead of the newest.
+    Throttled to CHECK_INTERVAL_S unless `force`. Blocking — call from a
+    worker thread.
 
     A probe that can't answer LEAVES THE LAST COUNT STANDING rather than
     resetting to zero: going offline doesn't make the checkout less behind, and
     publishing 0 would claim "up to date", which is the one wrong answer.
     """
-    global _checked_at, _behind, _ahead, _commits
+    global _checked_at, _behind, _ahead, _target, _releases
     with _LOCK:
         if not force and time.time() - _checked_at < CHECK_INTERVAL_S:
             return _behind
         _checked_at = time.time()
         known = _behind
-    # Compare against the tracked upstream rather than a hardcoded origin/main,
-    # matching the `merge --ff-only @{u}` the update itself will run.
-    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-    if not upstream:
-        return known  # detached HEAD or no tracking branch
-    if _git("fetch", "--quiet", timeout=30.0) is None:
-        return known  # offline, or no credentials
-    # ONE call answers both directions — left = upstream-only (behind), right
-    # = local-only (ahead). Ahead is not decoration: the update fast-forwards
-    # to @{u}, which refuses once BOTH counts are non-zero. Counting only
-    # `behind` rendered "↑ 10 behind" over a button that could not succeed,
-    # with the reason nowhere in the UI.
-    counts = (_git("rev-list", "--count", "--left-right", f"{upstream}...HEAD") or "").split()
+    # Same fetch, same tag choice as `bin/periscope update`, which will
+    # fast-forward to exactly this target.
+    if _git("fetch", "--quiet", RELEASES_URL, "+refs/tags/v*:refs/tags/v*", timeout=30.0) is None:
+        return known  # offline
+    target = (_git("tag", "--list", "v*", "--sort=-v:refname") or "").partition("\n")[0]
+    if not target:
+        return known  # nothing released yet
+    # ONE call answers both directions — left = release-only (behind), right =
+    # local-only (ahead). Ahead is not decoration: the fast-forward refuses
+    # once BOTH counts are non-zero. Counting only `behind` rendered
+    # "↑ 10 behind" over a button that could not succeed, with the reason
+    # nowhere in the UI.
+    counts = (_git("rev-list", "--count", "--left-right", f"{target}...HEAD") or "").split()
     if len(counts) != 2 or not all(c.isdigit() for c in counts):
         return known
     behind, ahead = int(counts[0]), int(counts[1])
-    # Local read — the fetch above already brought the objects in. %x1f keeps
-    # a subject containing a tab or space from splitting.
-    raw = _git("log", "--format=%h\x1f%s", "-n", str(COMMITS_LIMIT), f"HEAD..{upstream}")
+    # Notes come from the TARGET's changelog — the checkout's predates them —
+    # and stop at the release HEAD is on (describe fails when no release is
+    # behind HEAD: then every section is news).
+    changelog = _git("show", f"{target}:CHANGELOG.md")
+    current = _git("describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD")
     with _LOCK:
         _behind = behind
         _ahead = ahead
+        _target = target
         # Same rule as the count: a probe that can't answer leaves the last
-        # list standing. "" (nothing to list) is an answer; None is not.
-        if raw is not None:
-            _commits = [
-                {"sha": sha, "subject": subject}
-                for sha, _, subject in (line.partition("\x1f") for line in raw.splitlines())
-                if sha
-            ]
+        # notes standing.
+        if changelog is not None:
+            _releases = release_notes(changelog, current)
     return behind
 
 
@@ -135,21 +154,29 @@ def summary() -> dict:
     hottest endpoint in the app.
     """
     with _LOCK:
-        return {"behind": _behind, "ahead": _ahead, "checked_at": _checked_at, "running": _running_locked()}
+        return {
+            "behind": _behind,
+            "ahead": _ahead,
+            "target": _target,
+            "checked_at": _checked_at,
+            "running": _running_locked(),
+        }
 
 
 def status() -> dict:
-    """summary() plus what the update would pull and the current run's
-    transcript — for the on-demand /api/update/status probe (the popover
-    opening, the post-click watch), the only callers that need either."""
+    """summary() plus the release notes the update would bring and the
+    current run's transcript — for the on-demand /api/update/status probe (the
+    popover opening, the post-click watch), the only callers that need
+    either."""
     log_tail = tail()  # disk read stays outside the lock
     with _LOCK:
         return {
             "behind": _behind,
             "ahead": _ahead,
+            "target": _target,
             "checked_at": _checked_at,
             "running": _running_locked(),
-            "commits": list(_commits),
+            "releases": list(_releases),
             "log": log_tail,
         }
 

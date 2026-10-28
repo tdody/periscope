@@ -19,6 +19,23 @@ exists:
   `walkthrough` skill; a config dir the link never reached gives that Claude
   nothing to run, and the button silently does nothing.
 
+**What an update targets: the newest release, never `main`'s tip.** A
+release is a `vX.Y.Z` tag on the canonical repo's `main`, cut by
+`bin/release`, which refuses unless `CHANGELOG.md` opens with a non-empty
+`## vX.Y.Z` section (`bin/release-notes` extracts it; the release workflow
+publishes the same section as the GitHub Release body). Both the hourly check
+and the verb fetch `+refs/tags/v*:refs/tags/v*` from `RELEASES_URL` —
+`https://github.com/tomplex/periscope.git`, the same constant in
+`updater.py` and `bin/periscope` — and pick the highest tag by version sort
+(`v0.10.0` above `v0.9.0`). Straight from the canonical URL rather than the
+remote `main` tracks: a contributor's fork had a `main` 898 commits stale, and
+GitHub's fork sync never carries tags, so tracking it would hide every
+release. Consequences: a checkout at or past the newest release (any dev
+checkout, prod after a manual `git pull`) shows no pill; until the first tag
+exists the verb refuses with "no release to update to"; unreleased work
+reaches an install only by `git pull` + `bin/periscope restart` (plus
+`install-hook` / `install-skill` if it touched provisioning).
+
 **Ordering is the safety property.** The fetch + fast-forward runs before anything
 touches launchd, so the common failures (dirty tree, diverged branch) abort
 with the running server completely untouched. That's what makes the
@@ -26,18 +43,18 @@ dashboard-driven path viable: a failed update leaves the server alive to serve
 the reason back. Verified by running the verb with a dirty tree and on a branch
 with no upstream — both exit 1 with prod's pid unchanged.
 
-**Why `merge --ff-only @{u}` and not `git pull --ff-only`.** On git 2.33,
-`git pull --ff-only` dies `Not possible to fast-forward, aborting.` whenever the
-checkout is merely AHEAD of upstream — even with nothing to fetch. pull.c asks
+**Why `fetch` + `merge --ff-only <tag>` and not `git pull --ff-only`.** On
+git 2.33, `git pull --ff-only` dies `Not possible to fast-forward, aborting.`
+whenever the checkout is merely AHEAD — even with nothing to fetch. pull.c asks
 "is the fetched head a descendant of HEAD" and never reaches an
 already-up-to-date case, so being ahead by one local commit is fatal on its own.
 On a fork checkout that can't push to `origin/main`, that wedged the verb
 permanently: every update failed, including the ones with nothing to pull.
-An explicit `git fetch` followed by `git merge --ff-only '@{u}'` answers all
-three cases correctly — no-op when ahead only, fast-forward when behind, refuse
-on genuine divergence — and keeps the refusal ahead of anything touching
-launchd. Verified against both: `pull --ff-only` exits 128 where
-`merge --ff-only @{u}` prints "Already up to date."
+An explicit fetch followed by `git merge --ff-only` answers all three cases
+correctly — no-op when ahead only (the normal state of a checkout past the
+newest release), fast-forward when behind, refuse on genuine divergence — and
+keeps the refusal ahead of anything touching launchd. Verified against both:
+`pull --ff-only` exits 128 where `merge --ff-only` prints "Already up to date."
 
 The verb deliberately does **not** run `npm run build`: `static/dist/app.js` is
 committed, so the pull already carries it, and a build against drifted
@@ -72,26 +89,28 @@ to answer a credential or host-key prompt, and a wedged `git pull` would pin
 than refusing forever.
 
 **From the dashboard.** `updater.check()` runs on the activity worker's tick
-(self-throttled hourly) and counts commits behind AND ahead of the tracked
-upstream — one `rev-list --count --left-right @{u}...HEAD`; the counts ride
-`/api/state` as `update` and render as a header pill. **`ahead` is what makes
-the pill honest.** The update fast-forwards to `@{u}`, which refuses once the
-checkout carries local commits AND upstream has moved, so a behind-only pill
-armed a button that was arithmetically incapable of succeeding and gave no
-reason — the
-reported "I can't get the update button to work" on a fork checkout whose
-`main` held one unpushed commit while origin moved 10 ahead. With both counts
-the popover names the blocker. The button stays ENABLED: the count is up to an
+(self-throttled hourly) and counts commits behind AND ahead of the newest
+release — one `rev-list --count --left-right <tag>...HEAD`; the counts and the
+tag ride `/api/state` as `update` and render as a header pill (`↑ v0.3.0`).
+**`ahead` is what makes the pill honest.** The update fast-forwards to the
+tag, which refuses once the checkout carries commits the tag doesn't AND the
+tag has moved, so a behind-only pill armed a button that was arithmetically
+incapable of succeeding and gave no reason — the reported "I can't get the
+update button to work" on a fork checkout whose `main` held one unpushed
+commit while origin moved 10 ahead. With both counts the popover names the
+blocker. The button stays ENABLED: the count is up to an
 hour stale (an external rebase may already have cleared it), and a refused pull
 aborts before launchd is touched. Warn, don't block. A probe that
 can't answer (offline, no upstream) LEAVES THE LAST COUNT STANDING — going
 offline doesn't make the checkout less behind, and publishing 0 would render as
 "up to date", the one wrong answer. Assert that through `summary()`, not
 `check()`'s return value: the caller discards the return, so a test on it
-passes even while `_behind` is being clobbered. The same check records the
-subjects of the commits it would pull (`git log HEAD..@{u}`, capped at
-`COMMITS_LIMIT`); they ride `/api/update/status` only — never `/api/state` —
-and the pill's popover fetches them on open. Its Update button
+passes even while `_behind` is being clobbered. The same check reads the
+release notes — the `CHANGELOG.md` sections of the TARGET tag (the checkout's
+own copy predates them) newer than the release HEAD is on (`git describe`;
+none behind HEAD → every section); they ride `/api/update/status` only —
+never `/api/state` — and the popover fetches them on open and renders them as
+markdown. Its Update button
 POSTs `/api/update`, which spawns the script **detached**
 (`start_new_session=True`) — non-negotiable, because the script's `bootout`
 tears down the launchd job and would otherwise kill the very process running
@@ -101,9 +120,9 @@ dies, the connection banner shows, and the next poll carries `behind: 0`;
 failure = the server is still alive and `/api/update/status` has the log tail.
 
 Both `check()` (worker-gated) and `start()` (explicitly gated) are prod-only. A
-dev instance runs from a worktree on a feature branch, where `git pull
-fast-forward would fail or pull the WRONG branch over work in progress; `POST
-/api/update` 409s there. This also means the pill is invisible in dev by
+dev instance runs from a worktree on a feature branch, where a fast-forward
+would fail or land a release over work in progress; `POST /api/update` 409s
+there. This also means the pill is invisible in dev by
 construction — hence the render test in
 `static/src/chrome/__tests__/updatePillRender.test.jsx`, since the browser
 can't exercise those states.
