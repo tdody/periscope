@@ -36,7 +36,7 @@ applies. Read the relevant doc before editing, not after the tests go red.
 | `reviews.py`, `routes/reviews.py`, `static/src/review/*`, `skills/walkthrough/SKILL.md` (symlinked into each account's `skills/` by `bin/periscope install-skill`) | `docs/superpowers/specs/2026-10-26-review-walkthrough-design.md` — D1 periscope never mutates git/GitHub, D2 files under `~/.claude/reviews` with one writer per file, D6 queue sourced from `gh` with panes joined on |
 | `src-tauri/` | `docs/tauri-shell.md` — build via `.app` not `cargo tauri dev`, webview recycling |
 | `static/src/notify/`, `notifications.rs`, `tauri.js` `notify` / `onNotificationOpened` / `onNotificationAction`, `NotifySettings` | `docs/superpowers/specs/2026-10-21-native-notifications-design.md` (its revision sections first) — one pass per applied state (`stateSeq`), grace counted in passes, keys that survive a restart, webview/shell version skew; buttons: `2026-10-26-native-notifications-2b-design.md` (its "Revised in implementation (PR 2)" section first) — categories are data the webview registers, one per variant whose buttons all apply; Allow / Deny / Reply / Ask agent to fix POST to `routes/pane_actions.py`, which re-checks the pane when pressed |
-| `bin/periscope update`, `updater.py`, the launchd plist | `docs/updating.md` — why pull+restart is not `update`, the bootout guards |
+| `bin/periscope update`, `updater.py`, `bin/release`, `CHANGELOG.md`, the launchd plist | `docs/updating.md` — updates target the newest release tag (never `main`'s tip), why pull+restart is not `update`, the bootout guards |
 | `tests/conftest.py`, any test that touches the activity DB or spawns the shim | `docs/testing.md` — the no-leaked-thread invariant (CPython 3.14 sqlite segfault), `.venv` drift, `WORKTREES_DIR` landmine |
 | `pyproject.toml` `[tool.ruff]`/`[tool.ty]`, `biome.json` | `docs/linting.md` — which rules are off and why |
 
@@ -131,7 +131,7 @@ would double-load every global.
 | `git_pr.py` / `usage.py` / `launch_policy.py` / `cost_pressure.py` | Git state + PR cache / plan usage + `choose_launch` shell / pure account-and-model routing policy / per-pane context-cost pressure |
 | `narrator.py` / `rename_ai.py` | Per-pane AI status lines + divergence renames / Anthropic SDK plumbing |
 | `open_ops.py` | Unified-open core (path/branch/PR descriptors → create-or-focus → rail placement); no HTTP |
-| `updater.py` | Self-update: commits-behind check + detached spawn of `bin/periscope update` |
+| `updater.py` | Self-update: newest-release check (counts + changelog notes) + detached spawn of `bin/periscope update` |
 | `reviews.py` | Review walkthroughs: on-disk convention under `~/.claude/reviews/<repo>/<slug>`, GitHub-sourced queue (my PRs + review-requested, panes joined on), staleness, comments |
 | `routes/*.py` | One APIRouter per file |
 
@@ -210,12 +210,18 @@ Standard loop:
    net, don't `--force` past it.
 
 `bin/periscope install` generates the launchd plist and loads it;
-`bin/periscope update` is pull + re-provision + restart (see `docs/updating.md`
+`bin/periscope update` is fast-forward-to-the-newest-release + re-provision + restart (see `docs/updating.md`
 for why `git pull` + `restart` is not equivalent).
 
 ## Releases
 
-`bin/release X.Y.Z` bumps `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
-`pyproject.toml`, re-syncs `Cargo.lock`, commits `release: vX.Y.Z`, tags, and
-pushes; the `v*` tag triggers `.github/workflows/release.yml` (unsigned
-universal macOS `.dmg` via `tauri-apps/tauri-action`).
+A release is what installs update to — the dashboard's Update button targets
+the newest `v*` tag, never `main`'s tip (`docs/updating.md`). Write the
+`## vX.Y.Z — YYYY-MM-DD` section at the top of `CHANGELOG.md` (prose: what
+changed for someone running periscope), then `bin/release X.Y.Z`: it refuses
+without that section, off `main`, behind `origin/main`, or with no commits
+since the last tag; then bumps `src-tauri/tauri.conf.json`,
+`src-tauri/Cargo.toml`, `pyproject.toml`, re-syncs `Cargo.lock`, commits
+`release: vX.Y.Z` with the changelog, tags, and pushes. The tag triggers
+`.github/workflows/release.yml` (unsigned universal macOS `.dmg` via
+`tauri-apps/tauri-action`, the changelog section as the release body).

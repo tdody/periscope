@@ -23,6 +23,17 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # The same CHANGELOG.md section bin/release refused to tag without, and
+      # the one every install's Update popover shows.
+      - name: Release notes
+        id: notes
+        run: |
+          {
+            echo 'body<<PERISCOPE_NOTES_EOF'
+            bin/release-notes "${GITHUB_REF_NAME#v}"
+            echo 'PERISCOPE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build .dmg and publish release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -31,6 +42,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Periscope ${{ github.ref_name }}
           releaseBody: |
+            ${{ steps.notes.outputs.body }}
+
+            ---
+
             Native macOS shell for periscope (universal — Apple Silicon + Intel).
 
             The app is a thin Tauri shell that loads the dashboard from

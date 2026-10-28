@@ -33,22 +33,19 @@ subjects here aren't conventional, and the point of the exercise is that a
 human (or a Claude asked by one) writes a paragraph.
 
 **D5 — Developers reach unreleased code the way Tom does today: `git pull`
-+ `bin/periscope restart`.** The Update button gets no "track tip" mode
-(priced below; I'd skip it).
++ `bin/periscope restart`.** The Update button gets no "track tip" mode.
 
-### Questions for Tom
+**D6 — Installs read releases from the canonical repo's URL, not from
+whatever remote their `main` tracks.** A contributor's fork (`tdody/periscope`)
+had a `main` 898 commits behind the canonical one, and GitHub's fork sync
+never carries tags — tracking the fork would hide every release. The repo is
+public, so an anonymous HTTPS fetch works under launchd with no credentials.
 
-- **Q1 (T1, needs confirming):** Thibault's prod checkout fetches from
-  `tomplex/periscope`, not from his fork? Tags travel with `git fetch` only
-  from the remote his `main` tracks. `docs/updating.md` describes his setup
-  as "a fork checkout that can't push to `origin/main`", which says origin
-  *is* the canonical repo — if so, nothing to do.
-- **Q2 (T2):** GitHub's Releases page — carry the changelog section as the
-  release body (+1 file), or leave the dmg boilerplate? I'd take it; it's a
-  shell step in the workflow.
-- **Q3:** First release. Landing this makes the Update button inert until a
-  tag exists. I'd cut `v0.2.0` in the same session, notes drafted from
-  `git log` since whatever point you call the start.
+**D7 — The GitHub Release body is the changelog section**, above the
+existing install note for the unsigned `.dmg`.
+
+**D8 — `v0.2.0` is the first release**, cut once this lands; its notes cover
+the release mechanism itself plus the recent highlights.
 
 ## Smallest version
 
@@ -58,19 +55,17 @@ deliberate, described release.
 
 **Seam pair:** the target ref the updater measures against and fast-forwards
 to. Reader: `updater.check()` (Python, hourly, feeds the pill). Writer:
-`bin/periscope update` (shell, does the fast-forward). Both hardcode `@{u}`
-today — 2 sites, and they must agree or the pill arms a button that does
-something else. Producer: `bin/release`.
+`bin/periscope update` (shell, does the fast-forward). Both used `@{u}` — 2
+sites, and they must agree or the pill arms a button that does something
+else. Producer: `bin/release`.
 
-**Minimal version** (~9 files): both sides of the seam resolve the target as
-"newest `v*` tag reachable from upstream" instead of upstream's tip, and the
-popover shows the changelog sections between the running release and the
+**Minimal version** (~9 files): both sides of the seam fetch `v*` tags from
+the canonical repo and target the highest one instead of upstream's tip, and
+the popover shows the changelog sections between the running release and the
 target, read from the target tag's `CHANGELOG.md`. `bin/release` refuses
 without a non-empty section for the version being cut.
 
 Left out, and what it costs:
-- GitHub Releases page keeps its boilerplate body — anyone browsing releases
-  on GitHub; reads `CHANGELOG.md` instead.
 - No Update-button path to unreleased commits — a developer wanting tip on
   prod; `git pull` + `bin/periscope restart`, plus `install-hook` /
   `install-skill` if the pulled change touched provisioning (what Tom does
@@ -82,24 +77,31 @@ Left out, and what it costs:
 Accepted consequences:
 - Until the first tag is pushed the verb refuses ("no release to update to")
   and the pill stays hidden — cutting a release is part of landing this.
-- A checkout whose tracked remote isn't the canonical repo never sees a tag,
-  so never sees the pill (Q1).
 - Notes are proofread by nobody but the releaser; a typo fixed after tagging
   appears in the *next* release's popover, since the popover reads the target
   tag's file.
+- A stray local `v*` tag above the newest real release would be targeted —
+  nobody tags prod checkouts by hand; `git tag -d` recovers.
+- The hourly check no longer fetches the tracked remote, so on prod
+  `origin/main` refreshes only when something else fetches. The one other
+  reader (`git_pr.py`'s ahead count) is unaffected by a stale ref in practice.
 - Release discipline past the gate (cadence, semver choice) is convention.
 
-Additions (each is Tom's to pick):
-- +1 file (`.github/workflows/release.yml`) → removes "GitHub Releases page
-  shows boilerplate": a step extracts the tag's changelog section into
-  `releaseBody`.
-- +0 files (~6 lines in `bin/periscope`) → removes "no Update-button path to
-  tip": `bin/periscope update --tip` fast-forwards to `@{u}` as today. It's a
-  mode no dashboard caller passes; I'd skip it.
+Additions (picked):
+- +2 files (`.github/workflows/release.yml`, `bin/release-notes`) → removes
+  "GitHub Releases page shows boilerplate": the workflow publishes the
+  changelog section, extracted by the same script `bin/release` gates on.
+
+Not picked:
+- +0 files (~6 lines in `bin/periscope`) → would remove "no Update-button
+  path to tip": `bin/periscope update --tip`. A mode no dashboard caller
+  passes.
 
 Dropped:
 - Annotated-tag message as the notes' home — `CHANGELOG.md` is browsable and
   PR-reviewable; a second copy in the tag removes no hazard.
+- Filtering tags by `--merged @{u}` — it assumed the tracked remote is the
+  canonical one (D6); `bin/release` already refuses to tag off `main`.
 - A persisted "channel" setting (`release` / `main`) — every install has one
   value; a flag no caller varies is a constant.
 - A `release` field on `/api/healthz` — the update verb's SHA poll already
@@ -107,7 +109,7 @@ Dropped:
 - Version inference from commit messages — subjects aren't conventional
   here; the releaser picks the number.
 
-File budget: 9 (+ picked additions). Stop and report at 18.
+File budget: 11. Stop and report at 22.
 
 ## Mechanics
 
@@ -122,7 +124,9 @@ In order, each a refusal with the reason on stderr:
 3. Working tree clean *except* `CHANGELOG.md`, which may be modified — it is
    the one input the script expects to find fresh.
 4. `CHANGELOG.md`'s first `## ` heading is `## vX.Y.Z` (date suffix
-   optional) and the section body has at least one non-blank line.
+   optional) and the section body has at least one non-blank line —
+   `bin/release-notes X.Y.Z` prints that body, and the release workflow
+   publishes the same output.
 5. At least one commit since the newest existing tag (none → "nothing to
    release"); on refusal 4, print `git log <last-tag>..HEAD --format='- %s'`
    so the raw material is in front of the releaser.
@@ -133,22 +137,24 @@ tag.
 
 ### `bin/periscope update`
 
-After the existing dirty-tree check and `git fetch --quiet --tags`:
+After the existing dirty-tree check, replacing the fetch of the tracked
+remote and the `merge --ff-only @{u}`:
 
 ```sh
-TARGET="$(git -C "$REPO" tag --list 'v*' --sort=-v:refname --merged '@{u}' | head -1)"
-[ -n "$TARGET" ] || { echo "no release to update to — nothing tagged on origin" >&2; exit 1; }
-git -C "$REPO" merge --ff-only "$TARGET" || { ...same divergence message, naming $TARGET... }
+git -C "$REPO" fetch --quiet "$RELEASES_URL" '+refs/tags/v*:refs/tags/v*'
+TARGET="$(git -C "$REPO" tag --list 'v*' --sort=-v:refname | head -1)"
+[ -n "$TARGET" ] || { echo "no release to update to …" >&2; exit 1; }
+git -C "$REPO" merge --ff-only "$TARGET" || { …divergence message naming $TARGET… }
 ```
 
-`--merged '@{u}'` ignores any tag not on the upstream line (a stray local
-tag, a tag cut off a branch). `-v:refname` sorts `v0.10.0` above `v0.9.0`.
-Everything after the merge — plist, bootout/bootstrap, hooks, the healthz SHA
-poll — is unchanged; the SHA it waits for is `$TARGET`'s.
+`RELEASES_URL` is `https://github.com/tomplex/periscope.git`, the same
+constant as `updater.RELEASES_URL`. `-v:refname` sorts `v0.10.0` above
+`v0.9.0`. Everything after the merge — plist, bootout/bootstrap, hooks, the
+healthz SHA poll — is unchanged; the SHA it waits for is `$TARGET`'s.
 
 ### `periscope/updater.py`
 
-`check()` resolves the same target with the same two git calls, then:
+`check()` resolves the same target with the same fetch and tag listing, then:
 
 - `behind` / `ahead` = `rev-list --count --left-right <target>...HEAD`.
 - `target` = the tag name (new field on `summary()`, rides `/api/state` — one
@@ -167,8 +173,8 @@ poll — is unchanged; the SHA it waits for is `$TARGET`'s.
 - Pill label `↑ v0.3.0` (the version, not a commit count — the count is
   noise to the person deciding). `behind` stays on the wire for the
   `blocked` warning, which is unchanged.
-- Popover head: `v0.3.0 — N commits since v0.2.0` (or "since the start" when
-  no tag is behind HEAD).
+- Popover head: `v0.3.0 is out — N commits newer than this checkout`.
+- Clawd's duty bubble: `periscope v0.3.0 is out`.
 - `CommitList` becomes `ReleaseNotes`: one block per release, heading +
   `renderMarkdown(body)` (`split/markdown.jsx`, already in the bundle). Same
   three fallbacks (loading / request failed / nothing recorded).
