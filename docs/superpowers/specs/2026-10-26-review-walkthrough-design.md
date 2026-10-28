@@ -319,9 +319,11 @@ this repo, so outside this spec's budget.
   None, unresolved, comments, owner: {pid, pane_id, session, index, name} |
   None, worktree: path | None}` plus the pane payload's five Linear ticket
   fields (`linked_linear`, `linked_linear_title`, `linked_linear_status`,
-  `linear_ticket`, `linear_ticket_source`): the owner pane's link, else
-  `git_pr.linear_ticket_for` over the row's own branch and PR title —
-  decided here, never in the browser (THI-442,
+  `linear_ticket`, `linear_ticket_source`), built by
+  `git_pr.linear_ticket_fields` like a pane payload's: the owner pane's
+  link, else what the row's own branch and PR title name (the owner's PR
+  title when the row has none and its PR is the row's) — decided here,
+  never in the browser (THI-442,
   `2026-10-27-reviews-queue-improvements-design.md` D1). `team_keys` is
   `settings.linear_team_keys`, passed in by the route. `repos` is the list
   of known repo roots (the route passes `open_ops.discover_repos()`);
