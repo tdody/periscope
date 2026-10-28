@@ -11,6 +11,8 @@ PLIST_DST="$HOME/Library/LaunchAgents/com.tom.periscope.plist"
 LABEL="gui/$(id -u)/com.tom.periscope"
 CONFIG_DIR="$HOME/.config/periscope"
 LOG="$CONFIG_DIR/periscope-17374.log"
+# Where `update` looks for releases. Must match updater.RELEASES_URL.
+RELEASES_URL="https://github.com/tomplex/periscope.git"
 
 # Everything is wrapped in main() so `sh` parses the WHOLE file before running
 # any of it. `update` rewrites this very script mid-execution via git pull; an
@@ -155,21 +157,28 @@ case "$1" in
       echo "working tree is dirty — commit or stash before updating" >&2
       exit 1
     }
+    # The target is the newest release tag, never main's tip — see
+    # docs/updating.md > "What an update targets". Tags come straight from the
+    # canonical repo rather than whatever remote `main` tracks: a contributor's
+    # checkout may track a fork whose main sat 898 commits stale.
+    #
     # NOT `git pull --ff-only`: on git 2.33 that dies "Not possible to
-    # fast-forward, aborting." whenever the checkout is merely AHEAD of
-    # upstream, even with nothing to fetch — pull.c checks "is the fetched head
-    # a descendant of HEAD" and never reaches an already-up-to-date case. On a
-    # fork checkout carrying local commits that wedged the verb permanently:
-    # every update failed, including the one that had nothing to pull.
-    # fetch + `merge --ff-only` answers all three cases correctly — no-op when
-    # ahead only, fast-forward when behind, refuse on GENUINE divergence, which
-    # is the ordering guarantee that keeps launchd untouched on failure.
-    git -C "$REPO" fetch --quiet || {
-      echo "git fetch failed — can't reach origin" >&2
+    # fast-forward, aborting." whenever the checkout is merely AHEAD, even with
+    # nothing to fetch. fetch + `merge --ff-only` answers all three cases
+    # correctly — no-op when ahead only (a checkout past the newest release),
+    # fast-forward when behind, refuse on GENUINE divergence, which is the
+    # ordering guarantee that keeps launchd untouched on failure.
+    git -C "$REPO" fetch --quiet "$RELEASES_URL" '+refs/tags/v*:refs/tags/v*' || {
+      echo "git fetch failed — can't reach $RELEASES_URL" >&2
       exit 1
     }
-    git -C "$REPO" merge --ff-only '@{u}' || {
-      echo "fast-forward to @{u} failed — the checkout has diverged from origin" >&2
+    TARGET="$(git -C "$REPO" tag --list 'v*' --sort=-v:refname | head -1)"
+    [ -n "$TARGET" ] || {
+      echo "no release to update to — nothing tagged at $RELEASES_URL" >&2
+      exit 1
+    }
+    git -C "$REPO" merge --ff-only "$TARGET" || {
+      echo "fast-forward to $TARGET failed — this checkout has commits that aren't in it" >&2
       exit 1
     }
     NEW="$(git -C "$REPO" rev-parse --short HEAD)"
