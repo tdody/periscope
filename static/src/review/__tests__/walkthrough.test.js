@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchRefs, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
+import { filterRows, matchRefs, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
 
 const DOC = `# Cost gauge
 
@@ -124,5 +124,43 @@ describe("unresolvedTotal", () => {
     const row = (o) => ({ pr: { state: "open" }, unresolved: 0, ...o });
     expect(unresolvedTotal([row({ unresolved: 2 }), row({ unresolved: 3 }), row({ pr: { state: "merged" }, unresolved: 9 })])).toBe(5);
     expect(unresolvedTotal(null)).toBe(0);
+  });
+});
+
+describe("filterRows", () => {
+  const rows = [
+    { repo: "fdy", branch: "feat/restack", pr: { number: 8818, title: "Outcome restack", author: "sam" },
+      owner: { name: "gauge-pane" }, linear_ticket: "FDY-8562" },
+    { repo: "periscope", branch: "feat/queue", pr: { number: 45, title: "Queue search", author: "tdody" },
+      owner: null, linked_linear: "THI-442", linked_linear_title: "Reviews tab improvements" },
+    { repo: "periscope", branch: "feat/local", pr: null, owner: null },
+  ];
+  const branches = (q) => filterRows(rows, q).map((r) => r.branch);
+
+  it("keeps every row, in order, for an empty or blank query", () => {
+    expect(filterRows(rows, "")).toEqual(rows);
+    expect(filterRows(rows, "   ")).toEqual(rows);
+    expect(filterRows(null, "x")).toEqual([]);
+  });
+  it("matches each field the row shows", () => {
+    expect(branches("feat/local")).toEqual(["feat/local"]);              // branch
+    expect(branches("periscope")).toEqual(["feat/queue", "feat/local"]); // repo
+    expect(branches("#8818")).toEqual(["feat/restack"]);                 // PR number
+    expect(branches("search")).toEqual(["feat/queue"]);                  // PR title
+    expect(branches("sam")).toEqual(["feat/restack"]);                   // PR author
+    expect(branches("gauge")).toEqual(["feat/restack"]);                 // owner pane name
+    expect(branches("fdy-8562")).toEqual(["feat/restack"]);              // derived ticket id
+    expect(branches("thi-442")).toEqual(["feat/queue"]);                 // linked ticket id
+    expect(branches("improvements")).toEqual(["feat/queue"]);            // linked ticket title
+  });
+  it("gives a row with no PR, owner or ticket nothing beyond its branch and repo", () => {
+    expect(branches("#")).toEqual(["feat/restack", "feat/queue"]);
+    expect(branches("undefined")).toEqual([]);
+    expect(branches("null")).toEqual([]);
+  });
+  it("ignores case and needs every term", () => {
+    expect(branches("QUEUE")).toEqual(["feat/queue"]);
+    expect(branches("periscope local")).toEqual(["feat/local"]);
+    expect(branches("periscope xyz")).toEqual([]);
   });
 });

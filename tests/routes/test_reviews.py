@@ -73,6 +73,15 @@ def test_list(client):
     assert len(rows) == 1 and rows[0]["branch"] == "feat/x" and rows[0]["walkthrough"]["stops"] == 1
 
 
+def test_list_derives_tickets_with_the_settings_team_keys(client, clean_state, monkeypatch):
+    clean_state["settings"] = {"linear_team_keys": ["FDY"]}
+    wins = [_win(pid="a", branch="tdody/fdy-8562-x"), _win(pid="b", branch="tdody/thi-442-y")]
+    monkeypatch.setattr(state_hub, "_last_blob", json.dumps({"windows": wins}))
+    rows = {r["branch"]: r for r in client.get("/api/reviews").json()["rows"]}
+    assert rows["tdody/fdy-8562-x"]["linear_ticket"] == "FDY-8562"
+    assert rows["tdody/thi-442-y"]["linear_ticket"] is None
+
+
 def test_walkthrough_404_without_file_and_no_diff_without_worktree(client):
     assert client.get("/api/reviews/walkthrough", params={"repo": "fdy", "branch": "feat/x"}).status_code == 404
     _write_wt()

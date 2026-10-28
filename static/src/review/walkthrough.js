@@ -5,6 +5,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
+import { linearTicket } from "../split/linearTicket.js";
 import { metaPairs, parseCite, refTokens } from "../split/mdMeta.js";
 
 const KINDS = new Set(["new-subsystem", "extension", "reuse", "system-touch", "behavior"]);
@@ -115,6 +116,23 @@ export function sortRows(rows) {
     group(a) - group(b)
     || (b.pr?.number || 0) - (a.pr?.number || 0)
     || a.branch.localeCompare(b.branch));
+}
+
+// The queue's search box (THI-442): every whitespace-separated term must occur,
+// case-insensitively, in one of the searched fields — branch, repo, #N, PR title,
+// PR author, owner pane name, the ticket id the row shows (linearTicket's pick,
+// so the two can't disagree) and a linked ticket's title. "fdy thi" narrows to
+// fdy rows tied to a THI ticket. Fields join on a space, so a term never spans two.
+export function filterRows(rows, query) {
+  const terms = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return rows || [];
+  return (rows || []).filter((r) => {
+    const hay = [
+      r.branch, r.repo, r.pr ? `#${r.pr.number}` : null, r.pr?.title, r.pr?.author, r.owner?.name,
+      linearTicket(r)?.id, r.linked_linear_title,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
 }
 
 export function unresolvedTotal(rows) {

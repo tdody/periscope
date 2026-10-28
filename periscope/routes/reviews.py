@@ -67,8 +67,10 @@ class CommentBody(ReviewRef):
 
 @router.get("/api/reviews")
 async def reviews_list():
+    team_keys = store.linear_team_keys()
+
     def load():
-        return reviews.list_reviews(_windows(), sorted(open_ops.discover_repos()))  # a set
+        return reviews.list_reviews(_windows(), sorted(open_ops.discover_repos()), team_keys)  # a set
 
     rows = await asyncio.to_thread(load)
     return {"rows": rows}

@@ -16,6 +16,9 @@ export const tracks = signal([]);      // /api/state track registry rows (poll-f
 // part of the state push: each refresh may fork git per worktree). `null`
 // until the first fetch lands.
 export const reviews = signal(null);
+// The Reviews queue's search text (THI-442): it survives opening a walkthrough
+// and coming back; a reload clears it.
+export const reviewsQuery = signal("");
 // Cross-pane alert feed, fed by /api/state. `null` means "not loaded yet" and
 // is distinct from `[]` ("loaded, no alerts"): alertFeed's native-notify
 // sentinel must not treat the pre-load value as a real empty feed, or every

@@ -195,7 +195,9 @@ def clear_review(repo: str, branch: str) -> None:
 # --- queue -----------------------------------------------------------------
 
 
-class ReviewRow(TypedDict):
+# The row's Linear ticket rides under the pane payload's names (THI-442), built
+# by the same git_pr.linear_ticket_fields, so linearTicket() renders either.
+class ReviewRow(git_pr.TicketFields):
     repo: str
     branch: str
     slug: str
@@ -454,9 +456,23 @@ def _default_branch(root: str) -> str:
     return _DEFAULT_BRANCH[root]
 
 
-def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
+def _ticket_title(pr: dict | None, owner: dict | None) -> str | None:
+    """The PR title a row's ticket is read from. A row built from a walkthrough
+    header, or a local branch, has none even while its PR is open (a teammate's
+    drops out of review-requested:@me once you review it); the owner pane on the
+    branch knows it — if its PR is the row's, not one it was linked to."""
+    if pr and pr.get("title"):
+        return pr["title"]
+    if owner and owner.get("pr_title") and (pr is None or owner.get("pr") == pr["number"]):
+        return owner["pr_title"]
+    return None
+
+
+def list_reviews(windows: list[dict], repos: list[str], team_keys: frozenset[str] = frozenset()) -> list[ReviewRow]:
     """Queue rows: GitHub PRs (mine, review-requested) per known repo, then
-    live (repo, branch) pairs with no PR, then review dirs matching neither."""
+    live (repo, branch) pairs with no PR, then review dirs matching neither.
+    `team_keys` is settings.linear_team_keys, passed in so this module reads no
+    settings."""
     # Two discovered repos sharing a basename collapse to one: inherent to
     # label-keyed review dirs (spec D2).
     roots = {os.path.basename(r.rstrip("/")): r for r in repos}
@@ -531,6 +547,9 @@ def list_reviews(windows: list[dict], repos: list[str]) -> list[ReviewRow]:
                 "comments": len(comments),
                 "owner": {k: owner[k] for k in ("pid", "pane_id", "session", "index", "name")} if owner else None,
                 "worktree": worktree,
+                # The row's branch, not the owner's: a PR checked out as `pr-<N>`
+                # puts its pane on a branch that names nothing.
+                **git_pr.linear_ticket_fields(owner, branch, _ticket_title(pr, owner), team_keys),
             }
         )
     return rows

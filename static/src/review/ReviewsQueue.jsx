@@ -5,8 +5,10 @@ import { useEffect, useState } from "preact/hooks";
 import { confirmDialog } from "../overlays/Dialog.jsx";
 import { refreshReviews } from "../poll.js";
 import { selectReview } from "../split/alertFeed.js";
-import { reviews } from "../store.js";
-import { sortRows } from "./walkthrough.js";
+import { linearTicket } from "../split/linearTicket.js";
+import { reviews, reviewsQuery } from "../store.js";
+import { prStateMeta } from "../util.js";
+import { filterRows, sortRows } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -26,6 +28,25 @@ async function act(url, row, setNote, setBusy) {
     setBusy(false);
   }
 }
+
+// The PR ref (classes shared with every PR badge — see styles.css) with the
+// row's Linear ticket after it; with no PR the ticket fills the cell alone. A
+// landed PR's CI glyph is dropped, as on the pane pill and detail header, so a
+// stale ✓/✗ can't ride a merged PR.
+function PrCell({ row }) {
+  const lin = linearTicket(row);
+  const linLink = lin && <a class="rq-linear" href={lin.href} target="_blank" rel="noopener" title={lin.tip}>{lin.id}</a>;
+  if (!row.pr) return linLink || "—";
+  const meta = prStateMeta(row.pr.state);
+  const cls = `rq-pr-link ${meta.cls}`;
+  return <>
+    {row.pr.url ? <a class={cls} href={row.pr.url} target="_blank" rel="noopener">#{row.pr.number}</a> : <span class={cls}>#{row.pr.number}</span>}
+    {linLink ? <> · {linLink}</> : null}
+    {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci && !meta.cls ? row.pr.ci : ""}<div class="rq-repo">{row.pr.title}</div></>;
+}
+
+// The box's visible text is also its accessible name, so a voice user can say what they read.
+const SEARCH_HINT = "filter branches, PRs, people, tickets";
 
 function Row({ row }) {
   const [note, setNote] = useState("");
@@ -48,9 +69,7 @@ function Row({ row }) {
         {wt ? <button type="button" class="rq-open" onClick={() => selectReview(row.repo, row.branch)}>{row.branch}</button> : row.branch}
         <div class="rq-repo">{row.repo} · {row.role === "review-requested" ? "review requested" : row.role}</div>
       </td>
-      <td class="rq-pr">{row.pr ? <>
-        {row.pr.url ? <a href={row.pr.url} target="_blank" rel="noopener">#{row.pr.number}</a> : `#${row.pr.number}`}
-        {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci || ""}<div class="rq-repo">{row.pr.title}</div></> : "—"}</td>
+      <td class="rq-pr"><PrCell row={row} /></td>
       <td class="rq-wt">{wt ? <>{wt.stops} stop{wt.stops === 1 ? "" : "s"}{wt.stale_by > 0 ? ` · stale ${wt.stale_by}` : wt.stale_by === null && row.worktree ? " · stale: unknown" : ""}</> : "none"}</td>
       <td class="rq-comments">{row.unresolved ? <b>{row.unresolved} open</b> : "—"}</td>
       <td class="rq-owner">
@@ -80,13 +99,25 @@ export function ReviewsQueue() {
   const rows = reviews.value;
   if (rows === null) return <div class="wt-empty">loading…</div>;
   const sorted = sortRows(rows);
+  const query = reviewsQuery.value;
+  const shown = filterRows(sorted, query);
+  const noun = `branch${sorted.length === 1 ? "" : "es"}`;
   return (
     <div class="reviews-queue">
-      <header class="wt-head"><h2>Reviews</h2><span class="wt-sub">{sorted.length} branch{sorted.length === 1 ? "" : "es"}</span></header>
-      {sorted.length === 0 ? <div class="wt-empty">nothing open</div> : (
+      <header class="wt-head">
+        <h2>Reviews</h2>
+        {/* type=search: WebKit and Chromium clear it on Esc and draw the ✕ themselves. Ahead of the
+            count, whose width changes as you type — after it, the box slid under the caret. */}
+        <input type="search" class="rq-search" placeholder={SEARCH_HINT} aria-label={SEARCH_HINT}
+          spellcheck={false} autocomplete="off"
+          value={query} onInput={(e) => { reviewsQuery.value = e.currentTarget.value; }} />
+        <span class="wt-sub" aria-live="polite">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
+      </header>
+      {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
+        : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (
         <table class="rq-table">
           <thead><tr><th>branch</th><th>PR</th><th>walkthrough</th><th>comments</th><th>who</th><th></th></tr></thead>
-          <tbody>{sorted.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
+          <tbody>{shown.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
         </table>
       )}
     </div>
