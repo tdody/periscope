@@ -134,7 +134,7 @@ export function dutyItems({
   if (update?.behind > 0 && !update.running) {
     items.push({
       kind: "update", count: 1, label: "new",
-      phrase: `a periscope update is ready (${plural(update.behind, "new commit")})`,
+      phrase: `periscope ${update.target} is out`,
       target: { action: "update", says: "see the update" },
     });
   }

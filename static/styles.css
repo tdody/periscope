@@ -300,11 +300,13 @@ button, input, textarea, select { font-family: inherit; }
 .update-menu-warn { margin: 0 0 6px; padding: 4px 6px; border-radius: var(--r-sm); font-size: 11px; line-height: 1.4;
   color: var(--s-danger); background: color-mix(in oklch, var(--s-danger) 12%, transparent); }
 .update-menu-error { margin: 0 0 6px; padding: 4px 6px; font-size: 11px; white-space: pre-wrap; color: var(--s-danger); }
-.update-commits { max-height: 50vh; overflow-y: auto; }
-.update-commit { display: flex; gap: 8px; padding: 3px 6px; font-size: 12px; color: var(--fg-1); white-space: nowrap; }
-.update-commit code { flex: 0 0 auto; font-family: var(--mono); color: var(--fg-3); }
-.update-commit span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.update-commit.is-muted { color: var(--fg-3); font-style: italic; }
+.update-notes { max-height: 50vh; overflow-y: auto; padding: 0 6px; font-size: 12px; line-height: 1.5; color: var(--fg-1); }
+.update-release + .update-release { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.update-release-head { margin-bottom: 4px; font-weight: 600; color: var(--fg-0); }
+.update-release-body :is(p, ul, ol) { margin: 0 0 6px; }
+.update-release-body :is(ul, ol) { padding-left: 18px; }
+.update-release-body :is(h3, h4, h5, h6) { margin: 8px 0 4px; font-size: 12px; }
+.update-note-muted { padding: 3px 0; color: var(--fg-3); font-style: italic; }
 .update-menu-go { margin-top: 6px; align-self: stretch; border-radius: var(--r-sm); padding: 6px 10px; }
 /* Wrapper profile (non-default only). Outlined rather than plain text like the
    account chip: the profile changes what the pane can DO, so it should read as

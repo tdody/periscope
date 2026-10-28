@@ -1,6 +1,8 @@
-// "N behind" pill → popover listing what the update would pull → Update.
+// "↑ vX.Y.Z" pill → popover with that release's changelog prose → Update.
+// The target is the newest release tag, never main's tip, so the pill only
+// appears when someone has cut a release (bin/release) with notes.
 // Hidden entirely when the checkout is current, so it costs nothing in the
-// normal case. See CLAUDE.md > "Updating" for the design; the consequence that
+// normal case. See docs/updating.md for the design; the consequence that
 // shapes THIS file is that POST /api/update cannot report success — a
 // successful update kills the server mid-request — so the two outcomes are
 // read from opposite signals:
@@ -10,13 +12,14 @@
 //   failure — the pull aborts before launchd is touched, so the server is
 //             still alive and /api/update/status has the reason.
 //
-// The commit list is fetched when the popover opens, not carried on
-// /api/state: it's only wanted at the moment of deciding, and the 3s poll
-// shouldn't grow by thirty subjects.
+// The release notes are fetched when the popover opens, not carried on
+// /api/state: they're only wanted at the moment of deciding, and the 3s poll
+// shouldn't grow by a changelog.
 //
 // `ahead` rides on /api/state alongside `behind` because it decides whether the
-// button can work AT ALL: the update fast-forwards to @{u}, which refuses once
-// the checkout has local commits AND upstream has moved. Behind-only, the pill
+// button can work AT ALL: the update fast-forwards to the release, which
+// refuses once the checkout has commits the release doesn't AND the release
+// has moved. Behind-only, the pill
 // armed a button that was arithmetically incapable of succeeding and gave no
 // reason.
 // The button stays ENABLED anyway — the count is up to an hour stale, so an
@@ -26,6 +29,7 @@
 import { signal } from "@preact/signals";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
+import { renderMarkdown } from "../split/markdown.jsx";
 import { updateInfo } from "../store.js";
 import { apiCall, plural } from "../util.js";
 
@@ -47,25 +51,22 @@ export function openUpdatePopover({ focus = false } = {}) {
 // then waits for healthz. Past this, stop polling and let the banner speak.
 const GIVE_UP_MS = 120_000;
 
-// `commits` null = still loading; "error" = the status request failed;
-// [] = the server never got a git-log answer (its count came from rev-list,
-// so with behind > 0 an empty list is only ever a failed probe, not "nothing").
-export function CommitList({ commits, behind }) {
-  if (!commits) return <div class="update-commit is-muted">loading…</div>;
-  if (commits === "error") return <div class="update-commit is-muted">couldn't load the commit list</div>;
-  if (!commits.length) return <div class="update-commit is-muted">no commit list recorded — git log failed on the last check</div>;
-  const more = behind - commits.length;
-  return (
-    <>
-      {commits.map((c) => (
-        <div class="update-commit" key={c.sha} title={c.subject}>
-          <code>{c.sha}</code>
-          <span>{c.subject}</span>
-        </div>
-      ))}
-      {more > 0 && <div class="update-commit is-muted">…and {more} more</div>}
-    </>
-  );
+// `releases` null = still loading; "error" = the status request failed;
+// [] = the server couldn't read the release's CHANGELOG.md (bin/release
+// refuses to tag without a section, so with behind > 0 an empty list is only
+// ever a failed probe, not "nothing to say").
+export function ReleaseNotes({ releases }) {
+  if (!releases) return <div class="update-note-muted">loading…</div>;
+  if (releases === "error") return <div class="update-note-muted">couldn't load the release notes</div>;
+  if (!releases.length) {
+    return <div class="update-note-muted">no release notes recorded — CHANGELOG.md was unreadable on the last check</div>;
+  }
+  return releases.map((r) => (
+    <div class="update-release" key={r.heading}>
+      <div class="update-release-head">{r.heading}</div>
+      <div class="update-release-body">{renderMarkdown(r.body)}</div>
+    </div>
+  ));
 }
 
 export function UpdatePill() {
@@ -73,7 +74,7 @@ export function UpdatePill() {
   const [error, setError] = useState(null);
   const open = popoverOpen.value;
   const setOpen = (v) => { popoverOpen.value = v; };
-  const [commits, setCommits] = useState(null);
+  const [releases, setReleases] = useState(null);
   const ref = useRef(null);
   const goRef = useRef(null);
   const close = useCallback(() => { popoverOpen.value = false; }, []);
@@ -97,19 +98,19 @@ export function UpdatePill() {
     if (!behind) setOpen(false);
   }, [behind]);
 
-  // The commit list is fetched each time the popover opens, however it was
+  // The notes are fetched each time the popover opens, however it was
   // opened (the pill or Clawd).
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setCommits(null);
+    setReleases(null);
     if (focusOnOpen) {
       focusOnOpen = false;
       goRef.current?.focus();
     }
     fetch("/api/update/status")
-      .then(async (res) => { if (live) setCommits(res.ok ? (await res.json()).commits || [] : "error"); })
-      .catch(() => { if (live) setCommits("error"); });
+      .then(async (res) => { if (live) setReleases(res.ok ? (await res.json()).releases || [] : "error"); })
+      .catch(() => { if (live) setReleases("error"); });
     return () => { live = false; };
   }, [open]);
 
@@ -166,19 +167,20 @@ export function UpdatePill() {
 
   const running = busy || info.running;
   const n = info.behind;
-  const behindText = `${plural(n, "commit")} behind origin`;
-  // Only meaningful while the pill is up (behind > 0): ahead alone is a pull
-  // with nothing to do, which fast-forwards fine.
+  const target = info.target;
+  const behindText = `${target} is out — ${plural(n, "commit")} newer than this checkout`;
+  // Only meaningful while the pill is up (behind > 0): ahead alone is a
+  // checkout past the newest release, which has nothing to do.
   const blocked = n > 0 && ahead > 0;
-  const warn = `${plural(ahead, "local commit")} not on origin — the update's fast-forward will refuse. `
-    + "Rebase (`git pull`) or push first.";
+  const warn = `${plural(ahead, "local commit")} not in ${target} — the update's fast-forward will refuse. `
+    + "Get them into a release, or off this checkout's main.";
   const title = error
     ? `update failed:\n${error}`
     : running
       ? "updating — periscope will restart itself"
       : blocked
         ? `${behindText}, but ${warn}`
-        : `${behindText} — click to see what's changing`;
+        : `${behindText} — click to see what's new`;
 
   return (
     <div class="update-dd" ref={ref}>
@@ -191,14 +193,14 @@ export function UpdatePill() {
         disabled={running}
         onClick={running ? undefined : toggle}
       >
-        {running ? "updating…" : error ? "⚠ update failed" : `↑ ${n} behind${blocked ? " ⚠" : ""}`}
+        {running ? "updating…" : error ? "⚠ update failed" : `↑ ${target}${blocked ? " ⚠" : ""}`}
       </button>
       <div class="tb-dd-menu update-menu" role="dialog" hidden={!open}>
         <div class="update-menu-head">{behindText}</div>
         {blocked && <div class="update-menu-warn">{warn}</div>}
         {error && <pre class="update-menu-error">{error}</pre>}
-        <div class="update-commits">
-          <CommitList commits={commits} behind={n} />
+        <div class="update-notes">
+          <ReleaseNotes releases={releases} />
         </div>
         <button type="button" class="update-pill update-menu-go" ref={goRef} onClick={start}>
           {error ? "retry — " : ""}pull, re-provision and restart
