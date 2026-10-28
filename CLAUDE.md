@@ -204,24 +204,44 @@ Standard loop:
    harness refuses `git -C ~/dev/periscope …` from inside a worktree, so the
    merge can't happen without leaving first.
 5. `bin/periscope restart` — always respawns prod from `~/dev/periscope`
-   (the plist pins `WorkingDirectory`); step 4 is what makes the code live.
+   (the plist pins `WorkingDirectory`); step 4 is what makes the code live
+   on this machine. Other installs get it from the next release (see
+   Releases).
 6. `git worktree remove .claude/worktrees/<name>` + `git branch -d <branch>`
    — both refuse while anything is unmerged; that refusal is the safety
    net, don't `--force` past it.
 
 `bin/periscope install` generates the launchd plist and loads it;
-`bin/periscope update` is fast-forward-to-the-newest-release + re-provision + restart (see `docs/updating.md`
-for why `git pull` + `restart` is not equivalent).
+`bin/periscope update` is fast-forward to the newest release + re-provision +
+restart (see `docs/updating.md` for why `git pull` + `restart` is not
+equivalent).
 
 ## Releases
 
-A release is what installs update to — the dashboard's Update button targets
-the newest `v*` tag, never `main`'s tip (`docs/updating.md`). Write the
-`## vX.Y.Z — YYYY-MM-DD` section at the top of `CHANGELOG.md` (prose: what
-changed for someone running periscope), then `bin/release X.Y.Z`: it refuses
-without that section, off `main`, behind `origin/main`, or with no commits
-since the last tag; then bumps `src-tauri/tauri.conf.json`,
-`src-tauri/Cargo.toml`, `pyproject.toml`, re-syncs `Cargo.lock`, commits
-`release: vX.Y.Z` with the changelog, tags, and pushes. The tag triggers
-`.github/workflows/release.yml` (unsigned universal macOS `.dmg` via
-`tauri-apps/tauri-action`, the changelog section as the release body).
+A release is a `vX.Y.Z` tag on `main`, and it is the only thing other installs
+receive: their Update button targets the newest tag, never `main`'s tip
+(`docs/updating.md`). Merging to `main` + `bin/periscope restart` updates this
+machine alone.
+
+Cut one when asked — `bin/release` pushes a public tag that every install
+offers within the hour:
+
+1. Draft the `## vX.Y.Z — YYYY-MM-DD` section at the top of
+   `~/dev/periscope/CHANGELOG.md` — the one prod-tree file this workflow
+   edits, and the one dirty file `bin/release` accepts. Prose for someone
+   running periscope: what's new and what behaves differently, grouped by
+   feature. Raw material is `git log <last-tag>..HEAD`.
+2. Show the draft and wait for the requester's OK — the notes are the
+   release's whole public face (popover and GitHub Release body).
+3. `bin/release X.Y.Z` in `~/dev/periscope`. It refuses without the section,
+   off `main`, behind `origin/main`, or with no commits since the last tag;
+   then bumps `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
+   `pyproject.toml`, re-syncs `Cargo.lock`, commits `release: vX.Y.Z` with the
+   changelog, tags, and pushes. The tag runs `.github/workflows/release.yml`
+   (unsigned universal `.dmg`, the section as the release body).
+
+Done when `git ls-remote --tags origin vX.Y.Z` prints the tag.
+
+Feature merges leave `CHANGELOG.md` alone: it holds released sections only,
+written at release time — `bin/release-notes` requires the version being cut
+to be the file's first `## ` heading.

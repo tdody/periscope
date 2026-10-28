@@ -47,17 +47,24 @@ and `bin/periscope`.
 bin/periscope update
 ```
 
-Pulls, regenerates the launchd plist, re-registers the agent hooks, restarts,
-and waits until `/api/healthz` reports the SHA it just pulled. When the
-dashboard is running as the launchd service it also nags: the header shows an
-`↑ N behind` pill once the checkout falls behind, and clicking it runs the same
+Moves the checkout to the newest [release](#releases), regenerates the launchd
+plist, re-registers the agent hooks, restarts, and waits until `/api/healthz`
+reports the new SHA. When the dashboard is running as the launchd service it
+also nags: once a newer release is out the header shows an `↑ vX.Y.Z` pill,
+whose popover holds that release's notes, and clicking Update runs the same
 sequence in place.
 
-Use this rather than `git pull` + `bin/periscope restart` — the plist and the
-hook registration are *generated* by `bin/periscope`, so a plain pull carries
-neither, and `restart` reuses the already-loaded plist. It aborts without
-touching the running server if the tree is dirty, the branch has diverged, or
-it's being run from a linked worktree.
+Updates install releases only — commits on `main` that haven't been released
+yet never show up there. To run unreleased code, `git pull` and
+`bin/periscope restart`, plus `bin/periscope install-hook` / `install-skill`
+if the change touched them.
+
+Use `update` rather than `git pull` + `bin/periscope restart` whenever a
+release will do — the plist and the hook registration are *generated* by
+`bin/periscope`, so a plain pull carries neither, and `restart` reuses the
+already-loaded plist. It aborts without touching the running server if the
+tree is dirty, the checkout has commits the release doesn't, no release
+exists yet, or it's being run from a linked worktree.
 
 ### Agent lifecycle hooks
 
@@ -124,6 +131,23 @@ npm run dev        # then visit http://127.0.0.1:5174/
 `concurrently`; ctrl+c stops both. Vite proxies `/api/*` and `/ws/*` to
 FastAPI, so only one URL matters in the browser. There's no build step —
 production still loads `static/` as-is from FastAPI on :17374.
+
+## Releases
+
+A release is a `vX.Y.Z` tag on `main`, and it's what every install's Update
+button offers. Each one carries a prose account of what changed, in
+[`CHANGELOG.md`](./CHANGELOG.md). To cut one:
+
+1. Add a `## vX.Y.Z — YYYY-MM-DD` section at the top of `CHANGELOG.md`
+   saying what changed for someone running periscope — what's new and what
+   behaves differently, not a commit list.
+2. Run `bin/release X.Y.Z` on an up-to-date `main`. It refuses without that
+   section, or when nothing has landed since the last release; otherwise it
+   bumps the version files, commits them with the changelog, tags, and
+   pushes.
+
+Installs pick the release up within the hour. The tag also builds the macOS
+`.dmg` and publishes a GitHub Release with the same notes.
 
 ## Native app (macOS)
 
