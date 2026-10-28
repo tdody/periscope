@@ -548,3 +548,25 @@ def test_local_and_header_rows_derive_from_the_branch_alone(mocker):
     old, local = rows["thibaultdody/thi-400-old"], rows["thibaultdody/thi-441-local"]
     assert old["pr"]["title"] == "" and _ticket(old)["linear_ticket"] == "THI-400"
     assert local["pr"] is None and _ticket(local)["linear_ticket"] == "THI-441"
+
+
+def test_a_header_row_reads_its_owner_panes_pr_title(mocker):
+    # A teammate's PR you reviewed leaves review-requested:@me while still open:
+    # its row comes from the walkthrough header, with no title. The owner pane on
+    # the branch knows the title — used only when its PR is the row's.
+    mocker.patch("periscope.reviews.git_pr.cached_linked_pr_state", return_value={"pr_state": "open", "ci": None})
+    for branch, pr in (("feat/reviewed", 500), ("feat/relinked", 501)):
+        p = reviews.walkthrough_path("fdy", branch)
+        p.parent.mkdir(parents=True)
+        p.write_text(f"# T\n\n> branch: {branch} · head: abc1234 · pr: {pr}\n")
+    wins = [
+        _win(pid="a", branch="feat/reviewed", pr=500, pr_title="THI-442: queue"),
+        _win(pid="b", branch="feat/relinked", pr=999, pr_title="THI-9: some other PR"),
+    ]
+    rows = _rows_by_branch(mocker, [], wins)
+    assert _ticket(rows["feat/reviewed"]) == {
+        **_NO_TICKET,
+        "linear_ticket": "THI-442",
+        "linear_ticket_source": "pr_title",
+    }
+    assert _ticket(rows["feat/relinked"]) == _NO_TICKET

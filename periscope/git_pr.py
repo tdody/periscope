@@ -21,6 +21,8 @@ import re
 import shutil
 import threading
 import time
+from collections.abc import Mapping
+from typing import Any, TypedDict
 
 from periscope import config
 from periscope.gitutil import github_slug
@@ -422,6 +424,45 @@ def linear_ticket_for(
         if team_keys or (key.isalpha() and len(key) <= 5 and len(number) >= 2):
             return m.group(1).upper(), "branch"
     return None
+
+
+class TicketFields(TypedDict):
+    """A payload's Linear ticket under one set of names — a pane's (/api/state,
+    /api/pane) and a Reviews-queue row's (THI-442) — so the frontend's
+    linearTicket() reads either."""
+
+    linked_linear: str | None
+    linked_linear_title: str | None
+    linked_linear_status: str | None
+    linear_ticket: str | None
+    linear_ticket_source: str | None
+
+
+def linear_ticket_fields(
+    linked: Mapping[str, Any] | None, branch: str | None, pr_title: str | None, team_keys: frozenset[str]
+) -> TicketFields:
+    """The link_linear ticket `linked` carries (a persisted pane annotation or a
+    window payload), else the one the PR title or branch names — never both:
+    the Inspector says "linked by claude" of a link, and offers + link Linear
+    ticket only while none is set. The one builder for every payload, so the
+    rule can't drift between them; `team_keys` comes in (store.linear_team_keys)
+    to keep this module free of settings."""
+    if linked and linked.get("linked_linear"):
+        return {
+            "linked_linear": linked["linked_linear"],
+            "linked_linear_title": linked.get("linked_linear_title"),
+            "linked_linear_status": linked.get("linked_linear_status"),
+            "linear_ticket": None,
+            "linear_ticket_source": None,
+        }
+    derived = linear_ticket_for(branch, pr_title, team_keys)
+    return {
+        "linked_linear": None,
+        "linked_linear_title": None,
+        "linked_linear_status": None,
+        "linear_ticket": derived[0] if derived else None,
+        "linear_ticket_source": derived[1] if derived else None,
+    }
 
 
 def cached_pr_state(path: str, branch: str | None) -> dict | None:

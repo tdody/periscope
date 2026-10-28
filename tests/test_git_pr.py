@@ -16,6 +16,7 @@ from periscope.git_pr import (
     cached_git_state,
     git_signal_for,
     git_state_for,
+    linear_ticket_fields,
     linear_ticket_for,
     linked_pr_state_for,
     pr_state_for,
@@ -260,6 +261,36 @@ def test_linear_ticket_for_with_team_keys(branch, pr_title, want):
 
 def test_a_listed_team_key_wins_over_the_word_list():
     assert linear_ticket_for("pr-18", None, frozenset({"PR"})) == ("PR-18", "branch")
+
+
+_NO_TICKET = {
+    "linked_linear": None,
+    "linked_linear_title": None,
+    "linked_linear_status": None,
+    "linear_ticket": None,
+    "linear_ticket_source": None,
+}
+
+
+def test_linear_ticket_fields_a_link_replaces_the_derived_ticket():
+    linked = {"linked_linear": "THI-9", "linked_linear_title": "Other", "linked_linear_status": "Todo"}
+    got = linear_ticket_fields(linked, "tdody/thi-442-x", "THI-442: queue", frozenset())
+    assert got == {
+        **_NO_TICKET,
+        "linked_linear": "THI-9",
+        "linked_linear_title": "Other",
+        "linked_linear_status": "Todo",
+    }
+
+
+@pytest.mark.parametrize("linked", [None, {}, {"linked_linear": None}])
+def test_linear_ticket_fields_derive_without_a_link(linked):
+    assert linear_ticket_fields(linked, "feat/x", "THI-442: queue", frozenset()) == {
+        **_NO_TICKET,
+        "linear_ticket": "THI-442",
+        "linear_ticket_source": "pr_title",
+    }
+    assert linear_ticket_fields(linked, "tdody/thi-442-x", None, frozenset({"FDY"})) == _NO_TICKET
 
 
 def test_ci_checks_caps_the_list():

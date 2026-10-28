@@ -593,6 +593,12 @@ def get_settings() -> Settings:
         }  # type: ignore[return-value]
 
 
+def linear_team_keys() -> frozenset[str]:
+    """settings.linear_team_keys in the shape git_pr.linear_ticket_fields takes:
+    the only keys a branch or PR title names (THI-441); empty => the shape rule."""
+    return frozenset(get_settings().get("linear_team_keys") or ())
+
+
 def update_settings(patch: dict) -> None:
     """Merge `patch` into settings and persist. `worktree_layout_overrides`
     is replaced wholesale rather than merged (consumers always send the
