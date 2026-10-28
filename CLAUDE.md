@@ -236,8 +236,8 @@ offers within the hour:
 3. `bin/release X.Y.Z` in `~/dev/periscope`. It refuses without the section,
    off `main`, behind `origin/main`, or with no commits since the last tag;
    then bumps `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
-   `pyproject.toml`, re-syncs `Cargo.lock`, commits `release: vX.Y.Z` with the
-   changelog, tags, and pushes. The tag runs `.github/workflows/release.yml`
+   `pyproject.toml`, re-syncs `Cargo.lock` and `uv.lock`, commits
+   `release: vX.Y.Z` with the changelog, tags, and pushes. The tag runs `.github/workflows/release.yml`
    (unsigned universal `.dmg`, the section as the release body).
 
 Done when `git ls-remote --tags origin vX.Y.Z` prints the tag.
