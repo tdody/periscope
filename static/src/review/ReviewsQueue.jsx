@@ -30,17 +30,23 @@ async function act(url, row, setNote, setBusy) {
 }
 
 // The PR ref (classes shared with every PR badge — see styles.css) with the
-// row's Linear ticket after it; with no PR the ticket fills the cell alone.
+// row's Linear ticket after it; with no PR the ticket fills the cell alone. A
+// landed PR's CI glyph is dropped, as on the pane pill and detail header, so a
+// stale ✓/✗ can't ride a merged PR.
 function PrCell({ row }) {
   const lin = linearTicket(row);
   const linLink = lin && <a class="rq-linear" href={lin.href} target="_blank" rel="noopener" title={lin.tip}>{lin.id}</a>;
   if (!row.pr) return linLink || "—";
-  const cls = `rq-pr-link ${prStateMeta(row.pr.state).cls}`;
+  const meta = prStateMeta(row.pr.state);
+  const cls = `rq-pr-link ${meta.cls}`;
   return <>
     {row.pr.url ? <a class={cls} href={row.pr.url} target="_blank" rel="noopener">#{row.pr.number}</a> : <span class={cls}>#{row.pr.number}</span>}
     {linLink ? <> · {linLink}</> : null}
-    {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci || ""}<div class="rq-repo">{row.pr.title}</div></>;
+    {row.pr.draft ? " draft" : ""} {row.pr.state || ""} {row.pr.ci && !meta.cls ? row.pr.ci : ""}<div class="rq-repo">{row.pr.title}</div></>;
 }
+
+// The box's visible text is also its accessible name, so a voice user can say what they read.
+const SEARCH_HINT = "filter branches, PRs, people, tickets";
 
 function Row({ row }) {
   const [note, setNote] = useState("");
@@ -100,11 +106,12 @@ export function ReviewsQueue() {
     <div class="reviews-queue">
       <header class="wt-head">
         <h2>Reviews</h2>
-        <span class="wt-sub" aria-live="polite">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
-        {/* type=search: WebKit and Chromium clear it on Esc and draw the ✕ themselves. */}
-        <input type="search" class="rq-search" placeholder="filter branches, PRs, people, tickets" aria-label="filter reviews"
+        {/* type=search: WebKit and Chromium clear it on Esc and draw the ✕ themselves. Ahead of the
+            count, whose width changes as you type — after it, the box slid under the caret. */}
+        <input type="search" class="rq-search" placeholder={SEARCH_HINT} aria-label={SEARCH_HINT}
           spellcheck={false} autocomplete="off"
           value={query} onInput={(e) => { reviewsQuery.value = e.currentTarget.value; }} />
+        <span class="wt-sub" aria-live="polite">{query.trim() ? `${shown.length} of ${sorted.length} ${noun}` : `${sorted.length} ${noun}`}</span>
       </header>
       {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
         : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (

@@ -7,6 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Hunk, langFor } from "../diff/ChangesTab.jsx";
 import { refreshReviews } from "../poll.js";
 import { renderMarkdown } from "../split/markdown.jsx";
+import { prStateMeta } from "../util.js";
 import { matchRefs, parseWalkthrough } from "./walkthrough.js";
 
 async function postJson(url, body) {
@@ -162,7 +163,8 @@ export function Walkthrough({ repo, branch, pr, sig }) {
         <h2>{w.title || branch}</h2>
         <span class="wt-sub">
           {repo} · {branch}
-          {w.header?.pr ? <> · {pr?.url && pr.number === w.header.pr ? <a href={pr.url} target="_blank" rel="noopener">PR #{w.header.pr}</a> : `PR #${w.header.pr}`}</> : ""}
+          {/* Styled like the queue's PR link (THI-442): unclassed, it was the UA's default blue. */}
+          {w.header?.pr ? <> · {pr?.url && pr.number === w.header.pr ? <a class={`rq-pr-link ${prStateMeta(pr.state).cls}`} href={pr.url} target="_blank" rel="noopener">PR #{w.header.pr}</a> : `PR #${w.header.pr}`}</> : ""}
           {stale_by == null && w.header ? (diff ? "" : " · no worktree — hunks unavailable") : stale_by > 0 ? ` · stale: ${stale_by} commit${stale_by === 1 ? "" : "s"} since` : ""}
         </span>
       </header>

@@ -153,6 +153,11 @@ describe("filterRows", () => {
     expect(branches("thi-442")).toEqual(["feat/queue"]);                 // linked ticket id
     expect(branches("improvements")).toEqual(["feat/queue"]);            // linked ticket title
   });
+  it("gives a row with no PR, owner or ticket nothing beyond its branch and repo", () => {
+    expect(branches("#")).toEqual(["feat/restack", "feat/queue"]);
+    expect(branches("undefined")).toEqual([]);
+    expect(branches("null")).toEqual([]);
+  });
   it("ignores case and needs every term", () => {
     expect(branches("QUEUE")).toEqual(["feat/queue"]);
     expect(branches("periscope local")).toEqual(["feat/local"]);

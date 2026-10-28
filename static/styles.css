@@ -3943,13 +3943,15 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
 .rq-pr-link { color: var(--fg-1); }
 a.rq-pr-link { color: var(--accent); }
 a.rq-pr-link:hover, .rq-linear:hover { text-decoration: underline; }
-/* Beside the count, not pushed right: the header's critter overhangs the
-   detail area's top-right corner. */
+/* By the title, not pushed right: the header's critter overhangs the detail
+   area's top-right corner. */
 .rq-search {
   width: 240px; box-sizing: border-box;
   font: inherit; font-size: 12px; color: var(--fg-1); color-scheme: dark;
   background: var(--bg-1); border: 1px solid var(--line-soft); border-radius: var(--r-sm);
   padding: 3px 8px;
 }
-.rq-search::placeholder { color: var(--fg-4); }
+/* The placeholder is the box's only visible label: the app's usual fg-4 is
+   ~1.7:1 on bg-1, fg-2 clears 4.5:1. */
+.rq-search::placeholder { color: var(--fg-2); }
 .rq-search:focus { outline: none; border-color: var(--accent); }
