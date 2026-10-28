@@ -11,6 +11,7 @@ import { signal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
 import { useEscape } from "../hooks/useEscape.js";
 import { track } from "../track.js";
+import { FontPicker } from "./FontPicker.jsx";
 import { modalRequest } from "./modalRequest.js";
 import { NotifySettings } from "./NotifySettings.jsx";
 import { TamaPicker } from "./TamaPicker.jsx";
@@ -106,6 +107,7 @@ export function SettingsModal() {
           <button id="settings-modal-close" title="close" onClick={close}>×</button>
         </header>
         <form id="settings-form" onSubmit={handleSubmit}>
+          <FontPicker />
           <TamaPicker />
           <NotifySettings />
           <label>

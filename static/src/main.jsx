@@ -1,5 +1,6 @@
 // Preact entry point. Mounts the full dashboard into #app. Split is the only
 // view (grid was retired).
+import { effect } from "@preact/signals";
 import { render } from "preact";
 import { Header } from "./chrome/Header.jsx";
 import { installKeys } from "./keys.js";
@@ -7,7 +8,7 @@ import { startMemtest } from "./memtest.js";
 import { DialogHost } from "./overlays/Dialog.jsx";
 import { Overlays } from "./overlays/Overlays.jsx";
 import { Toaster } from "./overlays/Toast.jsx";
-import { getLastSelected, loadPrefs } from "./prefs.js";
+import { getFont, getLastSelected, loadPrefs } from "./prefs.js";
 import { Split } from "./split/Split.jsx";
 import { railSelection } from "./store.js";
 import { track } from "./track.js";
@@ -30,6 +31,14 @@ async function boot() {
   // commands, and last-selected all read from prefs.
   await loadPrefs();
   track("app.open");
+
+  // Settings → Fonts: the stylesheet reads every face through --sans / --mono.
+  // Set on :root before the first paint, and again on each later pick.
+  effect(() => {
+    const root = document.documentElement.style;
+    root.setProperty("--sans", getFont("ui").stack);
+    root.setProperty("--mono", getFont("code").stack);
+  });
 
   // Restore the persisted rail selection. last_selected is an OBJECT in prefs;
   // railSelection is a STRING highlight-key — deliberately different shapes.

@@ -250,4 +250,33 @@ describe("terminal webfont re-measure", () => {
     await settle();
     expect(env.sent).toEqual([]);
   });
+
+  it("swaps the face and re-measures when Settings picks another code font", async () => {
+    await mount("%1");
+    await settle(); // the mount's own load
+    faces.length = 0;
+    env.familyWrites.length = 0;
+    const { prefsSignal } = await import("../../prefs.js");
+    prefsSignal.value = { ...prefsSignal.value, ui: { code_font: "jetbrains-mono" } };
+    expect(env.familyWrites).toEqual([expect.stringContaining("JetBrains Mono")]);
+    const size = core.XTERM_OPTIONS.fontSize;
+    expect(faces.map((f) => f.spec)).toEqual([`${size}px "JetBrains Mono"`, `bold ${size}px "JetBrains Mono"`]);
+    await settle();
+    expect(env.familyWrites).toHaveLength(3); // the pick, then the bounce out and back
+    expect(env.term.options.fontFamily).toContain("JetBrains Mono");
+  });
+
+  it("keeps the last pick when an earlier pick's files land later", async () => {
+    await mount("%1");
+    await settle();
+    faces.length = 0;
+    const { prefsSignal } = await import("../../prefs.js");
+    prefsSignal.value = { ...prefsSignal.value, ui: { code_font: "jetbrains-mono" } };
+    const slow = faces.splice(0);
+    prefsSignal.value = { ...prefsSignal.value, ui: { code_font: "menlo" } };
+    await settle(); // Menlo lands first
+    for (const f of slow) f.resolve();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(env.term.options.fontFamily).toContain("Menlo");
+  });
 });

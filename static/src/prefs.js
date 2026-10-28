@@ -15,6 +15,7 @@
 
 import { signal } from "@preact/signals";
 import { critterById } from "./chrome/critters.js";
+import { fontById } from "./fonts.js";
 import { apiCall } from "./util.js";
 
 // The cache mirrors the server's state.json shape. `loaded` flips to true
@@ -335,6 +336,18 @@ export function getTamaCritter() {
 
 export function setTamaCritter(id) {
   return patchUI({ tama_critter: id });
+}
+
+
+// Settings → Fonts: the UI face and the code face (fonts.js), `which` being
+// "ui" or "code". Unset, or an id no longer in the list, is the stylesheet's
+// own default for that slot.
+export function getFont(which) {
+  return fontById(P().ui?.[`${which}_font`], which);
+}
+
+export function setFont(which, id) {
+  return patchUI({ [`${which}_font`]: id });
 }
 
 

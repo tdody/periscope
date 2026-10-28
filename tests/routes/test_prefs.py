@@ -1,9 +1,12 @@
 """Tests for /api/prefs/*."""
 
+import re
+from pathlib import Path
+
 import pytest
 
 import build_critters
-from periscope.routes.prefs import TAMA_CRITTERS
+from periscope.routes.prefs import FONT_IDS, TAMA_CRITTERS
 
 
 def test_get_prefs_returns_state(client, clean_state):
@@ -109,6 +112,26 @@ def test_tama_critters_match_the_generated_sprites():
     # The client builds its list from build_critters.py's; a critter added
     # there but not here would 400 on pick.
     assert ("clawd", *build_critters.CRITTERS) == TAMA_CRITTERS
+
+
+@pytest.mark.parametrize("key", ["ui_font", "code_font"])
+def test_patch_prefs_ui_font_round_trips(client, clean_state, key):
+    r = client.patch("/api/prefs/ui", json={key: "jetbrains-mono"})
+    assert r.status_code == 200
+    assert r.json()["ui"][key] == "jetbrains-mono"
+
+
+def test_patch_prefs_ui_rejects_unknown_font(client, clean_state):
+    r = client.patch("/api/prefs/ui", json={"ui_font": "comic-sans"})
+    assert r.status_code == 400
+    assert "ui_font" in r.json()["detail"]
+
+
+def test_font_ids_match_the_client_list():
+    # The picker offers static/src/fonts.js's list; an id there but not here
+    # would 400 on pick.
+    src = (Path(__file__).resolve().parents[2] / "static/src/fonts.js").read_text()
+    assert tuple(re.findall(r'\bid: "([a-z0-9-]+)"', src)) == FONT_IDS
 
 
 def test_patch_prefs_ui_notify_round_trips(client, clean_state):

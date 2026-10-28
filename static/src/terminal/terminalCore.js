@@ -16,6 +16,9 @@
 // All terminal state stays private to this module — the rest of the app talks
 // to it through the exported functions.
 
+import { effect } from "@preact/signals";
+import { DEFAULT_FONT, fontById } from "../fonts.js";
+import { getFont } from "../prefs.js";
 import { openExternal } from "../tauri.js";
 import { track } from "../track.js";
 import { paneIdQuery } from "../util.js";
@@ -31,7 +34,7 @@ import { terminalTheme } from "./theme.js";
 // typed text lands (a 🐍 in the shell prompt reproduced it every time).
 export const XTERM_OPTIONS = {
   allowProposedApi: true,
-  fontFamily: '"IBM Plex Mono", "JetBrains Mono", "Menlo", monospace',
+  fontFamily: fontById(DEFAULT_FONT.code).stack,
   fontSize: 12,
   cursorBlink: true,
   // Holds the initial paint (up to 10k lines from capture-pane in ws.py)
@@ -49,6 +52,7 @@ export const XTERM_OPTIONS = {
 };
 
 let term = null;
+let termFont = null;                // the code face the terminal wears (Settings → Fonts)
 let termWs = null;
 let termWsTarget = null;            // target the current/pending socket is for
 let termIntentionalClose = false;   // suppress reconnect when we close on purpose
@@ -409,6 +413,27 @@ function disposeWebglAddon() {
   webglAddon = null;
 }
 
+// The code face is usually a webfont: xterm measures its cell when the family
+// is set, often against the Menlo fallback, and never re-measures on its own.
+// Bouncing the family forces a fresh measure once the real face lands (the
+// options setter drops a same-value write, so one assignment is a no-op); the
+// refit goes through the width pin, so a sub-column difference never reaches
+// tmux. Both weights: the bounce rebuilds the WebGL glyph atlas, and bold
+// glyphs rasterised before the 700 file lands would otherwise stay in the
+// fallback for good. A system face resolves at once, and the bounce is a
+// harmless re-measure. A pick superseded while its files were still loading
+// stays out: the last pick wins, not the last download.
+function remeasureWhenLoaded(font) {
+  if (!document.fonts?.load) return;
+  const face = `${XTERM_OPTIONS.fontSize}px "${font.face}"`;
+  Promise.all([document.fonts.load(face), document.fonts.load(`bold ${face}`)]).then(() => {
+    if (!term || termFont !== font) return;
+    term.options.fontFamily = "monospace";
+    term.options.fontFamily = font.stack;
+    scheduleFit();
+  }, () => {});
+}
+
 // ONE xterm instance per page load, reused for every pane, living in a host
 // div we move between mount containers instead of rebuilding.
 //
@@ -430,12 +455,14 @@ function ensureTerminal() {
   xtermHost = document.createElement("div");
   xtermHost.className = "xterm-host";
 
+  termFont = getFont("code");
   term = new Terminal({
     ...XTERM_OPTIONS,
+    fontFamily: termFont.stack,
     theme: terminalTheme,
-    // No ligatures: IBM Plex Mono ships none, and they aren't a runtime xterm
-    // setting in the vendored bundle. .detail-xterm's font-feature-settings
-    // only matter if a ligature face goes back first in fontFamily.
+    // Ligatures aren't a runtime xterm setting in the vendored bundle;
+    // .detail-xterm's font-feature-settings turns them on for a face that
+    // ships them (JetBrains Mono). IBM Plex Mono has none.
     //
     // OSC 8 hyperlinks (Claude Code wraps file paths in file:// links).
     // Without a handler, xterm's fallback confirm()s then window.open()s
@@ -461,22 +488,15 @@ function ensureTerminal() {
     },
   });
   term.open(xtermHost);
-  // IBM Plex Mono is a webfont: xterm measures its cell on open, often against
-  // the Menlo fallback, and never re-measures on its own. Bouncing the family
-  // forces a fresh measure once the real face lands (the options setter drops
-  // a same-value write, so one assignment is a no-op); the refit goes through
-  // the width pin, so a sub-column difference never reaches tmux. Both faces:
-  // the bounce rebuilds the WebGL glyph atlas, and bold glyphs rasterised
-  // before the 700 file lands would otherwise stay in the fallback for good.
-  if (document.fonts?.load) {
-    const face = `${XTERM_OPTIONS.fontSize}px "IBM Plex Mono"`;
-    Promise.all([document.fonts.load(face), document.fonts.load(`bold ${face}`)]).then(() => {
-      if (!term) return;
-      term.options.fontFamily = "monospace";
-      term.options.fontFamily = XTERM_OPTIONS.fontFamily;
-      scheduleFit();
-    }, () => {});
-  }
+  remeasureWhenLoaded(termFont);
+  // Settings → Fonts can change the code face while the terminal is up.
+  effect(() => {
+    const font = getFont("code");
+    if (font === termFont) return;
+    termFont = font;
+    term.options.fontFamily = font.stack;
+    remeasureWhenLoaded(font);
+  });
 
   // Mouse wheel. tmux consumes the app's mouse-mode DECSET (it's a tmux pane
   // flag, `mouse_any_flag`), so the xterm mirror never sees `\e[?1003h` and

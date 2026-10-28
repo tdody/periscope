@@ -5,7 +5,9 @@
    (.card, .cards, .session-group, .stream-*) were removed when grid was
    retired. */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300..700&display=swap');
+/* Every webfont Settings → Fonts offers (static/src/fonts.js). One CSS
+   request; a face's files download only once text uses it. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   /* Surfaces — cool neutral gray (low chroma, slight blue cast) */
@@ -48,6 +50,7 @@
   --effort: oklch(0.72 0.12 330);    /* track / effort accent — pink-magenta */
   --worktree: oklch(0.72 0.13 295);  /* branch / worktree accent — violet (⎇) */
 
+  /* The unset defaults; Settings → Fonts sets both on :root (main.jsx). */
   --mono: 'IBM Plex Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
   --sans: 'Hanken Grotesk', -apple-system, system-ui, sans-serif;
 

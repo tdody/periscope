@@ -35,6 +35,10 @@ router = APIRouter()
 # in step (tests/routes/test_prefs.py).
 TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat")
 
+# Settings → Fonts: static/src/fonts.js's ids, in its order. A test keeps the
+# two in step (tests/routes/test_prefs.py).
+FONT_IDS = ("hanken", "inter", "system-sans", "plex-mono", "jetbrains-mono", "sf-mono", "menlo")
+
 
 @router.get("/api/prefs")
 def get_prefs():
@@ -102,6 +106,9 @@ class UIPatch(BaseModel):
     # Settings → Tamagotchi: one of TAMA_CRITTERS. Declared, or Pydantic drops
     # it and the client's optimistic pick reverts on the echo.
     tama_critter: str | None = None
+    # Settings → Fonts: one of FONT_IDS per slot (the UI; code and the terminal).
+    ui_font: str | None = None
+    code_font: str | None = None
     # Settings → Notifications (NotifyPrefs). Declared for the same reason.
     notify: NotifyPrefs | None = None
     # Diagnostic label for the track_order change log (which client path wrote
@@ -119,6 +126,9 @@ def patch_prefs_ui(body: UIPatch):
         raise HTTPException(400, f"invalid view: {patch['view']!r}")
     if "tama_critter" in patch and patch["tama_critter"] not in TAMA_CRITTERS:
         raise HTTPException(400, f"invalid tama_critter: {patch['tama_critter']!r}")
+    for key in ("ui_font", "code_font"):
+        if key in patch and patch[key] not in FONT_IDS:
+            raise HTTPException(400, f"invalid {key}: {patch[key]!r}")
     if "detail_mode_by_pid" in patch:
         for pid, mode in patch["detail_mode_by_pid"].items():
             if mode not in ("terminal", "transcript"):
