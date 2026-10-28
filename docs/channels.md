@@ -1,13 +1,18 @@
 # Channels (in-process MCP)
 
-`# --- Channels ---` block in `server.py` plus `channel_shim.py`. The
-shim is the documented stdio MCP entry point; the actual server logic
-(tool implementations, notification emission, session registry) is in
-`server.py` so it has access to the same state the dashboard does.
+`periscope/channels.py` plus `channel_shim.py`. The shim is the documented
+stdio MCP entry point; the server logic (tool implementations, notification
+emission, session registry) runs in-process so it shares the dashboard's
+state.
 
-Tools exposed to Claude:
-- `notify(message, kind=done|need_human|info)` — surfaces an alert on
-  the pane card and in the dashboard's alert feed without opening the modal.
+Tools exposed to Claude — 18, all registered in `_CHANNEL_TOOLS`
+(`periscope/channels.py`), which holds each one's schema and the description
+Claude reads. That registry is the source of truth; this list says what each
+is for and records the invariants behind the ones that have them.
+
+The pane's card:
+- `notify(message, kind=done|need_human|info, severity?)` — surfaces an
+  alert on the pane card and in the dashboard's alert feed.
 - `link_pr(number)` — bind a GitHub PR to the pane, even if Claude's
   status-line URL isn't visible.
 - `link_linear(id, title?, status?)` — same for Linear tickets. Without
@@ -15,7 +20,7 @@ Tools exposed to Claude:
   Linear-shaped branch names, as the id alone (`git_pr.linear_ticket_for`;
   `settings.linear_team_keys` narrows it to known keys); a link replaces
   that. Optional `title`/`status` metadata renders on the card and in the
-  modal; each call fully describes the link. The Reviews queue shows the
+  Inspector; each call fully describes the link. The Reviews queue shows the
   same ticket per row: the owning pane's link, else what the row's PR title
   or branch names. One builder, `git_pr.linear_ticket_fields`, makes all
   five fields for the pane payloads and the queue rows alike.
@@ -23,8 +28,15 @@ Tools exposed to Claude:
   against the narrator (see the narrator section's pin invariant). The
   only self-naming path: `spawn_claude(name=…)` could name a CHILD, so a
   pane holding a standing role had no way to assert its own label.
-- `spawn_claude(prompt, workspace?, session?, cwd?, name?)` — fork a
-  fresh Claude pane in a new tmux window with the given first message.
+- `open_document(path, line?)` — open a file as a preview tab on the
+  caller's pane, quietly (no focus steal); `line` forces source view.
+
+Other Claudes:
+- `spawn_claude(prompt, workspace?, session?, cwd?, repo?, branch?, name?,
+  account?, model?, workspace_id?)` — fork a fresh Claude pane in a new tmux
+  window with the given first message. `repo` + `branch` spawn into that
+  worktree (created if absent); `account` / `model` override launch routing
+  (`docs/account-routing.md`).
   `workspace="same"` (default) adds a window to the caller's session, so
   the spawn nests under the caller's rail item (fan-out / related work —
   the rail is session-anchored, so a different `cwd` shows only as a
@@ -37,9 +49,40 @@ Tools exposed to Claude:
   the spawned pane's `track` (the rail group it landed in, after the
   precedence above plays out).
 
-`list_claudes` rows carry `track` (the rail group each pane sits in), the
-response carries `you` (the caller's own handle + track), and
-`track: "mine"` filters to the caller's roster.
+- `list_claudes(track?)` — every live Claude pane with its handle (pid),
+  status, channel attachment, spawner and git head. Rows carry `track` (the
+  rail group each pane sits in), the response carries `you` (the caller's
+  own handle + track), and `track: "mine"` filters to the caller's roster.
+- `peek(handle, limit?, detail?)` — read another pane's recent transcript
+  without sending it anything; the source of truth for what a pane is doing
+  (its status line is only a summary).
+- `send_to(handle, message)` — wake another attached pane with a message.
+  Success means queued, not read — `peek` is the delivery check.
+- `report(message)` — send a result back to the pane that spawned the
+  caller. Always lands: with no live, attached spawner it becomes a user
+  alert on the caller's pane, and `delivered_to` says which happened.
+- `terminate(handle)` — kill another Claude's window; refuses the caller's
+  own.
+
+History (the `/history` index, so live panes aren't in it):
+- `search_history(query, project?, since?, limit?)` — full-text search over
+  past sessions; returns summaries + session ids.
+- `get_history_session(session_id, offset?, limit?)` — a slice of one
+  session's conversation, the last 30 messages by default.
+- `resume_session(session_id, tmux_session?, workspace_id?, account?)` —
+  `claude --resume` in a new window, in the session's original directory;
+  refuses a session that looks live.
+
+Repos and rail groups:
+- `open(path? | repo+branch? | repo+pr?)` — materialize a directory, a
+  worktree (created if absent) or a PR checkout into the rail, through the
+  same create-or-focus core as ⌘K (`docs/unified-open.md`).
+- `catalog()` — repos and their worktrees, dormant and live. Git-heavy:
+  once per command, never polled.
+- `create_workspace(name, base_repo?)` / `list_workspaces()` — goal-scoped
+  rail groups that `spawn_claude(workspace_id=…)` tags into. Legacy:
+  `tracks.migrate_workspaces_to_tracks()` folds every workspace into a goal
+  track at boot.
 
 Notifications go the other way as `notifications/claude/channel`
 messages, surfacing in Claude's prompt as `<channel source="periscope">`
