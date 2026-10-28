@@ -61,10 +61,13 @@ sed -i '' -E "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"$VERSION\"/" src-tau
 sed -i '' -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 sed -i '' -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
 
-# Keep Cargo.lock's own-package version in step with Cargo.toml.
+# Keep both lockfiles' own-package version in step with the manifests. uv.lock
+# matters most: any project-mode `uv run` rewrites a stale one, and that dirty
+# tree makes every install's `bin/periscope update` refuse.
 cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 >/dev/null
+uv lock --quiet
 
-git add CHANGELOG.md src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock pyproject.toml
+git add CHANGELOG.md src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock pyproject.toml uv.lock
 git commit -m "release: v$VERSION"
 git tag "v$VERSION"
 git push origin HEAD
