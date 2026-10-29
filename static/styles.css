@@ -3933,6 +3933,14 @@ li.md-task input { vertical-align: middle; margin-right: 6px; accent-color: var(
 .wt-comment-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .rq-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .rq-table th { text-align: left; color: var(--fg-3); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+/* Sortable headers (THI-444). Resting labels are fg-2, not the th's fg-3: that
+   is ~3:1 on bg-0, under 4.5:1 for 12.5px text, and these are the table's only
+   sort controls. Hover gets the dotted underline .rq-open uses; fg-1 is kept for
+   the sorted column, so a hovered header never looks like the sorted one. */
+.rq-sort { font: inherit; color: var(--fg-2); background: none; border: 0; padding: 0; cursor: pointer; }
+.rq-sort:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
+.rq-sort.is-active { color: var(--fg-1); }
+.rq-sort-dir { margin-left: 4px; font-size: 9px; }
 .rq-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .rq-row.is-merged { opacity: .55; }
 .rq-open { font: inherit; background: none; border: 0; color: var(--fg-1); cursor: pointer; padding: 0; text-decoration: underline dotted; }

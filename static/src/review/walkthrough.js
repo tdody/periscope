@@ -98,11 +98,15 @@ export function matchRefs(refs, diffFiles) {
   });
 }
 
+// Merged rows sink to the bottom of the readiness order and of every column
+// sort, and their comments stop counting toward the header badge.
+const isMerged = (r) => r.pr?.state === "merged";
+
 // Readiness first — a live pane, then a checkout on disk, then nothing local —
 // and within a tier the D6 order: unresolved comments, review-requested, a PR
 // with no walkthrough yet, the rest, local work with no PR. Merged last.
 function group(r) {
-  if (r.pr?.state === "merged") return 99;
+  if (isMerged(r)) return 99;
   const tier = r.owner ? 0 : r.worktree ? 10 : 20;
   if (r.unresolved > 0) return tier;
   if (r.role === "review-requested") return tier + 1;
@@ -111,11 +115,65 @@ function group(r) {
   return tier + 3;
 }
 
-export function sortRows(rows) {
-  return [...(rows || [])].sort((a, b) =>
+// The queue's sortable columns (THI-444), in header order: the queue draws one
+// header per entry, so the headers and the sort can't disagree. `label` is the
+// header's text, `what` its "sort by …" title. `value` is what a click orders
+// by, null for a row with nothing to rank; nulls sort last both ways, since
+// flipping a column must not float a block of empties to the top. `first` is
+// the first click's direction: the end of the column you'd act on.
+export const SORT_COLUMNS = {
+  branch: { label: "branch", what: "branch name", first: "asc", value: (r) => r.branch },
+  pr: { label: "PR", what: "PR number", first: "desc", value: (r) => r.pr?.number ?? null },
+  // Staleness, not stop count: most stale first is "what needs re-preparing".
+  // The cell shows it in every state (staleLabel), or the order looks random.
+  walkthrough: { label: "walkthrough", what: "staleness", first: "desc", value: (r) => r.walkthrough?.stale_by ?? null },
+  // 0 renders "—", so it ranks with the empties.
+  comments: { label: "comments", what: "open comments", first: "desc", value: (r) => r.unresolved || null },
+  who: { label: "who", what: "owner", first: "asc", value: (r) => r.owner?.name || r.pr?.author || null },
+};
+
+// The walkthrough cell's staleness, for every value its sort ranks. A bare
+// "N stops" read as current whether stale_by was 0 or null, yet null sorts
+// with the empties. Null means no worktree to count commits in, or a head the
+// worktree no longer has (rebased away).
+export function staleLabel(r) {
+  if (!r.walkthrough) return null;
+  const s = r.walkthrough.stale_by;
+  if (s > 0) return `stale ${s}`;
+  if (s === 0) return "current";
+  return r.worktree ? "stale: unknown" : "no worktree";
+}
+
+const compareValues = (a, b) => (typeof a === "string" ? a.localeCompare(b) : a - b);
+
+// `sort` is {key, dir} from a header click, or null for the readiness order.
+// The readiness sort runs first and Array.sort is stable, so rows a column ties
+// keep that order and don't swap places on every 10 s poll. Merged rows stay at
+// the bottom whatever the column.
+export function sortRows(rows, sort = null) {
+  const ready = [...(rows || [])].sort((a, b) =>
     group(a) - group(b)
     || (b.pr?.number || 0) - (a.pr?.number || 0)
     || a.branch.localeCompare(b.branch));
+  const col = sort && SORT_COLUMNS[sort.key];
+  if (!col) return ready;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return ready.sort((a, b) => {
+    const va = col.value(a);
+    const vb = col.value(b);
+    return isMerged(a) - isMerged(b)
+      || (va === null) - (vb === null)
+      || (va === null ? 0 : sign * compareValues(va, vb));
+  });
+}
+
+// A header click: a new column starts in its `first` direction, the second
+// click flips it, the third returns to the readiness order (null).
+export function nextSort(sort, key) {
+  const first = SORT_COLUMNS[key].first;
+  if (sort?.key !== key) return { key, dir: first };
+  if (sort.dir === first) return { key, dir: first === "asc" ? "desc" : "asc" };
+  return null;
 }
 
 // The queue's search box (THI-442): every whitespace-separated term must occur,
@@ -136,5 +194,5 @@ export function filterRows(rows, query) {
 }
 
 export function unresolvedTotal(rows) {
-  return (rows || []).filter((r) => r.pr?.state !== "merged").reduce((n, r) => n + (r.unresolved || 0), 0);
+  return (rows || []).filter((r) => !isMerged(r)).reduce((n, r) => n + (r.unresolved || 0), 0);
 }

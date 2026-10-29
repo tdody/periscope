@@ -5,8 +5,8 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it } from "vitest";
-import { reviews, reviewsQuery } from "../../store.js";
-import { ReviewsQueue } from "../ReviewsQueue.jsx";
+import { reviews, reviewsQuery, reviewsSort } from "../../store.js";
+import { ReviewsQueue, SortHeader } from "../ReviewsQueue.jsx";
 
 const row = (o) => ({
   repo: "fdy", role: "mine", pr: null, walkthrough: null, unresolved: 0, comments: 0, owner: null, worktree: null,
@@ -30,6 +30,7 @@ const prCell = (html, branch) => html.split(`>${branch}<`)[1].split('<td class="
 afterEach(() => {
   reviews.value = null;
   reviewsQuery.value = "";
+  reviewsSort.value = null;
 });
 
 describe("<ReviewsQueue>", () => {
@@ -82,6 +83,87 @@ describe("<ReviewsQueue>", () => {
     expect(html).toContain("no branches match &quot;zzz&quot;");
     expect(html).toContain(">0 of 1 branch<");
     expect(html).not.toContain("rq-table");
+  });
+
+  it("makes each data header a sort button, none marked until one is picked (THI-444)", () => {
+    reviews.value = [OPEN];
+    const html = render(<ReviewsQueue />);
+    for (const label of ["branch", "PR", "walkthrough", "comments", "who"]) {
+      expect(html).toMatch(new RegExp(`<th><button type="button" class="rq-sort"[^>]*>${label}</button></th>`));
+    }
+    expect(html).toContain('title="sort by staleness"');
+    expect(html).not.toContain("aria-sort");
+  });
+
+  it("orders rows by the picked column and marks its header with the direction", () => {
+    const FEW = row({ branch: "few", unresolved: 1 });
+    const MANY = row({ branch: "many", unresolved: 4 });
+    reviews.value = [FEW, MANY];
+    reviewsSort.value = { key: "comments", dir: "desc" };
+    let html = render(<ReviewsQueue />);
+    expect(html.indexOf(">many<")).toBeLessThan(html.indexOf(">few<"));
+    expect(html).toMatch(/<th aria-sort="descending"><button type="button" class="rq-sort is-active"[^>]*>comments<span class="rq-sort-dir" aria-hidden="true">▼<\/span><\/button><\/th>/);
+    reviewsSort.value = { key: "comments", dir: "asc" };
+    html = render(<ReviewsQueue />);
+    expect(html.indexOf(">few<")).toBeLessThan(html.indexOf(">many<"));
+    expect(html).toContain('<th aria-sort="ascending">');
+    expect(html).toContain(">▲<");
+    // comments starts descending, so from ascending the next click resets.
+    expect(html).toContain('title="back to the default order"');
+  });
+
+  // Spelled out, not read from SORT_COLUMNS, so a header wired to the wrong
+  // column or started in the wrong direction fails here.
+  const HEADERS = [
+    ["branch", "branch", "asc"], ["PR", "pr", "desc"], ["walkthrough", "walkthrough", "desc"],
+    ["comments", "comments", "desc"], ["who", "who", "asc"],
+  ];
+  const flip = { asc: "desc", desc: "asc" };
+
+  it("pressing a header sorts by it, reverses on the second press, and resets on the third", () => {
+    // render-to-string fires no events, so press the button the way hunk.test.jsx
+    // does: call the component and invoke the button's onClick.
+    const press = (col) => SortHeader({ col }).props.children.props.onClick();
+    for (const [, col, first] of HEADERS) {
+      press(col);
+      expect(reviewsSort.value).toEqual({ key: col, dir: first });
+      press(col);
+      expect(reviewsSort.value).toEqual({ key: col, dir: flip[first] });
+      press(col);
+      expect(reviewsSort.value).toBeNull();
+    }
+  });
+
+  it("shows the staleness the walkthrough column sorts by, in every state", () => {
+    const wtRow = (branch, stops, stale_by, worktree) => row({ branch, walkthrough: { stops, stale_by }, worktree });
+    reviews.value = [
+      wtRow("fresh", 5, 0, "/a"), wtRow("behind", 2, 3, "/b"), wtRow("unknown", 1, null, "/c"),
+      wtRow("gone", 6, null, null), row({ branch: "nowt" }),
+    ];
+    const cells = [...render(<ReviewsQueue />).matchAll(/<td class="rq-wt">([^<]*)<\/td>/g)].map((m) => m[1]);
+    expect(cells.sort()).toEqual(
+      ["1 stop · stale: unknown", "2 stops · stale 3", "5 stops · current", "6 stops · no worktree", "none"],
+    );
+  });
+
+  it("titles each header by what its next press does", () => {
+    reviews.value = [OPEN];
+    reviewsSort.value = { key: "comments", dir: "desc" };
+    let html = render(<ReviewsQueue />);
+    expect(html).toMatch(/title="reverse the order">comments</);
+    expect(html).toMatch(/title="sort by PR number">PR</);
+    reviewsSort.value = { key: "comments", dir: "asc" };
+    html = render(<ReviewsQueue />);
+    expect(html).toMatch(/title="back to the default order">comments</);
+  });
+
+  it("marks the header whose label names the sorted column", () => {
+    reviews.value = [OPEN];
+    for (const [label, col] of HEADERS) {
+      reviewsSort.value = { key: col, dir: "asc" };
+      const active = render(<ReviewsQueue />).match(/class="rq-sort is-active"[^>]*>([^<]+)</);
+      expect(active?.[1]).toBe(label);
+    }
   });
 
   it("names the search box by the words it shows", () => {

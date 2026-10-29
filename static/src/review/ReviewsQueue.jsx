@@ -6,9 +6,9 @@ import { confirmDialog } from "../overlays/Dialog.jsx";
 import { refreshReviews } from "../poll.js";
 import { selectReview } from "../split/alertFeed.js";
 import { linearTicket } from "../split/linearTicket.js";
-import { reviews, reviewsQuery } from "../store.js";
+import { reviews, reviewsQuery, reviewsSort } from "../store.js";
 import { prStateMeta } from "../util.js";
-import { filterRows, sortRows } from "./walkthrough.js";
+import { filterRows, nextSort, SORT_COLUMNS, sortRows, staleLabel } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -48,6 +48,24 @@ function PrCell({ row }) {
 // The box's visible text is also its accessible name, so a voice user can say what they read.
 const SEARCH_HINT = "filter branches, PRs, people, tickets";
 
+// The arrow is decoration: aria-sort already tells a screen reader the direction.
+// Exported for the render test, which presses it (no DOM to click in).
+export function SortHeader({ col }) {
+  const { label, what } = SORT_COLUMNS[col];
+  const sort = reviewsSort.value;
+  const active = sort?.key === col;
+  const next = nextSort(sort, col);
+  return (
+    <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>
+      <button type="button" class={`rq-sort${active ? " is-active" : ""}`}
+        title={!next ? "back to the default order" : active ? "reverse the order" : `sort by ${what}`}
+        onClick={() => { reviewsSort.value = next; }}>
+        {label}{active ? <span class="rq-sort-dir" aria-hidden="true">{sort.dir === "asc" ? "▲" : "▼"}</span> : null}
+      </button>
+    </th>
+  );
+}
+
 function Row({ row }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,7 +88,7 @@ function Row({ row }) {
         <div class="rq-repo">{row.repo} · {row.role === "review-requested" ? "review requested" : row.role}</div>
       </td>
       <td class="rq-pr"><PrCell row={row} /></td>
-      <td class="rq-wt">{wt ? <>{wt.stops} stop{wt.stops === 1 ? "" : "s"}{wt.stale_by > 0 ? ` · stale ${wt.stale_by}` : wt.stale_by === null && row.worktree ? " · stale: unknown" : ""}</> : "none"}</td>
+      <td class="rq-wt">{wt ? `${wt.stops} stop${wt.stops === 1 ? "" : "s"} · ${staleLabel(row)}` : "none"}</td>
       <td class="rq-comments">{row.unresolved ? <b>{row.unresolved} open</b> : "—"}</td>
       <td class="rq-owner">
         {row.owner ? row.owner.name : row.pr?.author ? `opened by ${row.pr.author}` : "—"}
@@ -98,7 +116,7 @@ export function ReviewsQueue() {
   useEffect(() => { refreshReviews(); }, []);
   const rows = reviews.value;
   if (rows === null) return <div class="wt-empty">loading…</div>;
-  const sorted = sortRows(rows);
+  const sorted = sortRows(rows, reviewsSort.value);
   const query = reviewsQuery.value;
   const shown = filterRows(sorted, query);
   const noun = `branch${sorted.length === 1 ? "" : "es"}`;
@@ -116,7 +134,7 @@ export function ReviewsQueue() {
       {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
         : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (
         <table class="rq-table">
-          <thead><tr><th>branch</th><th>PR</th><th>walkthrough</th><th>comments</th><th>who</th><th></th></tr></thead>
+          <thead><tr>{Object.keys(SORT_COLUMNS).map((col) => <SortHeader key={col} col={col} />)}<th></th></tr></thead>
           <tbody>{shown.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
         </table>
       )}
