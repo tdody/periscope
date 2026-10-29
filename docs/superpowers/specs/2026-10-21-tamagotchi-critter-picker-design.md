@@ -220,7 +220,7 @@ A **Tamagotchi** fieldset above the existing fields:
 - `periscope/routes/prefs.py`: `tama_critter: str | None = None` on `UIPatch`
   (without it Pydantic drops the field and the optimistic update reverts on the
   echo), validated in `patch_prefs_ui` against
-  `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat", "faradaysie")`
+  `TAMA_CRITTERS = ("clawd", "scope", "faradaysie", "jelly", "nox", "ember", "volt", "moss", "octocat")`
   → 400 otherwise, like `view`. A comment on each list points at the other, and
   a test pins them equal.
 

@@ -36,7 +36,7 @@ function groups(nodes, out = []) {
 
 describe("CRITTERS", () => {
   it("is Clawd first, then the eight, each id once", () => {
-    expect(CRITTERS.map((c) => c.id)).toEqual(["clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat", "faradaysie"]);
+    expect(CRITTERS.map((c) => c.id)).toEqual(["clawd", "scope", "faradaysie", "jelly", "nox", "ember", "volt", "moss", "octocat"]);
   });
 
   it("leaves Clawd without a sprite: Tamagotchi.jsx draws it", () => {
