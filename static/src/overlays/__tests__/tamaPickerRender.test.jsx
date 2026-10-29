@@ -12,11 +12,11 @@ const checked = (html) => [...html.matchAll(/<input[^>]*value="(\w+)"[^>]*checke
 describe("<TamaPicker>", () => {
   afterEach(() => withUI({}));
 
-  it("offers Clawd and the seven as real radios, each with a preview and its name", () => {
+  it("offers Clawd and the eight as real radios, each with a preview and its name", () => {
     const html = render(<TamaPicker />);
-    expect(html.match(/<input type="radio" name="tama-critter"/g)).toHaveLength(8);
-    expect(html.match(/class="critter-preview"/g)).toHaveLength(8);
-    for (const name of ["Clawd", "Scope", "Jelly", "Nox", "Ember", "Volt", "Moss", "Octocat"]) expect(html).toContain(`<span>${name}</span>`);
+    expect(html.match(/<input type="radio" name="tama-critter"/g)).toHaveLength(9);
+    expect(html.match(/class="critter-preview"/g)).toHaveLength(9);
+    for (const name of ["Clawd", "Scope", "Jelly", "Nox", "Ember", "Volt", "Moss", "Octocat", "Faradaysie"]) expect(html).toContain(`<span>${name}</span>`);
   });
 
   it("checks Clawd when nothing is picked", () => {

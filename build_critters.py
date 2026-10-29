@@ -53,7 +53,7 @@ OUT_CSS = ROOT / "static" / "critters.css"
 
 # Display order in Settings, after Clawd. A new critter is an SVG plus a line here and in
 # periscope/routes/prefs.py's TAMA_CRITTERS (tests/routes/test_prefs.py keeps the two in step).
-CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]
+CRITTERS = ["scope", "jelly", "nox", "ember", "volt", "moss", "octocat", "faradaysie"]
 
 PAINT = ("fill", "stroke", "stroke-width", "opacity")
 MOODS = {"mood-calm": "calm", "mood-grumpy": "grumpy", "mood-furious": "furious"}

@@ -1188,9 +1188,9 @@ describe("critters at their pastimes", () => {
 
   it.each(holders)("%s's side arms (if any) go at the console, and come back everywhere else", (_id, c) => {
     const game = render(<TamaScene activity="game" critter={c} />);
-    if (["ember", "volt", "moss"].includes(c.id)) {
+    if (["ember", "volt", "moss", "faradaysie"].includes(c.id)) {
       const code = render(<TamaScene activity="code" critter={c} />);
-      const armNeedle = c.id === "ember" ? '<rect x="3" y="9"' : c.id === "volt" ? '<rect x="2" y="9"' : '<rect x="4" y="10"';
+      const armNeedle = { ember: '<rect x="3" y="9"', volt: '<rect x="2" y="9"', moss: '<rect x="4" y="10"', faradaysie: '<rect x="3" y="9"' }[c.id];
       expect(code, c.id).toContain(armNeedle);
       expect(game, c.id).not.toContain(armNeedle);
     } else {

@@ -124,6 +124,22 @@ def test_ink_is_the_eye_fill_or_the_declared_colour():
     assert _sprite("moss")["ink"] == "#0f2e1b"
 
 
+def test_faradaysie_paints_only_faradays_brand_colours():
+    # Faraday's guidelines fix the Zap's Ultrarose and Supertrope; a near-miss
+    # hex reads as off-brand (docs/specs/faradaysie-critter.md's palette table).
+    brand = {"#b641ff", "#6d1ba0", "#e4baff", "#240835", "#f72f96", "#fcb0d7"}
+
+    def fills(ns):
+        for n in ns:
+            if "fill" in n.get("a", {}):
+                yield n["a"]["fill"]
+            yield from fills(n.get("g", []))
+
+    s = _sprite("faradaysie")
+    assert set(fills(s["root"])) == brand | {"#fdfaff"}  # the eyes' glint, the art's one off-palette white
+    assert s["limb"]["color"] == "#6d1ba0"
+
+
 def test_ink_from_an_eye_and_overridden_by_data_ink(tmp_path):
     s = build_critters.convert("t", _svg(tmp_path, BODY + EYE), build_critters.Sheet())
     assert s["ink"] == "#111111"
@@ -564,10 +580,10 @@ def _count(ns, key):
     return sum(bool(n.get(key)) + _count(n.get("g", []), key) for n in ns)
 
 
-def test_only_ember_volt_and_moss_have_one_hold_arms_group():
+def test_only_ember_volt_moss_and_faradaysie_have_one_hold_arms_group():
     for cid in build_critters.CRITTERS:
         s = _sprite(cid)
-        assert _count(s["root"], "arms") == (1 if cid in ("ember", "volt", "moss") else 0), cid
+        assert _count(s["root"], "arms") == (1 if cid in ("ember", "volt", "moss", "faradaysie") else 0), cid
 
 
 def test_every_shipped_critter_has_exactly_one_legs_node():
