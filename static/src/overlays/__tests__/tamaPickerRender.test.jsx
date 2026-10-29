@@ -12,11 +12,17 @@ const checked = (html) => [...html.matchAll(/<input[^>]*value="(\w+)"[^>]*checke
 describe("<TamaPicker>", () => {
   afterEach(() => withUI({}));
 
-  it("offers Clawd and the seven as real radios, each with a preview and its name", () => {
+  it("offers Clawd and the eight as real radios, each with a preview and its name", () => {
     const html = render(<TamaPicker />);
-    expect(html.match(/<input type="radio" name="tama-critter"/g)).toHaveLength(8);
-    expect(html.match(/class="critter-preview"/g)).toHaveLength(8);
-    for (const name of ["Clawd", "Scope", "Jelly", "Nox", "Ember", "Volt", "Moss", "Octocat"]) expect(html).toContain(`<span>${name}</span>`);
+    expect(html.match(/<input type="radio" name="tama-critter"/g)).toHaveLength(9);
+    expect(html.match(/class="critter-preview"/g)).toHaveLength(9);
+    for (const name of ["Clawd", "Scope", "Faradaysie", "Jelly", "Nox", "Ember", "Volt", "Moss", "Octocat"]) expect(html).toContain(`<span>${name}</span>`);
+  });
+
+  // Faradaysie was placed right after Scope on request (THI-445), not at the end.
+  it("lists the radios in CRITTERS' order, Faradaysie second after Clawd", () => {
+    const values = [...render(<TamaPicker />).matchAll(/<input type="radio" name="tama-critter"[^>]*value="(\w+)"/g)].map((m) => m[1]);
+    expect(values).toEqual(["clawd", "scope", "faradaysie", "jelly", "nox", "ember", "volt", "moss", "octocat"]);
   });
 
   it("checks Clawd when nothing is picked", () => {

@@ -11,6 +11,28 @@
 @keyframes crit-scope-4 { 0% { transform: translate(0px, 1px) scaleY(1); } 100% { transform: translate(0px, -2px) scaleY(1); } }
 .crit-scope-5 { animation: crit-scope-5 1.2s linear infinite; }
 @keyframes crit-scope-5 { 0% { transform: translate(0px, 2px) scaleY(1); } 100% { transform: translate(0px, -2px) scaleY(1); } }
+.crit-faradaysie-1 { animation: crit-faradaysie-1 1.6s linear infinite; }
+@keyframes crit-faradaysie-1 { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
+.crit-faradaysie-2 { animation: crit-faradaysie-2 1.6s linear infinite; }
+@keyframes crit-faradaysie-2 { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
+.crit-faradaysie-3 { animation: crit-faradaysie-3 1.6s linear infinite; }
+@keyframes crit-faradaysie-3 { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
+.crit-faradaysie-4 { animation: crit-faradaysie-4 1.6s linear infinite; }
+@keyframes crit-faradaysie-4 { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
+.crit-faradaysie-5 { animation: crit-faradaysie-5 1.3s steps(1, end) infinite; }
+@keyframes crit-faradaysie-5 { 0% { transform: translate(0px, 0px) scaleY(1); } 33.3333% { transform: translate(0px, -1.5px) scaleY(1); } 66.6667% { transform: translate(0px, 0px) scaleY(1); } 100% { transform: translate(0px, 0px) scaleY(1); } }
+.crit-faradaysie-6 { animation: crit-faradaysie-6 4.3s linear infinite; }
+@keyframes crit-faradaysie-6 { 0% { transform: translate(0px, 0px) scaleY(1); } 92% { transform: translate(0px, 0px) scaleY(1); } 96% { transform: translate(0px, 1px) scaleY(0.2); } 100% { transform: translate(0px, 0px) scaleY(1); } }
+.crit-faradaysie-7 { animation: crit-faradaysie-7 4.3s linear infinite; }
+@keyframes crit-faradaysie-7 { 0% { transform: translate(0px, 0px) scaleY(1); } 92% { transform: translate(0px, 0px) scaleY(1); } 96% { transform: translate(0px, 1px) scaleY(0.2); } 100% { transform: translate(0px, 0px) scaleY(1); } }
+.crit-faradaysie-8 { animation: crit-faradaysie-8 0.3s linear infinite; }
+@keyframes crit-faradaysie-8 { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+.crit-faradaysie-9 { animation: crit-faradaysie-9 0.3s linear infinite; }
+@keyframes crit-faradaysie-9 { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+.crit-faradaysie-10 { animation: crit-faradaysie-10 0.3s linear infinite; }
+@keyframes crit-faradaysie-10 { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+.crit-faradaysie-11 { animation: crit-faradaysie-11 0.3s linear infinite; }
+@keyframes crit-faradaysie-11 { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
 .crit-jelly-1 { animation: crit-jelly-1 1.4s steps(1, end) infinite; }
 @keyframes crit-jelly-1 { 0% { transform: translate(0px, 0px); } 25% { transform: translate(0.6px, 0px); } 50% { transform: translate(0px, 0px); } 75% { transform: translate(-0.6px, 0px); } 100% { transform: translate(-0.6px, 0px); } }
 .crit-jelly-2 { animation: crit-jelly-2 5s linear infinite; }

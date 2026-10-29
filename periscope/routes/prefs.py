@@ -33,7 +33,7 @@ router = APIRouter()
 # The header tamagotchi's creatures: Clawd plus build_critters.py's CRITTERS,
 # the list static/src/chrome/critters.js is built from. A test keeps the two
 # in step (tests/routes/test_prefs.py).
-TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat")
+TAMA_CRITTERS = ("clawd", "scope", "faradaysie", "jelly", "nox", "ember", "volt", "moss", "octocat")
 
 # Settings → Fonts: static/src/fonts.js's ids, in its order. A test keeps the
 # two in step (tests/routes/test_prefs.py).

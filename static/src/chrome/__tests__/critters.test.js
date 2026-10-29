@@ -35,8 +35,8 @@ function groups(nodes, out = []) {
 }
 
 describe("CRITTERS", () => {
-  it("is Clawd first, then the seven, each id once", () => {
-    expect(CRITTERS.map((c) => c.id)).toEqual(["clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat"]);
+  it("is Clawd first, then the eight, each id once", () => {
+    expect(CRITTERS.map((c) => c.id)).toEqual(["clawd", "scope", "faradaysie", "jelly", "nox", "ember", "volt", "moss", "octocat"]);
   });
 
   it("leaves Clawd without a sprite: Tamagotchi.jsx draws it", () => {
@@ -145,7 +145,7 @@ describe("placement", () => {
   // Legged critters: seated, it's the *hidden* legs' bottom that lands on the
   // seat, not the full (standing) box's — the body ends where Clawd's does,
   // at standing's scale.
-  const LEGGED = ["scope", "ember", "volt", "moss", "octocat"];
+  const LEGGED = ["scope", "ember", "volt", "moss", "octocat", "faradaysie"];
   it.each(LEGGED)("seats %s on the seat by its legs-hidden box, at standing's scale", (id) => {
     const sprite = critterById(id).sprite;
     const box = spriteBox(sprite);
@@ -610,7 +610,7 @@ describe("cheering", () => {
     return n.r ? (inArms ? [[n.r, f]] : []) : armRects(n.g, inArms || !!n.arms, f);
   });
 
-  it.each(["ember", "volt", "moss"])("%s raises its own side arms: a bar up from each, in its colour", (id) => {
+  it.each(["ember", "volt", "moss", "faradaysie"])("%s raises its own side arms: a bar up from each, in its colour", (id) => {
     const sprite = critterById(id).sprite;
     const arms = armRects(sprite.root);
     expect(arms.length).toBeGreaterThan(0);
