@@ -8,7 +8,7 @@ import { selectReview } from "../split/alertFeed.js";
 import { linearTicket } from "../split/linearTicket.js";
 import { reviews, reviewsQuery, reviewsSort } from "../store.js";
 import { prStateMeta } from "../util.js";
-import { filterRows, nextSort, SORT_COLUMNS, sortRows } from "./walkthrough.js";
+import { filterRows, nextSort, SORT_COLUMNS, sortRows, staleLabel } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -88,7 +88,7 @@ function Row({ row }) {
         <div class="rq-repo">{row.repo} · {row.role === "review-requested" ? "review requested" : row.role}</div>
       </td>
       <td class="rq-pr"><PrCell row={row} /></td>
-      <td class="rq-wt">{wt ? <>{wt.stops} stop{wt.stops === 1 ? "" : "s"}{wt.stale_by > 0 ? ` · stale ${wt.stale_by}` : wt.stale_by === null && row.worktree ? " · stale: unknown" : ""}</> : "none"}</td>
+      <td class="rq-wt">{wt ? `${wt.stops} stop${wt.stops === 1 ? "" : "s"} · ${staleLabel(row)}` : "none"}</td>
       <td class="rq-comments">{row.unresolved ? <b>{row.unresolved} open</b> : "—"}</td>
       <td class="rq-owner">
         {row.owner ? row.owner.name : row.pr?.author ? `opened by ${row.pr.author}` : "—"}

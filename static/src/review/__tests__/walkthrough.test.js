@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterRows, matchRefs, nextSort, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
+import { filterRows, matchRefs, nextSort, parseWalkthrough, sortRows, staleLabel, unresolvedTotal } from "../walkthrough.js";
 
 const DOC = `# Cost gauge
 
@@ -193,6 +193,21 @@ describe("sortRows by a column (THI-444)", () => {
     const rows = [row({ branch: "plain" }), row({ branch: "unres", unresolved: 1 })];
     expect(sortRows(rows, null).map((r) => r.branch)).toEqual(["unres", "plain"]);
     expect(order(rows, "nope", "asc")).toEqual(["unres", "plain"]);
+  });
+});
+
+describe("staleLabel", () => {
+  const wt = (stale_by, worktree = "/wt") => ({ walkthrough: { stops: 1, stale_by }, worktree });
+  it("names every state the walkthrough sort ranks", () => {
+    expect(staleLabel(wt(0))).toBe("current");
+    expect(staleLabel(wt(3))).toBe("stale 3");
+    // Head not found in the worktree (rebased away): staleness can't be counted.
+    expect(staleLabel(wt(null))).toBe("stale: unknown");
+    // Ranked with the empties, so the cell has to say why.
+    expect(staleLabel(wt(null, null))).toBe("no worktree");
+  });
+  it("is null for a row with no walkthrough", () => {
+    expect(staleLabel({ walkthrough: null, worktree: "/wt" })).toBeNull();
   });
 });
 

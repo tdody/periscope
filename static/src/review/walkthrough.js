@@ -125,12 +125,24 @@ export const SORT_COLUMNS = {
   branch: { label: "branch", what: "branch name", first: "asc", value: (r) => r.branch },
   pr: { label: "PR", what: "PR number", first: "desc", value: (r) => r.pr?.number ?? null },
   // Staleness, not stop count: most stale first is "what needs re-preparing".
-  // stale_by is null when there's no worktree to count commits in.
+  // The cell shows it in every state (staleLabel), or the order looks random.
   walkthrough: { label: "walkthrough", what: "staleness", first: "desc", value: (r) => r.walkthrough?.stale_by ?? null },
   // 0 renders "—", so it ranks with the empties.
   comments: { label: "comments", what: "open comments", first: "desc", value: (r) => r.unresolved || null },
   who: { label: "who", what: "owner", first: "asc", value: (r) => r.owner?.name || r.pr?.author || null },
 };
+
+// The walkthrough cell's staleness, for every value its sort ranks. A bare
+// "N stops" read as current whether stale_by was 0 or null, yet null sorts
+// with the empties. Null means no worktree to count commits in, or a head the
+// worktree no longer has (rebased away).
+export function staleLabel(r) {
+  if (!r.walkthrough) return null;
+  const s = r.walkthrough.stale_by;
+  if (s > 0) return `stale ${s}`;
+  if (s === 0) return "current";
+  return r.worktree ? "stale: unknown" : "no worktree";
+}
 
 const compareValues = (a, b) => (typeof a === "string" ? a.localeCompare(b) : a - b);
 

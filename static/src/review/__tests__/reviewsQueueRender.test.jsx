@@ -134,6 +134,18 @@ describe("<ReviewsQueue>", () => {
     }
   });
 
+  it("shows the staleness the walkthrough column sorts by, in every state", () => {
+    const wtRow = (branch, stops, stale_by, worktree) => row({ branch, walkthrough: { stops, stale_by }, worktree });
+    reviews.value = [
+      wtRow("fresh", 5, 0, "/a"), wtRow("behind", 2, 3, "/b"), wtRow("unknown", 1, null, "/c"),
+      wtRow("gone", 6, null, null), row({ branch: "nowt" }),
+    ];
+    const cells = [...render(<ReviewsQueue />).matchAll(/<td class="rq-wt">([^<]*)<\/td>/g)].map((m) => m[1]);
+    expect(cells.sort()).toEqual(
+      ["1 stop · stale: unknown", "2 stops · stale 3", "5 stops · current", "6 stops · no worktree", "none"],
+    );
+  });
+
   it("titles each header by what its next press does", () => {
     reviews.value = [OPEN];
     reviewsSort.value = { key: "comments", dir: "desc" };
