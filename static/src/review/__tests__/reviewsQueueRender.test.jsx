@@ -134,6 +134,17 @@ describe("<ReviewsQueue>", () => {
     }
   });
 
+  it("titles each header by what its next press does", () => {
+    reviews.value = [OPEN];
+    reviewsSort.value = { key: "comments", dir: "desc" };
+    let html = render(<ReviewsQueue />);
+    expect(html).toMatch(/title="reverse the order">comments</);
+    expect(html).toMatch(/title="sort by PR number">PR</);
+    reviewsSort.value = { key: "comments", dir: "asc" };
+    html = render(<ReviewsQueue />);
+    expect(html).toMatch(/title="back to the default order">comments</);
+  });
+
   it("marks the header whose label names the sorted column", () => {
     reviews.value = [OPEN];
     for (const [label, col] of HEADERS) {

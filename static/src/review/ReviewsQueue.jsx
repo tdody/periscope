@@ -58,7 +58,7 @@ export function SortHeader({ col }) {
   return (
     <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>
       <button type="button" class={`rq-sort${active ? " is-active" : ""}`}
-        title={next ? `sort by ${what}` : "back to the default order"}
+        title={!next ? "back to the default order" : active ? "reverse the order" : `sort by ${what}`}
         onClick={() => { reviewsSort.value = next; }}>
         {label}{active ? <span class="rq-sort-dir" aria-hidden="true">{sort.dir === "asc" ? "▲" : "▼"}</span> : null}
       </button>
