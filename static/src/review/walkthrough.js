@@ -115,19 +115,21 @@ function group(r) {
   return tier + 3;
 }
 
-// The queue's sortable columns (THI-444): the value a header click orders by,
-// null where the cell shows "—". Nulls sort last both ways — flipping a column
-// must not float a block of dashes to the top. `first` is the first click's
-// direction: the end of the column you'd act on.
+// The queue's sortable columns (THI-444), in header order: the queue draws one
+// header per entry, so the headers and the sort can't disagree. `label` is the
+// header's text, `what` its "sort by …" title. `value` is what a click orders
+// by, null for a row with nothing to rank; nulls sort last both ways, since
+// flipping a column must not float a block of empties to the top. `first` is
+// the first click's direction: the end of the column you'd act on.
 export const SORT_COLUMNS = {
-  branch: { first: "asc", value: (r) => r.branch },
-  pr: { first: "desc", value: (r) => r.pr?.number ?? null },
+  branch: { label: "branch", what: "branch name", first: "asc", value: (r) => r.branch },
+  pr: { label: "PR", what: "PR number", first: "desc", value: (r) => r.pr?.number ?? null },
   // Staleness, not stop count: most stale first is "what needs re-preparing".
   // stale_by is null when there's no worktree to count commits in.
-  walkthrough: { first: "desc", value: (r) => r.walkthrough?.stale_by ?? null },
+  walkthrough: { label: "walkthrough", what: "staleness", first: "desc", value: (r) => r.walkthrough?.stale_by ?? null },
   // 0 renders "—", so it ranks with the empties.
-  comments: { first: "desc", value: (r) => r.unresolved || null },
-  who: { first: "asc", value: (r) => r.owner?.name || r.pr?.author || null },
+  comments: { label: "comments", what: "open comments", first: "desc", value: (r) => r.unresolved || null },
+  who: { label: "who", what: "owner", first: "asc", value: (r) => r.owner?.name || r.pr?.author || null },
 };
 
 const compareValues = (a, b) => (typeof a === "string" ? a.localeCompare(b) : a - b);

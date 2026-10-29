@@ -8,7 +8,7 @@ import { selectReview } from "../split/alertFeed.js";
 import { linearTicket } from "../split/linearTicket.js";
 import { reviews, reviewsQuery, reviewsSort } from "../store.js";
 import { prStateMeta } from "../util.js";
-import { filterRows, nextSort, sortRows } from "./walkthrough.js";
+import { filterRows, nextSort, SORT_COLUMNS, sortRows } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -48,18 +48,9 @@ function PrCell({ row }) {
 // The box's visible text is also its accessible name, so a voice user can say what they read.
 const SEARCH_HINT = "filter branches, PRs, people, tickets";
 
-// [key, label, what the title says it sorts by]. "walkthrough" ranks staleness,
-// which its label doesn't say.
-const SORT_HEADERS = [
-  ["branch", "branch", "branch name"],
-  ["pr", "PR", "PR number"],
-  ["walkthrough", "walkthrough", "staleness"],
-  ["comments", "comments", "open comments"],
-  ["who", "who", "owner"],
-];
-
 // The arrow is decoration: aria-sort already tells a screen reader the direction.
-function SortHeader({ col, label, what }) {
+function SortHeader({ col }) {
+  const { label, what } = SORT_COLUMNS[col];
   const sort = reviewsSort.value;
   const active = sort?.key === col;
   const next = nextSort(sort, col);
@@ -142,7 +133,7 @@ export function ReviewsQueue() {
       {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
         : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (
         <table class="rq-table">
-          <thead><tr>{SORT_HEADERS.map(([col, label, what]) => <SortHeader key={col} col={col} label={label} what={what} />)}<th></th></tr></thead>
+          <thead><tr>{Object.keys(SORT_COLUMNS).map((col) => <SortHeader key={col} col={col} />)}<th></th></tr></thead>
           <tbody>{shown.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
         </table>
       )}
