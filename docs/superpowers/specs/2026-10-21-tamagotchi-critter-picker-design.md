@@ -9,7 +9,8 @@ notification work (`2026-10-21-native-notifications-design.md`).
 A Settings choice of which creature lives in the header corner: `clawd`
 (default, unchanged), `scope`, `jelly`, `nox`, `ember`, `volt`, `moss`, `octocat`
 (added after the first six: an original pixel take on GitHub's mascot, its SVG
-drawn to the same conventions). Picking
+drawn to the same conventions), `faradaysie` (Faraday's brand critter, THI-445;
+`docs/specs/faradaysie-critter.md`). Picking
 one swaps it in immediately and survives reload; a default install still shows
 Clawd.
 
@@ -219,7 +220,7 @@ A **Tamagotchi** fieldset above the existing fields:
 - `periscope/routes/prefs.py`: `tama_critter: str | None = None` on `UIPatch`
   (without it Pydantic drops the field and the optimistic update reverts on the
   echo), validated in `patch_prefs_ui` against
-  `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat")`
+  `TAMA_CRITTERS = ("clawd", "scope", "jelly", "nox", "ember", "volt", "moss", "octocat", "faradaysie")`
   → 400 otherwise, like `view`. A comment on each list points at the other, and
   a test pins them equal.
 
