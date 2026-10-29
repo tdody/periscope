@@ -98,11 +98,15 @@ export function matchRefs(refs, diffFiles) {
   });
 }
 
+// Merged rows sink to the bottom of the readiness order and of every column
+// sort, and their comments stop counting toward the header badge.
+const isMerged = (r) => r.pr?.state === "merged";
+
 // Readiness first — a live pane, then a checkout on disk, then nothing local —
 // and within a tier the D6 order: unresolved comments, review-requested, a PR
 // with no walkthrough yet, the rest, local work with no PR. Merged last.
 function group(r) {
-  if (r.pr?.state === "merged") return 99;
+  if (isMerged(r)) return 99;
   const tier = r.owner ? 0 : r.worktree ? 10 : 20;
   if (r.unresolved > 0) return tier;
   if (r.role === "review-requested") return tier + 1;
@@ -140,11 +144,10 @@ export function sortRows(rows, sort = null) {
   const col = sort && SORT_COLUMNS[sort.key];
   if (!col) return ready;
   const sign = sort.dir === "asc" ? 1 : -1;
-  const merged = (r) => (r.pr?.state === "merged" ? 1 : 0);
   return ready.sort((a, b) => {
     const va = col.value(a);
     const vb = col.value(b);
-    return merged(a) - merged(b)
+    return isMerged(a) - isMerged(b)
       || (va === null) - (vb === null)
       || (va === null ? 0 : sign * compareValues(va, vb));
   });
@@ -177,5 +180,5 @@ export function filterRows(rows, query) {
 }
 
 export function unresolvedTotal(rows) {
-  return (rows || []).filter((r) => r.pr?.state !== "merged").reduce((n, r) => n + (r.unresolved || 0), 0);
+  return (rows || []).filter((r) => !isMerged(r)).reduce((n, r) => n + (r.unresolved || 0), 0);
 }
