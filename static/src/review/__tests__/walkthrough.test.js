@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterRows, matchRefs, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
+import { filterRows, matchRefs, nextSort, parseWalkthrough, sortRows, unresolvedTotal } from "../walkthrough.js";
 
 const DOC = `# Cost gauge
 
@@ -116,6 +116,105 @@ describe("sortRows", () => {
     ];
     expect(sortRows(rows).map((r) => r.branch)).toEqual(["o", "m"]);
     expect(unresolvedTotal(rows)).toBe(0);
+  });
+});
+
+describe("sortRows by a column (THI-444)", () => {
+  const row = (o) => ({ repo: "r", branch: "b", role: "mine", pr: null, walkthrough: null, unresolved: 0, owner: null, ...o });
+  const open = (n) => ({ number: n, state: "open" });
+  const order = (rows, key, dir) => sortRows(rows, { key, dir }).map((r) => r.branch);
+
+  it("orders by branch name both ways", () => {
+    const rows = [row({ branch: "b" }), row({ branch: "c" }), row({ branch: "a" })];
+    expect(order(rows, "branch", "asc")).toEqual(["a", "b", "c"]);
+    expect(order(rows, "branch", "desc")).toEqual(["c", "b", "a"]);
+  });
+
+  it("orders by PR number, rows with no PR last both ways", () => {
+    const rows = [row({ branch: "none" }), row({ branch: "p5", pr: open(5) }), row({ branch: "p9", pr: open(9) })];
+    expect(order(rows, "pr", "asc")).toEqual(["p5", "p9", "none"]);
+    expect(order(rows, "pr", "desc")).toEqual(["p9", "p5", "none"]);
+  });
+
+  it("orders the walkthrough column by staleness; no walkthrough or unknown staleness last both ways", () => {
+    const rows = [
+      row({ branch: "none" }),
+      row({ branch: "stale3", walkthrough: { stops: 2, stale_by: 3 } }),
+      row({ branch: "unknown", walkthrough: { stops: 9, stale_by: null } }),
+      row({ branch: "fresh", walkthrough: { stops: 1, stale_by: 0 } }),
+      row({ branch: "stale1", walkthrough: { stops: 4, stale_by: 1 } }),
+    ];
+    // The two empties tie, so they keep the readiness order (here, by branch name).
+    expect(order(rows, "walkthrough", "asc")).toEqual(["fresh", "stale1", "stale3", "none", "unknown"]);
+    expect(order(rows, "walkthrough", "desc")).toEqual(["stale3", "stale1", "fresh", "none", "unknown"]);
+  });
+
+  it("orders by unresolved comments; zero renders a dash and sorts with the empties", () => {
+    const rows = [row({ branch: "zero" }), row({ branch: "two", unresolved: 2 }), row({ branch: "five", unresolved: 5 })];
+    expect(order(rows, "comments", "asc")).toEqual(["two", "five", "zero"]);
+    expect(order(rows, "comments", "desc")).toEqual(["five", "two", "zero"]);
+  });
+
+  it("orders who by the owning pane's name, else the PR author", () => {
+    const rows = [
+      row({ branch: "nobody" }),
+      row({ branch: "pane-zed", owner: { name: "zed" } }),
+      row({ branch: "author-amy", pr: { ...open(3), author: "amy" } }),
+      row({ branch: "pane-bob", owner: { name: "bob" }, pr: { ...open(4), author: "zoe" } }),
+    ];
+    expect(order(rows, "who", "asc")).toEqual(["author-amy", "pane-bob", "pane-zed", "nobody"]);
+    expect(order(rows, "who", "desc")).toEqual(["pane-zed", "pane-bob", "author-amy", "nobody"]);
+  });
+
+  it("breaks ties with the default readiness order, in both directions", () => {
+    const rows = [
+      row({ branch: "plain", unresolved: 0, walkthrough: { stops: 1, stale_by: 2 } }),
+      row({ branch: "unres", unresolved: 3, walkthrough: { stops: 1, stale_by: 2 } }),
+      row({ branch: "pane", owner: { name: "p" }, walkthrough: { stops: 1, stale_by: 2 } }),
+    ];
+    expect(order(rows, "walkthrough", "asc")).toEqual(["pane", "unres", "plain"]);
+    expect(order(rows, "walkthrough", "desc")).toEqual(["pane", "unres", "plain"]);
+  });
+
+  it("keeps merged rows at the bottom under any sort, ordered among themselves", () => {
+    const rows = [
+      row({ branch: "m-a", pr: { number: 1, state: "merged" } }),
+      row({ branch: "o-b", pr: open(2) }),
+      row({ branch: "m-c", pr: { number: 3, state: "merged" } }),
+      row({ branch: "o-d" }),
+    ];
+    expect(order(rows, "branch", "asc")).toEqual(["o-b", "o-d", "m-a", "m-c"]);
+    expect(order(rows, "branch", "desc")).toEqual(["o-d", "o-b", "m-c", "m-a"]);
+    // An open row with no PR is empty for this column, yet still above every merged row.
+    expect(order(rows, "pr", "desc")).toEqual(["o-b", "o-d", "m-c", "m-a"]);
+  });
+
+  it("falls back to the readiness order with no sort or an unknown column", () => {
+    const rows = [row({ branch: "plain" }), row({ branch: "unres", unresolved: 1 })];
+    expect(sortRows(rows, null).map((r) => r.branch)).toEqual(["unres", "plain"]);
+    expect(order(rows, "nope", "asc")).toEqual(["unres", "plain"]);
+  });
+});
+
+describe("nextSort", () => {
+  it("starts each column in its useful direction", () => {
+    expect(nextSort(null, "branch")).toEqual({ key: "branch", dir: "asc" });
+    expect(nextSort(null, "who")).toEqual({ key: "who", dir: "asc" });
+    expect(nextSort(null, "pr")).toEqual({ key: "pr", dir: "desc" });
+    expect(nextSort(null, "comments")).toEqual({ key: "comments", dir: "desc" });
+    // Most stale first: which walkthroughs need re-preparing.
+    expect(nextSort(null, "walkthrough")).toEqual({ key: "walkthrough", dir: "desc" });
+  });
+
+  it("flips on the second click and returns to the default order on the third", () => {
+    const first = nextSort(null, "walkthrough");
+    const second = nextSort(first, "walkthrough");
+    expect(second).toEqual({ key: "walkthrough", dir: "asc" });
+    expect(nextSort(second, "walkthrough")).toBeNull();
+  });
+
+  it("switching column starts that column fresh", () => {
+    expect(nextSort({ key: "pr", dir: "asc" }, "branch")).toEqual({ key: "branch", dir: "asc" });
   });
 });
 

@@ -111,11 +111,52 @@ function group(r) {
   return tier + 3;
 }
 
-export function sortRows(rows) {
-  return [...(rows || [])].sort((a, b) =>
+// The queue's sortable columns (THI-444): the value a header click orders by,
+// null where the cell shows "—". Nulls sort last both ways — flipping a column
+// must not float a block of dashes to the top. `first` is the first click's
+// direction: the end of the column you'd act on.
+export const SORT_COLUMNS = {
+  branch: { first: "asc", value: (r) => r.branch },
+  pr: { first: "desc", value: (r) => r.pr?.number ?? null },
+  // Staleness, not stop count: most stale first is "what needs re-preparing".
+  // stale_by is null when there's no worktree to count commits in.
+  walkthrough: { first: "desc", value: (r) => r.walkthrough?.stale_by ?? null },
+  // 0 renders "—", so it ranks with the empties.
+  comments: { first: "desc", value: (r) => r.unresolved || null },
+  who: { first: "asc", value: (r) => r.owner?.name || r.pr?.author || null },
+};
+
+const compareValues = (a, b) => (typeof a === "string" ? a.localeCompare(b) : a - b);
+
+// `sort` is {key, dir} from a header click, or null for the readiness order.
+// The readiness sort runs first and Array.sort is stable, so rows a column ties
+// keep that order and don't swap places on every 10 s poll. Merged rows stay at
+// the bottom whatever the column.
+export function sortRows(rows, sort = null) {
+  const ready = [...(rows || [])].sort((a, b) =>
     group(a) - group(b)
     || (b.pr?.number || 0) - (a.pr?.number || 0)
     || a.branch.localeCompare(b.branch));
+  const col = sort && SORT_COLUMNS[sort.key];
+  if (!col) return ready;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  const merged = (r) => (r.pr?.state === "merged" ? 1 : 0);
+  return ready.sort((a, b) => {
+    const va = col.value(a);
+    const vb = col.value(b);
+    return merged(a) - merged(b)
+      || (va === null) - (vb === null)
+      || (va === null ? 0 : sign * compareValues(va, vb));
+  });
+}
+
+// A header click: a new column starts in its `first` direction, the second
+// click flips it, the third returns to the readiness order (null).
+export function nextSort(sort, key) {
+  const first = SORT_COLUMNS[key].first;
+  if (sort?.key !== key) return { key, dir: first };
+  if (sort.dir === first) return { key, dir: first === "asc" ? "desc" : "asc" };
+  return null;
 }
 
 // The queue's search box (THI-442): every whitespace-separated term must occur,
