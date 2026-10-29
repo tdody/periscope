@@ -6,7 +6,7 @@
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it } from "vitest";
 import { reviews, reviewsQuery, reviewsSort } from "../../store.js";
-import { ReviewsQueue } from "../ReviewsQueue.jsx";
+import { ReviewsQueue, SortHeader } from "../ReviewsQueue.jsx";
 
 const row = (o) => ({
   repo: "fdy", role: "mine", pr: null, walkthrough: null, unresolved: 0, comments: 0, owner: null, worktree: null,
@@ -110,6 +110,37 @@ describe("<ReviewsQueue>", () => {
     expect(html).toContain(">▲<");
     // comments starts descending, so from ascending the next click resets.
     expect(html).toContain('title="back to the default order"');
+  });
+
+  // Spelled out, not read from SORT_COLUMNS, so a header wired to the wrong
+  // column or started in the wrong direction fails here.
+  const HEADERS = [
+    ["branch", "branch", "asc"], ["PR", "pr", "desc"], ["walkthrough", "walkthrough", "desc"],
+    ["comments", "comments", "desc"], ["who", "who", "asc"],
+  ];
+  const flip = { asc: "desc", desc: "asc" };
+
+  it("pressing a header sorts by it, reverses on the second press, and resets on the third", () => {
+    // render-to-string fires no events, so press the button the way hunk.test.jsx
+    // does: call the component and invoke the button's onClick.
+    const press = (col) => SortHeader({ col }).props.children.props.onClick();
+    for (const [, col, first] of HEADERS) {
+      press(col);
+      expect(reviewsSort.value).toEqual({ key: col, dir: first });
+      press(col);
+      expect(reviewsSort.value).toEqual({ key: col, dir: flip[first] });
+      press(col);
+      expect(reviewsSort.value).toBeNull();
+    }
+  });
+
+  it("marks the header whose label names the sorted column", () => {
+    reviews.value = [OPEN];
+    for (const [label, col] of HEADERS) {
+      reviewsSort.value = { key: col, dir: "asc" };
+      const active = render(<ReviewsQueue />).match(/class="rq-sort is-active"[^>]*>([^<]+)</);
+      expect(active?.[1]).toBe(label);
+    }
   });
 
   it("names the search box by the words it shows", () => {

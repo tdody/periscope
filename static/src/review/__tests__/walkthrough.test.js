@@ -213,6 +213,12 @@ describe("nextSort", () => {
     expect(nextSort(second, "walkthrough")).toBeNull();
   });
 
+  it("flips an ascending-first column to descending, then back to the default order", () => {
+    expect(nextSort({ key: "branch", dir: "asc" }, "branch")).toEqual({ key: "branch", dir: "desc" });
+    expect(nextSort({ key: "branch", dir: "desc" }, "branch")).toBeNull();
+    expect(nextSort({ key: "who", dir: "asc" }, "who")).toEqual({ key: "who", dir: "desc" });
+  });
+
   it("switching column starts that column fresh", () => {
     expect(nextSort({ key: "pr", dir: "asc" }, "branch")).toEqual({ key: "branch", dir: "asc" });
   });

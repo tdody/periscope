@@ -49,7 +49,8 @@ function PrCell({ row }) {
 const SEARCH_HINT = "filter branches, PRs, people, tickets";
 
 // The arrow is decoration: aria-sort already tells a screen reader the direction.
-function SortHeader({ col }) {
+// Exported for the render test, which presses it (no DOM to click in).
+export function SortHeader({ col }) {
   const { label, what } = SORT_COLUMNS[col];
   const sort = reviewsSort.value;
   const active = sort?.key === col;
