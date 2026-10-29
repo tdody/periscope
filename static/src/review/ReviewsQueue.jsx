@@ -6,9 +6,9 @@ import { confirmDialog } from "../overlays/Dialog.jsx";
 import { refreshReviews } from "../poll.js";
 import { selectReview } from "../split/alertFeed.js";
 import { linearTicket } from "../split/linearTicket.js";
-import { reviews, reviewsQuery } from "../store.js";
+import { reviews, reviewsQuery, reviewsSort } from "../store.js";
 import { prStateMeta } from "../util.js";
-import { filterRows, sortRows } from "./walkthrough.js";
+import { filterRows, nextSort, sortRows } from "./walkthrough.js";
 
 // `busy` is per row: a second click while the POST is in flight would send a
 // second prompt to the pane (the server's 409 only spans the request).
@@ -47,6 +47,32 @@ function PrCell({ row }) {
 
 // The box's visible text is also its accessible name, so a voice user can say what they read.
 const SEARCH_HINT = "filter branches, PRs, people, tickets";
+
+// [key, label, what the title says it sorts by]. "walkthrough" ranks staleness,
+// which its label doesn't say.
+const SORT_HEADERS = [
+  ["branch", "branch", "branch name"],
+  ["pr", "PR", "PR number"],
+  ["walkthrough", "walkthrough", "staleness"],
+  ["comments", "comments", "open comments"],
+  ["who", "who", "owner"],
+];
+
+// The arrow is decoration: aria-sort already tells a screen reader the direction.
+function SortHeader({ col, label, what }) {
+  const sort = reviewsSort.value;
+  const active = sort?.key === col;
+  const next = nextSort(sort, col);
+  return (
+    <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>
+      <button type="button" class={`rq-sort${active ? " is-active" : ""}`}
+        title={next ? `sort by ${what}` : "back to the default order"}
+        onClick={() => { reviewsSort.value = next; }}>
+        {label}{active ? <span class="rq-sort-dir" aria-hidden="true">{sort.dir === "asc" ? "▲" : "▼"}</span> : null}
+      </button>
+    </th>
+  );
+}
 
 function Row({ row }) {
   const [note, setNote] = useState("");
@@ -98,7 +124,7 @@ export function ReviewsQueue() {
   useEffect(() => { refreshReviews(); }, []);
   const rows = reviews.value;
   if (rows === null) return <div class="wt-empty">loading…</div>;
-  const sorted = sortRows(rows);
+  const sorted = sortRows(rows, reviewsSort.value);
   const query = reviewsQuery.value;
   const shown = filterRows(sorted, query);
   const noun = `branch${sorted.length === 1 ? "" : "es"}`;
@@ -116,7 +142,7 @@ export function ReviewsQueue() {
       {sorted.length === 0 ? <div class="wt-empty">nothing open</div>
         : shown.length === 0 ? <div class="wt-empty">no branches match "{query.trim()}"</div> : (
         <table class="rq-table">
-          <thead><tr><th>branch</th><th>PR</th><th>walkthrough</th><th>comments</th><th>who</th><th></th></tr></thead>
+          <thead><tr>{SORT_HEADERS.map(([col, label, what]) => <SortHeader key={col} col={col} label={label} what={what} />)}<th></th></tr></thead>
           <tbody>{shown.map((r) => <Row key={`${r.repo}/${r.branch}`} row={r} />)}</tbody>
         </table>
       )}

@@ -19,6 +19,9 @@ export const reviews = signal(null);
 // The Reviews queue's search text (THI-442): it survives opening a walkthrough
 // and coming back; a reload clears it.
 export const reviewsQuery = signal("");
+// The queue's header-click sort (THI-444), {key, dir} or null for the readiness
+// order; kept like reviewsQuery, through a walkthrough and back.
+export const reviewsSort = signal(null);
 // Cross-pane alert feed, fed by /api/state. `null` means "not loaded yet" and
 // is distinct from `[]` ("loaded, no alerts"): alertFeed's native-notify
 // sentinel must not treat the pre-load value as a real empty feed, or every

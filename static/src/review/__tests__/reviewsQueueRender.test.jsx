@@ -5,7 +5,7 @@
 
 import render from "preact-render-to-string";
 import { afterEach, describe, expect, it } from "vitest";
-import { reviews, reviewsQuery } from "../../store.js";
+import { reviews, reviewsQuery, reviewsSort } from "../../store.js";
 import { ReviewsQueue } from "../ReviewsQueue.jsx";
 
 const row = (o) => ({
@@ -30,6 +30,7 @@ const prCell = (html, branch) => html.split(`>${branch}<`)[1].split('<td class="
 afterEach(() => {
   reviews.value = null;
   reviewsQuery.value = "";
+  reviewsSort.value = null;
 });
 
 describe("<ReviewsQueue>", () => {
@@ -82,6 +83,33 @@ describe("<ReviewsQueue>", () => {
     expect(html).toContain("no branches match &quot;zzz&quot;");
     expect(html).toContain(">0 of 1 branch<");
     expect(html).not.toContain("rq-table");
+  });
+
+  it("makes each data header a sort button, none marked until one is picked (THI-444)", () => {
+    reviews.value = [OPEN];
+    const html = render(<ReviewsQueue />);
+    for (const label of ["branch", "PR", "walkthrough", "comments", "who"]) {
+      expect(html).toMatch(new RegExp(`<th><button type="button" class="rq-sort"[^>]*>${label}</button></th>`));
+    }
+    expect(html).toContain('title="sort by staleness"');
+    expect(html).not.toContain("aria-sort");
+  });
+
+  it("orders rows by the picked column and marks its header with the direction", () => {
+    const FEW = row({ branch: "few", unresolved: 1 });
+    const MANY = row({ branch: "many", unresolved: 4 });
+    reviews.value = [FEW, MANY];
+    reviewsSort.value = { key: "comments", dir: "desc" };
+    let html = render(<ReviewsQueue />);
+    expect(html.indexOf(">many<")).toBeLessThan(html.indexOf(">few<"));
+    expect(html).toMatch(/<th aria-sort="descending"><button type="button" class="rq-sort is-active"[^>]*>comments<span class="rq-sort-dir" aria-hidden="true">▼<\/span><\/button><\/th>/);
+    reviewsSort.value = { key: "comments", dir: "asc" };
+    html = render(<ReviewsQueue />);
+    expect(html.indexOf(">few<")).toBeLessThan(html.indexOf(">many<"));
+    expect(html).toContain('<th aria-sort="ascending">');
+    expect(html).toContain(">▲<");
+    // comments starts descending, so from ascending the next click resets.
+    expect(html).toContain('title="back to the default order"');
   });
 
   it("names the search box by the words it shows", () => {
