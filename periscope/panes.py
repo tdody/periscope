@@ -339,6 +339,13 @@ _FILE_HEADERS = {"Write": ("Create file", "Overwrite file"), "Edit": ("Edit file
 # second shallow row that no `Tip:` test would catch. Without a leading Tip,
 # a shallow row above the command is unknown chrome and stays in the block.
 _COMMAND_INDENT = 3
+# Rows Claude draws below a Bash dialog's description, shallower than the
+# command: "This command requires approval" sits there for `python3 -c …`
+# (tests/fixtures/permission_dialogs/bash_requires_approval.txt), and counted
+# into the block it made every such Allow a 409. Only these exact rows, only
+# at the block's end, are skipped; any other shallow row there stays in the
+# block, so unknown chrome still fails closed.
+_TRAILING_CHROME = frozenset({"This command requires approval"})
 # A multi-line command's `│ ` gutter; a blank command line leaves a bare `│`.
 _GUTTER_RE = re.compile(r"^│(?=\s|$)")
 # Mirrors pane_permission_hook._HIDDEN_RE (a test pins the two): the hook
@@ -617,8 +624,9 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
     WebFetch, MCP tools, …), never matches.
 
     Bash: the digest of the whole command + description block (after a
-    leading Tip and its wrap, up to the first row indented 3+), gutter and
-    whitespace squashed, EQUALS the key. Never a prefix or a substring: `git
+    leading Tip and its wrap, up to the first row indented 3+; before a known
+    trailing chrome row, `_TRAILING_CHROME`), gutter and whitespace squashed,
+    EQUALS the key. Never a prefix or a substring: `git
     push origin main` vouched for `… --force`, two `cd <repo> && …` share
     their first 40 characters, and every `python3 - <<'EOF'` its first line.
     Accepted limit: squashing loses whitespace-only differences and the
@@ -644,7 +652,14 @@ def dialog_matches(parsed: dict | None, tool: str, match_key: str | None) -> boo
         start = 0
         if body and body[0].lstrip().startswith("Tip:"):
             start = next((i for i, r in enumerate(body) if len(r) - len(r.lstrip()) >= _COMMAND_INDENT), len(body))
-        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in body[start:])
+        end = len(body)
+        while (
+            end > start
+            and body[end - 1].strip() in _TRAILING_CHROME
+            and len(body[end - 1]) - len(body[end - 1].lstrip()) < _COMMAND_INDENT
+        ):
+            end -= 1
+        block = "".join(_GUTTER_RE.sub("", row.lstrip()) for row in body[start:end])
         return _bash_key(_squash(block)) == match_key
     shown = parsed["shown_path"]
     return parsed["header"] in _FILE_HEADERS[tool] and bool(shown) and ("/" + match_key).endswith("/" + shown)
